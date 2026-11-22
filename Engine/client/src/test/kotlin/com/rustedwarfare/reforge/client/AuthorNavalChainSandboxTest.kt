@@ -122,9 +122,14 @@ class AuthorNavalChainSandboxTest {
             for (tick in 0 until 1000) {
                 session.tick(); collect()
                 val hull = session.observation.units.single { it.unitId == first.unitId }
-                if (hypot(hull.position.x - coast.x, hull.position.y - coast.y) <= 4.0) { sailed = true; break }
+                if (session.observation.events.any { it.kind == "movement-arrived" && it.unitId == first.unitId }) {
+                    assertTrue(hypot(hull.position.x - coast.x, hull.position.y - coast.y) < 7.0, hull.position.toString())
+                    assertEquals(0.0, hull.speed)
+                    sailed = true
+                    break
+                }
             }
-            assertTrue(sailed, "$format first ship must arrive at the existing four-unit radius")
+            assertTrue(sailed, "$format first ship must complete the ordinary Move at the coast")
             assertTrue(session.observation.units.single { it.unitId == "b" }.alive)
             assertIs<ActionResult.Accepted>(session.command(Position(350.0, 210.0)))
             repeat(400) { session.tick(); collect() }

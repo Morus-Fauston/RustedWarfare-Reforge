@@ -83,8 +83,15 @@ class NavalConstructionChainTest {
                 val move = assertIs<ActionResult.Accepted>(context.submit(
                     MoveAction("too-wide", "p1", ship, Position(450.0, 540.0), context.world)))
                 assertTrue(move.events.isEmpty())
-                val blocked = context.advanceToMoveOutcome(context.observe().stepIndex + 1, ship)
-                assertTrue(Event("path-unreachable", ship) in blocked.events, "Illegal circular route: ${blocked.events}")
+                var stopped: MoveArrival? = null
+                repeat(1250) {
+                    tick()
+                    val unit = context.observe().units.single { it.unitId == ship }
+                    assertTrue(unit.position.y < 340.0, "The circular hull entered the narrow channel: ${unit.position}")
+                    stopped = unit.moveArrival ?: stopped
+                }
+                assertEquals(Position(450.0, 540.0), assertNotNull(stopped).originalTarget)
+                assertTrue(stopped.distance > 0.0)
             }
         }
 

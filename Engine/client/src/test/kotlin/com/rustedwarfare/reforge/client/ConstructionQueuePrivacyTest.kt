@@ -62,14 +62,16 @@ class ConstructionQueuePrivacyTest {
                 capacity("never-contact", false)
                 common { MoveAction("discover", "p1", "observer", Position(500.0, 250.0), it.world) }
                 val discoverDeadline = step + 1000
-                while (contexts[0].observe().units.single { it.unitId == "observer" }.moveTarget != null && step < discoverDeadline) tick()
+                while (contexts[0].observe().units.single { it.unitId == "observer" }.tasks.isNotEmpty() &&
+                    step < discoverDeadline) tick()
                 assertNull(contexts[0].observe().units.single { it.unitId == "observer" }.moveTarget)
                 assertTrue(contexts[0].observe().units.single { it.unitId == "observer" }.position.x > 480.0)
                 capacity("visible", true)
                 assertEquals(false, contexts[0].observePlayer(contexts[0].world, "p1").knowledge!!.cell(35, 17).lastKnownBlocked)
                 common { MoveAction("return", "p1", "observer", Position(50.0, 70.0), it.world) }
                 val returnDeadline = step + 1000
-                while (contexts[0].observe().units.single { it.unitId == "observer" }.moveTarget != null && step < returnDeadline) tick()
+                while (contexts[0].observe().units.single { it.unitId == "observer" }.tasks.isNotEmpty() &&
+                    step < returnDeadline) tick()
                 assertNull(contexts[0].observe().units.single { it.unitId == "observer" }.moveTarget)
                 capacity("lost-sight", false)
                 assertEquals(if (mode == SandboxMode.MEMORY) false else null,

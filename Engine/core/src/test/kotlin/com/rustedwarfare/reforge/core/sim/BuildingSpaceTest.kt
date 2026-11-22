@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertSame
 import kotlin.test.assertFailsWith
@@ -215,10 +216,10 @@ class BuildingSpaceTest {
             for ((name, goal) in listOf("still-live-building" to Position(310.0, 90.0), "still-hard-wall" to Position(490.0, 210.0))) {
                 val blocked = assertIs<ActionResult.Accepted>(context.submit(MoveAction(name, "p1", "a", goal, context.world)))
                 assertTrue(blocked.events.isEmpty())
-                val failed = context.advanceToMoveOutcome(nextStep, "a")
-                nextStep = failed.stepIndex + 1
-                assertTrue(Event("path-unreachable", "a") in failed.events)
-                assertEquals(null, failed.units.single { it.unitId == "a" }.moveTarget)
+                val fallback = context.advanceToMoveOutcome(nextStep, "a")
+                nextStep = fallback.stepIndex + 1
+                val destination = assertNotNull(fallback.units.single { it.unitId == "a" }.moveTarget)
+                assertNotEquals(goal, destination, name)
             }
             assertTrue(!map.blocking.isBlocked(15, 10), "The original ground map must not be overwritten with building cost")
             assertTrue(map.blocking.isBlocked(24, 10))

@@ -62,26 +62,77 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
 }
 
 /** Render-only atlas metadata; replacing it cannot create a core TileSetDefinition. */
-data class VisualTileAtlas(val firstGid: Int, val name: String, val tileWidth: Int, val tileHeight: Int,
-    val imagePath: Path, val blockedTileIds: Set<Int>, val tileCount: Int, val columns: Int,
-    val spacing: Int, val margin: Int, val transparentColor: String?, val resourcePoolTileIds: Set<Int>,
-    val pixelTileWidth: Int = tileWidth, val pixelTileHeight: Int = tileHeight) {
+data class VisualTileAtlas(
+    val firstGid: Int,
+    val name: String,
+    val tileWidth: Int,
+    val tileHeight: Int,
+    val imagePath: Path,
+    val blockedTileIds: Set<Int>,
+    val tileCount: Int,
+    val columns: Int,
+    val spacing: Int,
+    val margin: Int,
+    val transparentColor: String?,
+    val resourcePoolTileIds: Set<Int>,
+    val pixelTileWidth: Int = tileWidth,
+    val pixelTileHeight: Int = tileHeight,
+    val imageSource: String = imagePath.fileName?.toString() ?: "",
+    val tsxSource: String? = null,
+    val isPlaceholderFallback: Boolean = false,
+) {
     companion object {
-        fun from(value: TileSetDefinition) = VisualTileAtlas(value.firstGid, value.name, value.tileWidth, value.tileHeight,
-            value.imagePath, value.blockedTileIds, value.tileCount, value.columns, value.spacing, value.margin,
-            value.transparentColor, value.resourcePoolTileIds)
+        fun from(value: TileSetDefinition) = VisualTileAtlas(
+            firstGid = value.firstGid,
+            name = value.name,
+            tileWidth = value.tileWidth,
+            tileHeight = value.tileHeight,
+            imagePath = value.imagePath,
+            blockedTileIds = value.blockedTileIds,
+            tileCount = value.tileCount,
+            columns = value.columns,
+            spacing = value.spacing,
+            margin = value.margin,
+            transparentColor = value.transparentColor,
+            resourcePoolTileIds = value.resourcePoolTileIds,
+            imageSource = value.imageSource,
+            tsxSource = value.tsxSource,
+        )
+
+        fun normalizeAtlasKey(raw: String): String {
+            val cleaned = raw.lowercase()
+                .replace('\\', '/')
+                .substringAfterLast('/')
+                .substringBeforeLast('.')
+                .replace(Regex("[^a-z0-9_.-]+"), "-")
+                .trim('-', '.')
+                .ifEmpty { "tileset" }
+            return cleaned
+        }
     }
 
-    fun supportedLayout(): String {
-        require(tileWidth == 20 && tileHeight == 20 && spacing == 0 && margin == 0) { "VISUAL_MAPPING_UNSUPPORTED: atlas $name" }
+    /** Stable resource-pack override identifier per ADR-013 (e.g. reforge:tileset/longgrass). */
+    fun normalizedResourceKey(): String {
+        val raw = imageSource.ifBlank { name }
+        return "reforge:tileset/${normalizeAtlasKey(raw)}"
+    }
+
+    /** Legacy 6 built-in test layout key when matched, or null for arbitrary standard TMX tilesets. */
+    fun legacyLayoutOrNull(): String? {
+        if (tileWidth != 20 || tileHeight != 20 || spacing != 0 || margin != 0) return null
         return when {
-            name == "naval-ground" && columns == 5 && tileCount == 40 && blockedTileIds.isEmpty() && resourcePoolTileIds.isEmpty() -> "naval-ground-40"
+            name == "naval-ground" && columns == 5 && tileCount == 40 && resourcePoolTileIds.isEmpty() &&
+                (blockedTileIds.isEmpty() || blockedTileIds == setOf(2)) -> "naval-ground-40"
             columns == 5 && tileCount == 40 && blockedTileIds == setOf(16) && resourcePoolTileIds.isEmpty() -> "controlled-ground-40"
             columns == 7 && tileCount == 35 && blockedTileIds == setOf(7, 8, 21, 22, 28, 29) && resourcePoolTileIds.isEmpty() -> "controlled-rock-35"
             columns == 5 && tileCount == 5 && blockedTileIds == setOf(1, 2) && resourcePoolTileIds == setOf(4) -> "construction-strip-5"
             columns == 2 && tileCount == 2 && blockedTileIds == setOf(1) && resourcePoolTileIds.isEmpty() -> "controlled-strip-2"
             columns == 4 && tileCount == 4 && blockedTileIds == setOf(2, 3) && resourcePoolTileIds.isEmpty() -> "demo-strip-4"
-            else -> throw IllegalArgumentException("VISUAL_MAPPING_UNSUPPORTED: atlas $name ($columns/$tileCount)")
+            else -> null
         }
     }
+
+    /** Retained for existing built-in test suite compatibility; dynamic TMX binding uses [legacyLayoutOrNull] & [normalizedResourceKey]. */
+    fun supportedLayout(): String = legacyLayoutOrNull()
+        ?: throw IllegalArgumentException("VISUAL_MAPPING_UNSUPPORTED: atlas $name ($columns/$tileCount)")
 }

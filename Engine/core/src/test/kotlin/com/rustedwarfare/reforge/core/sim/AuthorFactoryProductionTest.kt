@@ -48,10 +48,15 @@ class AuthorFactoryProductionTest {
                 assertEquals(MovementType.LAND, content.units.getValue("amber_scout").movement.type)
                 assertEquals(1.1, content.units.getValue("amber_scout").movement.moveSpeed)
                 assertIs<ActionResult.Accepted>(simulation.submit(MoveAction("move", "p1", born, arrival, simulation.world)))
-                repeat(180) { simulation.advance(Step(step++, 1.0, "sim-tick")) }
+                var arrivals = 0
+                repeat(180) {
+                    arrivals += simulation.advance(Step(step++, 1.0, "sim-tick")).events
+                        .count { it.kind == "movement-arrived" && it.unitId == born }
+                }
                 val moved = simulation.observe().units.single { it.unitId == born }.position
-                assertTrue(kotlin.math.abs(moved.x - arrival.x) <= 4.0 &&
-                    kotlin.math.abs(moved.y - arrival.y) <= 4.0, "Expected arrival near $arrival, got $moved")
+                assertEquals(1, arrivals)
+                assertTrue(kotlin.math.hypot(moved.x - arrival.x, moved.y - arrival.y) < 7.0,
+                    "Expected arrival near $arrival, got $moved")
                 val before = assertNotNull(simulation.observe().units.single { it.unitId == "target" }.health)
                 assertIs<ActionResult.Accepted>(simulation.submit(AttackAction("aim", "p1", born, "target", simulation.world)))
                 var fired = false

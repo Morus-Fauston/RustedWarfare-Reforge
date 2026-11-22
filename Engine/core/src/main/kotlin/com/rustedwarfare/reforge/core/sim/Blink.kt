@@ -33,6 +33,7 @@ internal object Blink {
         val dx = target.x - source.x
         val dy = target.y - source.y
         unit.position = target
+        state.spatialIndex.relocate(unit)
         unit.mechState = unit.mechState?.let { gait ->
             gait.copy(feet = immutable(gait.feet.map { foot ->
                 foot.copy(position = Position(foot.position.x + dx, foot.position.y + dy))
@@ -41,6 +42,7 @@ internal object Blink {
         for (id in unit.attachmentIds.values) {
             val child = state.units.getValue(id)
             UnitAttachments.synchronize(unit, child, checkNotNull(child.attachment).slot)
+            state.spatialIndex.relocate(child)
         }
         state.temporaryVision = state.temporaryVision + TemporaryVision(unit.ownerPlayerId, source)
         state.pendingEvents += Event("teleported", unit.unitId)

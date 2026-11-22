@@ -9,6 +9,15 @@ import kotlin.math.pow
 data class MapArea(val left: Double, val bottom: Double, val width: Double, val height: Double)
 data class MapCamera(val center: Position, val zoom: Double = 1.0)
 
+/** Invert the axis-aligned UI viewport in double precision before projecting onto the map. */
+internal fun battlefieldPoint(screenX: Int, screenY: Int, windowHeight: Int,
+                              viewportLeft: Int, viewportBottom: Int, viewportWidth: Int, viewportHeight: Int,
+                              battlefieldWidth: Double, battlefieldHeight: Double): Position? {
+    if (viewportWidth <= 0 || viewportHeight <= 0) return null
+    return Position((screenX.toDouble() - viewportLeft) * battlefieldWidth / viewportWidth,
+        (windowHeight.toDouble() - screenY - viewportBottom) * battlefieldHeight / viewportHeight)
+}
+
 class MapProjection(val worldWidth: Double, val worldHeight: Double,
                     mapArea: MapArea = MapArea(24.0, 100.0, 600.0, 400.0),
                     private val fillViewport: Boolean = false) {
@@ -24,9 +33,10 @@ class MapProjection(val worldWidth: Double, val worldHeight: Double,
     private fun baseScale(): Double = if (fillViewport) max(mapArea.width / worldWidth, mapArea.height / worldHeight)
         else min(mapArea.width / worldWidth, mapArea.height / worldHeight)
 
-    internal fun resizeBattlefield(width: Double) {
-        if (!fillViewport || !width.isFinite() || width <= 0 || width == mapArea.width) return
-        mapArea = mapArea.copy(width = width)
+    internal fun resizeBattlefield(width: Double, height: Double = mapArea.height) {
+        if (!fillViewport || !width.isFinite() || width <= 0 || !height.isFinite() || height <= 0) return
+        if (width == mapArea.width && height == mapArea.height) return
+        mapArea = mapArea.copy(width = width, height = height)
         fitScale = baseScale()
         centerOn(camera.center)
     }

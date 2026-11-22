@@ -44,6 +44,7 @@ internal data class StepState(
     var productionLedger: ProductionLedger? = null,
     var ordinaryUpgrades: OrdinaryUpgrades? = null,
     var missileTargets: MissileTargetIndex? = null,
+    var spatialIndex: WorldSpatialIndex = WorldSpatialIndex(),
     var buildingTerrain: BuildingTerrain? = null,
     var buildingKnowledge: Map<String, BuildingKnowledge> = emptyMap(),
     var pendingBuildingDiscoveries: Map<String, Map<Pair<Int, Int>, Long>> = emptyMap(),
@@ -59,6 +60,14 @@ internal data class StepState(
     var committedObservation: Observation? = null,
     var scheduledActions: MutableList<Action> = mutableListOf(),
     var movePlanning: MovePlanning = MovePlanning(),
+    var gateWorkDeferred: Boolean = false,
+    var driverPassages: DriverPassageSurvey = DriverPassageSurvey(),
+    var landingOccupancy: LandingOccupancy = LandingOccupancy(),
+    var landingsShortOfBudget: Boolean = false,
+    var separationInterventions: Long = 0,
+    var separationVisits: TrafficSeparation.Visits = TrafficSeparation.Visits(),
+    var landingAdmissions: MutableMap<GroupMoveRequest, Set<String>> = mutableMapOf(),
+    var landingSites: MutableMap<GroupMoveRequest, SharedLandingSites> = mutableMapOf(),
     var actionResultOwners: IdentityHashMap<ActionResult, String> = IdentityHashMap(),
     var playerActionRevisions: MutableMap<String, Long> = mutableMapOf(),
     var noFogPlanning: MutableMap<MovementType, CachedPlanningTerrain> = mutableMapOf(),
@@ -72,14 +81,17 @@ internal data class StepState(
     var routeContinuationDiagnostics: MutableList<RouteContinuationSample>? = null,
     var pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>> = mutableMapOf(),
 ) {
-    fun fork(planningRollback: PathSearchRollback): StepState = copy(
-        units = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
+    fun fork(planningRollback: PathSearchRollback): StepState {
+        val forkedUnits = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
             val combat = unit.combat?.copy()
             val named = unit.namedWeapons?.mapValuesTo(linkedMapOf()) { (_, state) ->
                 if (state === unit.combat) checkNotNull(combat) else state.copy()
             }
-            unit.copy(pathPoints = unit.pathPoints.toMutableList(), combat = combat, namedWeapons = named,
-                pointDefense = unit.pointDefense?.copy()) },
+            unit.copy(combat = combat, namedWeapons = named,
+                pointDefense = unit.pointDefense?.copy()) }
+        return copy(
+        units = forkedUnits,
+        spatialIndex = spatialIndex.fork(forkedUnits),
         projectiles = projectiles.mapTo(mutableListOf()) {
             it.copy(expansion = it.expansion?.let { area -> area.copy(hitUnitIds = LinkedHashSet(area.hitUnitIds)) }) },
         pendingEvents = pendingEvents.toMutableList(),
@@ -88,6 +100,10 @@ internal data class StepState(
         pendingActionResults = pendingActionResults.toMutableList(),
         scheduledActions = scheduledActions.toMutableList(),
         movePlanning = movePlanning.fork(planningRollback),
+        driverPassages = driverPassages.fork(planningRollback),
+        landingOccupancy = landingOccupancy.fork(planningRollback),
+        landingAdmissions = HashMap(landingAdmissions),
+        landingSites = landingSites.mapValuesTo(mutableMapOf()) { it.value.fork(planningRollback) },
         actionResultOwners = IdentityHashMap(actionResultOwners),
         playerActionRevisions = HashMap(playerActionRevisions),
         noFogPlanning = HashMap(noFogPlanning),
@@ -98,7 +114,8 @@ internal data class StepState(
         // Motion samples are staged separately and appended only on successful publication.
         // Do not recopy the already committed, potentially long diagnostic history per step.
         // Vision source counts and knowledge blocks are immutable; sharing them is a fork.
-    )
+        )
+    }
 
     fun validate(input: Scenario) {
         require(temporaryVision.all { it.owner in input.players.map { p -> p.playerId } &&
@@ -231,6 +248,7 @@ internal data class StepState(
         productionLedger?.validateCandidate()
         productionLedger?.validateUpgrades(units)
         missileTargets?.validate(units)
+        spatialIndex.validate(units)
         ordinaryUpgrades?.validateCandidate(units)
         // Ended/event-only objects also enter the public window; removing them from the active
         // container must not let an invalid numeric candidate bypass the S4 publication gate.
@@ -270,7 +288,7 @@ internal class CandidateSteps {
         current = candidate.state
         try {
             update(candidate)
-            val observation = candidate.publish(input, actions, observe)
+            val observation = candidate.publish(input, actions, observe, previous.state.units)
             candidate.releasePreviousKnowledge(previous.state)
             planningRollback.commit()
             return observation
@@ -285,7 +303,9 @@ internal class CandidateSteps {
 
 /** Owns projected resources and the publication window, as well as the working state. */
 internal class CandidateStep(val state: StepState, private val step: Step) {
-    val translations = UnitContact.Translations(step.delta) { id ->
+    var parkedNeighbors: TrafficSeparation.ParkedNeighbors? = null
+    var separationCaps: Map<String, Double> = emptyMap()
+    val translations = UnitContact.Translations(step.delta, state.spatialIndex) { id ->
         state.movePlanning.pending(id) && !state.movePlanning.repairing(id)
     }
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }
@@ -299,10 +319,26 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
     fun stageKnowledge(next: AutomaticKnowledgeCommit?) { knowledge = next }
     fun stageBuildings(next: BuildingCommit?) { buildings = next }
 
-    fun publish(input: Scenario, actions: List<Action>, observe: (Long, Double, Long) -> Observation): Observation {
+    /** The service cursor reads stable world order. Revisit only changed traffic that can intersect a checked leg. */
+    private fun invalidateChangedLandingTraffic(before: Map<String, MutableUnit>) {
+        val watching = state.landingSites.values.filter { it.checkingTraffic }
+        if (watching.isEmpty()) return
+        for ((index, body) in state.units.values.withIndex()) {
+            val old = before[body.unitId]
+            if (old != null && body.position == old.position && body.heading == old.heading &&
+                body.alive == old.alive && body.definition === old.definition && UnitContact.layer(body) == UnitContact.layer(old) &&
+                body.landingMember?.group === old.landingMember?.group && body.landingMember?.parked == old.landingMember?.parked &&
+                body.adoptedRouteRevision == old.adoptedRouteRevision && body.pathPoints.size == old.pathPoints.size && body.moveTarget == old.moveTarget) continue
+            for (pool in watching) pool.trafficChanged(body, old, index, state.units::get)
+        }
+    }
+
+    fun publish(input: Scenario, actions: List<Action>, observe: (Long, Double, Long) -> Observation,
+                previousUnits: Map<String, MutableUnit>): Observation {
         val nextTime = state.simulationTime + step.delta
         require(nextTime.isFinite()) { "Simulation time must remain finite" }
-        translations.finish(state.units.values, motionSamples)
+        translations.finish(state.units.values, motionSamples, state.landingOccupancy)
+        invalidateChangedLandingTraffic(previousUnits)
         state.validate(input)
         val observation = observe(step.stepIndex, nextTime, state.revision + 1L)
         val owners = IdentityHashMap<ActionResult, String>(observation.actionResults.size)

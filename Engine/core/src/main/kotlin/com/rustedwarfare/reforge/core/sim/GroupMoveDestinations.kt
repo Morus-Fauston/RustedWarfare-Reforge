@@ -13,7 +13,28 @@ class GroupMoveRequest internal constructor(
     internal val actor: String,
     internal val click: Position,
     internal val members: Set<String>,
-)
+    internal val sharedLanding: Boolean = false,
+) {
+    internal val trafficOrder = if (sharedLanding) members.sorted() else emptyList()
+
+    internal fun repairDue(step: Long): Boolean = (step - (completedStep ?: -1L) - 1L) % ROUTE_RETRY_TICKS == 0L
+}
+
+internal const val ROUTE_RETRY_TICKS = 60L
+
+internal fun MutableUnit.wallRepairDue(step: Long): Boolean = terrainCorrectionTime >= 3.0 && moveTarget != null &&
+    (landingMember?.group?.repairDue(step) ?: (step % ROUTE_RETRY_TICKS == 0L))
+
+internal fun StepState.sharedWallRepairDue(step: Long): Boolean = units.values.any {
+    it.landingMember != null && it.wallRepairDue(step)
+}
+
+/** Arrival receipts carry the click for display. Live shared landings carry the order identity. */
+internal fun GroupMoveRequest.hasParkedMember(unit: MutableUnit): Boolean {
+    if (unit.ownerPlayerId != actor || unit.moveTarget != null || unit.unitId !in members) return false
+    if (sharedLanding) return unit.landingMember?.let { it.parked && it.group === this } == true
+    return unit.parkedReservationOwner === this
+}
 
 internal data class GroupMoveSlot(val position: Position, val heading: Double, val path: List<Position>)
 internal data class GroupMoveReservation(val plan: GroupMoveRequest, val slot: GroupMoveSlot,
@@ -22,11 +43,11 @@ internal data class GroupMoveReservation(val plan: GroupMoveRequest, val slot: G
 
 internal object GroupMoveDestinations {
     /** Finite map lattice, emitted nearest first without constructing the whole map. */
-    class Points(private val map: MapDefinition, private val click: Position) {
+    class Points(private val map: MapDefinition, private val click: Position,
+                 private val spacing: Double = minOf(map.tileWidth, map.tileHeight) / 2.0) {
         private data class Offset(val x: Int, val y: Int) {
             val distanceSquared get() = x.toDouble() * x + y.toDouble() * y
         }
-        private val spacing = minOf(map.tileWidth, map.tileHeight) / 2.0
         private val minX = ceil(-click.x / spacing).toInt()
         private val maxX = floor((map.widthTiles.toDouble() * map.tileWidth - click.x) / spacing).toInt()
         private val minY = ceil(-click.y / spacing).toInt()
@@ -41,7 +62,7 @@ internal object GroupMoveDestinations {
 
         val exhausted get() = pending.isEmpty()
 
-        fun fork(rollback: PathSearchRollback): Points = Points(map, click).also {
+        fun fork(rollback: PathSearchRollback): Points = Points(map, click, spacing).also {
             it.pending = pending
             it.seen = seen
             it.rollback = rollback

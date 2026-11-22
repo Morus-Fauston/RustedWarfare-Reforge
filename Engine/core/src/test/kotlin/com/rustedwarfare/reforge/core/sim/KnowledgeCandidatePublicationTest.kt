@@ -12,8 +12,10 @@ class KnowledgeCandidatePublicationTest {
         val steps = CandidateSteps()
         val rules = KnowledgeRules(TerrainRetention.MEMORY, PathInformationSource.PLAYER_KNOWLEDGE, true)
         val spawn = input.units.single()
-        steps.current.units[spawn.unitId] = MutableUnit(spawn.unitId, spawn.ownerPlayerId, spawn.typeId,
+        val inserted = MutableUnit(spawn.unitId, spawn.ownerPlayerId, spawn.typeId,
             input.unitDefinitions.getValue(spawn.typeId), spawn.position, spawn.heading)
+        steps.current.units[spawn.unitId] = inserted
+        steps.current.spatialIndex.insert(inserted)
         fun prepare(state: StepState, epoch: Long): AutomaticKnowledgeCommit {
             val map = input.map
             val vision = AutomaticVision.project(state.automaticVisionState, world.id, epoch,
@@ -38,7 +40,9 @@ class KnowledgeCandidatePublicationTest {
         val snapshots = initial.stores.mapValues { it.value.snapshot(world) }
         var candidate: AutomaticKnowledgeCommit? = null
         fun update(step: CandidateStep) {
-            step.state.units.getValue(spawn.unitId).position = Position(120.0, 100.0)
+            val moved = step.state.units.getValue(spawn.unitId)
+            moved.position = Position(120.0, 100.0)
+            step.state.spatialIndex.relocate(moved)
             candidate = prepare(step.state, 1)
             step.stageKnowledge(candidate)
         }

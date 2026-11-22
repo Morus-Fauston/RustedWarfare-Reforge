@@ -26,8 +26,7 @@ import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.*
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.utils.Align
-import com.badlogic.gdx.utils.viewport.FitViewport
-import com.badlogic.gdx.utils.viewport.StretchViewport
+import com.badlogic.gdx.utils.viewport.ScreenViewport
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.Locale
@@ -45,22 +44,46 @@ class BootstrapScreen(
     private val initialContent: Boolean = true,
     openSetup: Boolean = true,
     private val cameraStartSeed: Path? = null,
+    private val initialSkirmishMap: Path? = null,
 ) : ApplicationAdapter() {
-    private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT }
+    private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT, MAPS }
     private data class ContentCandidate(val root: Path, val content: ContentPackChoice?)
     private lateinit var batch: SpriteBatch
     private lateinit var shapes: ShapeRenderer
     private lateinit var skin: Skin
     private lateinit var stage: Stage
     private lateinit var battleActions: BattleActionList
+    private lateinit var hudActionPanel: HudActionPanel
     private lateinit var minimapActor: Actor
-    private val viewport = if (touchControls) FitViewport(960f, 640f) else StretchViewport(960f, 640f)
+    private lateinit var hudOverlay: InGameHudOverlay
+    private lateinit var hudGroupBar: HudControlGroupBar
+    private lateinit var hudDebugOverlay: HudDebugOverlay
+    private lateinit var hudConsole: HudSandboxConsole
+    private var commandIcons: HudCommandIconAtlas? = null
+    private val hudEvents = HudEventStream()
+    private var hudMenuOpen = false
+    private var lastObservedEventSampleId: String? = null
+    private val lastObservedActionResultIds = LinkedHashSet<String>()
+    private var lastArrivalNoticeKey: String? = null
+    private var lastHudSnapshot: HudSnapshot? = null
+    private val viewport = ScreenViewport()
+    private var uiMetrics: UiMetrics = UiScale.metrics(960, 640, touchControls)
+    private var fontSet: UiFontSet? = null
+    private var fallbackFont: BitmapFont? = null
+    private val fontDebouncer = FontRebuildDebouncer()
     private val battlefieldCamera = OrthographicCamera()
-    private val battlefieldWidth: Float get() = if (touchControls) viewport.worldWidth else battlefieldCamera.viewportWidth
+    private val battlefieldWidth: Float get() = battlefieldCamera.viewportWidth.takeIf { it > 0f } ?: viewport.worldWidth
+    private val battlefieldHeight: Float get() = battlefieldCamera.viewportHeight.takeIf { it > 0f } ?: viewport.worldHeight
     private val loader = SandboxLoader()
     private var session: SandboxSession? = null
-    private var collisionBoxesVisible = false
-    private var collisionBoxPanel: CollisionBoxDevelopmentPanel? = null
+    private var debugLayerState = HudDebugLayerState()
+    private var f3Held = false
+    private var f3ComboUsed = false
+    private var lastFrameMs: Float = 0f
+    private var maxFrameMsWindow: Float = 0f
+    private var maxFrameMsResetTimer: Float = 0f
+    private var lastCursorWorld: Position? = null
+    private var activeMapId: String = "sandbox" 
     private var graphics: SandboxGraphics? = null
     private var scriptedCamera: OfflineCameraController? = null
     private var suspendedCamera: MapCamera? = null
@@ -78,6 +101,7 @@ class BootstrapScreen(
     private val commandPickButtons = linkedMapOf<String, TextButton>()
     private var commandPickError: String? = null
     private var commandConsoleOpen = false
+    private var swallowNextSlashTyped = false
     private lateinit var rootField: TextField
     private lateinit var titleLabel: Label
     private lateinit var selectedLabel: Label
@@ -132,8 +156,7 @@ class BootstrapScreen(
     private var repairHover = false
     private var flightHover = false
     private var nativeSelection: Set<String> = emptySet()
-    private val nativePanel: Boolean get() = NativeActionPanel.supports(session?.observation?.scenarioId) ||
-        session?.hasConstructorDefinitions == true || session?.hasProductionDefinitions == true
+    private val nativePanel: Boolean get() = false
     private val upgradeButtons = mutableMapOf<String, Pair<TextButton, TextButton>>()
     private val upgradeInputs = mutableListOf<UpgradeButtonInput>()
     private var upgradeHover: String? = null
@@ -177,8 +200,12 @@ class BootstrapScreen(
     }
     private var testScenePanel: TestScenarioPanel? = null
     private lateinit var testSceneTab: TextButton
+    private val skirmishMapState = SkirmishMapSelectionState()
+    private var skirmishMapPanel: SkirmishMapPanel? = null
+    private lateinit var skirmishMapTab: TextButton
+    private var matchStartupNotices: List<String> = emptyList()
     private var customRootText = if (initialContent) initialRoot.toAbsolutePath().normalize().toString() else ""
-    private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(), visualState?.selection ?: VisualAssetSelection()))
+    private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(deploymentEnabled = development && !touchControls), visualState?.selection ?: VisualAssetSelection()))
     private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
     private var loading = false
@@ -212,7 +239,10 @@ class BootstrapScreen(
         val loading: Boolean, val preparationStatus: String?, val error: String?, val hasSession: Boolean,
         val balance: Long?, val queue: com.rustedwarfare.reforge.core.sim.FactoryQueueObservation?,
         val patrolMode: Boolean, val patrolPoints: Int, val reclaimMode: Boolean, val repairMode: Boolean,
-        val workerQueueText: String?, val menu: ActionMenuView?)
+        val workerQueueText: String?, val menu: ActionMenuView?,
+        val hudMenuOpen: Boolean, val simPaused: Boolean, val simRate: OfflineRate, val language: UiLanguage,
+        val constructionTypeId: String?, val placementState: PlacementState?, val groundActionName: String?, val sandboxPick: SandboxPick?,
+        val debugLayerState: HudDebugLayerState = HudDebugLayerState())
     private var lastHudState: HudState? = null
     private val drawnActionLayout = DrawnActionLayout()
 
@@ -226,9 +256,34 @@ class BootstrapScreen(
         drawnActionLayout.invalidate()
         val created = mutableListOf<() -> Unit>()
         try {
+        val initW = Gdx.graphics?.width?.takeIf { it > 0 } ?: 960
+        val initH = Gdx.graphics?.height?.takeIf { it > 0 } ?: 640
+        val initPpc = Gdx.graphics?.ppcY?.takeIf { it > 0f } ?: 0f
+        val initPpi = Gdx.graphics?.ppiY?.takeIf { it > 0f } ?: 0f
+        uiMetrics = UiScale.metricsFromDensity(initW, initH, touchControls, initPpc, initPpi)
+        viewport.unitsPerPixel = 1f / uiMetrics.scale
+        viewport.update(initW, initH, true)
+        battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
         batch = SpriteBatch().also { created += { it.dispose() } }
         shapes = ShapeRenderer().also { created += { it.dispose() } }
-        skin = makeSkin().also { created += { it.dispose() } }
+        val createdFonts = createSafeFontSet(uiMetrics.scale, collectFontPreloadStrings())
+        fontSet = createdFonts
+        fallbackFont = if (createdFonts == null) BitmapFont() else null
+        if (createdFonts != null) {
+            fontDebouncer.markApplied(uiMetrics.scale)
+            created += { createdFonts.close(); if (fontSet === createdFonts) fontSet = null }
+        } else {
+            val fb = fallbackFont
+            created += { fb?.dispose(); if (fallbackFont === fb) fallbackFont = null }
+        }
+        skin = makeSkin(createdFonts?.body ?: checkNotNull(fallbackFont)).also { s ->
+            created += {
+                if (s.has("default-font", BitmapFont::class.java)) {
+                    s.remove("default-font", BitmapFont::class.java)
+                }
+                s.dispose()
+            }
+        }
         stage = Stage(viewport, batch).also { created += { it.dispose() } }
         groupButtons.clear()
         upgradeButtons.clear()
@@ -238,12 +293,7 @@ class BootstrapScreen(
         productionCards.clear()
         factoryUpgradeCards.clear()
         factoryUpgradeHover = null
-        if (touchControls) stage.addActor(Actor().apply {
-            setBounds(736f, 0f, 224f, 592f)
-            addListener(object : InputListener() {
-                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) = true
-            })
-        })
+
         fun label(text: String, x: Float, y: Float, w: Float, h: Float): Label = Label(text, skin).also {
             it.setBounds(x, y - h, w, h); it.setAlignment(Align.topLeft); it.setWrap(true)
             it.touchable = Touchable.disabled; stage.addActor(it)
@@ -268,9 +318,7 @@ class BootstrapScreen(
             }
         }.apply { height = 24f }
         pacingLabel = label("", 344f, 600f, 376f, 24f)
-        collisionBoxPanel = if (development && touchControls) {
-            CollisionBoxDevelopmentPanel(skin, collisionBoxesVisible, ::showCollisionBoxes).also(stage::addActor)
-        } else null
+
         selectionHeading = label("Selection", 752f, 442f, 176f, 22f)
         selectedLabel = label("None", 752f, 414f, 176f, 100f)
         patrolLabel = label("", 752f, 306f, 176f, 72f)
@@ -374,27 +422,7 @@ class BootstrapScreen(
             table.add(nativeTooltipText).width(204f).pad(8f)
             stage.addActor(table)
         }
-        for ((key, positions) in NativeActionPanel.upgrades) {
-            fun endpoint(text: String, bounds: NativeCardBounds, cancel: Boolean): TextButton = TextButton(text, skin).also { button ->
-                button.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
-                val input = UpgradeButtonInput({ session }, { !paused && button.isVisible && !button.isDisabled },
-                    key, cancel, { lastHudState = null; updateHud() })
-                upgradeInputs += input
-                button.addListener(input)
-                button.addListener(object : InputListener() {
-                    override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
-                        if (pointer == -1) { upgradeHover = key; lastHudState = null }
-                    }
-                    override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
-                        if (pointer == -1 && upgradeHover == key) { upgradeHover = null; lastHudState = null }
-                    }
-                })
-                stage.addActor(button)
-            }
-            val buy = endpoint("", positions.first, false)
-            val cancel = endpoint("Cancel", positions.second, true)
-            upgradeButtons[key] = buy to cancel
-        }
+        // Legacy NativeActionPanel upgrade buttons removed in UI-P001-005 (replaced by HudActionPanel)
         statusLabel = label("", 16f, 52f, 480f, 44f)
         productionNoticeLabel = label("", 16f, 84f, 400f, 24f)
         stopButton = button("Stop (S)", 752f, 168f, 84f) { mapInput.cancel(); session?.stop(); updateHud() }
@@ -420,18 +448,7 @@ class BootstrapScreen(
             })
             stage.addActor(actor)
         }
-        for ((name, bounds) in NativeActionPanel.customActions) {
-            val actor = TextButton("", skin)
-            actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
-            val input = CustomUnitActionButtonInput({ session }, { !paused && !loading && session?.isOpen == true }, name,
-                changed = { lastHudState = null; updateHud() }, hovered = { entered ->
-                    customActionHover = name.takeIf { entered }; lastHudState = null
-                }, beginTargeting = { mapInput.beginGroundAction(it) })
-            actor.addListener(input)
-            customActionInputs += input
-            customActionButtons[name] = actor
-            stage.addActor(actor)
-        }
+        // Legacy NativeActionPanel customActions removed in UI-P001-005 (replaced by HudActionPanel)
         exitButton = button("Return to menu", 752f, 72f, 176f) { leaveMatch() }
         contentLabel = label("Content folder", 752f, 378f, 176f, 24f)
         rootField = TextField(testScenes.choice?.root?.toString() ?: customRootText, skin).also {
@@ -510,21 +527,26 @@ class BootstrapScreen(
         previewHeading = label("", 178f, 449f, 256f, 52f).apply { setAlignment(Align.topLeft) }
         mapPreview = object : Actor() {
             override fun draw(batch: Batch, parentAlpha: Float) {
-                val map = testScenes.choice?.scenario?.map ?: qualifiedContent?.getOrNull()?.scenario?.map ?: return
-                val scale = minOf(width / (map.widthTiles * map.tileWidth), height / (map.heightTiles * map.tileHeight))
-                val cellWidth = map.tileWidth * scale
-                val cellHeight = map.tileHeight * scale
-                val left = x + (width - cellWidth * map.widthTiles) / 2
-                val bottom = y + (height - cellHeight * map.heightTiles) / 2
+                val map = skirmishMapState.selected?.map ?: testScenes.choice?.scenario?.map ?: qualifiedContent?.getOrNull()?.scenario?.map ?: return
+                val pxPerUnitX = if (viewport.worldWidth > 0f && viewport.screenWidth > 0) viewport.screenWidth.toFloat() / viewport.worldWidth else 1f
+                val pxPerUnitY = if (viewport.worldHeight > 0f && viewport.screenHeight > 0) viewport.screenHeight.toFloat() / viewport.worldHeight else 1f
+                val maxPxW = width * pxPerUnitX
+                val maxPxH = height * pxPerUnitY
+                val pxScale = minOf(maxPxW / (map.widthTiles * map.tileWidth), maxPxH / (map.heightTiles * map.tileHeight))
+                val cellWidth = (map.tileWidth * pxScale) / pxPerUnitX
+                val cellHeight = (map.tileHeight * pxScale) / pxPerUnitY
+                val left = x + (width - cellWidth * map.widthTiles) / 2f
+                val bottom = y + (height - cellHeight * map.heightTiles) / 2f
                 val columnStride = (map.widthTiles / 80).coerceAtLeast(1)
                 val rowStride = (map.heightTiles / 60).coerceAtLeast(1)
                 val original = batch.packedColor
                 val tile = skin.getRegion("white")
                 for (row in 0 until map.heightTiles step rowStride) for (col in 0 until map.widthTiles step columnStride) {
                     when {
-                        map.isResourcePool(col, row) -> batch.setColor(.76f, .72f, .44f, parentAlpha)
-                        map.blocking.isBlocked(col, row) -> batch.setColor(.22f, .34f, .36f, parentAlpha)
-                        else -> batch.setColor(.47f, .54f, .37f, parentAlpha)
+                        map.isResourcePool(col, row) -> batch.setColor(.89f, .73f, .24f, parentAlpha)
+                        !map.waterBlocking.isBlocked(col, row) && map.blocking.isBlocked(col, row) -> batch.setColor(.16f, .42f, .61f, parentAlpha)
+                        map.blocking.isBlocked(col, row) -> batch.setColor(.34f, .36f, .32f, parentAlpha)
+                        else -> batch.setColor(.36f, .52f, .31f, parentAlpha)
                     }
                     val tilesHigh = minOf(rowStride, map.heightTiles - row)
                     batch.draw(tile, left + col * cellWidth, bottom + (map.heightTiles - row - tilesHigh) * cellHeight,
@@ -590,6 +612,34 @@ class BootstrapScreen(
         testSceneTab = button(if (alternateStartSeed == null) "Development" else "Starting units", 424f, 568f, 176f) {
             openSettingsPage(StartupPage.DEVELOPMENT)
         }
+        skirmishMapTab = button("Maps (.tmx)", 424f, 568f, 112f) {
+            openSettingsPage(StartupPage.MAPS)
+        }
+        skirmishMapPanel = SkirmishMapPanel(
+            skirmishMapState,
+            skin,
+            originalDirectoryProvider = { visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory },
+        ) {
+            if (skirmishMapState.selected != null && testScenes.selected) {
+                testScenes.useCustomContent()
+                rootField.text = customRootText
+            }
+            evidence.record("skirmish-map-choice", mapOf(
+                "selected" to (skirmishMapState.selected != null),
+                "path" to skirmishMapState.selected?.path?.toString(),
+                "displayName" to skirmishMapState.selected?.displayName,
+                "error" to skirmishMapState.error,
+            ))
+            loadError = null; lastHudState = null; updateHud()
+        }.also {
+            it.setBounds(150f, 114f, 660f, 440f)
+            stage.addActor(it)
+            initialSkirmishMap?.let { preselected ->
+                if (skirmishMapState.select(preselected, visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory)) {
+                    it.refresh()
+                }
+            }
+        }
         testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, cameraStartSeed, skin,
             visualSettings?.let { it::createUiFont }) {
             if (visualState?.busy == true) visualState.cancel()
@@ -604,18 +654,96 @@ class BootstrapScreen(
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) }
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
-            viewport.unproject(Vector2(x.toFloat(), y.toFloat())).let {
-                Position(it.x.toDouble() * battlefieldWidth / viewport.worldWidth, it.y.toDouble())
-            }
-        }, { !paused && session != null }, { stage.keyboardFocus is TextField },
+            battlefieldPoint(x, y, Gdx.graphics.height, viewport.screenX, viewport.screenY,
+                viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
+        }, { !paused && session != null && !hudMenuOpen && !stepClock.isPaused }, { stage.keyboardFocus is TextField },
             { Gdx.input.isKeyPressed(it) }, { updateHud() }, evidence, touchControls, { x, y ->
                 val bottom = Gdx.graphics.height - y
                 x >= viewport.screenX && x < viewport.screenX + viewport.screenWidth &&
                     bottom >= viewport.screenY && bottom < viewport.screenY + viewport.screenHeight
-            }, battlefieldAt = { x, y -> touchControls || battlefieldAt(x, y) },
-            cameraTakeover = { reason -> scriptedCamera?.takeOver(reason) },
-            cameraFollowsUnit = { scriptedCamera?.followsUnit == true })
+            }, battlefieldAt = { x, y -> battlefieldAt(x, y) },
+            cameraTakeover = { reason -> takeOverCamera(reason) },
+            cameraFollowsUnit = { scriptedCamera?.followsUnit == true },
+            onGuardUnsupported = {
+                hudEvents.pushWarning(UiStrings.get("unsupported.guard"))
+                lastHudState = null
+                updateHud()
+            })
         for (index in 1..3) groupButtons += button("$index (0)", 508f + (index - 1) * 72f, 12f, 64f) { mapInput.group(index) }
+        commandIcons = runCatching { HudCommandIconAtlas.load() }.onFailure { err ->
+            Gdx.app?.error("ui-p001-icons", "Failed to load HudCommandIconAtlas", err)
+        }.getOrNull()
+        created += { commandIcons?.close(); commandIcons = null }
+        hudOverlay = InGameHudOverlay(
+            skin = skin,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            unitIconProvider = { graphics?.unitIcon(it) },
+            commandIconProvider = { name -> commandIcons?.icon(name) },
+            callbacks = object : InGameHudCallbacks {
+                override fun onToggleMenu() {
+                    if (paused || loading || session?.isOpen != true) return
+                    hudMenuOpen = !hudMenuOpen
+                    if (hudMenuOpen) {
+                        closeCommandConsole()
+                        cancelInput()
+                    }
+                    lastHudState = null
+                    updateHud()
+                }
+                override fun onTogglePause() {
+                    if (paused || loading || session?.isOpen != true) return
+                    hudMenuOpen = false
+                    stepClock.setPaused(!stepClock.isPaused)
+                    if (stepClock.isPaused) {
+                        closeCommandConsole()
+                        cancelInput()
+                    }
+                    recordSimulationControl(if (stepClock.isPaused) "pause" else "resume")
+                    lastHudState = null
+                    updateHud()
+                }
+                override fun onSelectRate(rate: OfflineRate) {
+                    if (paused || loading || session?.isOpen != true) return
+                    stepClock.setRate(rate)
+                    recordSimulationControl("speed")
+                    lastHudState = null
+                    updateHud()
+                }
+                override fun onMenuResume() {
+                    hudMenuOpen = false
+                    lastHudState = null
+                    updateHud()
+                }
+                override fun onMenuRestart() {
+                    hudMenuOpen = false
+                    requestLoad()
+                }
+                override fun onMenuBackToStart() {
+                    hudMenuOpen = false
+                    leaveMatch()
+                }
+                override fun onMenuSettings() {
+                    hudMenuOpen = false
+                    hudEvents.pushWarning(UiStrings.get("unsupported.settings"))
+                    lastHudState = null
+                    updateHud()
+                }
+                    override fun onToggleDebug() {
+                    if (development && touchControls && session?.isOpen == true && !loading && !paused && !hudMenuOpen && !stepClock.isPaused) {
+                        toggleDebugLayer()
+                    }
+                }
+            override fun onSelectPrimaryType(typeId: String) {
+                    val active = session ?: return
+                    if (active.selectPrimaryByType(typeId)) {
+                        mapInput.cancel()
+                        lastHudState = null
+                        updateHud()
+                    }
+                }
+            },
+        ).also(stage::addActor)
         minimapActor = Actor().apply {
             val area = if (touchControls) MapArea(752.0, 456.0, 176.0, 112.0) else SandboxGraphics.DESKTOP_MINIMAP_AREA
             setBounds(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
@@ -626,7 +754,7 @@ class BootstrapScreen(
                     val g = graphics ?: return
                     val area = g.minimap.area
                     val target = g.minimap.locate(area.left + x, area.bottom + y, dragging) ?: return
-                    scriptedCamera?.takeOver("minimap")
+                    takeOverCamera("minimap")
                     g.projection.centerOn(target)
                     evidence.record("camera", mapOf("reason" to "minimap",
                         "center" to g.projection.camera.center.fields(), "zoom" to g.projection.camera.zoom))
@@ -643,6 +771,130 @@ class BootstrapScreen(
                 override fun scrolled(event: InputEvent, x: Float, y: Float, amountX: Float, amountY: Float) = true
             })
         }.also(stage::addActor)
+        hudActionPanel = HudActionPanel(
+            skin = skin,
+            stage = stage,
+            touchControls = touchControls,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            unitIconProvider = { graphics?.unitIcon(it) },
+            commandIconProvider = { name -> commandIcons?.icon(name) },
+            onCommonCommand = { cmdId ->
+                val active = session ?: return@HudActionPanel
+                when (cmdId) {
+                    "stop" -> {
+                        mapInput.cancel()
+                        active.stop()
+                    }
+                    "choose-patrol" -> mapInput.beginPatrol()
+                    "choose-guard" -> hudEvents.pushWarning(UiStrings.get("unsupported.guard"))
+                }
+                lastHudState = null
+                updateHud()
+            },
+            onExclusiveAction = { key, cancel ->
+                val owner = session ?: return@HudActionPanel
+                val arg = key.id.substringAfter(':')
+                when (key.id.substringBefore(':')) {
+                    "produce" -> if (cancel) owner.cancelProduction(arg) else owner.produce(arg)
+                    "upgrade" -> if (cancel) owner.cancelUpgrade(arg) else owner.upgrade(arg)
+                    "choose-construction" -> mapInput.beginConstruction(arg)
+                    "unit-action" -> if (key.isTargetAction && !cancel) mapInput.beginGroundAction(arg)
+                        else owner.unitAction(arg, cancelQueued = cancel)
+                    "submarine-surface", "submarine-dive" -> owner.submarineDepth(key.id == "submarine-surface")
+                    "amphibious-fly", "amphibious-dive" -> owner.amphibiousFlight(key.id == "amphibious-fly")
+                    "transport-unload-target" -> mapInput.beginGroundAction("transport-unload-target")
+                    "transport-unload", "transport-cancel-unload" -> owner.unload(key.id == "transport-unload")
+                    "cancel-construction" -> {
+                        mapInput.cancel()
+                        owner.cancelConstruction()
+                    }
+                    "choose-reclaim" -> mapInput.beginReclaim()
+                    "choose-repair" -> mapInput.beginRepair()
+                    else -> hudEvents.pushWarning(UiStrings.get("unsupported.generic"))
+                }
+                lastHudState = null
+                updateHud()
+            },
+            onDisabledFlash = { key ->
+                when (key.state) {
+                    HudActionKeyState.SHORT_FUNDS -> hudEvents.pushWarning(UiStrings.get("noFunds"))
+                    HudActionKeyState.DISABLED -> key.noteText?.let { hudEvents.pushWarning(it) }
+                    else -> {}
+                }
+            },
+            onSelectSlot = { slotNum ->
+                val owner = session ?: return@HudActionPanel
+                mapInput.cancel()
+                val currentSlot = owner.observation.units.firstOrNull { it.unitId == owner.selectedId }?.attachmentOverview?.selectedSlot
+                if (currentSlot == slotNum) {
+                    owner.unitAction("selectSlotBuild")
+                } else {
+                    owner.unitAction("selectSlot$slotNum")
+                }
+                lastHudState = null
+                updateHud()
+            },
+        )
+        hudGroupBar = HudControlGroupBar(
+            skin = skin,
+            touchControls = touchControls,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            onPcGroupClick = { index ->
+                mapInput.group(index)
+                lastHudState = null
+                updateHud()
+            },
+            onTouchGroupAction = { index, outcome ->
+                val owner = session ?: return@HudControlGroupBar
+                val prevSelection = owner.selectedIds.toSet()
+                hudActionPanel.clearTouchPreview()
+                when (outcome) {
+                    TouchGroupReleaseOutcome.RECALL -> {
+                        owner.recallGroup(index, additive = false)?.let { center ->
+                            graphics?.projection?.let { map ->
+                                takeOverCamera("group")
+                                map.centerOn(center)
+                            }
+                        }
+                    }
+                    TouchGroupReleaseOutcome.SAVE_EMPTY, TouchGroupReleaseOutcome.REPLACE -> {
+                        owner.saveGroup(index)
+                    }
+                    TouchGroupReleaseOutcome.APPEND_AND_RECALL -> {
+                        owner.appendGroup(index)
+                        owner.recallGroup(index, additive = false)?.let { center ->
+                            graphics?.projection?.let { map ->
+                                takeOverCamera("group")
+                                map.centerOn(center)
+                            }
+                        }
+                    }
+                    TouchGroupReleaseOutcome.NONE -> Unit
+                }
+                if (owner.selectedIds != prevSelection) {
+                    mapInput.cancel()
+                }
+                lastHudState = null
+                updateHud()
+            },
+            hasSelection = { session?.selectedIds?.isNotEmpty() == true },
+            allowTouchHold = {
+                !paused && !hudMenuOpen && !stepClock.isPaused &&
+                    mapInput.constructionTypeId == null && !mapInput.reclaimMode &&
+                    !mapInput.repairMode && !mapInput.patrolMode && mapInput.groundActionName == null
+            },
+        ).also(stage::addActor)
+        hudDebugOverlay = HudDebugOverlay(
+            skin = skin,
+            touchControls = touchControls,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            onToggleBoxes = { toggleDebugSubLayer("boxes") },
+            onToggleRoutes = { toggleDebugSubLayer("routes") },
+            onToggleGrid = { toggleDebugSubLayer("grid") },
+        ).also(stage::addActor)
         battleActions = BattleActionList(skin, stage, { session }, { graphics?.unitIcon(it) }, { owner, row, cancel ->
             val key = row.id.substringAfter(':')
             when (row.id.substringBefore(':')) {
@@ -694,26 +946,32 @@ class BootstrapScreen(
             stage.addActor(area)
         }
         commandFeedbackLabel = label("", 48f, 232f, 644f, 84f).also {
-            it.setWrap(true); it.setAlignment(Align.topLeft)
+            it.setWrap(true); it.setAlignment(Align.topLeft); it.isVisible = false
         }
         commandField = TextField("", skin).also {
             it.setOnlyFontChars(false); it.maxLength = 512
-            it.setBounds(48f, 108f, 644f, 34f); stage.addActor(it)
         }
-        commandPickButtons["sandbox-pick-spawn"] = button("Place once", 48f, 150f, 130f) {
-            beginPickedCommand(SandboxPick.parseSpawn(commandField.text, repeat = false), "Enter a unit type and player")
-        }
-        commandPickButtons["sandbox-pick-repeat"] = button("Keep placing", 186f, 150f, 130f) {
-            beginPickedCommand(SandboxPick.parseSpawn(commandField.text, repeat = true), "Enter a unit type and player")
-        }
-        commandPickButtons["sandbox-pick-destroy"] = button("Pick destroy", 324f, 150f, 130f) {
-            beginPickedCommand(SandboxPick.Destroy, "")
-        }
-        commandPickButtons["sandbox-pick-health"] = button("Pick health", 462f, 150f, 130f) {
-            beginPickedCommand(SandboxPick.parseHealth(commandField.text), "Enter a signed health amount")
-        }
-        commandPickHint = label("Place <type> <player>    Health <+amount|-amount>", 48f, 194f, 644f, 24f)
-        commandHintLabel = label("Sandbox: / for commands", 40f, 100f, 660f, 24f)
+        hudConsole = HudSandboxConsole(
+            skin = skin,
+            field = commandField,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            onPickSpawnOnce = {
+                beginPickedCommand(SandboxPick.parseSpawn(commandField.text, repeat = false), "Enter a unit type and player")
+            },
+            onPickSpawnRepeat = {
+                beginPickedCommand(SandboxPick.parseSpawn(commandField.text, repeat = true), "Enter a unit type and player")
+            },
+            onPickDestroy = {
+                beginPickedCommand(SandboxPick.Destroy, "")
+            },
+            onPickHealth = {
+                beginPickedCommand(SandboxPick.parseHealth(commandField.text), "Enter a signed health amount")
+            },
+        ).also(stage::addActor)
+        commandPickHint = label("", 0f, 0f, 1f, 1f).also { it.isVisible = false }
+        commandHintLabel = label("", 0f, 0f, 1f, 1f).also { it.isVisible = false }
+        commandPanel.isVisible = false
         commandConsoleOpen = false
         Gdx.input.inputProcessor = InputMultiplexer(object : InputAdapter() {
             override fun touchCancelled(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
@@ -721,42 +979,106 @@ class BootstrapScreen(
                 return false
             }
 
-            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean =
-                pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
+            override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+                if (touchControls && pointer == 0 && ::hudActionPanel.isInitialized && hudActionPanel.hasTouchPreview) {
+                    val pt = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
+                    if (hudActionPanel.isPointInTouchPreviewCard(pt.x, pt.y)) {
+                        // Consume tap inside the touch preview card so it never leaks onto the battlefield (Spec §9.1/§9.3)
+                        return true
+                    }
+                    if (!hudActionPanel.isPointOnExclusiveKey(pt.x, pt.y)) {
+                        hudActionPanel.clearTouchPreview()
+                    }
+                }
+                if (!touchControls && session != null && pointer == 0) {
+                    graphics?.projection?.let { proj ->
+                        val bfPt = battlefieldPoint(screenX, screenY, Gdx.graphics.height, viewport.screenX, viewport.screenY,
+                            viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
+                        if (bfPt != null) lastCursorWorld = proj.toWorld(bfPt.x, bfPt.y)
+                    }
+                }
+                return !hudMenuOpen && !stepClock.isPaused && pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
+            }
 
             override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
-                if (!touchControls && session != null && !commandConsoleOpen) {
-                    val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
-                    val hit = stage.hit(point.x, point.y, true)
-                    stage.scrollFocus = battleActions.scrollTarget(hit) ?: minimapActor.takeIf { hit === it }
+                if (!touchControls && session != null) {
+                    graphics?.projection?.let { proj ->
+                        val bfPt = battlefieldPoint(screenX, screenY, Gdx.graphics.height, viewport.screenX, viewport.screenY,
+                            viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
+                        if (bfPt != null) lastCursorWorld = proj.toWorld(bfPt.x, bfPt.y)
+                    }
+                    if (!commandConsoleOpen) {
+                        val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
+                        val hit = stage.hit(point.x, point.y, true)
+                        stage.scrollFocus = hudActionPanel.scrollTarget(hit) ?: minimapActor.takeIf { hit === it }
+                    }
                 }
                 return false
             }
 
             override fun keyDown(keycode: Int): Boolean {
-                if (development && !touchControls && keycode == Input.Keys.F3 && session?.isOpen == true &&
-                    !loading && !paused) {
-                    showCollisionBoxes(!collisionBoxesVisible)
-                    return true
+                if (development && !touchControls && session?.isOpen == true && !loading && !paused && !hudMenuOpen && !stepClock.isPaused) {
+                    if (keycode == Input.Keys.F3) {
+                        if (!f3Held) {
+                            f3Held = true
+                            f3ComboUsed = false
+                        }
+                        return true
+                    }
+                    val f3PressedNow = f3Held || Gdx.input.isKeyPressed(Input.Keys.F3)
+                    if (f3PressedNow && debugLayerState.enabled) {
+                        when (keycode) {
+                            Input.Keys.B -> { f3ComboUsed = true; toggleDebugSubLayer("boxes"); return true }
+                            Input.Keys.R -> { f3ComboUsed = true; toggleDebugSubLayer("routes"); return true }
+                            Input.Keys.G -> { f3ComboUsed = true; toggleDebugSubLayer("grid"); return true }
+                        }
+                    }
                 }
-                if (development && keycode == Input.Keys.SLASH && !commandConsoleOpen && !paused && !loading &&
-                    !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
-                    mapInput.cancel()
-                    commandConsoleOpen = true
-                    commandPickError = null
-                    commandField.text = ""
-                    stage.keyboardFocus = commandField
-                    lastHudState = null; updateHud()
-                    evidence.record("sandbox-console", mapOf("generation" to generation, "open" to true))
+                if (HudSandboxConsole.isConsoleOpenKey(keycode) && HudSandboxConsole.canOpenConsole(
+                        development = development,
+                        commandConsoleOpen = commandConsoleOpen,
+                        appPaused = paused,
+                        loading = loading,
+                        hudMenuOpen = hudMenuOpen,
+                        touchControls = touchControls,
+                        canDeploy = session?.canDeploy == true,
+                        textFieldFocused = stage.keyboardFocus is TextField,
+                    )) {
+                    openCommandConsole(swallowKeyTyped = true)
                     return true
                 }
                 if (!commandConsoleOpen) {
-                    if ((keycode == Input.Keys.ESCAPE || touchControls && keycode == Input.Keys.BACK) && session == null) {
-                        if (loading) leaveMatch()
-                        else if (startupPage == StartupPage.SETUP) showStartupPage(StartupPage.HOME)
-                        else if (startupPage != StartupPage.HOME) showStartupPage(settingsBack)
-                        else return false
-                        return true
+                    if (keycode == Input.Keys.ESCAPE || touchControls && keycode == Input.Keys.BACK) {
+                        if (session == null) {
+                            if (loading) leaveMatch()
+                            else if (startupPage == StartupPage.SETUP) showStartupPage(StartupPage.HOME)
+                            else if (startupPage != StartupPage.HOME) showStartupPage(settingsBack)
+                            else return false
+                            return true
+                        }
+                        if (hudMenuOpen) {
+                            hudMenuOpen = false
+                            lastHudState = null
+                            updateHud()
+                            return true
+                        }
+                        if (stepClock.isPaused) {
+                            stepClock.setPaused(false)
+                            recordSimulationControl("resume")
+                            lastHudState = null
+                            updateHud()
+                            return true
+                        }
+                        val hasActiveTargetMode = mapInput.constructionTypeId != null ||
+                            mapInput.reclaimMode || mapInput.repairMode || mapInput.patrolMode ||
+                            mapInput.groundActionName != null || mapInput.sandboxPick != null
+                        if (!hasActiveTargetMode) {
+                            hudMenuOpen = true
+                            cancelInput()
+                            lastHudState = null
+                            updateHud()
+                            return true
+                        }
                     }
                     return false
                 }
@@ -771,7 +1093,38 @@ class BootstrapScreen(
                 }
                 return false
             }
-            override fun keyTyped(character: Char): Boolean = commandConsoleOpen && (character == '\r' || character == '\n')
+            override fun keyUp(keycode: Int): Boolean {
+                if (keycode == Input.Keys.F3 && f3Held) {
+                    val usedCombo = f3ComboUsed
+                    f3Held = false
+                    f3ComboUsed = false
+                    if (!usedCombo && development && !touchControls && session?.isOpen == true && !loading && !paused && !hudMenuOpen && !stepClock.isPaused) {
+                        toggleDebugLayer()
+                    }
+                    return true
+                }
+                return false
+            }
+            override fun keyTyped(character: Char): Boolean {
+                if (swallowNextSlashTyped) {
+                    swallowNextSlashTyped = false
+                    if (HudSandboxConsole.isConsoleOpenChar(character)) return true
+                }
+                if (HudSandboxConsole.isConsoleOpenChar(character) && HudSandboxConsole.canOpenConsole(
+                        development = development,
+                        commandConsoleOpen = commandConsoleOpen,
+                        appPaused = paused,
+                        loading = loading,
+                        hudMenuOpen = hudMenuOpen,
+                        touchControls = touchControls,
+                        canDeploy = session?.canDeploy == true,
+                        textFieldFocused = stage.keyboardFocus is TextField,
+                    )) {
+                    openCommandConsole(swallowKeyTyped = false)
+                    return true
+                }
+                return commandConsoleOpen && (character == '\r' || character == '\n')
+            }
         }, stage, object : InputAdapter() {
             override fun keyDown(keycode: Int): Boolean {
                 if (!touchControls || keycode != Input.Keys.BACK) return false
@@ -791,14 +1144,134 @@ class BootstrapScreen(
         }
     }
 
-    private fun makeSkin(): Skin {
+    private fun createSafeFontSet(scale: Float, preloadExtras: Iterable<String> = emptyList()): UiFontSet? =
+        runCatching { UiFontSet.create(scale, UiStrings.preloadCharacters(preloadExtras)) }.onFailure { err ->
+            Gdx.app?.error("ui-p001-fonts", "Failed to create FreeType UiFontSet, falling back to default BitmapFont", err)
+        }.getOrNull()
+
+    private fun collectFontPreloadStrings(): List<String> = buildList {
+        session?.renderResources?.units?.keys?.forEach(::add)
+        session?.actionMenu?.let { menu ->
+            menu.selectedTitle?.let(::add)
+            menu.battleActions().forEach { add(it.title); add(it.hint) }
+        }
+        skirmishMapState.selected?.displayName?.let(::add)
+    }
+
+    private fun rebuildFontsForScale(targetScale: Float) {
+        val next = createSafeFontSet(targetScale, collectFontPreloadStrings()) ?: return
+        val oldSet = fontSet
+        val oldFallback = fallbackFont
+        val retiredFonts = LinkedHashSet<BitmapFont>().apply {
+            oldSet?.allFonts?.let(::addAll)
+            oldFallback?.let(::add)
+        }
+        fontSet = next
+        fallbackFont = null
+        if (::skin.isInitialized) {
+            // Rebind live/cached actors FIRST while shared Skin styles still point to retired fonts,
+            // so Label.setStyle() / TextField.setStyle() rebuild their internal BitmapFontCache!
+            refreshActorFonts(stage.root, next.body, retiredFonts)
+            productionCards.values.forEach { refreshActorFonts(it.table, next.body, retiredFonts) }
+            factoryUpgradeCards.values.forEach { refreshActorFonts(it.table, next.body, retiredFonts) }
+            constructionCards.values.forEach { refreshActorFonts(it.table, next.body, retiredFonts) }
+            applyFontSetToSkin(skin, next, retiredFonts)
+        }
+        oldSet?.close()
+        oldFallback?.dispose()
+    }
+
+    private fun applyFontSetToSkin(targetSkin: Skin, fonts: UiFontSet, retired: Set<BitmapFont>) {
+        val body = fonts.body
+        targetSkin.add("default-font", body, BitmapFont::class.java)
+        targetSkin.getAll(Label.LabelStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+        }
+        targetSkin.getAll(TextButton.TextButtonStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+        }
+        targetSkin.getAll(TextField.TextFieldStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+            if (style.messageFont in retired) style.messageFont = body
+        }
+        targetSkin.getAll(com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+        }
+        targetSkin.getAll(SelectBox.SelectBoxStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+            if (style.listStyle?.font in retired) style.listStyle.font = body
+        }
+        targetSkin.getAll(CheckBox.CheckBoxStyle::class.java)?.values()?.forEach { style ->
+            if (style.font in retired) style.font = body
+        }
+    }
+
+    /**
+     * Rebinds ONLY actors whose style references a retired font from [retired] (preserving sub-panels'
+     * own platform fonts) and explicitly refreshes hidden SelectBox dropdown lists.
+     */
+    private fun refreshActorFonts(actor: Actor, bodyFont: BitmapFont, retired: Set<BitmapFont>) {
+        when (actor) {
+            is Label -> {
+                if (actor.style.font in retired) {
+                    actor.style = Label.LabelStyle(actor.style).apply { font = bodyFont }
+                }
+            }
+            is CheckBox -> {
+                if (actor.style.font in retired) {
+                    actor.style = CheckBox.CheckBoxStyle(actor.style).apply { font = bodyFont }
+                }
+            }
+            is TextButton -> {
+                if (actor.style.font in retired) {
+                    actor.style = TextButton.TextButtonStyle(actor.style).apply { font = bodyFont }
+                }
+            }
+            is TextField -> {
+                if (actor.style.font in retired || actor.style.messageFont in retired) {
+                    actor.style = TextField.TextFieldStyle(actor.style).apply {
+                        if (font in retired) font = bodyFont
+                        if (messageFont in retired) messageFont = bodyFont
+                    }
+                }
+            }
+            is com.badlogic.gdx.scenes.scene2d.ui.List<*> -> {
+                if (actor.style.font in retired) {
+                    actor.style = com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle(actor.style).apply { font = bodyFont }
+                }
+            }
+            is SelectBox<*> -> {
+                val styleNeeds = actor.style.font in retired || actor.style.listStyle?.font in retired
+                val listNeeds = actor.list.style.font in retired
+                if (styleNeeds || listNeeds) {
+                    val copy = SelectBox.SelectBoxStyle(actor.style).apply {
+                        if (font in retired) font = bodyFont
+                        if (listStyle != null && listStyle.font in retired) {
+                            listStyle = com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle(listStyle).apply { font = bodyFont }
+                        }
+                    }
+                    actor.style = copy
+                    if (actor.list.style.font in retired) {
+                        actor.list.style = com.badlogic.gdx.scenes.scene2d.ui.List.ListStyle(actor.list.style).apply { font = bodyFont }
+                    }
+                }
+            }
+        }
+        if (actor is Group) {
+            val children = actor.children
+            for (i in 0 until children.size) {
+                refreshActorFonts(children[i], bodyFont, retired)
+            }
+        }
+    }
+
+    private fun makeSkin(font: BitmapFont): Skin {
         val result = Skin()
         val pixmap = Pixmap(1, 1, Pixmap.Format.RGBA8888)
         pixmap.setColor(Color.WHITE); pixmap.fill()
         val texture = try { Texture(pixmap) } finally { pixmap.dispose() }
         result.add("white", texture)
-        val font = BitmapFont()
-        result.add("default-font", font)
+        result.add("default-font", font, BitmapFont::class.java)
         val text = Color(0.9f, 0.92f, 0.9f, 1f)
         result.add("default", Label.LabelStyle(font, text))
         result.add("default", TextButton.TextButtonStyle().apply {
@@ -890,7 +1363,11 @@ class BootstrapScreen(
     }
 
     private fun canStartMatch(): Boolean = visualState?.canStart != false &&
-        if (testScenes.selected) testScenes.choice != null else packState.canStart && qualifiedContent?.isSuccess == true
+        when {
+            skirmishMapState.selected != null -> packState.canStart && (packState.choice() != null || qualifiedContent?.isSuccess == true || rootField.text.trim().takeIf { it.isNotEmpty() }?.let { raw -> runCatching { java.nio.file.Files.isRegularFile(java.nio.file.Paths.get(raw).resolve("pack.json")) }.getOrDefault(false) } == true)
+            testScenes.selected -> testScenes.choice != null
+            else -> packState.canStart && qualifiedContent?.isSuccess == true
+        }
 
     private fun requestLoad() {
         if (loading) {
@@ -901,11 +1378,17 @@ class BootstrapScreen(
             val request = if (launch.canEdit) {
                 refreshContentQualification()
                 if (!canStartMatch()) return
-                val scene = testScenes.choice
+                val skirmish = skirmishMapState.selected
+                val scene = if (skirmish != null) null else testScenes.choice
                 val content = contentCandidate
-                launch.configure(launch.configuration.copy(root = scene?.root ?: checkNotNull(content).root,
+                launch.configure(launch.configuration.copy(
+                    root = scene?.root ?: content?.root ?: activeRoot,
                     visuals = visualState?.selection ?: launch.configuration.visuals,
-                    contentPack = scene?.content ?: content?.content, testScenario = scene))
+                    contentPack = scene?.content ?: content?.content ?: packState.choice(),
+                    testScenario = scene,
+                    skirmishMapPath = skirmish?.path,
+                    skirmishMapName = skirmish?.displayName,
+                ))
                 launch.start()
             } else launch.reopen()
             val acceptedNanos = System.nanoTime()
@@ -928,8 +1411,12 @@ class BootstrapScreen(
             val contentPack = request.configuration.contentPack
             val prepare = visualState?.prepareForLoad(contentPack)
                 ?: visualSettings?.let { settings -> { settings.prepareForContent(request.configuration.visuals, contentPack) } }
+            val skirmishMapPath = request.configuration.skirmishMapPath
             val testScenario = request.configuration.testScenario
-            if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
+            if (skirmishMapPath != null) {
+                val origDir = request.configuration.visuals.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                loader.requestSkirmishMap(skirmishMapPath, activeRoot, contentPack, origDir, request.configuration.skirmishMapName, prepare)
+            } else if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
             else if (contentPack == null) loader.request(activeRoot, prepare)
             else loader.requestPack(activeRoot, contentPack, prepare)
         } catch (failure: Exception) { failLoad(failure) }
@@ -955,8 +1442,16 @@ class BootstrapScreen(
     }
 
     private fun closeMatchResources() {
-        collisionBoxesVisible = false
-        collisionBoxPanel?.reset()
+        debugLayerState = debugLayerState.reset()
+        f3Held = false
+        f3ComboUsed = false
+        lastCursorWorld = null
+        hudMenuOpen = false
+        hudEvents.clear()
+        lastObservedEventSampleId = null
+        lastObservedActionResultIds.clear()
+        lastArrivalNoticeKey = null
+        lastHudSnapshot = null
         closeCommandConsole()
         cancelInput()
         loader.cancel()
@@ -974,6 +1469,7 @@ class BootstrapScreen(
         scriptedCamera = null
         suspendedCamera = null
         activeVisuals = null
+        matchStartupNotices = emptyList()
         listOf<() -> Unit>({ closingSounds?.close() }, { closingSession?.close() }, { closingGraphics?.close() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)
@@ -1012,11 +1508,11 @@ class BootstrapScreen(
                     "visualsPreparedNanos" to timing.visualsPreparedNanos, "completedNanos" to timing.completedNanos,
                     "observedNanos" to System.nanoTime())) }
                 val graphicsStartedNanos = System.nanoTime()
-                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = !touchControls)
-                pendingGraphics.projection.resizeBattlefield(battlefieldWidth.toDouble())
+                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = true)
+                pendingGraphics.projection.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
                 evidence.record("load-graphics-ready", mapOf("generation" to generation,
                     "startedNanos" to graphicsStartedNanos, "completedNanos" to System.nanoTime(),
-                    "battlefieldFill" to !touchControls,
+                    "battlefieldFill" to true,
                     "worldWidth" to pendingGraphics.projection.worldWidth, "worldHeight" to pendingGraphics.projection.worldHeight))
                 val runGeneration = generation
                 val generationEvidence = evidence.withGeneration(runGeneration)
@@ -1028,14 +1524,40 @@ class BootstrapScreen(
                     val map = pendingGraphics.projection
                     map.restoreCamera(map.camera.copy(zoom = FixedCameraJoystick.startingZoom))
                 }
+                if (request.configuration.skirmishMapPath != null) {
+                    val focus = pendingSession.observation.units.firstOrNull { it.alive && it.ownerPlayerId == "p1" }
+                    if (focus != null) {
+                        pendingGraphics.projection.centerOn(focus.position)
+                    }
+                    evidence.record("terrain-atlas-usage", mapOf(
+                        "generation" to generation,
+                        "loadedTerrainTextureCount" to pendingGraphics.loadedTerrainTextureCount,
+                        "declaredTilesetCount" to scenario.map.tileSets.size,
+                        "visualLayerCount" to scenario.map.visualLayers.size,
+                    ))
+                }
                 val camera = if (cameraCues.isEmpty()) null else OfflineCameraController(pendingGraphics.projection, generationEvidence)
                 pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
                     pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,
                     soundFactory, evidence.withGeneration(runGeneration)) }
+                matchStartupNotices = loaded.startupNotices
+                hudEvents.clear()
+                hudMenuOpen = false
+                lastObservedEventSampleId = null
+                lastObservedActionResultIds.clear()
+                lastArrivalNoticeKey = null
+                if (loaded.startupNotices.isNotEmpty()) {
+                    evidence.record("skirmish-startup-notices", mapOf("generation" to generation, "notices" to loaded.startupNotices))
+                    for (notice in loaded.startupNotices) {
+                        hudEvents.pushWarning(notice)
+                    }
+                }
                 evidence.recordLoadReady(generation, loaded)
                 check(launch.complete(request.generation)) { "Cancelled load generation" }
                 loaded.visuals?.let { visualState?.rememberPublished(it, loaded.contentPack) }
                 pendingLoad = null
+                pendingGraphics.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)
+                syncMinimapActorBounds(pendingGraphics)
                 graphics = pendingGraphics
                 activeVisuals = loaded.visuals
                 session = pendingSession
@@ -1043,9 +1565,40 @@ class BootstrapScreen(
                 if (touchControls) recordCameraJoystick("opened", null)
                 sounds = pendingSounds
                 loaded.visuals?.let { visuals -> evidence.recordVisualAssetsReady(visuals, generation) }
+                fontSet?.let { fs ->
+                    val extras = buildList<String> {
+                        scenario.unitDefinitions.values.forEach { def ->
+                            add(def.id)
+                            def.customActions?.actions?.forEach { action ->
+                                add(action.name)
+                                add(action.actionId)
+                            }
+                        }
+                        loaded.contentPack?.pack?.name?.let(::add)
+                        loaded.contentPack?.content?.openingPack?.name?.let(::add)
+                        loaded.startupNotices.forEach(::add)
+                    }
+                    if (extras.isNotEmpty()) {
+                        val uniqueChars = LinkedHashSet<Char>()
+                        for (s in extras) for (c in s) if (!c.isISOControl()) uniqueChars.add(c)
+                        if (uniqueChars.isNotEmpty()) {
+                            val extraText = String(uniqueChars.toCharArray())
+                            val layout = com.badlogic.gdx.graphics.g2d.GlyphLayout()
+                            layout.setText(fs.body, extraText)
+                            layout.setText(fs.title, extraText)
+                            layout.setText(fs.keyBold, extraText)
+                        }
+                    }
+                }
                 visualSettings?.preparationDiagnostics?.takeIf { it.isNotEmpty() }?.let {
                     evidence.record("resource-acceptance-reuse", it + mapOf("generation" to generation))
                 }
+                activeMapId = skirmishMapState.selected?.displayName
+                    ?: testScenes.choice?.id
+                    ?: "sandbox"
+                debugLayerState = debugLayerState.reset()
+                f3Held = false
+                f3ComboUsed = false
                 loading = false
                 stepClock.reset()
                 lastPacingFrame = OfflinePacingFrame(0, 0.0)
@@ -1080,48 +1633,61 @@ class BootstrapScreen(
                 throw failure
             }
         }
+        if (current != null && !paused) {
+            hudEvents.update(Gdx.graphics.deltaTime)
+            if (::hudActionPanel.isInitialized) hudActionPanel.tickEffects(Gdx.graphics.deltaTime)
+            syncHudEventsFromSession(current)
+        }
         updateHud()
         updatePacingHud()
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
-        nativeTooltip.isVisible = nativePanel && !paused &&
-            (productionHover != null && session?.productionActions?.any { it.typeId == productionHover } == true ||
-                constructionHover != null && session?.constructionActions?.any { it.typeId == constructionHover } == true ||
-                economicUpgradeHover && economicUpgradeCard.isVisible || reclaimHover && reclaimCard.isVisible ||
-                repairHover && repairCard.isVisible ||
-                upgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == upgradeHover } == true ||
-                factoryUpgradeHover != null && session?.selectedUpgrades?.any { it.actionKey == factoryUpgradeHover } == true ||
-                flightHover && session?.actionMenu?.flightAction != null ||
-                session?.actionMenu?.unitActions?.any { it.name == customActionHover } == true)
-        if (nativeTooltip.isVisible) nativeTooltip.toFront()
+        nativeTooltip.isVisible = false
+        val frameDt = Gdx.graphics.deltaTime.coerceAtLeast(0f)
+        lastFrameMs = frameDt * 1000f
+        maxFrameMsResetTimer += frameDt
+        if (maxFrameMsResetTimer >= 2.0f) {
+            maxFrameMsResetTimer = 0f
+            maxFrameMsWindow = lastFrameMs
+        } else if (lastFrameMs > maxFrameMsWindow) {
+            maxFrameMsWindow = lastFrameMs
+        }
+        fontDebouncer.pollReadyScale(frameDt)?.let { readyScale ->
+            rebuildFontsForScale(readyScale)
+        }
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         viewport.apply()
         batch.projectionMatrix = viewport.camera.combined
         shapes.projectionMatrix = viewport.camera.combined
-        if (touchControls && current != null) {
-            shapes.begin(ShapeRenderer.ShapeType.Filled)
-            shapes.color = Color(0.105f, 0.13f, 0.12f, 1f)
-            if (touchControls) shapes.rect(736f, 0f, 224f, 592f)
-            shapes.rect(0f, 592f, 960f, 48f)
-            shapes.end()
-        }
+
         val graphics = graphics
         if (current != null && graphics != null) {
             val clip = Rectangle()
             val area = graphics.projection.mapArea
             val stagePerWorldX = viewport.worldWidth / battlefieldWidth
-            stage.calculateScissors(Rectangle((area.left * stagePerWorldX).toFloat(), area.bottom.toFloat(),
-                (area.width * stagePerWorldX).toFloat(), area.height.toFloat()), clip)
-            if (!touchControls) {
-                batch.projectionMatrix = battlefieldCamera.combined
-                shapes.projectionMatrix = battlefieldCamera.combined
-            }
+            val stagePerWorldY = viewport.worldHeight / battlefieldHeight
+            stage.calculateScissors(Rectangle((area.left * stagePerWorldX).toFloat(), (area.bottom * stagePerWorldY).toFloat(),
+                (area.width * stagePerWorldX).toFloat(), (area.height * stagePerWorldY).toFloat()), clip)
+            batch.projectionMatrix = battlefieldCamera.combined
+            shapes.projectionMatrix = battlefieldCamera.combined
             if (ScissorStack.pushScissors(clip)) try {
                 batch.begin(); graphics.draw(batch, current.frame, mapInput.constructionPreview, current.selectedIds); batch.end()
+                mapInput.groundActionPreview?.takeIf { it.areaRadius > 0.0 }?.let { preview ->
+                    graphics.drawGroundActionAreaFill(shapes, preview)
+                }
                 shapes.begin(ShapeRenderer.ShapeType.Line)
                 graphics.drawOverlay(shapes, current.frame, current.selectedIds, mapInput.box, mapInput.constructionPreview,
                     mapInput.groundActionPreview, current.selectedId.takeUnless { touchControls })
                 mapInput.sandboxPickPreview?.let { graphics.drawSandboxPick(shapes, current.frame, it) }
-                if (collisionBoxesVisible) CollisionBoxView.draw(shapes, current, graphics.projection)
+                if (development && debugLayerState.enabled) {
+                    CollisionBoxView.draw(
+                        shapes,
+                        current,
+                        graphics.projection,
+                        showBoxes = debugLayerState.showBoxes,
+                        showRoutes = debugLayerState.showRoutes,
+                        showGrid = debugLayerState.showGrid,
+                    )
+                }
                 current.moveArrivalMarker?.let { arrival ->
                     val projection = graphics.projection
                     val tx = projection.x(arrival.originalTarget.x)
@@ -1138,11 +1704,18 @@ class BootstrapScreen(
                 shapes.end()
                 graphics.drawFlameEffects(shapes, current.frame)
             } finally { ScissorStack.popScissors() }
+            batch.projectionMatrix = viewport.camera.combined
             shapes.projectionMatrix = viewport.camera.combined
-            graphics.drawMinimap(shapes, current.frame)
+            graphics.drawMinimap(shapes, current.frame, batch)
             if (cameraJoystickActive()) drawCameraJoystick()
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
+        if (current != null && ::hudOverlay.isInitialized && (hudMenuOpen || stepClock.isPaused)) {
+            batch.projectionMatrix = viewport.camera.combined
+            batch.begin()
+            hudOverlay.drawModalLayer(batch, 1f)
+            batch.end()
+        }
         loadingDrawn = loading
         val drawnNanos = System.nanoTime()
         if (current == null && !loading && launch.canEdit) {
@@ -1177,12 +1750,16 @@ class BootstrapScreen(
         fun button(id: String, actor: TextButton) {
             entries += DrawnAction(id, actor, actor.text.toString(), enabled = !actor.isDisabled)
         }
-        button("start-match", startButton); button("exit-match", exitButton)
+        if (::hudOverlay.isInitialized && current != null) entries += hudOverlay.drawnActions()
+        if (current == null) { button("start-match", startButton); button("exit-match", exitButton) }
         button("skirmish-setup", setupButton); button("startup-back", menuBackButton)
         button("check-start-content", retryContentButton)
-        rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
-        button("pause-simulation", simulationPauseButton)
-        collisionBoxPanel?.let { entries += it.drawnActions() }
+        button("skirmish-maps", skirmishMapTab)
+        if (current == null) {
+            rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
+            button("pause-simulation", simulationPauseButton)
+        }
+        if (::hudDebugOverlay.isInitialized && development && debugLayerState.enabled) entries += hudDebugOverlay.drawnActions()
         button("content-tab", packTab)
         button("resource-tab", visualsTab)
         button("test-scenes-tab", testSceneTab)
@@ -1197,13 +1774,15 @@ class BootstrapScreen(
             enabled = !cameraJoystickBox.isDisabled)
         entries += DrawnAction("camera-joystick-area", cameraJoystickArea, "Camera joystick", enabled = cameraJoystickActive())
         entries += DrawnAction("no-nukes", noNukesBox, noNukesBox.text.toString(), enabled = !noNukesBox.isDisabled)
-        entries += DrawnAction("sandbox-command-input", commandField, commandField.text,
-            enabled = commandConsoleOpen && current?.canDeploy == true)
-        commandPickButtons.forEach { (id, actor) -> button(id, actor) }
+        if (development && ::hudConsole.isInitialized && commandConsoleOpen && current?.canDeploy == true) {
+            entries += hudConsole.drawnActions()
+        }
         packPanel?.let { entries += it.drawnActions() }
-        button("stop", stopButton); button("choose-patrol", patrolButton)
+        if (stopButton.isVisible) button("stop", stopButton)
+        if (patrolButton.isVisible) button("choose-patrol", patrolButton)
         entries += DrawnAction("minimap", minimapActor, "Minimap", enabled = current != null)
-        if (!touchControls) entries += battleActions.drawnActions()
+        if (::hudActionPanel.isInitialized && current != null) entries += hudActionPanel.drawnActions()
+        if (::hudGroupBar.isInitialized && current != null) entries += hudGroupBar.drawnActions()
         customActionButtons.forEach { (name, actor) ->
             val action = menu?.unitActions?.singleOrNull { it.name == name }
             entries += DrawnAction("unit-action:$name", actor, actor.text.toString(), enabled = action?.available == true)
@@ -1290,27 +1869,111 @@ class BootstrapScreen(
             "stepIndex" to session?.observation?.stepIndex, "hostNanos" to now))
     }
 
-    private fun showCollisionBoxes(visible: Boolean) {
+    private fun toggleDebugLayer() {
         val current = session?.takeIf { it.isOpen } ?: return
-        collisionBoxesVisible = visible
+        if (!development) return
+        debugLayerState = debugLayerState.toggleEnabled()
+        lastHudState = null
         evidence.recordWhenEnabled("collision-box-view") {
-            mapOf("enabled" to visible, "generation" to generation, "stepIndex" to current.observation.stepIndex)
+            mapOf(
+                "enabled" to debugLayerState.enabled,
+                "boxes" to debugLayerState.showBoxes,
+                "routes" to debugLayerState.showRoutes,
+                "grid" to debugLayerState.showGrid,
+                "generation" to generation,
+                "stepIndex" to current.observation.stepIndex,
+            )
+        }
+        updateHud()
+    }
+
+    private fun toggleDebugSubLayer(layer: String) {
+        val current = session?.takeIf { it.isOpen } ?: return
+        if (!development || !debugLayerState.enabled) return
+        debugLayerState = when (layer) {
+            "boxes" -> debugLayerState.toggleBoxes()
+            "routes" -> debugLayerState.toggleRoutes()
+            "grid" -> debugLayerState.toggleGrid()
+            else -> debugLayerState
+        }
+        lastHudState = null
+        evidence.recordWhenEnabled("collision-box-view") {
+            mapOf(
+                "enabled" to debugLayerState.enabled,
+                "layer" to layer,
+                "boxes" to debugLayerState.showBoxes,
+                "routes" to debugLayerState.showRoutes,
+                "grid" to debugLayerState.showGrid,
+                "generation" to generation,
+                "stepIndex" to current.observation.stepIndex,
+            )
+        }
+        updateHud()
+    }
+
+    private fun syncHudEventsFromSession(current: SandboxSession) {
+        val obs = current.observation
+        hudEvents.setCameraFollowing(scriptedCamera?.followsUnit == true)
+        if (obs.sampleId != lastObservedEventSampleId) {
+            lastObservedEventSampleId = obs.sampleId
+            for (result in obs.actionResults) {
+                if (result is com.rustedwarfare.reforge.core.sim.ActionResult.Rejected) {
+                    val key = "${result.actionId}:${result.error.code}"
+                    if (lastObservedActionResultIds.add(key)) {
+                        hudEvents.pushRejectionCode(result.error.code)
+                    }
+                }
+            }
+            while (lastObservedActionResultIds.size > 128) {
+                val iter = lastObservedActionResultIds.iterator()
+                if (iter.hasNext()) { iter.next(); iter.remove() } else break
+            }
+            for (event in obs.events) {
+                when (event.kind) {
+                    "unit-produced" -> {
+                        val unit = obs.units.firstOrNull { it.unitId == event.unitId && it.ownerPlayerId == obs.playerId }
+                        if (unit != null) {
+                            val title = current.unitTitle(unit.typeId)
+                            hudEvents.pushInfo(UiStrings.format("done", "NAME" to title))
+                        }
+                    }
+                    "unit-damaged" -> {
+                        val unit = obs.units.firstOrNull { it.unitId == event.unitId && it.ownerPlayerId == obs.playerId }
+                        if (unit != null) {
+                            hudEvents.pushInfo(UiStrings.get("damage"))
+                        }
+                    }
+                }
+            }
+            val arrivals = current.selectedMoveArrivals
+            if (arrivals.isNotEmpty()) {
+                val maxStep = arrivals.maxOf { it.stepIndex }
+                val arrivalKey = "$maxStep:" + arrivals.joinToString("|") { m ->
+                    "${m.originalTarget.x.toInt()},${m.originalTarget.y.toInt()}:${m.stoppedAt.x.toInt()},${m.stoppedAt.y.toInt()}"
+                }
+                if (arrivalKey != lastArrivalNoticeKey) {
+                    lastArrivalNoticeKey = arrivalKey
+                    val msg = if (arrivals.size > 1) {
+                        UiStrings.format("arrivalDeviatedMulti", "N" to arrivals.size)
+                    } else {
+                        UiStrings.get("arrivalDeviated")
+                    }
+                    hudEvents.pushInfo(msg)
+                }
+            }
         }
     }
 
     private fun updatePacingHud() {
         if (!presentationReady) return
         val visible = session?.isOpen == true
-        collisionBoxPanel?.isVisible = visible && !paused && !loading
-        rateButtons.forEach { (rate, actor) ->
-            actor.isVisible = visible
-            actor.isDisabled = paused || loading || !visible
-            actor.setText("${rate.multiplier}x" + if (stepClock.rate == rate) " *" else "")
+        rateButtons.forEach { (_, actor) ->
+            actor.isVisible = false
+            actor.isDisabled = true
         }
-        simulationPauseButton.isVisible = visible
-        simulationPauseButton.isDisabled = paused || loading || !visible
-        simulationPauseButton.setText(if (stepClock.isPaused) "Resume" else "Pause")
-        pacingLabel.isVisible = visible
+        simulationPauseButton.isVisible = false
+        simulationPauseButton.isDisabled = true
+        pacingLabel.isVisible = false
         val actual = if (paused) 0.0 else stepClock.actualMultiplier
         val state = if (paused) "Suspended" else if (stepClock.isPaused) "Paused" else "Speed"
         pacingLabel.setText("$state ${stepClock.rate.multiplier}x | actual " +
@@ -1318,7 +1981,20 @@ class BootstrapScreen(
             " | backlog ${lastPacingFrame.pendingSteps.toLong()}")
     }
 
+    private fun openCommandConsole(swallowKeyTyped: Boolean = false) {
+        mapInput.cancel()
+        commandConsoleOpen = true
+        swallowNextSlashTyped = swallowKeyTyped
+        commandPickError = null
+        commandField.text = ""
+        stage.keyboardFocus = commandField
+        lastHudState = null
+        updateHud()
+        evidence.record("sandbox-console", mapOf("generation" to generation, "open" to true))
+    }
+
     private fun closeCommandConsole() {
+        swallowNextSlashTyped = false
         if (!commandConsoleOpen) return
         commandConsoleOpen = false
         if (::commandField.isInitialized && stage.keyboardFocus === commandField) stage.keyboardFocus = null
@@ -1360,8 +2036,8 @@ class BootstrapScreen(
         card.table.isVisible = nativePanel
         when {
             overflow -> card.table.setBounds((index % 2) * 92f, ((total + 1) / 2 - 1 - index / 2) * 60f, 84f, 54f)
-            naval -> NativeActionPanel.navalProduction.let { card.table.setBounds(it.x, it.y, it.width, it.height) }
-            total <= 3 -> NativeActionPanel.production[index].let { card.table.setBounds(it.x, it.y, it.width, it.height) }
+            naval -> card.table.setBounds(752f, 270f, 84f, 50f)
+            total <= 3 -> card.table.setBounds(752f + (index % 2) * 92f, 256f - (index / 2) * 68f, 84f, 64f)
             else -> card.table.setBounds(752f + (index % 2) * 92f, 280f - (index / 2) * 60f, 84f, 54f)
         }
         val compact = total > 3 || naval
@@ -1525,30 +2201,37 @@ class BootstrapScreen(
         val current = session
         cameraJoystickArea.isVisible = cameraJoystickActive()
         if (current?.canDeploy != true) closeCommandConsole()
-        val showConsole = commandConsoleOpen && current?.canDeploy == true
-        commandPanel.isVisible = showConsole
-        commandField.isVisible = showConsole
-        commandFeedbackLabel.isVisible = showConsole
-        commandPickHint.isVisible = showConsole
-        commandPickButtons.values.forEach { it.isVisible = showConsole }
-        commandFeedbackLabel.setText(commandPickError ?: current?.sandboxCommandFeedback.orEmpty())
-        commandHintLabel.isVisible = development && current?.canDeploy == true && !showConsole && !touchControls
-        val pickHint = when (val pick = mapInput.sandboxPick) {
-            is SandboxPick.Spawn -> "Place ${pick.setup.typeId} for ${pick.setup.ownerPlayerId}"
-            SandboxPick.Destroy -> "Pick a unit to destroy"
-            is SandboxPick.Health -> "Pick a unit to adjust health by ${pick.amount}"
-            null -> null
+        val showConsole = development && commandConsoleOpen && current?.canDeploy == true
+        commandPanel.isVisible = false
+        commandFeedbackLabel.isVisible = false
+        commandPickHint.isVisible = false
+        commandHintLabel.isVisible = false
+        if (::hudConsole.isInitialized) {
+            hudConsole.update(
+                open = showConsole,
+                stageWidth = viewport.worldWidth,
+                stageHeight = viewport.worldHeight,
+                feedback = commandPickError ?: current?.sandboxCommandFeedback.orEmpty(),
+                lang = UiStrings.currentLanguage,
+            )
         }
-        commandHintLabel.setText(pickHint?.let { "$it    ${mapInput.sandboxPickFeedback ?: "Esc or right click cancels"}" }
-            ?: current?.lastSandboxReceipt?.let { "${current.sandboxCommandFeedback}    / for commands" }
-            ?: "Sandbox: / for commands")
         val menu = current?.actionMenu
         val selected = current?.observation?.units?.find { it.unitId == current.selectedId }
         val naval = selected?.transport != null && menu?.unitActions?.any { it.name == "buildAntiNuke" } == true
-        val state = HudState(selected, current?.selectedIds ?: emptySet(), (1..3).map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
+        val state = HudState(selected, current?.selectedIds ?: emptySet(), HudControlGroupLogic.GROUP_ORDER.map { current?.groupCount(it) ?: 0 }, current?.feedback, current?.observation?.stepIndex,
             launch.canEdit, loading, visualState?.preparationStatus, loadError, current != null, menu?.balance, menu?.factoryQueue,
-            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu)
-        if (state == lastHudState) return
+            mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu,
+            hudMenuOpen, stepClock.isPaused, stepClock.rate, UiStrings.currentLanguage,
+            mapInput.constructionTypeId, mapInput.constructionPreview?.state, mapInput.groundActionName, mapInput.sandboxPick, debugLayerState)
+        if (state == lastHudState) {
+            if (current != null && ::hudOverlay.isInitialized) {
+                refreshDebugOverlay(current)
+                val dbgOpen = development && debugLayerState.enabled
+                val belowY = if (dbgOpen && ::hudDebugOverlay.isInitialized) hudDebugOverlay.leftColumnBottomY else null
+                hudOverlay.syncEventStream(hudEvents, noticesStartBelowY = belowY)
+            }
+            return
+        }
         if (state.preparationStatus != null && state.preparationStatus != lastHudState?.preparationStatus) {
             evidence.record("resource-preparation-stage", mapOf("generation" to generation, "stage" to state.preparationStatus,
                 "scope" to if (loading) "match-load" else "menu-preparation"))
@@ -1701,31 +2384,8 @@ class BootstrapScreen(
         }
         stopButton.isDisabled = selected == null
         depthButton.isVisible = menu?.depthAction != null || menu?.flightAction != null || menu?.transportAction != null
-        val unloadBounds = if (naval) NativeActionPanel.navalUnload
-            else if (menu?.transportAction != null && menu.unitActions.isNotEmpty()) NativeActionPanel.transportWithCustomAction
-            else NativeCardBounds(752f, 188f, 176f, 40f)
-        depthButton.setBounds(unloadBounds.x, unloadBounds.y, unloadBounds.width, unloadBounds.height)
-        depthButton.isDisabled = menu?.depthAction == null && menu?.flightAction?.available != true && menu?.transportAction?.available != true
-        depthButton.setText(menu?.depthAction?.title ?: menu?.flightAction?.title ?: menu?.transportAction?.title ?: "Surface")
-        val spiderPurchaseMenu = menu?.unitActions?.any { it.name == "buildFabricator" } == true
-        val spiderInterceptor = selected?.attachmentOverview != null && selected.unitActions?.interceptorOnline != null
-        customActionButtons.forEach { (name, actor) ->
-            val action = menu?.unitActions?.singleOrNull { it.name == name }
-            val bounds = NativeActionPanel.customBounds(name, naval, spiderPurchaseMenu, spiderInterceptor)
-            actor.setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
-            actor.isVisible = current != null && action != null && !(name == "selectSlotBuild" &&
-                selected?.attachmentOverview?.selectedSlot == null)
-            actor.isDisabled = action?.available != true && action?.cancellable != true
-            val status = when {
-                action?.queued == true -> "\n${((action.progress ?: 0f) * 100f).toInt()}%"
-                (action?.cooldownRemaining ?: 0) > 0 -> String.format(Locale.ROOT, "\n%.1fs", action!!.cooldownRemaining / 1000f)
-                else -> ""
-            }
-            val title = action?.title.orEmpty()
-            val compact = spiderPurchaseMenu && bounds.height == 24f
-            actor.label.setFontScale(if (compact && status.isNotEmpty()) .8f else 1f)
-            actor.setText((if (compact) title.removePrefix("Add ") else title) + status)
-        }
+        depthButton.isVisible = false
+        depthButton.isDisabled = true
         menu?.unitActions?.singleOrNull { it.name == customActionHover }?.let { action ->
             setUnitIcon(nativeTooltipIcon, action.iconTypeId ?: selected?.typeId)
             nativeTooltipText.setText(action.tooltip)
@@ -1734,23 +2394,7 @@ class BootstrapScreen(
             setUnitIcon(nativeTooltipIcon, selected?.typeId)
             nativeTooltipText.setText(action.tooltip)
         }
-        val economicPanel = nativePanel && (current?.hasEconomicConstruction == true || constructionCards.size > 4 ||
-            menu?.canMaintain == true && constructionCards.size > 2 || productionCards.size + factoryUpgradeCards.size > 4)
-        val stopY = when {
-            spiderPurchaseMenu -> NativeActionPanel.spiderPurchaseStopY
-            spider -> 112f
-            economicPanel -> 112f
-            nativePanel -> 144f
-            else -> 168f
-        }
-        stopButton.setY(stopY)
-        patrolButton.setY(stopY)
-        val reopenBounds = if (spiderPurchaseMenu) NativeActionPanel.spiderPurchaseReopen
-            else NativeCardBounds(752f, if (economicPanel) 64f else if (nativePanel || launch.canEdit) 96f else 120f, 176f, 40f)
-        val exitBounds = if (spiderPurchaseMenu) NativeActionPanel.spiderPurchaseExit
-            else NativeCardBounds(752f, if (economicPanel) 16f else if (nativePanel) 48f else 72f, 176f, 40f)
-        startButton.setBounds(reopenBounds.x, reopenBounds.y, reopenBounds.width, reopenBounds.height)
-        exitButton.setBounds(exitBounds.x, exitBounds.y, exitBounds.width, exitBounds.height)
+        // Legacy bottom stop/reopen/exit bounds replaced by InGameHudOverlay & HudActionPanel
         stopButton.isVisible = current != null
         patrolButton.isVisible = current != null && !touchControls
         patrolButton.isDisabled = current?.canPatrol != true
@@ -1775,39 +2419,58 @@ class BootstrapScreen(
             actor.setText("${index + 1} (${state.groups[index]})"); actor.isVisible = current != null
         }
         val editable = launch.canEdit && !loading
+        val sxOff = ((viewport.worldWidth - 960f) * 0.5f).coerceAtLeast(0f)
+        val syOff = ((viewport.worldHeight - 640f) * 0.5f).coerceAtLeast(0f)
         startupFrame.isVisible = current == null
-        if (home) startupFrame.setBounds(286f, 159f, 388f, 280f)
-        else startupFrame.setBounds(124f, 60f, 712f, 493f)
+        if (home) startupFrame.setBounds(sxOff + 286f, syOff + 159f, 388f, 280f)
+        else startupFrame.setBounds(sxOff + 124f, syOff + 60f, 712f, 493f)
         startupTitle.isVisible = current == null
+        startupTitle.setBounds(sxOff + 130f, syOff + 564f, 700f, 52f)
+        previewHeading.setBounds(sxOff + 178f, syOff + 397f, 256f, 52f)
+        mapPreview.setBounds(sxOff + 178f, syOff + 213f, 256f, 174f)
+        startupNotice.setBounds(sxOff + 146f, syOff + 122f, 668f, 48f)
+        retryContentButton.setBounds(sxOff + 178f, syOff + 174f, 144f, 34f)
+        setupButton.setBounds(sxOff + 346f, syOff + 359f, 268f, 40f)
+        menuBackButton.setBounds(sxOff + 146f, syOff + 76f, 136f, 40f)
+        quitButton.setBounds(sxOff + 346f, syOff + 187f, 268f, 40f)
+        visualPanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
+        packPanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
+        skirmishMapPanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
+        testScenePanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
         startupTitle.setText(when {
             loading -> "Loading match"
             home -> "RustedWarfare-Reforge"
             setup -> "Skirmish setup"
             startupPage == StartupPage.DEVELOPMENT -> "Development"
+            startupPage == StartupPage.MAPS -> "Skirmish Maps (.tmx)"
             else -> "RustedWarfare-Reforge"
         })
         setupButton.isVisible = home
-        retryContentButton.isVisible = setup && !testScenes.selected && qualifiedContent?.isFailure == true
+        retryContentButton.isVisible = setup && !testScenes.selected && skirmishMapState.selected == null && qualifiedContent?.isFailure == true
         quitButton.isVisible = home
         menuBackButton.isVisible = setup || managing
         previewHeading.isVisible = setup
         mapPreview.isVisible = setup
+        val selectedTmx = skirmishMapState.selected
         val prepared = testScenes.choice?.scenario ?: qualifiedContent?.getOrNull()?.scenario
-        previewHeading.setText(prepared?.let { scenario ->
-            val choice = contentCandidate?.content
-            val name = testScenes.choice?.name ?: choice?.content?.openingPack?.name ?: choice?.pack?.name ?: "Selected map"
-            "$name\n" +
-            "${scenario.map.widthTiles} x ${scenario.map.heightTiles} tiles"
-        } ?: "No map selected")
+        previewHeading.setText(when {
+            selectedTmx != null -> "${selectedTmx.displayName}\n${selectedTmx.map.widthTiles} x ${selectedTmx.map.heightTiles} tiles (${selectedTmx.playerCount}p)"
+            prepared != null -> {
+                val choice = contentCandidate?.content
+                val name = testScenes.choice?.name ?: choice?.content?.openingPack?.name ?: choice?.pack?.name ?: "Selected map"
+                "$name\n${prepared.map.widthTiles} x ${prepared.map.heightTiles} tiles"
+            }
+            else -> "No map selected"
+        })
         val startupMessage = when {
             loading -> state.preparationStatus ?: "Preparing content and resources..."
             loadError != null -> loadError
             testScenes.selected && testScenes.error != null -> testScenes.error
             packState.error != null -> packState.error
             packState.compositionError != null -> packState.compositionError
-            qualifiedContent?.isFailure == true -> qualifiedContent?.exceptionOrNull()?.message
+            skirmishMapState.selected == null && qualifiedContent?.isFailure == true -> qualifiedContent?.exceptionOrNull()?.message
             visualState?.canStart == false -> visualState.error ?: "Apply the resource selection before starting."
-            contentCandidate != null && qualifiedContent == null -> "Checking map and content..."
+            skirmishMapState.selected == null && contentCandidate != null && qualifiedContent == null -> "Checking map and content..."
             !canStartMatch() -> if (rootField.text.isBlank())
                 "Check and enable a base package in Content packs."
             else "Choose a checked content folder and enable any content packs you want to use."
@@ -1820,38 +2483,44 @@ class BootstrapScreen(
         }
         val packageOpening = contentCandidate?.content?.content?.openingPack != null
         contentLabel.isVisible = setup && !packageOpening
-        contentLabel.setBounds(488f, 420f, 296f, 24f)
+        contentLabel.setBounds(sxOff + 488f, syOff + 420f, 296f, 24f)
         rootField.isVisible = setup && !packageOpening
-        rootField.setBounds(488f, 379f, 296f, 36f)
+        rootField.setBounds(sxOff + 488f, syOff + 379f, 296f, 36f)
         rootField.isDisabled = touchControls || !editable || testScenes.selected
         modeBox.isVisible = setup
-        modeBox.setBounds(488f, 323f, 296f, 40f)
+        modeBox.setBounds(sxOff + 488f, syOff + 323f, 296f, 40f)
         modeBox.isDisabled = !editable
         shareBox.isVisible = setup
-        shareBox.setBounds(488f, 268f, 296f, 40f)
+        shareBox.setBounds(sxOff + 488f, syOff + 268f, 296f, 40f)
         shareBox.isDisabled = !editable
         noNukesBox.isVisible = setup
-        noNukesBox.setBounds(488f, 220f, 296f, 36f)
+        noNukesBox.setBounds(sxOff + 488f, syOff + 220f, 296f, 36f)
         noNukesBox.isDisabled = !editable
         deploymentBox.isVisible = setup && development && !touchControls
-        deploymentBox.setBounds(488f, 174f, 296f, 36f)
+        deploymentBox.setBounds(sxOff + 488f, syOff + 174f, 296f, 36f)
         deploymentBox.isDisabled = !editable || !development || touchControls
         cameraJoystickBox.isVisible = setup && touchControls
-        cameraJoystickBox.setBounds(488f, 174f, 296f, 36f)
+        cameraJoystickBox.setBounds(sxOff + 488f, syOff + 174f, 296f, 36f)
         cameraJoystickBox.isDisabled = !editable || !touchControls
         startButton.isVisible = setup || current != null
         startButton.setText(if (setup) "Start" else "Reopen")
         startButton.isDisabled = loading || setup && !canStartMatch()
-        if (setup) startButton.setBounds(666f, 76f, 148f, 40f)
+        if (setup) startButton.setBounds(sxOff + 666f, syOff + 76f, 148f, 40f)
         exitButton.isVisible = loading || current != null
         exitButton.setText(if (loading) "Cancel" else "Return")
-        if (loading) exitButton.setBounds(406f, 76f, 148f, 40f)
+        if (loading) exitButton.setBounds(sxOff + 406f, syOff + 76f, 148f, 40f)
         packTab.isVisible = setup || home
-        packTab.setBounds(if (home) 346f else 298f, if (home) 305f else 76f, if (home) 268f else 112f, 40f)
+        packTab.setBounds(sxOff + (if (home) 346f else 290f), syOff + (if (home) 305f else 76f), if (home) 268f else 108f, 40f)
         visualsTab.isVisible = (setup || home) && visualPanel != null
-        visualsTab.setBounds(if (home) 346f else 422f, if (home) 251f else 76f, if (home) 268f else 110f, 40f)
+        visualsTab.setBounds(sxOff + (if (home) 346f else 404f), syOff + (if (home) 251f else 76f), if (home) 268f else 108f, 40f)
+        skirmishMapTab.isVisible = setup
+        skirmishMapTab.setBounds(sxOff + (if (retryContentButton.isVisible) 326f else 178f), syOff + 174f, 114f, 34f)
         testSceneTab.isVisible = (setup || home) && development && testScenarioSeed != null && !touchControls
-        testSceneTab.setBounds(if (home) 346f else 544f, if (home) 132f else 76f, if (home) 268f else 110f, 40f)
+        testSceneTab.setBounds(sxOff + (if (home) 346f else 520f), syOff + (if (home) 132f else 76f), if (home) 268f else 118f, 40f)
+        skirmishMapPanel?.let {
+            it.isVisible = managing && startupPage == StartupPage.MAPS
+            if (it.isVisible) it.refresh()
+        }
         testScenePanel?.let {
             it.isVisible = managing && startupPage == StartupPage.DEVELOPMENT
             it.setEditable(launch.canEdit && !loading)
@@ -1874,18 +2543,128 @@ class BootstrapScreen(
             state.preparationStatus != null -> state.preparationStatus
             loadError != null -> if (visualRecoveryFailed) "Visual cache failed. Reopen or exit match to prepare again." else "Load failed"
             current == null -> "Ready"
-            nativePanel -> current.playerFeedback
+            nativePanel -> if (matchStartupNotices.isNotEmpty() && (current.playerFeedback.isBlank() || current.playerFeedback == "Ready")) "! " + matchStartupNotices.joinToString(" | ") else current.playerFeedback
             else -> "${current.feedback}\nStep ${current.observation.stepIndex}"
         })
         minimapActor.isVisible = current != null
-        val ownerHeading = menu?.let { desktopPrimaryHeading(it, state.selected, state.selectedIds) }
-        battleActions.update(current?.selectedId, ownerHeading,
-            if (current != null && !touchControls && !paused) menu?.battleActions().orEmpty() else emptyList())
-        if (current != null && !touchControls) {
+        val hudSnap = current?.let {
+            HudSidebarProjection.project(
+                session = it,
+                menuOpen = hudMenuOpen,
+                simPaused = stepClock.isPaused,
+                activeRate = stepClock.rate,
+            )
+        }
+        lastHudSnapshot = hudSnap
+        val worldW = graphics?.projection?.worldWidth ?: 1000.0
+        val worldH = graphics?.projection?.worldHeight ?: 1000.0
+
+        // First compute pre-actions layout so BattleActionList anchors flush beneath queue/card inside 232px rail
+        hudEvents.setCameraFollowing(scriptedCamera?.followsUnit == true)
+        hudOverlay.update(
+            stageWidth = viewport.worldWidth,
+            stageHeight = viewport.worldHeight,
+            worldWidth = worldW,
+            worldHeight = worldH,
+            hudSnapshot = hudSnap,
+            eventStream = hudEvents,
+            externalActionsHeight = 0f,
+        )
+        val railLayout = hudOverlay.layout
+        // Keep legacy BattleActionList empty/hidden now that HudActionPanel owns the action list
+        battleActions.update(null, null, emptyList())
+        val actionListSnap = if (current != null && !paused) {
+            HudActionProjection.projectActionList(
+                session = current,
+                activeConstructionTypeId = mapInput.constructionTypeId,
+                reclaimMode = mapInput.reclaimMode,
+                repairMode = mapInput.repairMode,
+                patrolMode = mapInput.patrolMode,
+                activeGroundActionName = mapInput.groundActionName,
+                touchControls = touchControls,
+            )
+        } else null
+        val targetModeCard = if (current != null && !paused && !hudMenuOpen && !stepClock.isPaused) {
+            HudActionProjection.projectTargetModeCard(
+                session = current,
+                constructionTypeId = mapInput.constructionTypeId,
+                constructionPreview = mapInput.constructionPreview,
+                reclaimMode = mapInput.reclaimMode,
+                repairMode = mapInput.repairMode,
+                patrolMode = mapInput.patrolMode,
+                patrolPointCount = mapInput.patrolPointCount,
+                groundActionName = mapInput.groundActionName,
+                groundActionPreview = mapInput.groundActionPreview,
+                sandboxPick = mapInput.sandboxPick,
+                touchControls = touchControls,
+            )
+        } else null
+        val effectiveHudSnap = hudSnap?.copy(showActionsSection = actionListSnap != null && !actionListSnap.isEmpty)
+        hudActionPanel.update(
+            stageWidth = viewport.worldWidth,
+            stageHeight = viewport.worldHeight,
+            sidebarLeft = railLayout.sidebarLeft,
+            actionsTopY = railLayout.actionsTopY,
+            sidebarWidth = railLayout.sidebarWidth,
+            actionsMaxHeight = railLayout.actionsMaxHeight,
+            actionSnapshot = actionListSnap,
+            targetModeCard = targetModeCard,
+            primaryUnitId = current?.selectedId,
+            language = UiStrings.currentLanguage,
+        )
+        hudGroupBar.update(
+            visible = current != null && !paused && !hudMenuOpen && !stepClock.isPaused,
+            joystickVisible = cameraJoystickActive(),
+            countOf = { idx -> current?.groupCount(idx) ?: 0 },
+            lang = UiStrings.currentLanguage,
+        )
+        val showTouchDebugBtn = development && touchControls && current != null
+        val debugOpen = development && debugLayerState.enabled && current != null
+        // Update debug overlay first so we know its leftColumnBottomY for notice shift
+        refreshDebugOverlay(current)
+        val noticesBelowY = if (debugOpen && ::hudDebugOverlay.isInitialized) hudDebugOverlay.leftColumnBottomY else null
+        // Re-sync hudOverlay with actual HudActionPanel occupied height so sidebarBottom shrink-wraps accurately
+        hudOverlay.update(
+            stageWidth = viewport.worldWidth,
+            stageHeight = viewport.worldHeight,
+            worldWidth = worldW,
+            worldHeight = worldH,
+            hudSnapshot = effectiveHudSnap,
+            eventStream = hudEvents,
+            externalActionsHeight = hudActionPanel.occupiedHeight,
+            showTouchDebugButton = showTouchDebugBtn,
+            debugLayerEnabled = debugOpen,
+            noticesStartBelowY = noticesBelowY,
+        )
+        if (current != null) {
+            if (hudMenuOpen || stepClock.isPaused) {
+                hudOverlay.toFront()
+            } else {
+                minimapActor.toFront()
+                if (::hudDebugOverlay.isInitialized && debugOpen) hudDebugOverlay.toFront()
+                hudGroupBar.toFront()
+                hudActionPanel.toFront()
+                if (showConsole && ::hudConsole.isInitialized) {
+                    hudConsole.toFront()
+                }
+            }
+        }
+
+        if (current != null) {
+            // Hide legacy match chrome replaced by InGameHudOverlay on both desktop and touch (HUD Spec §4, §5, §12.1)
+            titleLabel.isVisible = false
+            productionLabel.isVisible = false
+            productionNoticeLabel.isVisible = false
+            statusLabel.isVisible = false
+            patrolLabel.isVisible = false
+            startButton.isVisible = false
+            exitButton.isVisible = false
             produceButton.isVisible = false
             cancelProductionButton.isVisible = false
             productionLayer.isVisible = false
+            productionScroll.isVisible = false
             constructionLayer.isVisible = false
+            constructionScroll.isVisible = false
             reclaimCard.isVisible = false
             repairCard.isVisible = false
             economicUpgradeCard.isVisible = false
@@ -1896,19 +2675,41 @@ class BootstrapScreen(
             nativeInfo.isVisible = false
             selectedLabel.isVisible = false
             selectionHeading.isVisible = false
-            stopButton.setBounds(752f, 68f, 84f, 36f)
-            patrolButton.setBounds(844f, 68f, 92f, 36f)
-            startButton.setBounds(752f, 20f, 84f, 36f)
-            exitButton.setBounds(844f, 20f, 92f, 36f)
+            stopButton.isVisible = false
+            patrolButton.isVisible = false
+            groupButtons.forEach { it.isVisible = false }
         } else {
             productionLayer.isVisible = true
             constructionLayer.isVisible = true
         }
     }
 
+    private fun refreshDebugOverlay(current: SandboxSession?) {
+        if (!::hudDebugOverlay.isInitialized) return
+        if (!development || !debugLayerState.enabled || current == null || !current.isOpen) {
+            hudDebugOverlay.update(viewport.worldWidth, viewport.worldHeight, hudOverlay.layout.systemBarRect.y, null)
+            return
+        }
+        val metrics = HudDebugFrameMetrics(
+            fps = Gdx.graphics?.framesPerSecond ?: 0,
+            frameMs = lastFrameMs,
+            maxFrameMs = maxFrameMsWindow,
+            rateMultiplier = stepClock.rate.multiplier,
+            actualMultiplier = if (paused) 0.0 else stepClock.actualMultiplier,
+            backlogSteps = lastPacingFrame.pendingSteps.toLong(),
+            mapId = activeMapId,
+            cursorWorld = lastCursorWorld,
+        )
+        val snap = HudDebugProjection.project(current, graphics?.projection, debugLayerState, metrics, viewport.worldWidth)
+        hudDebugOverlay.update(viewport.worldWidth, viewport.worldHeight, hudOverlay.layout.systemBarRect.y, snap)
+    }
+
     private fun battlefieldAt(screenX: Int, screenY: Int): Boolean {
         val point = stage.screenToStageCoordinates(Vector2(screenX.toFloat(), screenY.toFloat()))
-        if (battleActions.containsPoint(point.x, point.y)) return false
+        if (::hudOverlay.isInitialized && hudOverlay.containsHudPoint(point.x, point.y)) return false
+        if (::hudActionPanel.isInitialized && (hudActionPanel.containsPoint(point.x, point.y) || hudActionPanel.isPointInTouchPreviewCard(point.x, point.y))) return false
+        if (::hudGroupBar.isInitialized && hudGroupBar.containsPoint(point.x, point.y)) return false
+        if (::hudConsole.isInitialized && hudConsole.containsPoint(point.x, point.y)) return false
         val hit = stage.hit(point.x, point.y, true)
         return hit == null || hit === stage.root
     }
@@ -1923,13 +2724,30 @@ class BootstrapScreen(
 
     override fun resize(width: Int, height: Int) {
         cancelInput()
-        viewport.update(width, height, true)
-        if (!touchControls && width > 0 && height > 0) {
-            battlefieldCamera.setToOrtho(false, viewport.worldHeight * width / height, viewport.worldHeight)
-            graphics?.projection?.resizeBattlefield(battlefieldWidth.toDouble())
+        if (width > 0 && height > 0) {
+            val ppc = Gdx.graphics?.ppcY?.takeIf { it > 0f } ?: 0f
+            val ppi = Gdx.graphics?.ppiY?.takeIf { it > 0f } ?: 0f
+            uiMetrics = UiScale.metricsFromDensity(width, height, touchControls, ppc, ppi)
+            viewport.unitsPerPixel = 1f / uiMetrics.scale
+            viewport.update(width, height, true)
+            battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
+            graphics?.projection?.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
+            fontDebouncer.onScaleChanged(uiMetrics.scale)
+        } else {
+            viewport.update(width, height, true)
         }
-        evidence.record("resize", mapOf("width" to width, "height" to height, "screenX" to viewport.screenX,
-            "screenY" to viewport.screenY, "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
+        graphics?.let { g ->
+            g.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)
+            syncMinimapActorBounds(g)
+        }
+        if (presentationReady) {
+            lastHudState = null
+            updateHud()
+        }
+        evidence.record("resize", mapOf("width" to width, "height" to height,
+            "uiScale" to uiMetrics.scale, "logicalWidth" to uiMetrics.logicalWidth, "logicalHeight" to uiMetrics.logicalHeight,
+            "screenX" to viewport.screenX, "screenY" to viewport.screenY,
+            "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight))
     }
     override fun pause() {
         if (disposed) return
@@ -1966,10 +2784,19 @@ class BootstrapScreen(
         if (touchControls && !presentationReady) {
             try {
                 createPresentation()
-                graphics = session?.let { SandboxGraphics.load(activeVisuals?.let(it.renderResources::withVisuals)
-                    ?: it.renderResources, activeRoot, fullBattlefield = !touchControls) }
-                graphics?.projection?.let { map ->
-                    map.resizeBattlefield(battlefieldWidth.toDouble())
+                graphics = session?.let {
+                    val origRoot = TmxSkirmishScenarioBuilder.tilesetFallbackRoots(
+                        visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                    ).firstOrNull()
+                    val bound = activeVisuals?.let { v -> it.renderResources.bindVisuals(v, originalTilesetRoot = origRoot) }
+                        ?: it.renderResources.resolveTileAtlases(null, origRoot)
+                    SandboxGraphics.load(bound, activeRoot, fullBattlefield = true)
+                }
+                graphics?.let { g ->
+                    g.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)
+                    syncMinimapActorBounds(g)
+                    val map = g.projection
+                    map.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
                     suspendedCamera?.let(map::restoreCamera)
                     scriptedCamera?.rebind(map)
                 }
@@ -2014,8 +2841,14 @@ class BootstrapScreen(
     private fun cameraJoystickActive() =
         touchControls && !paused && session?.options?.cameraJoystickEnabled == true
 
+    private fun takeOverCamera(reason: String) {
+        scriptedCamera?.takeOver(reason)
+        hudEvents.setCameraFollowing(scriptedCamera?.followsUnit == true)
+        if (::hudOverlay.isInitialized) hudOverlay.syncEventStream(hudEvents)
+    }
+
     private fun takeCameraFromJoystick() {
-        if (cameraJoystick.steering) scriptedCamera?.takeOver("joystick")
+        if (cameraJoystick.steering) takeOverCamera("joystick")
     }
 
     private fun clearCameraJoystick(event: String, systemPointer: Int? = null) {
@@ -2039,13 +2872,26 @@ class BootstrapScreen(
         val x = area.x + radius
         val y = area.y + radius
         val direction = cameraJoystick.direction
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
         shapes.begin(ShapeRenderer.ShapeType.Filled)
-        shapes.color = Color.DARK_GRAY
-        shapes.circle(x, y, radius, 32)
-        shapes.color = Color.LIGHT_GRAY
-        shapes.circle(x + direction.x.toFloat() * radius * .64f,
-            y + direction.y.toFloat() * radius * .64f, radius * .26f, 24)
+        shapes.setColor(UiTokens.RAIL.r, UiTokens.RAIL.g, UiTokens.RAIL.b, 0.45f)
+        shapes.circle(x, y, radius, 40)
+        shapes.setColor(0.788f, 0.820f, 0.835f, 0.55f)
+        shapes.circle(x + direction.x.toFloat() * radius * .58f,
+            y + direction.y.toFloat() * radius * .58f, radius * .35f, 28)
         shapes.end()
+        shapes.begin(ShapeRenderer.ShapeType.Line)
+        shapes.setColor(UiTokens.LINE.r, UiTokens.LINE.g, UiTokens.LINE.b, 0.90f)
+        shapes.circle(x, y, radius, 40)
+        shapes.end()
+        Gdx.gl.glDisable(GL20.GL_BLEND)
+    }
+
+    private fun syncMinimapActorBounds(g: SandboxGraphics) {
+        if (!::minimapActor.isInitialized) return
+        val area = g.minimap.area
+        minimapActor.setBounds(area.left.toFloat(), area.bottom.toFloat(), area.width.toFloat(), area.height.toFloat())
     }
 
     private fun releasePresentation() {
@@ -2054,7 +2900,15 @@ class BootstrapScreen(
         presentationReady = false
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
-        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { stage.dispose() }, { skin.dispose() },
+        val closingCommandIcons = commandIcons; commandIcons = null
+        val closingFonts = fontSet; fontSet = null
+        val closingFallback = fallbackFont; fallbackFont = null
+        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { closingCommandIcons?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { skirmishMapPanel?.close() }, { stage.dispose() }, {
+            if (::skin.isInitialized && skin.has("default-font", BitmapFont::class.java)) {
+                skin.remove("default-font", BitmapFont::class.java)
+            }
+            skin.dispose()
+        }, { closingFonts?.close() }, { closingFallback?.dispose() },
             { shapes.dispose() }, { batch.dispose() }).forEach { cleanup ->
             try { cleanup() } catch (failure: Exception) {
                 evidence.recordFailure("cleanup-error", failure)
@@ -2080,6 +2934,10 @@ class BootstrapScreen(
         factoryUpgradeHover = null
         if (::economicUpgradeInput.isInitialized) economicUpgradeInput.cancel()
         if (::nativeTooltip.isInitialized) nativeTooltip.isVisible = false
+        f3Held = false
+        f3ComboUsed = false
+        if (::hudGroupBar.isInitialized) hudGroupBar.cancelHold()
+        if (::hudActionPanel.isInitialized) hudActionPanel.clearTouchPreview()
         if (::mapInput.isInitialized) mapInput.cancel()
         if (::stage.isInitialized) { stage.cancelTouchFocus(); stage.unfocusAll() }
     }

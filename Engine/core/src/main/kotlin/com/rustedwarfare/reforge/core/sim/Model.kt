@@ -193,7 +193,7 @@ data class UnitActionsObservation(val actions: List<UnitActionObservation>, val 
 
 data class TransportObservation(val passengerIds: List<String>?, val passengerCount: Int,
     val occupiedSlots: Int, val capacity: Int, val unloading: Boolean, val unloadRemaining: Float?,
-    val canUnload: Boolean = false)
+    val canUnload: Boolean = false, val passengerTypeIds: List<String> = emptyList())
 
 data class TransportExitObservation(val previousCarrierId: String, val remaining: Float)
 
@@ -433,31 +433,8 @@ internal data class MutableUnit(
     var speed: Double = 0.0,
     /** Retained steering-rate state; an idle unit does not integrate it into heading. */
     var angularVelocity: Double = 0.0,
-    var moveTarget: Position? = null,
-    var nearestMoveTarget: Position? = null,
-    var nearestMoveIsGroup: Boolean = false,
-    var moveArrival: MoveArrival? = null,
-    var pathPoints: MutableList<Position> = mutableListOf(),
+    var nav: UnitNavigationState = UnitNavigationState.EMPTY,
     var movementState: MovementState = MovementState.IDLE,
-    var originMoveId: String? = null,
-    var originAtStep: Long? = null,
-    var lastPlannedKnowledgeRevision: Long = -1L,
-    var lastPlannedBuildingRevision: Long = -1L,
-    var nearTargetTime: Double = 0.0,
-    var localMotion: LocalMotionSegment? = null,
-    var routeContinuation: RouteContinuation? = null,
-    var stalledRouteTicks: Long = 0,
-    var hardContactLimitedTicks: Long = 0,
-    var routeTranslationClipped: Boolean = false,
-    var followsManeuverRoute: Boolean = false,
-    var maneuverTurnWaypoint: Position? = null,
-    var lastManeuverContactRepair: Long? = null,
-    var routeOccupantIds: List<String> = emptyList(),
-    var passageEntry: PassageEntry? = null,
-    var groupMoveReservation: GroupMoveReservation? = null,
-    var localProgressTime: Double = 0.0,
-    var terrainCorrectionTime: Double = 0.0,
-    var terrainClearSteps: Int = 0,
     var health: Double? = definition.maximumHealth,
     var shield: Float = definition.shield?.takeUnless { it.startAtZero }?.maximum ?: 0f,
     var shieldDisplayDamage: Float = 0f,
@@ -543,6 +520,93 @@ internal data class MutableUnit(
     var spiderBlink: SpiderBlink? = null,
     var destroyedWithoutHealth: Boolean = false,
 ) {
+    var moveTarget: Position?
+        get() = nav.moveTarget
+        set(value) { if (nav.moveTarget != value) nav = nav.copy(moveTarget = value) }
+    var nearestMoveTarget: Position?
+        get() = nav.nearestMoveTarget
+        set(value) { if (nav.nearestMoveTarget != value) nav = nav.copy(nearestMoveTarget = value) }
+    var nearestMoveIsGroup: Boolean
+        get() = nav.nearestMoveIsGroup
+        set(value) { if (nav.nearestMoveIsGroup != value) nav = nav.copy(nearestMoveIsGroup = value) }
+    var moveArrival: MoveArrival?
+        get() = nav.moveArrival
+        set(value) { if (nav.moveArrival != value) nav = nav.copy(moveArrival = value) }
+    var pathPoints: List<Position>
+        get() = nav.pathPoints
+        set(value) { nav = nav.withPathPoints(value) }
+    var originMoveId: String?
+        get() = nav.originMoveId
+        set(value) { if (nav.originMoveId != value) nav = nav.copy(originMoveId = value) }
+    var originAtStep: Long?
+        get() = nav.originAtStep
+        set(value) { if (nav.originAtStep != value) nav = nav.copy(originAtStep = value) }
+    var lastPlannedKnowledgeRevision: Long
+        get() = nav.lastPlannedKnowledgeRevision
+        set(value) { if (nav.lastPlannedKnowledgeRevision != value) nav = nav.copy(lastPlannedKnowledgeRevision = value) }
+    var lastPlannedBuildingRevision: Long
+        get() = nav.lastPlannedBuildingRevision
+        set(value) { if (nav.lastPlannedBuildingRevision != value) nav = nav.copy(lastPlannedBuildingRevision = value) }
+    var nearTargetTime: Double
+        get() = nav.nearTargetTime
+        set(value) { if (nav.nearTargetTime != value) nav = nav.copy(nearTargetTime = value) }
+    var localMotion: LocalMotionSegment?
+        get() = nav.localMotion
+        set(value) { if (nav.localMotion != value) nav = nav.copy(localMotion = value) }
+    var routeContinuation: RouteContinuation?
+        get() = nav.routeContinuation
+        set(value) { if (nav.routeContinuation != value) nav = nav.copy(routeContinuation = value) }
+    var stalledRouteTicks: Long
+        get() = nav.stalledRouteTicks
+        set(value) { if (nav.stalledRouteTicks != value) nav = nav.copy(stalledRouteTicks = value) }
+    var hardContactLimitedTicks: Long
+        get() = nav.hardContactLimitedTicks
+        set(value) { if (nav.hardContactLimitedTicks != value) nav = nav.copy(hardContactLimitedTicks = value) }
+    var routeTranslationClipped: Boolean
+        get() = nav.routeTranslationClipped
+        set(value) { if (nav.routeTranslationClipped != value) nav = nav.copy(routeTranslationClipped = value) }
+    var followsManeuverRoute: Boolean
+        get() = nav.followsManeuverRoute
+        set(value) { if (nav.followsManeuverRoute != value) nav = nav.copy(followsManeuverRoute = value) }
+    var maneuverTurnWaypoint: Position?
+        get() = nav.maneuverTurnWaypoint
+        set(value) { if (nav.maneuverTurnWaypoint != value) nav = nav.copy(maneuverTurnWaypoint = value) }
+    var lastManeuverContactRepair: Long?
+        get() = nav.lastManeuverContactRepair
+        set(value) { if (nav.lastManeuverContactRepair != value) nav = nav.copy(lastManeuverContactRepair = value) }
+    var routeOccupantIds: List<String>
+        get() = nav.routeOccupantIds
+        set(value) { nav = nav.withRouteOccupantIds(value) }
+    var passageEntry: PassageEntry?
+        get() = nav.passageEntry
+        set(value) { if (nav.passageEntry != value) nav = nav.copy(passageEntry = value) }
+    var groupMoveReservation: GroupMoveReservation?
+        get() = nav.groupMoveReservation
+        set(value) { nav = nav.withGroupMoveReservation(value) }
+    var parkedReservationOwner: GroupMoveRequest?
+        get() = nav.parkedReservationOwner
+        set(value) { nav = nav.withParkedReservationOwner(value) }
+    var indexedLandingBody: LandingOccupancy.IndexedBody?
+        get() = nav.indexedLandingBody
+        set(value) { if (nav.indexedLandingBody !== value) nav = nav.copy(indexedLandingBody = value) }
+    var landingMember: LandingMember?
+        get() = nav.landingMember
+        set(value) { nav = nav.withLandingMember(value) }
+    var lastRoadProgress: RoadProgress?
+        get() = nav.lastRoadProgress
+        set(value) { if (nav.lastRoadProgress != value) nav = nav.copy(lastRoadProgress = value) }
+    var adoptedRouteRevision: Long
+        get() = nav.adoptedRouteRevision
+        set(value) { if (nav.adoptedRouteRevision != value) nav = nav.copy(adoptedRouteRevision = value) }
+    var localProgressTime: Double
+        get() = nav.localProgressTime
+        set(value) { if (nav.localProgressTime != value) nav = nav.copy(localProgressTime = value) }
+    var terrainCorrectionTime: Double
+        get() = nav.terrainCorrectionTime
+        set(value) { if (nav.terrainCorrectionTime != value) nav = nav.copy(terrainCorrectionTime = value) }
+    var terrainClearSteps: Int
+        get() = nav.terrainClearSteps
+        set(value) { if (nav.terrainClearSteps != value) nav = nav.copy(terrainClearSteps = value) }
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
     val alive: Boolean get() = !destroyedWithoutHealth && (deathPending || health == null || checkNotNull(health) > 0.0)
@@ -577,10 +641,7 @@ internal data class MutableUnit(
 
     /** No usable physical route; a still-active logical approach may remain. */
     fun pauseRoute() {
-        moveTarget = null
-        pathPoints.clear()
-        passageEntry = null
-        clearMoveOrigin()
+        nav = nav.pauseRoute()
         movementState = if (speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
     }
 
@@ -589,17 +650,7 @@ internal data class MutableUnit(
                    occupantIds: List<String> = emptyList()) {
         recordLogicalTarget(logicalTarget)
         pendingPathNodeCounts = immutable(pendingPathNodeCounts + points.size)
-        pathPoints = points.toMutableList()
-        localMotion = null
-        routeContinuation = null
-        stalledRouteTicks = 0
-        hardContactLimitedTicks = 0
-        routeTranslationClipped = false
-        maneuverTurnWaypoint = null
-        routeOccupantIds = occupantIds
-        localProgressTime = 0.0
-        lastPlannedKnowledgeRevision = knowledgeRevision
-        lastPlannedBuildingRevision = buildingRevision
+        nav = nav.adoptRoute(points, knowledgeRevision, buildingRevision, occupantIds)
         movementState = MovementState.MOVING
     }
 
@@ -634,24 +685,7 @@ internal data class MutableUnit(
     }
 
     fun clearMoveOrigin() {
-        nearestMoveTarget = null
-        nearestMoveIsGroup = false
-        originMoveId = null
-        originAtStep = null
-        groupMoveReservation = null
-        lastPlannedKnowledgeRevision = -1L
-        lastPlannedBuildingRevision = -1L
-        nearTargetTime = 0.0
-        localMotion = null
-        routeContinuation = null
-        stalledRouteTicks = 0
-        hardContactLimitedTicks = 0
-        routeTranslationClipped = false
-        followsManeuverRoute = false
-        maneuverTurnWaypoint = null
-        lastManeuverContactRepair = null
-        routeOccupantIds = emptyList()
-        localProgressTime = 0.0
+        nav = nav.clearMoveOrigin()
     }
 }
 

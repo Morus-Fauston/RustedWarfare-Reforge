@@ -63,7 +63,11 @@ class HeavyMechTransactionTest {
             assertTrue(advanced.mechPose!!.legs.any { it.height > .1 })
             assertEquals(before.units.single { it.unitId == "heavy" }.position, Position(110.0, 350.0))
             assertEquals(contexts[1].drainMotionDiagnostics(contexts[1].world), failed.drainMotionDiagnostics(failed.world))
-            assertEquals(contexts[1].drainPathDiagnostics(contexts[1].world), failed.drainPathDiagnostics(failed.world))
+            val expectedSearches = contexts[1].drainPathDiagnostics(contexts[1].world)
+            val actualSearches = failed.drainPathDiagnostics(failed.world)
+            assertTrue(expectedSearches.isNotEmpty())
+            assertEquals(expectedSearches.map { it.copy(inputPreparationNanos = 0, searchNanos = 0) },
+                actualSearches.map { it.copy(inputPreparationNanos = 0, searchNanos = 0) })
         } finally { contexts.forEach { it.close() } }
     }
 }

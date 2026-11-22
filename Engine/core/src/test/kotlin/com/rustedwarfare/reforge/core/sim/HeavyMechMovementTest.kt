@@ -35,10 +35,10 @@ class HeavyMechMovementTest {
             val sealed = assertIs<ActionResult.Accepted>(context.submit(
                 MoveAction("known-wall", "p1", "heavy", Position(600.0, 200.0), context.world)))
             assertTrue(sealed.events.isEmpty())
-            val unreachable = context.advanceToMoveOutcome(0, "heavy")
-            assertTrue(Event("path-unreachable", "heavy") in unreachable.events)
-            assertNull(unreachable.units.single().moveTarget)
-            assertEquals(Position(200.0, 200.0), unreachable.units.single().position)
+            val routed = context.advanceToMoveOutcome(0, "heavy")
+            val endpoint = assertNotNull(routed.units.single().moveTarget)
+            assertTrue(endpoint.x in 200.0..<300.0, endpoint.toString())
+            assertTrue(routed.units.single().pathPoints.all { it.x < 300.0 })
         } finally { context.close(); open.close() }
     }
 

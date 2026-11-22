@@ -37,14 +37,16 @@ internal data class PassageOpening(val horizontal: Boolean, val outward: Int, va
 internal data class PassageCrossing(val fraction: Double, val inbound: Boolean)
 
 internal class NarrowPassage(val cells: Set<PassageCell>, val mouths: List<PassageOpening>,
-                             val width: Double, private val tileWidth: Int, private val tileHeight: Int) {
-    private val identity = cells.hashCode() * 31 + mouths.hashCode()
+                             val width: Double, private val tileWidth: Int, private val tileHeight: Int, cellHash: Int = cells.hashCode()) {
+    private val identity = cellHash * 31 + mouths.hashCode()
 
     override fun hashCode(): Int = identity
 
     override fun equals(other: Any?): Boolean =
-        other is NarrowPassage && identity == other.identity && cells == other.cells && mouths == other.mouths &&
+        this === other || other is NarrowPassage && identity == other.identity && cells == other.cells && mouths == other.mouths &&
             width == other.width && tileWidth == other.tileWidth && tileHeight == other.tileHeight
+
+    fun contains(column: Int, row: Int): Boolean = PassageCell(column, row) in cells
 
     fun overlaps(position: Position, halfX: Double, halfY: Double): Boolean {
         val firstColumn = kotlin.math.floor((position.x - halfX) / tileWidth).toInt()
@@ -84,17 +86,20 @@ internal class NarrowPassage(val cells: Set<PassageCell>, val mouths: List<Passa
 internal class KnownPassages(private val twoHullWidth: Double) {
     private data class Face(val horizontal: Boolean, val outward: Int, val plane: Int)
     private val bay = HashMap<PassageCell, Boolean>()
-    private val passages = HashMap<PassageCell, NarrowPassage?>()
+    class Tile(val passage: NarrowPassage? = null, val wideBay: Boolean = false)
+    private val wide = Tile(wideBay = true)
+    private val noGate = Tile()
+    private val passages = HashMap<PassageCell, Tile>()
 
-    fun at(terrain: PlanningTerrain, point: Position): NarrowPassage? {
-        if (point.x < 0.0 || point.y < 0.0 || point.x >= terrain.widthTiles.toDouble() * terrain.tileWidth ||
-            point.y >= terrain.heightTiles.toDouble() * terrain.tileHeight) return null
-        val cell = PassageCell((point.x / terrain.tileWidth).toInt(), (point.y / terrain.tileHeight).toInt())
-        if (passages.containsKey(cell)) return passages[cell]
-        if (!open(terrain, cell) || isBay(terrain, cell)) {
-            passages[cell] = null
-            return null
-        }
+    fun at(terrain: PlanningTerrain, point: Position): NarrowPassage? = tileAt(terrain,
+        kotlin.math.floor(point.x / terrain.tileWidth).toInt(), kotlin.math.floor(point.y / terrain.tileHeight).toInt()).passage
+
+    fun tileAt(terrain: PlanningTerrain, column: Int, row: Int): Tile {
+        if (column !in 0 until terrain.widthTiles || row !in 0 until terrain.heightTiles) return noGate
+        val cell = PassageCell(column, row)
+        passages[cell]?.let { return it }
+        if (!open(terrain, cell)) return noGate.also { passages[cell] = it }
+        if (isBay(terrain, cell)) return wide.also { passages[cell] = it }
         val visited = linkedSetOf(cell)
         val pending = ArrayDeque<PassageCell>()
         val boundary = linkedMapOf<Face, MutableList<Int>>()
@@ -114,8 +119,9 @@ internal class KnownPassages(private val twoHullWidth: Double) {
         val mouths = openings(terrain, boundary)
         val passage = if (mouths.size == 2) NarrowPassage(visited, mouths,
             visited.minOf { maximumSquare(terrain, it) }, terrain.tileWidth, terrain.tileHeight) else null
-        for (known in visited) passages[known] = passage
-        return passage
+        val result = passage?.let { Tile(it) } ?: noGate
+        for (known in visited) passages[known] = result
+        return result
     }
 
     private fun isBay(terrain: PlanningTerrain, cell: PassageCell): Boolean =

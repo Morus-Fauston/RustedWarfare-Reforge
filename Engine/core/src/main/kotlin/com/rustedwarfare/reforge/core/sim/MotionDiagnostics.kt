@@ -17,6 +17,9 @@ data class MotionStepSample(
     val unitContactLimited: Boolean,
     val hardContactLimitedTicks: Long = 0,
     val pushedDisplacement: Position = Position(0.0, 0.0),
+    val landingClaim: Position? = null,
+    val landingIngress: Position? = null,
+    val landingParked: Boolean = false,
 )
 
 class MotionDiagnosticsException(val code: String, message: String) : IllegalStateException(message)

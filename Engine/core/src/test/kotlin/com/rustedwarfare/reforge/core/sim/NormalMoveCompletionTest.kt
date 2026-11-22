@@ -8,11 +8,11 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 
 class NormalMoveCompletionTest {
-    private fun context(heading: Double = 90.0, maximumSpeed: Double = 1.1): SimulationContext {
+    private fun context(heading: Double = 90.0, acceleration: Double = 0.07): SimulationContext {
         val source = TestContentFactory.openScenario()
         val original = source.unitDefinitions.getValue("tank")
         val unit = TestContentFactory.unitWith(original, movement = original.movement.copy(
-            moveSpeed = maximumSpeed, moveAccelerationSpeed = 0.07, moveDecelerationSpeed = 0.17))
+            moveSpeed = 1.1, moveAccelerationSpeed = acceleration, moveDecelerationSpeed = 0.17))
         return assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
             map = MapDefinition(30, 20, 20, 20, emptyList(), IntArray(600), BlockingGrid(30, 20, BooleanArray(600))),
             unitDefinitions = mapOf("tank" to unit),
@@ -44,7 +44,7 @@ class NormalMoveCompletionTest {
     }
 
     @Test
-    fun normal_clear_keeps_inertia_and_integrates_the_updated_proportion() {
+    fun normal_arrival_stops_at_the_captured_pose_in_the_same_step() {
         val context = context()
         try {
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("warm", "p1", "u1", Position(500.0, 100.0), context.world)))
@@ -55,9 +55,10 @@ class NormalMoveCompletionTest {
             val observation = context.advance(Step(10, 1.0, "sim-tick"))
             val after = observation.units.single()
             assertEquals(null, after.moveTarget)
-            assertEquals(0.583, after.speed, 1e-12)
-            assertEquals(before.position.x + 0.583, after.position.x, 1e-12)
-            assertEquals(MovementState.DECELERATING, after.movementState)
+            assertEquals(0.0, after.speed)
+            assertEquals(0.0, after.angularVelocity)
+            assertEquals(before.position, after.position)
+            assertEquals(MovementState.IDLE, after.movementState)
             assertEquals(listOf("movement-started", "movement-arrived"), observation.events.map { it.kind })
         } finally { context.close() }
     }
@@ -65,7 +66,7 @@ class NormalMoveCompletionTest {
     @Test
     fun near_target_time_is_accumulated_before_the_strict_long_wait_boundaries() {
         for ((distance, lastActiveQ) in listOf(15.0 to 240, 35.0 to 340)) {
-            val context = context(maximumSpeed = 0.0)
+            val context = context(acceleration = 0.0)
             try {
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("wait", "p1", "u1",
                     Position(100.0 + distance, 100.0), context.world)))
@@ -77,7 +78,7 @@ class NormalMoveCompletionTest {
                 assertEquals(listOf("movement-arrived"), completed.events.map { it.kind })
             } finally { context.close() }
         }
-        val far = context(maximumSpeed = 0.0)
+        val far = context(acceleration = 0.0)
         try {
             assertIs<ActionResult.Accepted>(far.submit(MoveAction("far", "p1", "u1", Position(150.0, 100.0), far.world)))
             repeat(400) { far.advance(Step(it.toLong(), 1.0, "sim-tick")) }

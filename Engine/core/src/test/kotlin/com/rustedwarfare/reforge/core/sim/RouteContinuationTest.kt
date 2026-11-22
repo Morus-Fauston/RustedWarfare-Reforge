@@ -3,14 +3,103 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.content.UnitDefinition
+import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import com.rustedwarfare.reforge.core.path.PathSearchOutcome
 import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class RouteContinuationTest {
+    @Test
+    fun contact_repair_rechecks_live_orders_before_stopping_a_long_stalled_move() =
+        WaterTestScene.withCorridor(dryBarrier = false) { map ->
+            val definition = WaterTestScene.unit(MovementType.WATER)
+            val target = Position(10.0, 30.0)
+            val start = Position(10.0, 82.0)
+            val follower = MutableUnit("follower", "p1", definition.id, definition, start, 0.0).apply {
+                stalledRouteTicks = 480L
+                moveTarget = target
+                pathPoints = mutableListOf(target)
+                taskQueue = taskQueue.append(UnitTask(UnitTaskKind.MOVE, "follow", target))
+            }
+            val leader = MutableUnit("leader", "p1", definition.id, definition, Position(10.0, 70.0), 0.0).apply {
+                stalledRouteTicks = 480L
+                taskQueue = taskQueue.append(UnitTask(UnitTaskKind.MOVE, "lead", Position(10.0, 22.0)))
+            }
+            fun commandLeader(id: String, goal: Position) {
+                leader.moveTarget = goal
+                leader.pathPoints = mutableListOf(goal)
+                leader.taskQueue = leader.taskQueue.replaceHead(UnitTask(UnitTaskKind.MOVE, id, goal))
+            }
+            fun pose(unit: MutableUnit) = MovePlanningPose(
+                unit.position, unit.heading, ContactLayer.SURFACE, definition.movementCollision)
+            val action = MoveAction("follow", "p1", follower.unitId, target, WorldHandle("contact-repair"))
+            val terrain = PlanningTerrain.fromNoFog(map, MovementType.WATER)
+            val member = MovePlanningMember(action, follower, pose(follower), start, definition.radius,
+                terrain, HullRoute.forUnit(follower, maneuver = true), false, 0L)
+            fun blocker() = MovePlanningOccupant(leader.copy(), pose(leader), null, idle = false, obstructsRoute = true)
+            val policy = ExperimentalPolicies().path
+            fun repair(occupants: List<MovePlanningOccupant>): PlannedMove {
+                val queue = MovePlanning()
+                var result: PlannedMove? = null
+                queue.repair(action, ManeuverRepair.CONTACT)
+                repeat(40) {
+                    queue.advance(policy, PathWorkBudget(512), { _, _, reason ->
+                        MovePlanningInput(map, listOf(member), occupants, false, reason)
+                    }, { _, _, _, _, planned -> result = planned })
+                    result?.let { return it }
+                }
+                error("Contact repair never finished")
+            }
+            val clearGoal = Position(10.0, 22.0)
+            val opposingGoal = Position(10.0, 110.0)
+            commandLeader("lead", clearGoal)
+            val waiting = repair(listOf(blocker()))
+            assertEquals(null, waiting.slot)
+            assertTrue(!waiting.nearest)
+            assertEquals(target, assertNotNull(repair(emptyList()).slot).position)
+
+            commandLeader("opposing", opposingGoal)
+            val opposed = repair(listOf(blocker()))
+            assertTrue(opposed.nearest)
+            assertEquals(start, assertNotNull(opposed.slot).position)
+
+            val delayed = object : PathPolicy by policy {
+                override fun beginExact(map: PlanningTerrain, start: Position, target: Position, radius: Double,
+                                        hull: HullRoute?, occupancy: RouteOccupancy?, counters: PathSearchCounters?): ExactPathSearch {
+                    val search = policy.beginExact(map, start, target, radius, hull, occupancy, counters)
+                    return object : ExactPathSearch by search {
+                        private var first = true
+                        override fun advance(budget: PathWorkBudget, cache: PathClearanceCache?) {
+                            if (first) {
+                                first = false
+                                budget.take(budget.limit - budget.used)
+                            } else search.advance(budget, cache)
+                        }
+                    }
+                }
+            }
+            val queue = MovePlanning()
+            val publications = mutableListOf<PlannedMove>()
+            val work = mutableListOf<PlanningWorkSlice>()
+            queue.repair(action, ManeuverRepair.CONTACT)
+            fun tick() = queue.advance(delayed, PathWorkBudget(512), { _, _, reason ->
+                MovePlanningInput(map, listOf(member), listOf(blocker()), false, reason)
+            }, { _, _, _, _, result -> publications += result }, work)
+            tick()
+            assertTrue(publications.isEmpty())
+            commandLeader("clear", clearGoal)
+            repeat(10) { if (work.none { it.restarted }) tick() }
+            assertTrue(work.any { it.restarted }, work.toString())
+            assertTrue(publications.isEmpty(), publications.toString())
+        }
+
     @Test
     fun continuously_blocked_commands_can_end_when_the_other_unit_also_has_a_move() =
         WaterTestScene.withCorridor(dryBarrier = false) { map ->
@@ -31,11 +120,17 @@ class RouteContinuationTest {
                 assertTrue(stalled.units.all { it.moveTarget != null })
                 val retries = context.drainPathDiagnostics(context.world).filter { it.reason == PathSearchReason.ROUTE_REPAIR }
                 assertEquals(setOf("north", "south"), retries.map { it.actionId }.toSet())
-                val final = frames.firstOrNull { frame -> frame.events.any { it.kind == "path-unreachable" } }
-                assertTrue(final != null, "An active move on the blocker cannot postpone an unreachable result indefinitely")
-                assertTrue(final.stepIndex > stalled.stepIndex)
-                assertTrue(frames.none { frame -> frame.events.any { it.kind == "movement-arrived" } })
-                println("Both commands held at ${stalled.stepIndex}; first confirmed unreachable at ${final.stepIndex}")
+                val stopped = frames.flatMap { frame ->
+                    frame.events.filter { it.kind == "movement-nearest-reached" }.map { frame to it }
+                }
+                assertEquals(setOf("northbound", "southbound"), stopped.map { it.second.unitId }.toSet())
+                assertTrue(stopped.all { it.first.stepIndex > stalled.stepIndex })
+                assertTrue(stopped.all { (frame, event) ->
+                    val unit = frame.units.single { it.unitId == event.unitId }
+                    unit.moveArrival?.originalTarget == if (event.unitId == "northbound") Position(10.0, 30.0) else Position(10.0, 130.0)
+                })
+                assertTrue(frames.last().units.all { it.moveTarget == null && it.tasks.isEmpty() && it.speed == 0.0 })
+                assertEquals(frames[780].units.map { it.position }, frames.last().units.map { it.position })
             } finally {
                 context.close()
             }
@@ -122,7 +217,7 @@ class RouteContinuationTest {
         }
 
     @Test
-    fun a_blocked_single_channel_eventually_reports_no_route_without_reporting_arrival() =
+    fun a_blocked_single_channel_stops_at_the_nearest_pose_without_crossing_the_occupant() =
         WaterTestScene.withCorridor(dryBarrier = false) { map ->
             val goal = Position(10.0, 30.0)
             val start = Position(10.0, 110.0)
@@ -134,22 +229,16 @@ class RouteContinuationTest {
                 context.enablePathDiagnostics(context.world)
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("through-channel", "p1", "mover", goal, context.world)))
                 val frames = (0L..800L).map { context.advance(Step(it, 1.0, "sim-tick")) }
-                val blocked = Event("movement-blocked", "mover")
-                val noRoute = Event("path-unreachable", "mover")
-                val firstContact = frames.first { blocked in it.events }
-                assertEquals(goal, firstContact.units.single { it.unitId == "mover" }.moveTarget)
-                assertTrue(noRoute !in firstContact.events)
-                val retry = context.drainPathDiagnostics(context.world).filter {
-                    it.unitId == "mover" && it.actionId == "through-channel" &&
-                        it.reason == PathSearchReason.ROUTE_REPAIR
-                }
-                assertTrue(retry.isNotEmpty(), "A sustained obstruction needs a route search before it can fail")
-                val failure = frames.single { noRoute in it.events }
-                assertTrue(retry.any { it.executionStep in (firstContact.stepIndex + 1)..failure.stepIndex })
-                assertEquals(null, failure.units.single { it.unitId == "mover" }.moveTarget)
-                assertEquals(82.0, failure.units.single { it.unitId == "mover" }.position.y, 1e-9)
-                assertTrue(frames.none { Event("movement-arrived", "mover") in it.events })
-                println("Sealed channel contact=${firstContact.stepIndex} searches=${retry.map { it.executionStep }} noRoute=${failure.stepIndex}")
+                val stop = frames.single { Event("movement-nearest-reached", "mover") in it.events }
+                val mover = stop.units.single { it.unitId == "mover" }
+                val receipt = checkNotNull(mover.moveArrival)
+                assertEquals(goal, receipt.originalTarget)
+                assertEquals(null, mover.moveTarget)
+                assertEquals(82.0, mover.position.y, 1e-6)
+                assertEquals(0.0, mover.speed)
+                assertTrue(frames.all { it.units.single { unit -> unit.unitId == "mover" }.position.y >= 82.0 - 1e-6 })
+                val samples = context.drainPathDiagnostics(context.world)
+                assertTrue(samples.any { it.actionId == "through-channel" && it.outcome == PathSearchOutcome.FOUND })
             } finally {
                 context.close()
             }
@@ -230,29 +319,50 @@ class RouteContinuationTest {
 
     @Test
     fun a_temporary_contact_near_the_goal_preserves_the_move_until_the_occupant_clears() =
-        WaterTestScene.withMap { map ->
-            for ((originX, goalX, releaseStep) in listOf(Triple(470.0, 502.0, 256L), Triple(478.0, 494.9, 101L))) {
+        WaterTestScene.withMap { water ->
+            val channel = MapDefinition(water.widthTiles, water.heightTiles, water.tileWidth, water.tileHeight,
+                water.tileSets, water.groundGids, water.blocking, buildSet {
+                    for (row in 0 until water.heightTiles) for (col in 20 until water.widthTiles) {
+                        if (row != 9 && !(col == 24 && row in 10..12)) add(col to row)
+                    }
+                })
+            for ((originX, goalX, releaseStep) in listOf(Triple(459.0, 502.0, 256L), Triple(460.0, 494.9, 101L))) {
                 val origin = Position(originX, 190.0)
                 val goal = Position(goalX, 190.0)
-                val scene = WaterTestScene.scenario(map, MovementType.WATER, origin).copy(
+                val base = WaterTestScene.scenario(channel, MovementType.WATER, origin)
+                val ordinary = base.unitDefinitions.getValue("water-test")
+                val crossing = UnitDefinition("crossing", ordinary.className, ordinary.radius, ordinary.displayRadius,
+                    ordinary.totalFrames, ordinary.imagePath, ordinary.imageScale,
+                    ordinary.movement.copy(moveSpeed = 2.0, moveAccelerationSpeed = 1.0, maxTurnSpeed = 180.0),
+                    emptySet())
+                val scene = base.copy(
+                    unitDefinitions = base.unitDefinitions + (crossing.id to crossing),
                     players = listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.LOCAL)),
                     units = listOf(UnitSpawn("mover", "p1", "water-test", origin, 90.0),
-                        UnitSpawn("occupant", "p2", "water-test", Position(500.0, 190.0), 0.0)))
+                        UnitSpawn("occupant", "p2", crossing.id, Position(490.0, 217.0), 0.0)))
                 val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
                 try {
                     fun Observation.mover() = units.single { it.unitId == "mover" }
                     val arrived = Event("movement-arrived", "mover")
                     val blocked = Event("movement-blocked", "mover")
                     assertIs<ActionResult.Accepted>(context.submit(MoveAction("through-after-clear", "p1", "mover", goal, context.world)))
-                    val waiting = (0L until releaseStep).map { context.advance(Step(it, 1.0, "sim-tick")) }
-                    assertTrue(waiting.any { blocked in it.events })
-                    assertEquals(488.0, waiting.last().mover().position.x, 1e-9)
-                    val premature = waiting.firstOrNull { arrived in it.events }
-                    assertEquals(null, premature?.stepIndex, "Physically blocked move reported normal arrival")
+                    val first = context.advance(Step(0, 1.0, "sim-tick"))
+                    assertEquals(goal, first.mover().moveTarget)
+                    assertIs<ActionResult.Accepted>(context.submit(MoveAction("enter", "p2", "occupant",
+                        Position(490.0, 190.0), context.world)))
+                    val waiting = (1L until releaseStep).map { context.advance(Step(it, 1.0, "sim-tick")) }
+                    assertTrue(waiting.any { blocked in it.events }, "goal=$goal events=${waiting.flatMap { it.events }.distinct()} " +
+                        "end=${waiting.last().mover()}")
+                    assertTrue(waiting.last().mover().position.x < goal.x, waiting.last().mover().position.toString())
+                    val premature = waiting.firstOrNull {
+                        arrived in it.events || Event("movement-nearest-reached", "mover") in it.events
+                    }
+                    assertEquals(null, premature?.stepIndex, "A temporary blockage ended the original move: " +
+                        "${premature?.events} at ${premature?.units?.map { it.position }}")
                     assertEquals(goal, waiting.last().mover().moveTarget)
 
                     assertIs<ActionResult.Accepted>(context.submit(MoveAction("clear", "p2", "occupant",
-                        Position(500.0, 120.0), context.world)))
+                        Position(490.0, 238.0), context.world)))
                     val released = (releaseStep..(releaseStep + 204)).map { context.advance(Step(it, 1.0, "sim-tick")) }
                     val completion = released.single { arrived in it.events }
                     assertEquals(null, completion.mover().moveTarget)

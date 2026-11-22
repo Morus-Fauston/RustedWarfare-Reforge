@@ -62,42 +62,56 @@ class PathDiagnosticsTest {
     }
 
     @Test
-    fun pd03_blocked_goal_and_outside_target_report_real_early_attempts() {
-        for ((map, target) in listOf(scenario(3 to 2) to Position(70.0, 50.0), scenario() to Position(110.0, 50.0))) {
-            val context = open(map)
-            try {
-                context.enablePathDiagnostics(context.world)
-                val result = assertIs<ActionResult.Accepted>(context.submit(MoveAction("pd-early", "p1", "u1", target, context.world)))
-                assertTrue(result.events.isEmpty())
-                val observation = context.advance(Step(0, 1.0, "sim-tick"))
-                assertEquals(listOf(Event("movement-cancelled", "u1"), Event("path-unreachable", "u1")), observation.events)
-                val sample = context.drainPathDiagnostics(context.world).single()
-                assertEquals(PathSearchOutcome.UNREACHABLE, sample.outcome)
-                assertEquals(1L, sample.actualSearchCalls)
-                assertEquals(listOf(0L, 0L, 0L, 0L, 0L, 0L), listOf(sample.candidatesChecked, sample.popped, sample.expanded, sample.enqueued, sample.neighborsChecked, sample.heuristicCalls))
-                assertEquals(0, sample.pathPointCount)
-                assertTrue(context.observe().units.single().pathPoints.isEmpty())
-            } finally { context.close() }
-        }
+    fun pd03_outside_target_has_no_search_and_blocked_goal_records_the_nearest_route() {
+        val context = open(scenario(3 to 2))
+        try {
+            context.enablePathDiagnostics(context.world)
+            val outside = assertIs<ActionResult.Rejected>(context.submit(
+                MoveAction("pd-outside", "p1", "u1", Position(110.0, 50.0), context.world)))
+            assertEquals("invalid-target", outside.error.code)
+            val idle = context.advance(Step(0, 1.0, "sim-tick"))
+            assertNull(idle.units.single().moveTarget)
+            assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+
+            val result = assertIs<ActionResult.Accepted>(context.submit(
+                MoveAction("pd-blocked", "p1", "u1", Position(70.0, 50.0), context.world)))
+            assertTrue(result.events.isEmpty())
+            val observation = context.advanceToMoveOutcome(1, "u1")
+            assertTrue(Event("movement-started", "u1") in observation.events)
+            val unit = observation.units.single()
+            val stop = assertNotNull(unit.moveTarget)
+            val distanceToTile = kotlin.math.hypot(maxOf(60.0 - stop.x, stop.x - 80.0, 0.0),
+                maxOf(40.0 - stop.y, stop.y - 60.0, 0.0))
+            assertEquals(1.0, distanceToTile, 1e-6, stop.toString())
+            assertEquals(11.0, kotlin.math.hypot(stop.x - 70.0, stop.y - 50.0), 1e-6)
+            val sample = context.drainPathDiagnostics(context.world).single()
+            assertEquals("pd-blocked", sample.actionId)
+            assertEquals(PathSearchOutcome.FOUND, sample.outcome)
+            assertTrue(sample.actualSearchCalls > 0)
+            assertEquals(unit.pathPoints.size, sample.pathPointCount)
+        } finally { context.close() }
     }
 
     @Test
-    fun pd04_full_wall_is_unreachable_after_full_candidate_preparation() {
+    fun pd04_full_wall_uses_search_and_publishes_a_route_on_the_near_side() {
         val context = open(scenario(2 to 0, 2 to 1, 2 to 2, 2 to 3, 2 to 4))
         try {
             context.enablePathDiagnostics(context.world)
             val result = assertIs<ActionResult.Accepted>(context.submit(MoveAction("pd-wall", "p1", "u1", Position(70.0, 50.0), context.world)))
             assertTrue(result.events.isEmpty())
-            val observation = context.advance(Step(0, 1.0, "sim-tick"))
-            assertEquals(listOf(Event("movement-cancelled", "u1"), Event("path-unreachable", "u1")), observation.events)
+            val observation = context.advanceToMoveOutcome(0, "u1")
+            assertTrue(Event("movement-started", "u1") in observation.events)
+            val unit = observation.units.single()
+            val stop = assertNotNull(unit.moveTarget)
+            assertTrue(stop.x in 30.0..<40.0, stop.toString())
+            assertTrue(unit.pathPoints.isNotEmpty() && unit.pathPoints.all { it.x < 40.0 })
             val sample = context.drainPathDiagnostics(context.world).single()
-            assertEquals(PathSearchOutcome.UNREACHABLE, sample.outcome)
-            assertEquals(1L, sample.actualSearchCalls)
-            assertEquals(25L, sample.candidatesChecked)
+            assertEquals(PathSearchOutcome.FOUND, sample.outcome)
+            assertTrue(sample.actualSearchCalls >= 1L)
+            assertTrue(sample.candidatesChecked in 1L..25L, "O(1) clearance & component fast-reject avoids full-map scan: ${sample.candidatesChecked}")
             assertTrue(sample.expanded >= 1L)
             assertEquals(sample.enqueued, sample.heuristicCalls)
-            assertEquals(0, sample.pathPointCount)
-            assertTrue(context.observe().units.single().pathPoints.isEmpty())
+            assertEquals(unit.pathPoints.size, sample.pathPointCount)
         } finally { context.close() }
     }
 
@@ -148,18 +162,30 @@ class PathDiagnosticsTest {
                 context.advance(Step(1, 1.0, "sim-tick"))
                 assertEquals(0L, context.drainPathDiagnostics(world).single().candidatesChecked)
                 context.acceptVisibleTerrain(world, "p1", listOf(VisibleTerrainCell(3, 2, true)))
+                context.submit(StopAction("stop-before-known", "p1", "u1", world))
                 context.submit(MoveAction("known", "p1", "u1", Position(70.0, 50.0), world))
-                context.advance(Step(2, 1.0, "sim-tick"))
+                val knownRoute = context.advanceToMoveOutcome(2, "u1").units.single()
                 val known = context.drainPathDiagnostics(world).single()
-                assertEquals(PathSearchOutcome.UNREACHABLE, known.outcome)
-                assertEquals(1L, known.actualSearchCalls)
-                assertEquals(0L, known.candidatesChecked)
+                assertTrue(known.usedPlayerKnowledge)
+                assertEquals("known", known.actionId)
+                assertEquals(PathSearchOutcome.FOUND, known.outcome)
+                assertTrue(known.actualSearchCalls >= 1L)
+                val fallback = assertNotNull(knownRoute.moveTarget)
+                assertNotEquals(Position(70.0, 50.0), fallback)
+                assertFalse(fallback.x in 60.0..<80.0 && fallback.y in 40.0..<60.0, fallback.toString())
                 context.acceptVisibleTerrain(world, "p1", emptyList())
+                context.submit(StopAction("stop-before-empty", "p1", "u1", world))
                 context.submit(MoveAction("after-empty", "p1", "u1", Position(70.0, 50.0), world))
-                context.advance(Step(3, 1.0, "sim-tick"))
+                val afterRoute = context.advanceToMoveOutcome(context.observe().stepIndex + 1, "u1").units.single()
                 val afterEmpty = context.drainPathDiagnostics(world).single()
-                assertEquals(if (retention == TerrainRetention.MEMORY) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND, afterEmpty.outcome)
-                assertEquals(0L, afterEmpty.candidatesChecked)
+                assertEquals("after-empty", afterEmpty.actionId)
+                assertEquals(PathSearchOutcome.FOUND, afterEmpty.outcome)
+                if (retention == TerrainRetention.MEMORY) {
+                    assertNotEquals(Position(70.0, 50.0), afterRoute.moveTarget)
+                } else {
+                    assertEquals(Position(70.0, 50.0), afterRoute.moveTarget)
+                    assertEquals(0L, afterEmpty.candidatesChecked)
+                }
                 assertEquals(1L, emptySample.actualSearchCalls)
             } finally { context.close() }
         }

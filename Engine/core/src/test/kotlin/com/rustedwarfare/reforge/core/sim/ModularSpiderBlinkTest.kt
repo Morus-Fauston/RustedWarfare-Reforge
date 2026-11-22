@@ -136,7 +136,9 @@ class ModularSpiderBlinkTest {
             assertEquals(destination, battle.actions.queue.single { it.name == "blinkQueued" }.target)
             assertIs<ActionResult.Accepted>(battle.context.submit(
                 MoveAction("move-after-blink", "p1", "spider", Position(650.0, 220.0), battle.context.world)))
+            battle.tick()
             val path = battle.parent.pathPoints
+            assertEquals(listOf(Position(650.0, 220.0)), path)
             val tasks = battle.parent.tasks
             val origin = battle.parent.position
             assertFalse(VisionCell(31, 10) in battle.context.visionSnapshot(battle.context.world, "p1").effectiveCells)
@@ -246,11 +248,19 @@ class ModularSpiderBlinkTest {
                 val origin = battle.parent.position
                 assertIs<ActionResult.Accepted>(battle.context.submit(
                     MoveAction("cruise-$expected", "p1", "spider", Position(origin.x + 100, origin.y), battle.context.world)))
-                repeat(78) { battle.tick() }
-                val before = battle.parent.position
-                battle.tick()
-                assertEquals(expected, battle.parent.position.x - before.x, 1e-7)
-                assertEquals(before.y, battle.parent.position.y, 1e-7)
+                var consecutiveCruiseSteps = 0
+                repeat(140) {
+                    if (consecutiveCruiseSteps < 3) {
+                        val before = battle.parent.position
+                        battle.tick()
+                        val dx = battle.parent.position.x - before.x
+                        assertEquals(before.y, battle.parent.position.y, 1e-7)
+                        assertTrue(dx <= expected + 1e-7)
+                        consecutiveCruiseSteps = if (kotlin.math.abs(dx - expected) <= 1e-7)
+                            consecutiveCruiseSteps + 1 else 0
+                    }
+                }
+                assertEquals(3, consecutiveCruiseSteps, "No sustained cruise at $expected")
                 assertIs<ActionResult.Accepted>(battle.context.submit(
                     StopAction("stop-$expected", "p1", "spider", battle.context.world)))
             }

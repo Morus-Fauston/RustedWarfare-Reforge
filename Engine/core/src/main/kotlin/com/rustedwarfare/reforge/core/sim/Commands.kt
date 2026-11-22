@@ -104,6 +104,15 @@ data class ResumeConstructionAction(
     val append: Boolean = false,
 ) : Action
 
+/** Cancels an own under-construction building, refunding its construction price and removing the site. */
+data class CancelConstructionAction(
+    override val actionId: String,
+    override val actorPlayerId: String,
+    override val unitId: String,
+    override val world: WorldHandle,
+    override val atStep: Long? = null,
+) : Action
+
 data class UpgradeAction(
     override val actionId: String,
     override val actorPlayerId: String,

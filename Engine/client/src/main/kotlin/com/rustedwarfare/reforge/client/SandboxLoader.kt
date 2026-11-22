@@ -14,7 +14,8 @@ data class SandboxPreparationTiming(val startedNanos: Long, val scenarioPrepared
 
 data class LoadedSandbox(val scenario: Scenario, val visuals: PreparedVisualAssets?, val renderResources: SandboxRenderResources,
                          val contentSources: List<ContentSourceIdentity> = emptyList(), val inputRoot: Path? = null,
-                         val contentPack: ContentPackChoice? = null, val preparationTiming: SandboxPreparationTiming? = null)
+                         val contentPack: ContentPackChoice? = null, val preparationTiming: SandboxPreparationTiming? = null,
+                         val startupNotices: List<String> = emptyList())
 
 /** The render thread alone consumes results. Cancelled jobs never publish a world or own GL resources. */
 class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?) : AutoCloseable {
@@ -32,6 +33,52 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
 
     fun requestTestScenario(choice: TestScenarioChoice, prepareVisuals: (() -> PreparedVisualAssets)? = null) {
         begin(choice.root, choice.content, prepareVisuals, choice)
+    }
+
+    fun requestSkirmishMap(
+        mapPath: Path,
+        root: Path,
+        contentPack: ContentPackChoice?,
+        originalDirectory: Path? = null,
+        displayName: String? = null,
+        prepareVisuals: (() -> PreparedVisualAssets)? = null,
+    ) {
+        cancel()
+        pending = executor.submit<Result<LoadedSandbox>> { runCatching {
+            val startedNanos = System.nanoTime()
+            val checked = contentPack?.revalidate()
+            val autoPack = if (checked == null && java.nio.file.Files.isRegularFile(root.resolve("pack.json"))) {
+                when (val loadedPack = com.rustedwarfare.reforge.core.content.ContentLoader.loadContentPack(root)) {
+                    is ContentResult.Success -> ContentPackChoice(loadedPack.value, loadedPack.value.units.keys.first())
+                    is ContentResult.Failure -> null
+                }
+            } else null
+            val effectivePack = checked ?: autoPack
+            val definitions = effectivePack?.content?.units ?: ControlledScenario.prepare(root).scenario.unitDefinitions
+            val built = TmxSkirmishScenarioBuilder.build(mapPath, definitions, originalDirectory, displayName)
+            val scene = built.scenario
+            val scenarioPreparedNanos = System.nanoTime()
+            val visuals = prepareVisuals?.invoke()?.let { before -> effectivePack?.let { contentPackVisuals(before, it) } ?: before }
+            val visualsPreparedNanos = System.nanoTime()
+            val resources = SandboxRenderResources.from(scene)
+            val originalTilesetRoot = TmxSkirmishScenarioBuilder.tilesetFallbackRoots(originalDirectory).firstOrNull()
+            val renderResources = visuals?.let { resources.bindVisuals(it, useScenarioTerrain = false, originalTilesetRoot = originalTilesetRoot) }
+                ?: resources.resolveTileAtlases(null, originalTilesetRoot)
+            checked?.content?.verifyStable()?.let { stable ->
+                if (stable is ContentResult.Failure) error(stable.error.describe())
+            }
+            visuals?.verifyForPublication()
+            LoadedSandbox(
+                scenario = scene,
+                visuals = visuals,
+                renderResources = renderResources,
+                contentSources = effectivePack?.content?.sources ?: emptyList(),
+                inputRoot = root.toAbsolutePath().normalize(),
+                contentPack = effectivePack,
+                preparationTiming = SandboxPreparationTiming(startedNanos, scenarioPreparedNanos, visualsPreparedNanos, System.nanoTime()),
+                startupNotices = built.startupNotices,
+            )
+        } }
     }
 
     internal fun qualify(root: Path, contentPack: ContentPackChoice?) {

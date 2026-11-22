@@ -41,7 +41,7 @@ class ProportionalMovementTest {
 
     @Test
     fun stop_clears_the_command_before_proportional_braking_and_settle() {
-        for ((maximumSpeed, expectedAfterStop) in listOf(1.1 to 0.913, 2.2 to 1.826, 0.0 to 0.0)) {
+        for ((maximumSpeed, expectedAfterStop) in listOf(1.1 to 0.913, 2.2 to 1.826)) {
             val context = context(maximumSpeed)
             try {
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("move", "p1", "u1",
@@ -60,5 +60,17 @@ class ProportionalMovementTest {
                 assertEquals(settled.position, context.advance(Step(22, 1.0, "sim-tick")).units.single().position)
             } finally { context.close() }
         }
+    }
+
+    @Test
+    fun an_immobile_unit_rejects_move_without_changing_its_pose() {
+        val context = context(0.0)
+        try {
+            val before = context.observe().units.single()
+            val rejected = assertIs<ActionResult.Rejected>(context.submit(
+                MoveAction("move", "p1", "u1", Position(500.0, 100.0), context.world)))
+            assertEquals("immobile-unit", rejected.error.code)
+            assertEquals(before, context.advance(Step(0, 1.0, "sim-tick")).units.single())
+        } finally { context.close() }
     }
 }

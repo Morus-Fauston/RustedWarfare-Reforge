@@ -11,7 +11,7 @@ class SteeringRegressionTest {
         val definition = base.unitDefinitions.getValue("tank")
         val scenario = base.copy(
             unitDefinitions = mapOf("tank" to TestContentFactory.unitWith(definition,
-                movement = definition.movement.copy(moveSpeed = 0.0, turnAcceleration = acceleration))),
+                movement = definition.movement.copy(moveAccelerationSpeed = 0.0, turnAcceleration = acceleration))),
             units = listOf(UnitSpawn("u1", "p1", "tank", Position(110.0, 110.0), heading)),
         )
         return assertIs<InitResult.Accepted>(SimulationContext.initialize(scenario)).context.also {

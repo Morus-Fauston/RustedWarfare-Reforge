@@ -115,7 +115,7 @@ class NuclearSiloSandboxTest {
             val scene = contentPackScenario(root, ContentPackChoice(pack, "commandCenter"))
             assertEquals("p009-nuclear-production", scene.scenarioId)
             assertEquals(listOf("commandCenter"), scene.units.filter { it.ownerPlayerId == "p1" }.map { it.typeId })
-            assertTrue(NativeActionPanel.supports(scene.scenarioId))
+            // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
             SandboxSession(scene).use { s ->
                 fun until(limit: Int, ready: () -> Boolean) {
                     repeat(limit) { if (!ready()) s.tick() }

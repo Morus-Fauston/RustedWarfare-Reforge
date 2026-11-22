@@ -466,12 +466,17 @@ class ConstructionQTest {
             val move = assertIs<ActionResult.Accepted>(context.submit(MoveAction("wall-control", "p1", "worker", target, context.world)))
             assertTrue(move.events.isEmpty())
             var step = 0L
-            val blocked = (0 until 250).any {
-                context.advance(Step(step++, 1.0, "sim-tick")).events.any {
-                    it.kind == "path-unreachable" && it.unitId == "worker"
-                }
+            var closest: MoveArrival? = null
+            while (step < 1600L && closest == null) {
+                val worker = context.advance(Step(step++, 1.0, "sim-tick")).units.single()
+                assertTrue(worker.position.x < 400.0)
+                closest = worker.moveArrival
             }
-            assertTrue(blocked, "The complete real wall must block the actual path policy")
+            assertEquals(target, assertNotNull(closest, "A complete wall limits the Move to the nearest reachable side").originalTarget)
+            assertTrue(closest.stoppedAt.x in origin.x..<400.0)
+            context.close()
+            assertIs<InitResult.Accepted>(context.reopen(scene))
+            step = 0L
             assertIs<ActionResult.Accepted>(context.submit(BuildAction("far-build", "p1", "worker", "landFactory",
                 target, "1".repeat(32), context.world)))
             assertIs<ActionResult.Accepted>(context.submit(PatrolAction("tail", "p1", "worker", Position(170.0, 290.0), true, context.world)))

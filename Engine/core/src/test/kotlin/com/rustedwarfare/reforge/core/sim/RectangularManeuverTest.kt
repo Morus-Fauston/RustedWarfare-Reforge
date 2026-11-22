@@ -37,7 +37,7 @@ class RectangularManeuverTest {
             val start = Position(150.0, 100.0 + i * 100)
             val body = MutableUnit("w$i", "p1", def.id, def, start, 90.0)
             val next = Position(220.0, start.y)
-            body.pathPoints.addAll(listOf(Position(150.0, start.y + 20), next))
+            body.pathPoints = listOf(Position(150.0, start.y + 20), next)
             MovePlanningMember(MoveAction("near-$i", "p1", body.unitId, next, world), body,
                 MovePlanningPose(start, 90.0, ContactLayer.SURFACE, hull), start, 10.0, terrain,
                 HullRoute.forUnit(body, maneuver = true), false, 0L)
@@ -132,7 +132,8 @@ class RectangularManeuverTest {
         val ship = body("ship", MovementCollisionShape.Rectangle(20.0, 12.0), 4000.0, 1.0, Position(500.0, 190.0))
         val boat = body("boat", MovementCollisionShape.Circle(6.0), 1000.0, .1, boatAt)
         val units = listOf(ship, boat)
-        val translation = UnitContact.Translations(1.0) { false }.resolve(ship, Position(501.0, 190.0), units,
+        val spatial = WorldSpatialIndex().apply { syncAll(units) }
+        val translation = UnitContact.Translations(1.0, spatial) { false }.resolve(ship, Position(501.0, 190.0),
             map, units.associateBy { it.unitId }, { _, b -> b === boat }, map, freeBlockedTurn = true) { true }
         val shifted = translation.displaced.single().position
         assertEquals(boatAt.x, shifted.x, 1e-9, "The boat must slide laterally")
@@ -479,17 +480,18 @@ class RectangularManeuverTest {
         while (!work.finished) {
             val current = work
             val before = checkNotNull(current.counters).popped
+            val stepBudget = 64
             if (slices == 2) {
                 val abandoned = PathSearchRollback()
-                current.fork(abandoned).advance(PathWorkBudget(512), cache.fork())
+                current.fork(abandoned).advance(PathWorkBudget(stepBudget), cache.fork())
                 abandoned.restore()
                 assertEquals(before, current.counters?.popped)
             }
             val journal = PathSearchRollback()
             work = current.fork(journal)
-            work.advance(PathWorkBudget(512), cache)
+            work.advance(PathWorkBudget(stepBudget), cache)
             journal.commit()
-            assertTrue(checkNotNull(work.counters).popped - before <= 512)
+            assertTrue(checkNotNull(work.counters).popped - before <= stepBudget)
             assertTrue(++slices < 100, "Offset search should terminate within the probe bound")
         }
         val path = checkNotNull(work.path)

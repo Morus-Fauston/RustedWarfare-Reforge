@@ -46,7 +46,7 @@ fun main(args: Array<String>) {
         val config = Lwjgl3ApplicationConfiguration().apply {
             setTitle(options.title)
             if (options.backgroundInput) {
-                if (options.backgroundCompact) setWindowedMode(960, 640) else setWindowedMode(1920, 1080)
+                setWindowedMode(options.backgroundWidth, options.backgroundHeight)
                 setInitialVisible(false)
             } else {
                 setWindowedMode(1200, 800)
@@ -68,7 +68,9 @@ fun main(args: Array<String>) {
                 alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json"),
                 development = options.development, initialContent = options.development || args.contains("--inputs"),
                 openSetup = options.development || args.contains("--inputs"),
-                cameraStartSeed = sceneRoot.resolve("phase-seven-camera.json").takeIf { options.development })
+                cameraStartSeed = sceneRoot.resolve("phase-seven-camera.json").takeIf { options.development },
+                touchControls = options.touchSimulation,
+                initialSkirmishMap = options.skirmishMap)
             val client = if (sink == null) screen else WindowPerfSampling(screen, sink)
             val application = if (options.backgroundInput)
                 BackgroundClientInput(client, output, runId, checkNotNull(sink), { screen.inputGeneration },

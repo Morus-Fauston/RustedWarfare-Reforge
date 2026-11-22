@@ -49,7 +49,8 @@ class AutomaticArrivalBudgetTest {
                     assertNull(value.moveTarget)
                     assertTrue(value.pathPoints.isEmpty())
                     assertEquals(previous.heading, value.heading)
-                    assertEquals(maxOf(0.0, previous.speed - 0.022), value.speed, 1e-9)
+                    assertEquals(0.0, value.speed)
+                    assertEquals(0.0, value.angularVelocity)
                     stable = if (value.speed == 0.0 && value.position == previous.position) stable + 1 else 0
                     if (stable >= 18) {
                         println("A1 normal clear and stable tail; final target distance=${hypot(value.position.x - goal.x, value.position.y - goal.y)}")

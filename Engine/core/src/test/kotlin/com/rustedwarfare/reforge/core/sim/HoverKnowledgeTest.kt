@@ -22,9 +22,10 @@ class HoverKnowledgeTest {
             context.acceptVisibleTerrain(context.world, "p1", listOf(VisibleTerrainCell(2, 2, true, 2)))
             context.advance(Step(0, 1.0, "sim-tick"))
             assertIs<ActionResult.Accepted>(context.submit(MoveAction("move", "p1", "u1", Position(70.0, 50.0), context.world)))
+            context.advance(Step(1, 1.0, "sim-tick"))
             assertEquals(listOf(Position(70.0, 50.0)), context.observePlayer(context.world, "p1").units.single().pathPoints)
             context.acceptVisibleTerrain(context.world, "p1", listOf(VisibleTerrainCell(2, 2, true, 3)))
-            val view = context.advance(Step(1, 1.0, "sim-tick"))
+            val view = context.advance(Step(2, 1.0, "sim-tick"))
             assertEquals(listOf(Position(30.0, 30.0), Position(70.0, 30.0), Position(70.0, 50.0)), view.units.single().pathPoints)
         } finally { context.close() }
     }

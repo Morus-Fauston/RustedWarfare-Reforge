@@ -53,6 +53,7 @@ class HelicopterSandboxTest {
                 assertEquals(enemy.unitId, session.observation.units.single { it.unitId == own.unitId }.attackTargetId)
                 val destination = Position(250.0, 300.0)
                 assertIs<ActionResult.Accepted>(session.command(destination))
+                session.tick()
                 assertEquals(destination, session.observation.units.single { it.unitId == own.unitId }.moveTarget)
             }
         }

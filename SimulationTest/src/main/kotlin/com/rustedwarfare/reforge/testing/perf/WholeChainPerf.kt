@@ -286,17 +286,21 @@ object WholeChainPerf {
             val dx=old.position.x-goal.x;val dy=old.position.y-goal.y
             if((old.moveTarget==goal || step==0) && dx*dx+dy*dy<1681.0)
                 nearTimes[u.unitId]=(nearTimes[u.unitId]?:0.0)+delta
-            if(observed.events.any { it.kind=="movement-arrived" && it.unitId==u.unitId })
+            val arrived = observed.events.any { it.kind == "movement-arrived" && it.unitId == u.unitId }
+            if (arrived)
                 check(u.moveTarget==null && u.pathPoints.isEmpty()) { "Normal clear retained target/path" }
             if (u.moveTarget == null) {
                 check(u.pathPoints.isEmpty())
                 if (old.moveTarget != null) check(observed.events.any { it.unitId == u.unitId && it.kind in setOf("movement-arrived", "path-unreachable") }) { "Move vanished" }
-                if (observed.events.any { it.kind == "movement-arrived" && it.unitId == u.unitId }) {
+                if (arrived) {
                     val time=nearTimes.getValue(u.unitId);val capture=if(time>340.0)36.0 else if(time>240.0)16.0 else 7.0
                     check(old.moveTarget == goal && old.pathPoints.lastOrNull()==goal &&
                         dx*dx+dy*dy<capture*capture) { "Arrival outside strict normal pre-step capture radius $capture" }
-                }
-                run {
+                    check(u.heading == old.heading && u.position == old.position) { "Arrival changed the captured pose" }
+                    check(u.speed == 0.0 && u.angularVelocity == 0.0 && u.movementState == MovementState.IDLE) {
+                        "Arrival did not stop in the capture step"
+                    }
+                } else {
                     check(u.heading == old.heading) { "Coasting changed heading" }
                     val movement = f.scenario.unitDefinitions.getValue("tank").movement
                     val expectedSpeed = maxOf(0.0, old.speed - movement.moveDecelerationSpeed*movement.moveSpeed*delta)

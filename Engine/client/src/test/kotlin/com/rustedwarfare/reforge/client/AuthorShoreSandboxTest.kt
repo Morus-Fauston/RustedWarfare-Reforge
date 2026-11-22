@@ -55,10 +55,15 @@ class AuthorShoreSandboxTest {
             assertEquals(ship.unitId, session.selectedId)
             val destination = Position(250.0, 350.0)
             assertIs<ActionResult.Accepted>(session.move(destination))
-            repeat(600) { session.tick() }
+            var arrived = false
+            repeat(600) {
+                session.tick()
+                arrived = arrived || session.observation.events.any { it.kind == "movement-arrived" && it.unitId == ship.unitId }
+            }
             val moved = session.observation.units.single { it.unitId == ship.unitId }
-            // The existing ordinary scene declares MovementContract.targetRadius = 4.
-            assertTrue(hypot(moved.position.x - destination.x, moved.position.y - destination.y) <= 4.0)
+            assertTrue(arrived)
+            assertTrue(hypot(moved.position.x - destination.x, moved.position.y - destination.y) < 7.0)
+            assertEquals(0.0, moved.speed)
             assertNotNull(moved.waterPose)
             assertTrue(moved.alive)
             assertEquals(1950L, session.observation.balance)

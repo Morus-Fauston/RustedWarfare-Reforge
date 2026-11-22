@@ -799,8 +799,8 @@ class PatrolCommandTest {
         try {
             context.submit(MoveAction("move-first", "p1", "a", Position(210.0, 210.0), context.world))
             context.submit(PatrolAction("patrol-next", "p1", "a", Position(410.0, 210.0), true, context.world))
-            assertEquals(Position(210.0, 210.0), context.observe().units.single().moveTarget)
             val history = (0L..599L).map { context.advance(Step(it, 1.0, "sim-tick")) }
+            assertEquals(Position(210.0, 210.0), history.first().units.single().moveTarget)
             val unit = context.observePlayer(context.world, "p1").units.single()
             assertEquals(listOf("patrol-next"), unit.tasks.map { it.actionId })
             assertTrue(unit.position.x > 370.0, "The appended patrol must run after Move: ${unit.position}")
@@ -864,7 +864,9 @@ class PatrolCommandTest {
             val unit = context.observePlayer(context.world, "p1").units.single { it.unitId == "a" }
             assertEquals(listOf("move") + (1..28).map { "point-$it" }, unit.tasks.map { it.actionId })
             assertEquals(UnitTaskKind.MOVE, unit.tasks.first().kind)
-            assertEquals(Position(310.0, 210.0), unit.moveTarget)
+            assertEquals(Position(310.0, 210.0), unit.tasks.first().target)
+            val started = context.advanceToMoveOutcome(0, "a").units.single { it.unitId == "a" }
+            assertEquals(Position(310.0, 210.0), started.moveTarget)
         } finally { context.close() }
     }
 

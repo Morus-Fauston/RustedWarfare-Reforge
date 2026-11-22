@@ -8,6 +8,20 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.*
 
 class LoadingAndProjectionTest {
+    @Test fun desktop_click_on_a_tile_boundary_round_trips_through_the_battlefield_viewport() {
+        val projection = MapProjection(1480.0, 800.0, MapArea(0.0, 0.0, 960.0, 640.0), fillViewport = true)
+        projection.centerOn(Position(1480.0, 400.0))
+        val ui = battlefieldPoint(784, 320, 640, 0, 0, 960, 640, 960.0, 640.0)!!
+        assertEquals(Position(1260.0, 400.0), projection.toWorld(ui.x, ui.y))
+        val adjacent = battlefieldPoint(783, 320, 640, 0, 0, 960, 640, 960.0, 640.0)!!
+        assertEquals(Position(1258.75, 400.0), projection.toWorld(adjacent.x, adjacent.y))
+    }
+
+    @Test fun fitted_viewport_uses_its_offsets_and_keeps_fractional_battlefield_positions() {
+        assertEquals(Position(2.5, 317.5), battlefieldPoint(82, 292, 640, 80, 94, 768, 512, 960.0, 640.0))
+        assertNull(battlefieldPoint(82, 292, 640, 80, 94, 0, 0, 960.0, 640.0))
+    }
+
     private val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir")))
     private fun await(loader: SandboxLoader): Result<Scenario> {
         val deadline = System.nanoTime() + 5_000_000_000

@@ -44,10 +44,12 @@ class DefenseSiegeScenarioTest {
                 fun moveTo(p: Position) {
                     s.select(unit(worker).position)
                     assertIs<ActionResult.Accepted>(s.move(p))
+                    tick()
                     await("worker reaches $p", 2000) {
                         val u = unit(worker)
                         assertTrue(u.alive, "The route must preserve its actual worker")
-                        kotlin.math.hypot(u.position.x - p.x, u.position.y - p.y) <= 6.0
+                        u.tasks.isEmpty() && u.speed == 0.0 &&
+                            kotlin.math.hypot(u.position.x - p.x, u.position.y - p.y) < 7.0
                     }
                 }
                 moveTo(Position(50.0, 390.0))

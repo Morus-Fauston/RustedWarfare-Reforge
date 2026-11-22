@@ -6,6 +6,19 @@ import com.rustedwarfare.reforge.core.sim.*
 import kotlin.test.*
 
 class PlanningTerrainTest {
+    @Test fun refined_parking_grid_reads_only_its_source_and_clips_partial_queries() {
+        val mask = booleanArrayOf(false, true, true, false, false, false)
+        val source = PlanningTerrain(3, 2, 20, 20, mask)
+        val refined = source.subdivided(4)
+        mask.fill(false)
+        for (y in 0 until 8) for (x in 0 until 12)
+            assertEquals(source.isBlocked(x / 4, y / 4), refined.isBlocked(x, y))
+        val hits = mutableSetOf<Pair<Int, Int>>()
+        assertFalse(refined.anyBlocked(3, 9, 2, 6) { x, y -> hits.add(x to y); false })
+        assertEquals((2..3).flatMap { y -> (4..9).map { x -> x to y } }.toSet(), hits)
+        assertFalse(refined.anyBlocked(7, 6, 0, 1) { _, _ -> true })
+    }
+
     @Test fun updating_authorized_blocks_matches_a_fresh_mask_across_visibility_and_forgetting() {
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(TestContentFactory.openScenario())).context
         val world = context.world
