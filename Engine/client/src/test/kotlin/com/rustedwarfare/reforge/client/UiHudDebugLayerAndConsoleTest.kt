@@ -226,4 +226,42 @@ class UiHudDebugLayerAndConsoleTest {
         stream.update(1.0f)
         assertTrue(stream.visibleNotices().isEmpty(), "Info notices must fade out after 4s")
     }
+
+    @Test
+    fun sandboxConsoleAcceptsSlashNumpadDivideImeFallbackAndAllowsOpeningWhileMatchPaused() {
+        assertTrue(HudSandboxConsole.isConsoleOpenKey(com.badlogic.gdx.Input.Keys.SLASH))
+        assertTrue(HudSandboxConsole.isConsoleOpenKey(com.badlogic.gdx.Input.Keys.NUMPAD_DIVIDE))
+        assertFalse(HudSandboxConsole.isConsoleOpenKey(com.badlogic.gdx.Input.Keys.SPACE))
+
+        assertTrue(HudSandboxConsole.isConsoleOpenChar('/'))
+        assertTrue(HudSandboxConsole.isConsoleOpenChar('、'))
+        assertFalse(HudSandboxConsole.isConsoleOpenChar('a'))
+
+        // Desktop development mode with deployment enabled can open console (even when match simulation is paused)
+        assertTrue(
+            HudSandboxConsole.canOpenConsole(
+                development = true,
+                commandConsoleOpen = false,
+                appPaused = false,
+                loading = false,
+                hudMenuOpen = false,
+                touchControls = false,
+                canDeploy = true,
+                textFieldFocused = false,
+            ),
+        )
+        // Blocked when text field focused, touch controls active, non-development, menu open, or deployment disabled
+        assertFalse(HudSandboxConsole.canOpenConsole(true, false, false, false, false, false, true, true))
+        assertFalse(HudSandboxConsole.canOpenConsole(true, false, false, false, false, true, true, false))
+        assertFalse(HudSandboxConsole.canOpenConsole(false, false, false, false, false, false, true, false))
+        assertFalse(HudSandboxConsole.canOpenConsole(true, false, false, false, true, false, true, false))
+        assertFalse(HudSandboxConsole.canOpenConsole(true, false, false, false, false, false, false, false))
+
+        // Multiline feedback (e.g. /help) expands console panel height cleanly without overlapping footnote
+        val lines = HudSandboxConsole.parseFeedbackLines(listOf("/help", "/spawn <type>", "/credits <p> <n>", "/destroy <id>").joinToString("\n"))
+        assertEquals(4, lines.size)
+        val rect1 = HudSandboxConsole.computePanelRect(stageWidth = 1440f, feedbackLineCount = 1)
+        val rect4 = HudSandboxConsole.computePanelRect(stageWidth = 1440f, feedbackLineCount = 4)
+        assertTrue(rect4.height > rect1.height + 40f, "4-line feedback must expand console panel height cleanly")
+    }
 }

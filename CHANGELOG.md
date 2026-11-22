@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.61 (2026-11-22 14:30)
+
+### 调整
+
+- **大屏非线性自适应 HUD 缩放（`UiScale`）**：针对 2K/4K 等大分辨率窗口下纯线性缩放导致侧栏过大的问题，按确认的《局内HUD规格》§2.1–2.2 修订 `UiScale.computeBaseScale`：短边 `≤ 640` 保持纯线性 `max(0.5, r)`；短边 `> 640` 改用连续幂曲线并带最小占比地板 `max(r^0.55, 0.50 × r)`（逻辑短边上限 1280，16:9 侧栏宽度占比不低于 10.2%，960×640 `1.00×`/24.2%、1920×1080 `1.33×`/16.1%、2560×1080 `1.33×`/12.1%、3840×2160 `1.95×`/11.8%）；桌面纯像素短边不读 EDID/PPI，触控共用基础曲线并保留 `max(s_base, s_touch)` 8mm 物理下限。
+
+### 修复
+
+- **开发模式 `/` 唤出沙盒指令台与多行帮助排版（`BootstrapScreen`、`HudSandboxConsole`）**：
+  - 现象 → 桌面以 `--development true` 启动时，因默认未启用沙盒部署开关且未处理暂停态/小键盘 `/` 与中文输入法 `、` 字符，按 `/` 无法唤出沙盒指令台；且 `/help` 多行反馈直接按单行绘制导致文字穿透输入框与底部脚注。
+  - 修复 → 桌面开发模式默认开启 `SandboxOptions(deploymentEnabled = development && !touchControls)`；统一经 `HudSandboxConsole.isConsoleOpenKey`/`isConsoleOpenChar`/`canOpenConsole` 支持 `/`、`NUMPAD_DIVIDE` 与中文输入法 `'/'`/`'、'` 在常规及暂停态唤起，并吞掉 `keyDown` 触发后紧随的重复 `keyTyped` 字符避免误写入输入框；`HudSandboxConsole` 改为多行反馈高度自适应排版（上限 8 行）使 `/help` 完整居中显示零重叠。
+
+### 技术
+
+- **高分后台抓图选项、单测与四分辨率实窗复核**：`WindowsLaunchOptions` 补充 `2560x1440` 与 `3840x2160` 后台窗口尺寸选项；更新 `UiFoundationScaleTokensAndStringsTest` 覆盖小窗地板、基准 640、1080p/2560×1080/4K 非线性曲线、8K 最小占比地板与触控高/低 DPI；扩充 `UiHudDebugLayerAndConsoleTest` 覆盖 `/`、小键盘、中文输入法与多行反馈高度计算；受影响客户端/PC 单测、`:pc:installDist`、`:android:assembleDebug` 与 `:android:verifySandboxHostChecks`（4 项 414 检查）全绿；完成 `960×640`、`1920×1080`、`2560×1080`、`3840×2160`（实际 3840×2130）四分辨率实窗、`/` 默认唤出指令台（含修复后多行 `/help` 目视复核）及 4K F3 调试层核验。
+
+---
 ## v0.5.60 (2026-11-22 08:36)
 
 ### 修复

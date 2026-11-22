@@ -1,3 +1,10 @@
+v0.5.61 (2026-11-22 14:30)
+  调整: 修订大屏 HUD 为连续非线性自适应缩放（UiScale.computeBaseScale：短边 <=640 维持 max(0.5, r) 线性，短边 >640 采用 max(r^0.55, 0.50*r)，逻辑短边上限 1280 且 16:9 侧栏占比地板 10.2%，4K 侧栏由 20.4% 收紧至约 11.8%；桌面纯像素短边不读 EDID/PPI，触控共用基础曲线并保留 8mm 下限）
+  修复: 修复开发模式桌面端默认开启沙盒部署权限并支持 /、小键盘 / 与中文输入法 、 在常规及暂停态唤出沙盒指令台（同时吞掉紧随的重复 keyTyped 字符防误写入输入框）/ 修复 HudSandboxConsole 多行反馈（如 /help）高度自适应排版，消除文字与输入框/脚注穿透重叠
+  技术: WindowsLaunchOptions 新增 2560x1440 与 3840x2160 后台尺寸选项；更新 UiFoundationScaleTokensAndStringsTest 与 UiHudDebugLayerAndConsoleTest 并通过受影响客户端/PC 单测、:pc:installDist、:android:assembleDebug 与 :android:verifySandboxHostChecks(414 项)；完成 960x640/1920x1080/2560x1080/3840x2160 四分辨率实窗与 4K 多行控制台/F3 调试层实窗目视复核
+
+====
+
 v0.5.60 (2026-11-22 08:36)
   修复: 补齐 SimulationTest 中 MotionDiagnosticCapture 与 MotionV2CoreTraceJson 对 CancelConstructionAction 的详尽分支，恢复公开短场景批跑编译与执行全绿
   技术: 完成 UI-P001 固定候选收口：6 套公开短场景批跑全通过 / 受影响核心(31)、客户端(156)、PC(33) 与 Android 宿主检查(414) 全绿 / 完成 960×640、1920×1080、2560×1080 三分辨率实窗与原版遭遇战(Big Island 8/33 图集、Fire Bridge 19/42 图集)及自有示范图(river_crossing 1/2 图集)对照核验（稳态 P50 0.25–0.40ms，F3 前后 0.985→1.373ms）/ Android Debug APK 四 ABI(arm64-v8a/armeabi-v7a/x86/x86_64) 含 libgdx-freetype.so 与随包字体/OFL 许可证核验通过 / Hydrogen 视觉终审与 Neon 独立代码整审均 0 必修 PASS；登记 ENG-P016 合并接缝并标注 Android 真机手感与最终试玩留待维护者验收

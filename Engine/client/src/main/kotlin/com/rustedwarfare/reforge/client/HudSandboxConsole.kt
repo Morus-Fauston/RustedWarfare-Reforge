@@ -38,7 +38,7 @@ internal class HudSandboxConsole(
     private val glyphLayout = GlyphLayout()
     private val panelRect = Rectangle()
     private var language: UiLanguage = UiLanguage.ZH
-    private var feedbackText: String = ""
+    private var feedbackLines: List<String> = emptyList()
 
     private class PickChipActor(
         val actionId: String,
@@ -101,14 +101,14 @@ internal class HudSandboxConsole(
         lang: UiLanguage,
     ) {
         language = lang
-        feedbackText = feedback
+        feedbackLines = parseFeedbackLines(feedback)
         isVisible = open
         if (!open) {
             panelRect.set(0f, 0f, 0f, 0f)
             return
         }
 
-        val rect = computePanelRect(stageWidth, hasFeedback = feedback.isNotBlank())
+        val rect = computePanelRect(stageWidth, feedbackLineCount = feedbackLines.size)
         val x = rect.x
         val y = rect.y
         val w = rect.width
@@ -198,10 +198,15 @@ internal class HudSandboxConsole(
         super.draw(batch, parentAlpha)
         strokeRect(batch, white, field.x, field.y, field.width, field.height, UiTokens.LINE, alpha)
 
-        // Feedback line (optional) & footnote
+        // Feedback lines (optional, multiline-safe) & footnote
         val innerX = panelRect.x + PAD
-        if (feedbackText.isNotBlank()) {
-            drawTextLeft(batch, smallFont(), feedbackText, innerX, panelRect.y + PAD + FOOT_H + 4f + FEEDBACK_H * 0.5f, UiTokens.VALUE, alpha)
+        if (feedbackLines.isNotEmpty()) {
+            val fbFont = smallFont()
+            var lineTopCenterY = panelRect.y + PAD + FOOT_H + 4f + feedbackLines.size * FEEDBACK_H - FEEDBACK_H * 0.5f
+            for (line in feedbackLines) {
+                drawTextLeft(batch, fbFont, line, innerX, lineTopCenterY, UiTokens.VALUE, alpha)
+                lineTopCenterY -= FEEDBACK_H
+            }
         }
         drawTextLeft(batch, smallFont(), UiStrings.get("escClose", language), innerX, panelRect.y + PAD + FOOT_H * 0.5f, UiTokens.DIM, alpha)
 
@@ -253,10 +258,39 @@ internal class HudSandboxConsole(
         )
         const val COMMAND_INPUT_ACTION_ID: String = "sandbox-command-input"
 
-        fun computePanelRect(stageWidth: Float, hasFeedback: Boolean): Rectangle {
+        /** True when the given keycode opens the sandbox console on desktop (`/` or numpad `/`). */
+        fun isConsoleOpenKey(keycode: Int): Boolean =
+            keycode == Input.Keys.SLASH || keycode == Input.Keys.NUMPAD_DIVIDE
+
+        /** True when a typed character opens the sandbox console (`/` or Chinese IME `、`). */
+        fun isConsoleOpenChar(character: Char): Boolean =
+            character == '/' || character == '、'
+
+        /** Shared eligibility check for opening the sandbox console (allowed while match is paused). */
+        fun canOpenConsole(
+            development: Boolean,
+            commandConsoleOpen: Boolean,
+            appPaused: Boolean,
+            loading: Boolean,
+            hudMenuOpen: Boolean,
+            touchControls: Boolean,
+            canDeploy: Boolean,
+            textFieldFocused: Boolean,
+        ): Boolean = development && !commandConsoleOpen && !appPaused && !loading &&
+            !hudMenuOpen && !touchControls && canDeploy && !textFieldFocused
+
+        fun parseFeedbackLines(feedback: String): List<String> =
+            feedback.lineSequence().map { it.trimEnd() }.filter { it.isNotEmpty() }.take(MAX_FEEDBACK_LINES).toList()
+
+        fun computePanelRect(stageWidth: Float, hasFeedback: Boolean): Rectangle =
+            computePanelRect(stageWidth, feedbackLineCount = if (hasFeedback) 1 else 0)
+
+        fun computePanelRect(stageWidth: Float, feedbackLineCount: Int): Rectangle {
+            val lines = feedbackLineCount.coerceIn(0, MAX_FEEDBACK_LINES)
             val bfWidth = (stageWidth - UiTokens.SIDEBAR_WIDTH).coerceAtLeast(320f)
             val w = CONSOLE_WIDTH.coerceAtMost(bfWidth - 16f)
-            val h = PAD * 2f + PICK_H + GAP + INPUT_H + GAP + FOOT_H + if (hasFeedback) (FEEDBACK_H + 4f) else 0f
+            val feedbackBlockH = if (lines > 0) (lines * FEEDBACK_H + 4f) else 0f
+            val h = PAD * 2f + PICK_H + GAP + INPUT_H + GAP + FOOT_H + feedbackBlockH
             val x = ((bfWidth - w) * 0.5f).coerceAtLeast(UiTokens.SCREEN_MARGIN)
             val y = UiTokens.SCREEN_MARGIN
             return Rectangle(x, y, w, h)
@@ -266,7 +300,8 @@ internal class HudSandboxConsole(
         private const val PICK_H: Float = 26f
         private const val INPUT_H: Float = 30f
         private const val FOOT_H: Float = 15f
-        private const val FEEDBACK_H: Float = 16f
+        private const val FEEDBACK_H: Float = 15f
+        private const val MAX_FEEDBACK_LINES: Int = 8
         private val BORDER_COLOR: Color = UiTokens.hex(0x727B81)
         private val CELL_HOVER: Color = UiTokens.hex(0x3D454B)
     }

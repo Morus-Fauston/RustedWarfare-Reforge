@@ -2,14 +2,19 @@ package com.rustedwarfare.reforge.client
 
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /**
  * Continuous uniform UI scale calculator (HUD Spec §2.1–2.3).
  *
  * - Reference short edge is 640 reference units (at 960x640, 1 ref unit = 1 physical pixel).
- * - Desktop: `scale = min(width, height) / 640f`, continuous with no stepped jumps.
- * - Touch: `scale = max(min(width, height) / 640f, sTouch)` where `sTouch = 8mm * pxPerMm / 58`
+ * - Base scale from `r = min(width, height) / 640f`:
+ *   - Small windows (`r <= 1`): linear `max(0.5f, r)`.
+ *   - Large windows (`r > 1`): gentle nonlinear growth with minimum proportion floor
+ *     `max(r^0.55, 0.50f * r)` (caps logical short edge at 1280, keeping 16:9 sidebar >= 10.2%).
+ * - Desktop: `scale = sBase` (pure pixel short-edge, no desktop EDID/PPI auto-boost).
+ * - Touch: `scale = max(sBase, sTouch)` where `sTouch = 8mm * pxPerMm / 58`
  *   ensures 58-ref-unit touch action keys are physically >= 8 mm tall.
  * - Zero non-uniform stretching; wider windows allocate all extra width to the battlefield while
  *   keeping the right HUD sidebar fixed at `UiTokens.SIDEBAR_WIDTH` (232 ref units).
@@ -45,6 +50,9 @@ data class UiMetrics(
 
 object UiScale {
     const val REFERENCE_SHORT_EDGE: Float = 640f
+    const val MIN_SCALE_FLOOR: Float = 0.5f
+    const val LARGE_WINDOW_EXPONENT: Double = 0.55
+    const val MIN_LINEAR_PROPORTION_FLOOR: Float = 0.50f
     const val TOUCH_ACTION_KEY_HEIGHT_REF: Float = 58f
     const val TOUCH_MIN_KEY_MM: Float = 8f
     /** Scale change threshold for triggering font atlas rebuild. */
@@ -53,16 +61,29 @@ object UiScale {
     const val FONT_REBUILD_DEBOUNCE_SECONDS: Float = 0.16f
 
     /**
+     * Computes the continuous nonlinear base scale from pixel dimensions:
+     * - `r <= 1`: linear `max(0.5, r)`
+     * - `r > 1`: `max(r^0.55, 0.50 * r)`
+     */
+    fun computeBaseScale(widthPixels: Int, heightPixels: Int): Float {
+        val safeW = widthPixels.coerceAtLeast(1)
+        val safeH = heightPixels.coerceAtLeast(1)
+        val ratio = min(safeW, safeH).toFloat() / REFERENCE_SHORT_EDGE
+        if (ratio <= 1f) return ratio.coerceAtLeast(MIN_SCALE_FLOOR)
+        val nonlinear = ratio.toDouble().pow(LARGE_WINDOW_EXPONENT).toFloat()
+        val proportionFloor = MIN_LINEAR_PROPORTION_FLOOR * ratio
+        return maxOf(nonlinear, proportionFloor)
+    }
+
+    /**
      * Computes continuous uniform UI scale from window pixel dimensions and pixel density (`pxPerMm`).
      * Defensive lower clamp `0.5f` only guards degenerate sub-320px windows.
      */
     fun computeScaleFromPxPerMm(widthPixels: Int, heightPixels: Int, touch: Boolean = false, pxPerMm: Float = 0f): Float {
-        val safeW = widthPixels.coerceAtLeast(1)
-        val safeH = heightPixels.coerceAtLeast(1)
-        val base = min(safeW, safeH).toFloat() / REFERENCE_SHORT_EDGE
-        if (!touch) return base.coerceAtLeast(0.5f)
+        val base = computeBaseScale(widthPixels, heightPixels)
+        if (!touch) return base.coerceAtLeast(MIN_SCALE_FLOOR)
         val sTouch = if (pxPerMm > 0f) (TOUCH_MIN_KEY_MM * pxPerMm) / TOUCH_ACTION_KEY_HEIGHT_REF else 0f
-        return maxOf(base, sTouch).coerceAtLeast(0.5f)
+        return maxOf(base, sTouch).coerceAtLeast(MIN_SCALE_FLOOR)
     }
 
     /**

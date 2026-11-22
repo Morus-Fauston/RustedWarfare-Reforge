@@ -64,6 +64,8 @@ data class WindowsLaunchOptions(
                     "1920x1080" -> Triple(false, 1920, 1080)
                     "2400x1080" -> Triple(false, 2400, 1080)
                     "2560x1080" -> Triple(false, 2560, 1080)
+                    "2560x1440" -> Triple(false, 2560, 1440)
+                    "3840x2160" -> Triple(false, 3840, 2160)
                     else -> throw IllegalArgumentException("Unsupported --background-size: $value")
                 }
             } ?: Triple(false, 1920, 1080)

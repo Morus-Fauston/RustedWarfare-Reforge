@@ -101,6 +101,7 @@ class BootstrapScreen(
     private val commandPickButtons = linkedMapOf<String, TextButton>()
     private var commandPickError: String? = null
     private var commandConsoleOpen = false
+    private var swallowNextSlashTyped = false
     private lateinit var rootField: TextField
     private lateinit var titleLabel: Label
     private lateinit var selectedLabel: Label
@@ -204,7 +205,7 @@ class BootstrapScreen(
     private lateinit var skirmishMapTab: TextButton
     private var matchStartupNotices: List<String> = emptyList()
     private var customRootText = if (initialContent) initialRoot.toAbsolutePath().normalize().toString() else ""
-    private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(), visualState?.selection ?: VisualAssetSelection()))
+    private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(deploymentEnabled = development && !touchControls), visualState?.selection ?: VisualAssetSelection()))
     private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
     private var loading = false
@@ -1033,15 +1034,17 @@ class BootstrapScreen(
                         }
                     }
                 }
-                if (development && keycode == Input.Keys.SLASH && !commandConsoleOpen && !paused && !loading &&
-                    !hudMenuOpen && !stepClock.isPaused && !touchControls && session?.canDeploy == true && stage.keyboardFocus !is TextField) {
-                    mapInput.cancel()
-                    commandConsoleOpen = true
-                    commandPickError = null
-                    commandField.text = ""
-                    stage.keyboardFocus = commandField
-                    lastHudState = null; updateHud()
-                    evidence.record("sandbox-console", mapOf("generation" to generation, "open" to true))
+                if (HudSandboxConsole.isConsoleOpenKey(keycode) && HudSandboxConsole.canOpenConsole(
+                        development = development,
+                        commandConsoleOpen = commandConsoleOpen,
+                        appPaused = paused,
+                        loading = loading,
+                        hudMenuOpen = hudMenuOpen,
+                        touchControls = touchControls,
+                        canDeploy = session?.canDeploy == true,
+                        textFieldFocused = stage.keyboardFocus is TextField,
+                    )) {
+                    openCommandConsole(swallowKeyTyped = true)
                     return true
                 }
                 if (!commandConsoleOpen) {
@@ -1102,7 +1105,26 @@ class BootstrapScreen(
                 }
                 return false
             }
-            override fun keyTyped(character: Char): Boolean = commandConsoleOpen && (character == '\r' || character == '\n')
+            override fun keyTyped(character: Char): Boolean {
+                if (swallowNextSlashTyped) {
+                    swallowNextSlashTyped = false
+                    if (HudSandboxConsole.isConsoleOpenChar(character)) return true
+                }
+                if (HudSandboxConsole.isConsoleOpenChar(character) && HudSandboxConsole.canOpenConsole(
+                        development = development,
+                        commandConsoleOpen = commandConsoleOpen,
+                        appPaused = paused,
+                        loading = loading,
+                        hudMenuOpen = hudMenuOpen,
+                        touchControls = touchControls,
+                        canDeploy = session?.canDeploy == true,
+                        textFieldFocused = stage.keyboardFocus is TextField,
+                    )) {
+                    openCommandConsole(swallowKeyTyped = false)
+                    return true
+                }
+                return commandConsoleOpen && (character == '\r' || character == '\n')
+            }
         }, stage, object : InputAdapter() {
             override fun keyDown(keycode: Int): Boolean {
                 if (!touchControls || keycode != Input.Keys.BACK) return false
@@ -1959,7 +1981,20 @@ class BootstrapScreen(
             " | backlog ${lastPacingFrame.pendingSteps.toLong()}")
     }
 
+    private fun openCommandConsole(swallowKeyTyped: Boolean = false) {
+        mapInput.cancel()
+        commandConsoleOpen = true
+        swallowNextSlashTyped = swallowKeyTyped
+        commandPickError = null
+        commandField.text = ""
+        stage.keyboardFocus = commandField
+        lastHudState = null
+        updateHud()
+        evidence.record("sandbox-console", mapOf("generation" to generation, "open" to true))
+    }
+
     private fun closeCommandConsole() {
+        swallowNextSlashTyped = false
         if (!commandConsoleOpen) return
         commandConsoleOpen = false
         if (::commandField.isInitialized && stage.keyboardFocus === commandField) stage.keyboardFocus = null

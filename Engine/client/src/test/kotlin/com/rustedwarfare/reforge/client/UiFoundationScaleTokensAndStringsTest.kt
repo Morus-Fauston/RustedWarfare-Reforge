@@ -16,33 +16,60 @@ class UiFoundationScaleTokensAndStringsTest {
     }
 
     @Test
-    fun continuousScaleMatchesSpecResolutionsPortraitAndDensityFallbacks() {
+    fun continuousScaleMatchesNonlinearSpecResolutionsFloorsAndFallbacks() {
+        // Small windows (short <= 640): linear with 0.5 defensive floor
+        val mTiny = UiScale.metrics(400, 240, touch = false)
+        assertEquals(0.5f, mTiny.scale, 1e-4f)
+
+        val mSmall = UiScale.metrics(800, 480, touch = false)
+        assertEquals(0.75f, mSmall.scale, 1e-4f)
+        assertEquals(640f, mSmall.logicalHeight, 1e-3f)
+
+        // Reference resolution (short == 640): exact 1.0x
         val m960 = UiScale.metrics(960, 640, touch = false)
         assertEquals(1.0f, m960.scale, 1e-4f)
         assertEquals(960f, m960.logicalWidth, 1e-3f)
         assertEquals(640f, m960.logicalHeight, 1e-3f)
         assertEquals(960f - UiTokens.SIDEBAR_WIDTH, m960.battlefieldLogicalWidth, 1e-3f)
 
+        // 1080p: r = 1080/640 = 1.6875 -> nonlinear r^0.55 (~1.3338)
+        val expected1080 = Math.pow(1080.0 / 640.0, 0.55).toFloat()
         val m1080 = UiScale.metrics(1920, 1080, touch = false)
-        assertEquals(1.6875f, m1080.scale, 1e-4f)
-        assertEquals(1920f / 1.6875f, m1080.logicalWidth, 1e-2f)
-        assertEquals(640f, m1080.logicalHeight, 1e-3f)
+        assertEquals(expected1080, m1080.scale, 1e-4f)
+        assertEquals(1920f / expected1080, m1080.logicalWidth, 1e-2f)
+        assertEquals(1080f / expected1080, m1080.logicalHeight, 1e-2f)
+        assertTrue(m1080.scale < 1.6875f, "Nonlinear scale at 1080p must grow slower than linear")
 
-        // 2560x1080 ultrawide: same short edge -> same scale 1.6875, all extra width goes to battlefield!
+        // 2560x1080 ultrawide: same short edge -> identical scale, all extra width goes to battlefield!
         val mUltra = UiScale.metrics(2560, 1080, touch = false)
-        assertEquals(1.6875f, mUltra.scale, 1e-4f)
-        assertEquals(640f, mUltra.logicalHeight, 1e-3f)
-        assertTrue(mUltra.battlefieldLogicalWidth > m1080.battlefieldLogicalWidth + 370f,
+        assertEquals(expected1080, mUltra.scale, 1e-4f)
+        assertEquals(m1080.logicalHeight, mUltra.logicalHeight, 1e-3f)
+        assertTrue(mUltra.battlefieldLogicalWidth > m1080.battlefieldLogicalWidth + 470f,
             "Ultrawide extra width must go entirely to battlefield, keeping sidebar fixed at 232")
+
+        // 4K 27" (3840x2160): nonlinear r^0.55 (~1.952), sidebar ~11.8% of width instead of linear 20.4%
+        val expected4k = Math.pow(2160.0 / 640.0, 0.55).toFloat()
+        val m4k = UiScale.metrics(3840, 2160, touch = false)
+        assertEquals(expected4k, m4k.scale, 1e-4f)
+        val sidebarPct4k = (UiTokens.SIDEBAR_WIDTH * m4k.scale) / 3840f
+        assertTrue(sidebarPct4k in 0.11f..0.125f, "4K 16:9 sidebar ratio should be ~11.8%, got $sidebarPct4k")
+        assertTrue(m4k.logicalHeight <= 1280f, "Logical short edge must never exceed 1280")
+
+        // Ultra-high resolution (8K, 7680x4320): 0.50*r proportion floor activates (logical short edge capped at 1280)
+        val m8k = UiScale.metrics(7680, 4320, touch = false)
+        assertEquals(0.50f * (4320f / 640f), m8k.scale, 1e-4f)
+        assertEquals(1280f, m8k.logicalHeight, 1e-2f)
+        val sidebarPct8k = (UiTokens.SIDEBAR_WIDTH * m8k.scale) / 7680f
+        assertTrue(sidebarPct8k >= 0.101f, "8K 16:9 sidebar ratio must stay >= 10.2%, got $sidebarPct8k")
 
         // Portrait orientation uses short edge = min(width, height) = 1080
         val portrait = UiScale.metrics(1080, 1920, touch = false)
-        assertEquals(1.6875f, portrait.scale, 1e-4f)
-        assertEquals(640f, portrait.logicalWidth, 1e-3f)
+        assertEquals(expected1080, portrait.scale, 1e-4f)
+        assertEquals(1080f / expected1080, portrait.logicalWidth, 1e-2f)
 
-        // Touch with unknown/zero density falls back cleanly to base scale
+        // Touch with unknown/zero density falls back cleanly to shared nonlinear base scale
         val touchNoDensity = UiScale.metricsFromDensity(1920, 1080, touch = true, ppcY = 0f, ppiY = 0f)
-        assertEquals(1.6875f, touchNoDensity.scale, 1e-4f)
+        assertEquals(expected1080, touchNoDensity.scale, 1e-4f)
         assertEquals(0f, touchNoDensity.pxPerMm, 1e-4f)
     }
 
@@ -52,13 +79,14 @@ class UiFoundationScaleTokensAndStringsTest {
         val highDpi = UiScale.metricsFromDensity(1920, 1080, touch = true, ppcY = 173.23f, ppiY = 160f)
         val expectedTouch = (8f * 17.323f) / 58f
         assertEquals(expectedTouch, highDpi.scale, 1e-3f)
-        assertTrue(highDpi.scale > 1.6875f)
+        assertTrue(highDpi.scale > UiScale.computeBaseScale(1920, 1080))
         val physicalKeyMm = (UiTokens.ACTION_KEY_HEIGHT_TOUCH * highDpi.scale) / 17.323f
         assertTrue(physicalKeyMm >= 7.99f, "Touch action key physical height must be >= 8mm, got $physicalKeyMm")
 
-        // Low-DPI large tablet (2560x1600 at 220 ppi): base = 2.5 > sTouch (~1.19) -> keeps base scale
+        // Low-DPI large tablet (2560x1600 at 220 ppi): nonlinear base (~1.655) > sTouch (~1.195) -> keeps shared base scale
+        val expectedTabletBase = Math.pow(1600.0 / 640.0, 0.55).toFloat()
         val tablet = UiScale.metrics(2560, 1600, touch = true, ppi = 220f)
-        assertEquals(2.5f, tablet.scale, 1e-4f)
+        assertEquals(expectedTabletBase, tablet.scale, 1e-4f)
     }
 
     @Test
