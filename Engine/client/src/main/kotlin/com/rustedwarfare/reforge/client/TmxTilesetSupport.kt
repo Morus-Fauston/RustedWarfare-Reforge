@@ -323,7 +323,7 @@ object TmxSkirmishScenarioBuilder {
         "amphibiousjet" to "amphibiousJet",
         "dropship" to "dropship",
         "hovercraft" to "hovercraft",
-        "gunboat" to "gunBoat",
+        "gunboat" to "gunboat",
         "battleship" to "heavyBattleship",
         "heavybattleship" to "heavyBattleship",
         "attacksubmarine" to "attackSubmarine",

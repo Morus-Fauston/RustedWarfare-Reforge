@@ -44,7 +44,7 @@ internal class ActionCatalogue(private val definitions: Map<String, UnitDefiniti
         "modularSpider_blink" to Names("Blink", "Blink module"),
         "seaFactory" to Names("Sea factory"), "seaFactoryT2" to Names("Sea factory T2"),
         "experimentalLandFactory" to Names("Experimental", "Experimental factory"),
-        "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
+        "gunboat" to Names("Gunboat"), "heavyBattleship" to Names("Heavy battleship"), "attackSubmarine" to Names("Submarine"),
         "nautilusSubmarine" to Names("Nautilus"), "nukeLauncherC" to Names("Nuclear silo"),
         "antiNukeLauncherC" to Names("Anti-nuke silo"),
         "nautilusSubmarineSurface" to Names("Nautilus (Surface)"),

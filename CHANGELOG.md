@@ -1,4 +1,23 @@
 # Changelog
+## v0.5.64 (2026-11-22 18:44)
+
+### 新增
+
+- **现行七期综合试玩内容包（`phase-seven-sandbox`）**：在不触碰 `SimulationTest/public/inputs/phase-six-a-sandbox` 及任何历史 SHA-256 锁定场景的前提下，新建 `SimulationTest/public/inputs/phase-seven-sandbox/json/package`（`id: phase-seven.json`），完整继承六期 A 陆/海/空/机甲/蜘蛛/核弹/经济单位体系，将 `heavyBattleship` 升级为 `102×20` 旋转矩形碰撞箱、纳入 `24×13` 旋转矩形 `gunboat` 并接入 `seaFactory` / `seaFactoryT2` 生产名单、`ActionPresentation` 显示名及 `TmxTilesetSupport` 原版地图别名映射；同步打包进 `:pc:installDist` 并设为 `--map` 对战地图直开的默认推荐内容包入口（不破坏显式 `--inputs` 传参）。
+
+### 调整
+
+- **F3 碰撞箱视图参考图减噪与 `F3+D` 细化开关（`CollisionBoxView.kt`、`HudDebugOverlay.kt`、`BootstrapScreen.kt`）**：
+  - `F3+B`（默认开）：全图可见单位统一采用黑边暖黄（`#F2C96B`）粗实线硬轮廓 + 碰撞箱前端外部短箭头（沿朝向置于硬轮廓外侧，不从中心穿线遮挡贴图）；停滞 `>= 2s` 切换亮红（`#FF2929`），`ShapeRenderer` 与 `GL_BLEND` 状态切换由 `try/finally` 守卫。
+  - 次级细节收敛与 `F3+D`（默认关）：浅青包围圆（`coarse r`）、接触缓冲带、速度与指引矢量默认仅对选中单位绘制；新增 `F3+D`（PC 组合键与触控图层行 `[D]` 命中区 `debug-sublayer-details`）按需全图展开；`F3+R` 未选中路线以 `0.35` alpha 半透明降噪。
+  - 同步更新 F3 左栏图层行（`layers [B] boxes ... · [R] routes ... · [D] details ... · [G] grid ...`）与三色图例行（暖黄 `hard shape / heading`、亮红 `stalled ≥2s`、浅青 `selected / [D] details & routes`）。
+
+### 技术
+
+- **测试与双审收据（`UI-P002-002`）**：新增 `PhaseSevenPackAndDebugDenoiseTest`（含 `phase-seven-sandbox` 加载、矩形舰船参数、海厂生产、`F3+D` 状态机及多角度/圆形外置箭头与降噪计划校验），同步更新 `UiHudDebugLayerAndConsoleTest` 与 `WindowsLaunchOptionsTest`，连同 `CollisionBoxViewTest`、`TmxDynamicAtlasAndSkirmishTest`、`PhaseSixASandboxTest` 及 `:pc:installDist` 全部通过；完成 Big Island（原版素材 + 默认 `--map` 启用 `phase-seven-sandbox`）1920×1080 Windows 实窗采集；全新上下文 Neon 独立非作者整审 0 必修 `APPROVE`（顺手采纳 `try/finally` 与多角度测试 P2 加固），Hydrogen 实窗视觉审查经 `F3+D` 截帧时序定向复核后 0 必修 `APPROVE`。
+
+---
+
 ## v0.5.63 (2026-11-22 17:46)
 
 ### 修复

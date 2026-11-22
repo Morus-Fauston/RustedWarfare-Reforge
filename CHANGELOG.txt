@@ -1,3 +1,10 @@
+v0.5.64 (2026-11-22 18:44)
+  新增: 零扰动 phase-six-a-sandbox 前提下新建现行综合试玩包 SimulationTest/public/inputs/phase-seven-sandbox/json/package（heavyBattleship 升级为 102x20 旋转矩形，纳入 24x13 旋转矩形 gunboat 并接入 seaFactory/seaFactoryT2 生产、ActionPresentation 显示名与 TmxTilesetSupport 别名映射，打包至 pc installDist 并设为 --map 对战地图直开默认推荐内容包）
+  调整: 重构 F3 CollisionBoxView 与 HudDebugOverlay 为参考图低噪风格——默认 F3+B 全图仅绘黑边暖黄(#F2C96B)硬碰撞轮廓与前端外部短箭头（不穿心遮挡贴图，停滞 >=2s 切亮红 #FF2929），青色外接包围圆/缓冲带/速度与指引矢量默认仅选中单位显示，新增 F3+D（触控图层行 [D]，默认关）按需全图展开，F3+R 未选中路线压暗至 0.35 alpha，同步更新 F3 左栏图层行与三色图例
+  技术: 新增 PhaseSevenPackAndDebugDenoiseTest 并同步 UiHudDebugLayerAndConsoleTest 与 WindowsLaunchOptionsTest，受影响 client/pc 单测与 :pc:installDist 全绿 / 完成 Big Island 1920x1080 Windows 实窗采集（默认 F3 态、选中战舰详情、F3+D 全图展开、停滞 >=2s 亮红高亮与 seaFactoryT2 炮艇生产菜单）/ 全新上下文 Neon 独立代码审阅 0 必修 APPROVE（并采纳 2 条 P2 异常恢复与多角度单测加固），Hydrogen 实窗目视审查经 F3+D 截帧时序复核后 0 必修 APPROVE
+
+====
+
 v0.5.63 (2026-11-22 17:46)
   修复: 修复 SandboxSession.previewConstruction 仅读 Ground 单层 GID 导致原版地图 Items 层 res_pool 被误判为平地及水桥/岩石/PathingOverride 未合并的问题，在严格校验 frame.terrain[index].known（零迷雾泄露）前提下复用 MapDefinition.isResourcePool 与 isFoundationBlocked 与核心建筑裁决对齐
   调整: 重绘公开占位图集 base_terrain 为 3x3(60x60) 柔和岩边多格矿池（中心格 id=24/GID 25 标 res_pool，外圈 8 格透明渐变过渡），并同步更新内置示范图 river_crossing.tmx 与 volcanic_archipelago.tmx（含 units_markers firstgid 21->31 偏移与火山岛中央矿池边缘补沙地）

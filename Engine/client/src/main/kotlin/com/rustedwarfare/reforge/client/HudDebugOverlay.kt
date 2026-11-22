@@ -26,19 +26,21 @@ import kotlin.math.roundToInt
  * Pure F3 debug layer toggle & sub-layer state machine (HUD Spec §12A.2).
  *
  * - Available ONLY in development mode; defaults to closed and resets on every new match.
- * - Sub-layer defaults: boxes=ON, routes=ON, grid=OFF.
- * - PC: F3 toggles overlay; holding F3 + B / R / G toggles sub-layers (or pressing B/R/G while F3 held).
- * - Touch: system bar trailing "调试" button toggles overlay; tapping [B]/[R]/[G] on layers line toggles sub-layers.
+ * - Sub-layer defaults: boxes=ON, routes=ON, details=OFF, grid=OFF.
+ * - PC: F3 toggles overlay; holding F3 + B / R / D / G toggles sub-layers (or pressing B/R/D/G while F3 held).
+ * - Touch: system bar trailing "调试" button toggles overlay; tapping [B]/[R]/[D]/[G] on layers line toggles sub-layers.
  */
 data class HudDebugLayerState(
     val enabled: Boolean = false,
     val showBoxes: Boolean = true,
     val showRoutes: Boolean = true,
+    val showDetails: Boolean = false,
     val showGrid: Boolean = false,
 ) {
     fun toggleEnabled(): HudDebugLayerState = copy(enabled = !enabled)
     fun toggleBoxes(): HudDebugLayerState = if (enabled) copy(showBoxes = !showBoxes) else this
     fun toggleRoutes(): HudDebugLayerState = if (enabled) copy(showRoutes = !showRoutes) else this
+    fun toggleDetails(): HudDebugLayerState = if (enabled) copy(showDetails = !showDetails) else this
     fun toggleGrid(): HudDebugLayerState = if (enabled) copy(showGrid = !showGrid) else this
     fun reset(): HudDebugLayerState = HudDebugLayerState()
 }
@@ -49,6 +51,7 @@ data class HudDebugOverlaySnapshot(
     val stacked: Boolean,
     val showBoxes: Boolean,
     val showRoutes: Boolean,
+    val showDetails: Boolean,
     val showGrid: Boolean,
 )
 
@@ -116,7 +119,7 @@ object HudDebugProjection {
             cursorLine,
             "units visible $visibleAlive / $totalVisibleUnits · projectiles $projectiles",
             buildLayersLine(state),
-            "LEGEND", // Rendered with orange & cyan swatch squares by HudDebugOverlay
+            "LEGEND", // Rendered with yellow, stalled-red & cyan swatch squares by HudDebugOverlay
         )
 
         val selectedId = session.selectedId
@@ -134,6 +137,7 @@ object HudDebugProjection {
             stacked = isNarrowStack(stageWidth),
             showBoxes = state.showBoxes,
             showRoutes = state.showRoutes,
+            showDetails = state.showDetails,
             showGrid = state.showGrid,
         )
     }
@@ -141,8 +145,9 @@ object HudDebugProjection {
     fun buildLayersLine(state: HudDebugLayerState): String {
         val b = if (state.showBoxes) "ON" else "off"
         val r = if (state.showRoutes) "ON" else "off"
+        val d = if (state.showDetails) "ON" else "off"
         val g = if (state.showGrid) "ON" else "off"
-        return "layers [B] boxes $b · [R] routes $r · [G] grid $g"
+        return "layers [B] boxes $b · [R] routes $r · [D] details $d · [G] grid $g"
     }
 
     private fun buildCursorLine(cursor: Position?, map: com.rustedwarfare.reforge.core.content.MapDefinition): String {
@@ -242,6 +247,7 @@ internal class HudDebugOverlay(
     private val fallbackFontProvider: () -> BitmapFont,
     private val onToggleBoxes: () -> Unit,
     private val onToggleRoutes: () -> Unit,
+    private val onToggleDetails: () -> Unit = {},
     private val onToggleGrid: () -> Unit,
 ) : Group() {
 
@@ -257,6 +263,7 @@ internal class HudDebugOverlay(
 
     private val btnToggleBoxes = LayerHitActor(onToggleBoxes).also(::addActor)
     private val btnToggleRoutes = LayerHitActor(onToggleRoutes).also(::addActor)
+    private val btnToggleDetails = LayerHitActor(onToggleDetails).also(::addActor)
     private val btnToggleGrid = LayerHitActor(onToggleGrid).also(::addActor)
 
     init {
@@ -303,7 +310,7 @@ internal class HudDebugOverlay(
         if (snap == null) {
             isVisible = false
             leftColumnBottomY = systemBarBottomY
-            btnToggleBoxes.disable(); btnToggleRoutes.disable(); btnToggleGrid.disable()
+            btnToggleBoxes.disable(); btnToggleRoutes.disable(); btnToggleDetails.disable(); btnToggleGrid.disable()
             return
         }
         isVisible = true
@@ -320,23 +327,27 @@ internal class HudDebugOverlay(
             val baseX = UiTokens.SCREEN_MARGIN + PAD_X
             val prefix = "layers "
             val segB = "[B] boxes ${if (snap.showBoxes) "ON" else "off"}"
-            val sep1 = " · "
+            val sep = " · "
             val segR = "[R] routes ${if (snap.showRoutes) "ON" else "off"}"
-            val sep2 = " · "
+            val segD = "[D] details ${if (snap.showDetails) "ON" else "off"}"
             val segG = "[G] grid ${if (snap.showGrid) "ON" else "off"}"
 
+            val sepW = textWidth(font, sep)
             val xB = baseX + textWidth(font, prefix)
             val wB = textWidth(font, segB)
-            val xR = xB + wB + textWidth(font, sep1)
+            val xR = xB + wB + sepW
             val wR = textWidth(font, segR)
-            val xG = xR + wR + textWidth(font, sep2)
+            val xD = xR + wR + sepW
+            val wD = textWidth(font, segD)
+            val xG = xD + wD + sepW
             val wG = textWidth(font, segG)
 
             btnToggleBoxes.setActive(xB - 4f, rowY - 2f, wB + 8f, ROW_H + 4f)
             btnToggleRoutes.setActive(xR - 4f, rowY - 2f, wR + 8f, ROW_H + 4f)
+            btnToggleDetails.setActive(xD - 4f, rowY - 2f, wD + 8f, ROW_H + 4f)
             btnToggleGrid.setActive(xG - 4f, rowY - 2f, wG + 8f, ROW_H + 4f)
         } else {
-            btnToggleBoxes.disable(); btnToggleRoutes.disable(); btnToggleGrid.disable()
+            btnToggleBoxes.disable(); btnToggleRoutes.disable(); btnToggleDetails.disable(); btnToggleGrid.disable()
         }
     }
 
@@ -345,6 +356,7 @@ internal class HudDebugOverlay(
         return listOf(
             DrawnAction("debug-sublayer-boxes", btnToggleBoxes, "Boxes", enabled = btnToggleBoxes.touchable == Touchable.enabled),
             DrawnAction("debug-sublayer-routes", btnToggleRoutes, "Routes", enabled = btnToggleRoutes.touchable == Touchable.enabled),
+            DrawnAction("debug-sublayer-details", btnToggleDetails, "Details", enabled = btnToggleDetails.touchable == Touchable.enabled),
             DrawnAction("debug-sublayer-grid", btnToggleGrid, "Grid", enabled = btnToggleGrid.touchable == Touchable.enabled),
         )
     }
@@ -400,22 +412,28 @@ internal class HudDebugOverlay(
 
     private fun drawLegendRow(batch: Batch, white: TextureRegion, font: BitmapFont, x: Float, y: Float, alpha: Float) {
         val part1 = " hard shape / heading   "
-        val part2 = " buffer / coarse / route / target"
+        val part2 = " stalled ≥2s   "
+        val part3 = " selected / [D] details & routes"
         val sq = 7f
         val w1 = textWidth(font, part1)
         val w2 = textWidth(font, part2)
-        val totalW = ceil(PAD_X * 2f + sq + w1 + sq + w2)
+        val w3 = textWidth(font, part3)
+        val totalW = ceil(PAD_X * 2f + sq + w1 + sq + w2 + sq + w3)
         fillRect(batch, white, x, y, totalW, ROW_H, BG_COLOR, alpha)
 
         var cx = x + PAD_X
         val midY = y + ROW_H * 0.5f
-        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, LEGEND_ORANGE, alpha)
+        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, LEGEND_YELLOW, alpha)
         cx += sq
         drawText(batch, font, part1, cx, midY, TEXT_COLOR, alpha)
         cx += w1
-        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, LEGEND_CYAN, alpha)
+        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, LEGEND_STALLED, alpha)
         cx += sq
         drawText(batch, font, part2, cx, midY, TEXT_COLOR, alpha)
+        cx += w2
+        fillRect(batch, white, cx, midY - sq * 0.5f, sq, sq, LEGEND_CYAN, alpha)
+        cx += sq
+        drawText(batch, font, part3, cx, midY, TEXT_COLOR, alpha)
     }
 
     private fun monoFont(): BitmapFont = fontsProvider()?.smallMono ?: fallbackFontProvider()
@@ -445,7 +463,8 @@ internal class HudDebugOverlay(
         const val PAD_X: Float = 6f
         private val BG_COLOR: Color = Color(0f, 0f, 0f, 0.60f)
         private val TEXT_COLOR: Color = UiTokens.hex(0xE8ECEE)
-        private val LEGEND_ORANGE: Color = UiTokens.hex(0xFF9F1A)
+        private val LEGEND_YELLOW: Color = UiTokens.hex(0xF2C96B)
+        private val LEGEND_STALLED: Color = UiTokens.hex(0xFF2929)
         private val LEGEND_CYAN: Color = UiTokens.hex(0x52D8FF)
     }
 }
