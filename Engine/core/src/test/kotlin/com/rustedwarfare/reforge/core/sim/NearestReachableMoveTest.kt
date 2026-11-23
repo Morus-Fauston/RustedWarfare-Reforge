@@ -208,7 +208,10 @@ class NearestReachableMoveTest {
                     assertTrue(results.values.all { it.originalTarget == click && it.group })
                     frame.units.forEach { assertEquals(it.position, results.getValue(it.unitId).stoppedAt) }
                     assertEquals(230.0, results.getValue("left").distance, 0.00001)
-                    assertEquals(0.0, results.getValue("right").distance, 1.1)
+                    val right = frame.units.single { it.unitId == "right" }
+                    assertTrue(results.getValue("right").distance <= tank.movementCollision.boundingRadius)
+                    assertEquals(MoveArrival.distanceToHull(tank.movementCollision, right.position, right.heading, click),
+                        results.getValue("right").distance)
                     assertTrue(frame.units.all { it.tasks.isEmpty() && it.moveTarget == null })
                     val stopped = frame.units.map { it.position to it.heading }
                     repeat(600) { offset ->

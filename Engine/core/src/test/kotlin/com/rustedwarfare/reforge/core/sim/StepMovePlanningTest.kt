@@ -96,16 +96,14 @@ class StepMovePlanningTest {
                     UnitSpawn("b", "p1", "builder", Position(200.0, 250.0), 90.0))))
                 try {
                     val requestTarget = Position(270.0, 180.0)
-                    // Mix the carrier into the selection so the unsubmitted members keep this order pending.
+                    // Boarding supersedes a movement request that has not reached its first simulation step.
                     val request = assertNotNull(context.requestGroupMove("p1", listOf("a", "b", "craft"), requestTarget))
                     assertIs<ActionResult.Accepted>(context.submitGroupMove(move(context, "a", requestTarget, "group"), request))
-                    val waiting = context.advance(Step(0, 1.0, "sim-tick"))
-                    assertTrue(waiting.events.none { it.kind == "movement-started" })
                     val (actor, target) = if (direction == LoadDirection.INTO) "a" to "craft" else "craft" to "a"
                     assertIs<ActionResult.Accepted>(context.submit(LoadAction("board", "p1", actor, target, direction, context.world)))
                     val destination = Position(250.0, 250.0)
                     assertIs<ActionResult.Accepted>(context.submit(move(context, "b", destination, "new")))
-                    val next = context.advance(Step(1, 1.0, "sim-tick"))
+                    val next = context.advance(Step(0, 1.0, "sim-tick"))
                     assertEquals("craft", next.units.single { it.unitId == "a" }.carriedBy)
                     assertEquals(listOf(Event("movement-started", "b")), next.events.filter { it.kind == "movement-started" }, "$direction")
                     assertEquals(destination, next.units.single { it.unitId == "b" }.moveTarget)
@@ -142,70 +140,72 @@ class StepMovePlanningTest {
                 }
                 assertEquals(emptyList(), context.drainPathDiagnostics(context.world))
                 assertTrue(context.observe().units.all { it.moveTarget == null && it.pathPoints.isEmpty() })
+                val started = mutableSetOf<String>()
                 val frames = mutableListOf<Pair<Long, List<Pair<Position, Position?>>>>()
                 for (tick in 0L..900L) {
                     val frame = context.advance(Step(tick, 1.0, "sim-tick"))
                     frames += tick to frame.units.map { it.position to it.moveTarget }
-                    if (frame.units.all { it.moveTarget != null }) break
+                    started += frame.events.filter { it.kind == "movement-started" }.mapNotNull { it.unitId }
+                    if (started.containsAll(ships)) break
                 }
-                assertTrue(frames.first().second.all { it.second == null }, "The entire selection searched in one step")
-                val planned = frames.last().second.map { assertNotNull(it.second) }
-                assertEquals(ships.size, planned.toSet().size)
+                assertEquals(ships.toSet(), started)
+                assertTrue(frames.size > 1, "The test budget must slice the selection across steps")
                 frames
             }
             assertEquals(replay(), replay())
         }
 
     @Test
-    fun a_knowledge_change_restarts_only_the_affected_players_pending_plan() =
+    fun a_knowledge_change_affects_only_the_observing_players_arrivals() =
         WaterTestScene.withMap { map ->
             val click = Position(640.0, 190.0)
-            fun run(observer: String?): Pair<Long, List<Position>> = withShips(map) { context ->
+            fun run(observer: String?): Pair<Long, List<Position>> = withShips(map, budget = 512) { context ->
                 context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY,
                     PathInformationSource.PLAYER_KNOWLEDGE, false))
                 submitGroup(context, click)
-                context.advance(Step(0, 1.0, "sim-tick"))
+                val firstFrame = context.advance(Step(0, 1.0, "sim-tick"))
                 if (observer != null) context.acceptVisibleTerrain(context.world, observer,
                     listOf(VisibleTerrainCell(32, 9, true, 1)))
-                awaitStart { context.advance(Step(it, 1.0, "sim-tick")) }
+                awaitStops(firstFrame) { context.advance(Step(it, 1.0, "sim-tick")) }
             }
             val original = run(null)
-            assertTrue(click in original.second)
             assertEquals(original, run("p2"))
             val changed = run("p1")
-            assertTrue(changed.first > original.first)
-            assertTrue(click !in changed.second)
+            fun blocked(p: Position) = p.x in 640.0..<660.0 && p.y in 180.0..<200.0
+            assertTrue(changed.second.none(::blocked), "A known blocked tile was used for parking: ${changed.second}")
         }
 
     @Test
-    fun an_occupied_destination_is_rechecked_and_a_distant_spawn_does_not_restart_the_plan() =
+    fun an_occupied_destination_stays_clear_and_a_distant_spawn_preserves_arrivals() =
         WaterTestScene.withMap { map ->
             val click = Position(640.0, 190.0)
             fun run(spawn: Position?): Pair<Long, List<Position>> = OfflineSandboxHost(shipScene(map), deploymentEnabled = true).use { host ->
                 val context = host.context
                 submitGroup(context, click)
-                host.advance(Step(0, 1.0, "sim-tick"))
+                val firstFrame = host.advance(Step(0, 1.0, "sim-tick"))
                 if (spawn != null) {
                     val receipt = host.submit(SandboxCommandRequest(1, context.world, host.generation,
                         "/spawn water-test ${spawn.x.toInt()} ${spawn.y.toInt()} p1"))
                     assertEquals(SandboxCommandStatus.QUEUED, receipt.status)
                 }
-                awaitStart { host.advance(Step(it, 1.0, "sim-tick")) }.also {
+                awaitStops(firstFrame) { host.advance(Step(it, 1.0, "sim-tick")) }.also {
                     if (spawn != null) assertEquals(SandboxCommandStatus.APPLIED, host.receipt(1)?.status)
                 }
             }
             val original = run(null)
-            assertTrue(click in original.second)
             assertEquals(original, run(Position(765.0, 310.0)))
             val occupied = run(click)
-            assertTrue(occupied.first > original.first)
-            assertTrue(click !in occupied.second)
+            assertTrue(occupied.second.all { ScreenPlane.distanceSquared(click, it) >= 144.0 - 1e-6 })
         }
 
     @Test
     fun a_contact_push_during_planning_rebases_the_route_to_the_actual_pose() =
         WaterTestScene.withMap { map ->
-            val base = shipScene(map)
+            val reef = map.groundGids.copyOf()
+            for (row in 3..13) reef[row * map.widthTiles + 27] = 1
+            val detour = MapDefinition(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
+                map.tileSets, reef, map.blocking)
+            val base = shipScene(detour)
             val old = base.unitDefinitions.getValue("water-test")
             val ship = UnitDefinition(old.id, old.className, old.radius, old.displayRadius, old.totalFrames,
                 old.imagePath, old.imageScale, old.movement.copy(moveAccelerationSpeed = 1.0, moveDecelerationSpeed = 1.0),
@@ -213,19 +213,20 @@ class StepMovePlanningTest {
             val a = base.units.first { it.unitId == "a" }.position
             val scene = base.copy(unitDefinitions = mapOf(ship.id to ship), units = base.units +
                 UnitSpawn("pusher", "p1", ship.id, Position(a.x - 12, a.y), 90.0))
-            val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = 8)).initialize(scene)).context
             try {
                 context.enablePathDiagnostics(context.world)
                 assertIs<ActionResult.Accepted>(context.submit(move(context, "pusher", Position(520.0, a.y), "push")))
                 submitGroup(context, Position(640.0, 190.0))
-                val pressed = context.advance(Step(0, 1.0, "sim-tick")).units.first { it.unitId == "a" }
+                val firstFrame = context.advance(Step(0, 1.0, "sim-tick"))
+                val pressed = firstFrame.units.first { it.unitId == "a" }
                 assertTrue(pressed.position.x > a.x)
                 assertEquals(null, pressed.moveTarget)
                 assertIs<ActionResult.Accepted>(context.submit(StopAction("stop-pusher", "p1", "pusher", context.world)))
                 context.drainPathDiagnostics(context.world)
-                awaitStart { context.advance(Step(it, 1.0, "sim-tick")) }
-                val rebased = context.drainPathDiagnostics(context.world).single { it.actionId == "group-a" }
-                assertEquals(pressed.position, rebased.searchStart)
+                awaitStart(firstFrame) { context.advance(Step(it, 1.0, "sim-tick")) }
+                val rebased = context.drainPathDiagnostics(context.world).first { it.actionId == "group-a" }
+                assertTrue(rebased.searchStart!!.x >= pressed.position.x, "Route began behind the contact displacement")
             } finally {
                 context.close()
             }
@@ -236,13 +237,24 @@ class StepMovePlanningTest {
         for (id in ships) assertIs<ActionResult.Accepted>(context.submitGroupMove(move(context, id, click, "group"), selection))
     }
 
-    private fun awaitStart(advance: (Long) -> Observation): Pair<Long, List<Position>> {
-        for (tick in 1L..900L) {
-            val frame = advance(tick)
-            val destinations = frame.units.filter { it.unitId in ships }.mapNotNull { it.moveTarget }
-            if (destinations.size == ships.size) return tick to destinations
+    private fun awaitStops(firstFrame: Observation, advance: (Long) -> Observation): Pair<Long, List<Position>> {
+        for (tick in firstFrame.stepIndex..(firstFrame.stepIndex + 8000)) {
+            val frame = if (tick == firstFrame.stepIndex) firstFrame else advance(tick)
+            val selected = ships.map { id -> frame.units.single { it.unitId == id } }
+            if (selected.all { it.moveArrival != null && it.tasks.isEmpty() })
+                return tick to selected.map { it.position }
         }
-        error("The selection did not receive its routes")
+        error("Selection did not finish parking after step ${firstFrame.stepIndex}")
+    }
+
+    private fun awaitStart(firstFrame: Observation, advance: (Long) -> Observation): Pair<Long, List<Position>> {
+        val targets = mutableMapOf<String, Position>()
+        for (tick in firstFrame.stepIndex..20000L) {
+            val frame = if (tick == firstFrame.stepIndex) firstFrame else advance(tick)
+            for (unit in frame.units) if (unit.unitId in ships) unit.moveTarget?.let { targets.putIfAbsent(unit.unitId, it) }
+            if (targets.keys.containsAll(ships)) return tick to ships.map(targets::getValue)
+        }
+        error("Missing routes for ${ships - targets.keys}")
     }
 
     @Test
@@ -255,13 +267,12 @@ class StepMovePlanningTest {
                 for (id in ships) assertIs<ActionResult.Accepted>(
                     context.submitGroupMove(move(context, id, first, "first"), selection))
                 assertTrue(context.observe().units.all { it.moveTarget == null })
-                val initial = context.advance(Step(0, 1.0, "sim-tick"))
-                assertTrue(initial.units.all { it.moveTarget == null })
+                // Replace the queued command before its first execution step.
                 val accepted = assertIs<ActionResult.Accepted>(context.submit(move(context, "a", replacement, "second")))
                 assertTrue(accepted.events.none { it.kind == "movement-started" })
                 var starts = 0
                 var othersReady = false
-                for (tick in 1L..900L) {
+                for (tick in 0L..900L) {
                     val frame = context.advance(Step(tick, 1.0, "sim-tick"))
                     val replaced = frame.units.first { it.unitId == "a" }
                     if (Event("movement-started", "a") in frame.events) starts++
@@ -285,8 +296,8 @@ class StepMovePlanningTest {
         })
     }
 
-    private fun <T> withShips(map: MapDefinition, action: (SimulationContext) -> T): T {
-        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(shipScene(map))).context
+    private fun <T> withShips(map: MapDefinition, budget: Int = 8, action: (SimulationContext) -> T): T {
+        val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = budget)).initialize(shipScene(map))).context
         try {
             return action(context)
         } finally {

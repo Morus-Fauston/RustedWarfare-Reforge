@@ -1,13 +1,13 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
-import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
+import com.rustedwarfare.reforge.core.path.FirstSegmentDecision
 import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
-import com.rustedwarfare.reforge.core.path.FirstSegmentDecision
 import java.util.Collections
 
 internal data class MovePlanningPose(val position: Position, val heading: Double, val layer: ContactLayer?,
@@ -25,16 +25,20 @@ internal data class MovePlanningMember(
     val inputPreparationNanos: Long,
 )
 
-internal data class MovePlanningOccupant(val body: MutableUnit, val pose: MovePlanningPose,
-                                         val reserved: GroupMoveSlot?, val idle: Boolean, val obstructsRoute: Boolean = false,
-                                         val fixed: Boolean = false)
+internal data class MovePlanningOccupant(
+    val body: MutableUnit,
+    val pose: MovePlanningPose,
+    val reserved: GroupMoveSlot?,
+    val idle: Boolean,
+    val obstructsRoute: Boolean = false,
+    val fixed: Boolean = false,
+)
 
 internal enum class ManeuverRepair(val reason: PathSearchReason) {
     SHORE_REJOIN(PathSearchReason.ROUTE_REPAIR),
     CONTACT(PathSearchReason.ROUTE_REPAIR),
     CONNECTION(PathSearchReason.ROUTE_REPAIR),
     KNOWLEDGE(PathSearchReason.KNOWLEDGE_REPLAN),
-    GROUP_SLOT(PathSearchReason.ROUTE_REPAIR),
 }
 
 internal data class MovePlanningInput(
@@ -43,7 +47,7 @@ internal data class MovePlanningInput(
     val occupants: List<MovePlanningOccupant>,
     val collectDiagnostics: Boolean,
     val repair: ManeuverRepair? = null,
-    val segmentPeers: List<MovePlanningOccupant> = emptyList(),
+    val segmentPeers: (MovePlanningMember, Position) -> List<MovePlanningOccupant> = { _, _ -> emptyList() },
 ) {
     fun matches(current: MovePlanningInput): Boolean =
         matchesMembers(current) && sameOccupants(occupants, current.occupants)
@@ -85,12 +89,17 @@ private fun MoveAction.sameMoveRequest(other: MoveAction): Boolean =
 internal data class PlannedMove(val slot: GroupMoveSlot?, val counters: PathSearchCounters?, val searchNanos: Long,
                                 val nearest: Boolean = false)
 
-/** The ordinary order queue belongs to the same candidate transaction as movement. */
+/**
+ * Per-unit move & repair planning queue belonging to the same candidate transaction as movement.
+ *
+ * ENG-P016-009B: legacy multi-member group slot allocation (OpenGroundGroup / GroupMoveDestinations.Assignment /
+ * ManeuverRepair.GROUP_SLOT) was removed; all group parking allocation lives in the single terminal landing layer
+ * ([SharedLandingSites] / [MixedLandingBays]).
+ */
 internal class MovePlanning {
-    private class Order(val group: GroupMoveRequest?, val actions: MutableList<MoveAction>,
+    private class Order(val actions: MutableList<MoveAction>,
                         val repair: ManeuverRepair? = null, var requestKey: Any = Any(),
                         var fastLaneEligible: Boolean = false)
-
 
     companion object {
         internal const val FAST_LANE_MAX_SQUAD_SIZE: Int = 5
@@ -103,19 +112,13 @@ internal class MovePlanning {
     private val p2Repairs = linkedSetOf<Order>()
     private val optionalRejoins = linkedSetOf<Order>()
     private val byMember = HashMap<String, Order>()
-    private val byGroup = HashMap<GroupMoveRequest, Order>()
     private val workByOrder = HashMap<Order, Work>()
 
     private fun queueFor(order: Order): LinkedHashSet<Order> = when {
         order.repair == ManeuverRepair.SHORE_REJOIN -> optionalRejoins
         order.repair != null -> p2Repairs
-        isFastLanePlayerOrder(order) -> p0FastLane
+        order.fastLaneEligible -> p0FastLane
         else -> p0Ordinary
-    }
-
-    private fun isFastLanePlayerOrder(order: Order): Boolean {
-        if (order.repair != null) return false
-        return order.fastLaneEligible
     }
 
     private fun allOrdersSequence(): Sequence<Order> =
@@ -123,85 +126,47 @@ internal class MovePlanning {
 
     fun fork(rollback: PathSearchRollback): MovePlanning = MovePlanning().also { pending ->
         for (order in allOrdersSequence()) {
-            // Single orders are removed as a whole, so their requests can be shared across rollback.
-            val request = if (order.group == null) order else
-                Order(order.group, order.actions.toMutableList(), order.repair, order.requestKey, order.fastLaneEligible)
-            pending.add(request)
-            workByOrder[order]?.let { pending.workByOrder[request] = it.fork(rollback) }
+            pending.add(order)
+            workByOrder[order]?.let { pending.workByOrder[order] = it.fork(rollback) }
         }
     }
 
-    fun enqueue(action: MoveAction, group: GroupMoveRequest?, selectionSize: Int = group?.members?.size ?: 1) {
+    fun enqueue(action: MoveAction, group: GroupMoveRequest? = null, selectionSize: Int = group?.members?.size ?: 1) {
         val prior = byMember[action.unitId]
         val reusable = prior?.takeIf { old ->
-            old.repair == null && old.actions.firstOrNull { it.unitId == action.unitId }?.sameMoveRequest(action) == true &&
-                if (group == null) old.group == null else old.group?.let {
-                    it.world === group.world && it.actor == group.actor && it.click == group.click &&
-                        it.members == group.members && old.actions.mapTo(hashSetOf()) { member -> member.unitId } == group.members
-                } == true
+            old.repair == null && old.actions.firstOrNull { it.unitId == action.unitId }?.sameMoveRequest(action) == true
         }?.let(workByOrder::get)
         cancel(action.unitId)
-        val existing = group?.let(byGroup::get)
-        if (existing == null) {
-            val fastLane = selectionSize <= FAST_LANE_MAX_SQUAD_SIZE
-            val order = Order(group, mutableListOf(action), fastLaneEligible = fastLane)
-            add(order)
-            if (reusable != null) workByOrder[order] = reusable
-        } else {
-            val prevQueue = queueFor(existing)
-            existing.actions += action
-            if (selectionSize > FAST_LANE_MAX_SQUAD_SIZE || existing.actions.size > FAST_LANE_MAX_SQUAD_SIZE) {
-                existing.fastLaneEligible = false
-            }
-            existing.requestKey = Any()
-            val nextQueue = queueFor(existing)
-            if (prevQueue !== nextQueue) {
-                prevQueue.remove(existing)
-                nextQueue.add(existing)
-            }
-            // A repeated selection is received member by member. Keep its saved work
-            // until the next simulation step can validate the complete new request.
-            byMember[action.unitId] = existing
-        }
+        val fastLane = selectionSize <= FAST_LANE_MAX_SQUAD_SIZE
+        val order = Order(mutableListOf(action), fastLaneEligible = fastLane)
+        add(order)
+        if (reusable != null) workByOrder[order] = reusable
     }
 
     fun cancel(unitId: String) {
         val order = byMember.remove(unitId) ?: return
         workByOrder.remove(order)
-        if (order.actions.size == 1) {
-            p0FastLane.remove(order)
-            p0Ordinary.remove(order)
-            p2Repairs.remove(order)
-            optionalRejoins.remove(order)
-            if (order.repair == null) order.group?.let(byGroup::remove)
-        } else {
-            order.actions.removeAll { it.unitId == unitId }
-        }
+        p0FastLane.remove(order)
+        p0Ordinary.remove(order)
+        p2Repairs.remove(order)
+        optionalRejoins.remove(order)
     }
 
-    fun repair(action: MoveAction, reason: ManeuverRepair, group: GroupMoveRequest? = null) {
+    fun repair(action: MoveAction, reason: ManeuverRepair) {
         val existing = byMember[action.unitId]
         if (existing != null && (existing.repair == null || existing.repair >= reason)) return
         cancel(action.unitId)
-        add(Order(group, mutableListOf(action), reason))
+        add(Order(mutableListOf(action), reason))
     }
 
     private fun add(order: Order) {
         queueFor(order).add(order)
-        if (order.repair == null) order.group?.let { byGroup[it] = order }
         for (action in order.actions) byMember[action.unitId] = order
-    }
-
-    fun pendingReservation(unitId: String): GroupMoveReservation? {
-        val order = byMember[unitId] ?: return null
-        val group = order.group ?: return null
-        return workByOrder[order]?.heldSlot(unitId)?.let { GroupMoveReservation(group, it) }
     }
 
     fun pending(unitId: String): Boolean = unitId in byMember
     fun repairing(unitId: String): Boolean = byMember[unitId]?.repair != null
     fun holdsManeuverRoute(unitId: String): Boolean = byMember[unitId]?.repair?.let { it != ManeuverRepair.SHORE_REJOIN } == true
-    fun replacingDestination(unitId: String): Boolean = byMember[unitId]?.repair == ManeuverRepair.GROUP_SLOT
 
     fun hasPendingFastLaneOrders(): Boolean = p0FastLane.isNotEmpty()
 
@@ -221,41 +186,36 @@ internal class MovePlanning {
         rotateQueues: Boolean = true,
         p2BudgetAlreadyUsed: Int = 0,
     ): Int {
-        // Rotate active heads inside same-tier queues between simulation steps for fair time-slicing.
-        // Only rotate multi-order repair queues (P2) between steps so stale/stuck repairs never starve peers;
-        // preserve deterministic FIFO arrival order for fresh player orders in p0Ordinary so corridor warming
-        // and multi-unit order publication stay reproducible.
-        if (rotateQueues) {
-            if (p2Repairs.size > 1) {
-                val front = p2Repairs.first()
-                if (front in workByOrder) {
-                    p2Repairs.remove(front)
-                    p2Repairs.add(front)
-                }
-            }
-        }
-        // Tier 0a: Fast-lane fresh player orders (1..5 unit squads) ALWAYS preempt first with guaranteed budget.
+        // Priority 0a: Fast-lane individual / small-squad (<= 5 units) player commands.
         processQueue(p0FastLane, pathPolicy, budget, snapshot, publish, samples, liveUnitCount, executionStep)
         if (budget.exhausted) return 0
 
-        // Tier 0b: Ordinary fresh player orders (large groups) run ahead of P1/P2 so player clicks are never starved.
+        // Priority 0b: Remaining ordinary player move commands.
         processQueue(p0Ordinary, pathPolicy, budget, snapshot, publish, samples, liveUnitCount, executionStep)
         if (budget.exhausted) return 0
 
-        // Tier 1: Shared flow-field build / dirty-chunk refresh slot (hook ready for ENG-P016-008).
+        // Priority 1: Optional shared-flow-field incremental work slot.
         if (p1FlowWork != null && !budget.exhausted) {
             p1FlowWork(budget)
             if (budget.exhausted) return 0
         }
 
-        // Tier 2: Background repairs (fair round-robin within tier, strictly isolated budget cap).
-        // Enforce a step-wide 3/4 budget cap on P2 repairs whenever P1 flow work or optional rejoins
-        // share the step (or across multiple same-step advance passes), leaving headroom without starving repairs.
-        val stepP2Cap = if (p1FlowWork != null || optionalRejoins.isNotEmpty()) {
-            maxOf(8, budget.limit * P2_REPAIR_MAX_SHARE_NUMERATOR / P2_REPAIR_MAX_SHARE_DENOMINATOR)
-        } else budget.limit
-        val remainingP2Cap = (stepP2Cap - p2BudgetAlreadyUsed).coerceAtLeast(0)
-        val p2SubBudget = PathWorkBudget(minOf(budget.remaining, remainingP2Cap))
+        // Priority 2: Background repair queue with anti-starvation rotation and bounded step share.
+        if (rotateQueues && p2Repairs.size > 1) {
+            val head = p2Repairs.first()
+            p2Repairs.remove(head)
+            p2Repairs.add(head)
+        }
+        // A repair must fit at least one indivisible path operation. Ordinary orders retain first service.
+        val maxP2Total = maxOf(
+            minOf(budget.limit, PathWorkBudget.OPERATION_COST),
+            (budget.limit * P2_REPAIR_MAX_SHARE_NUMERATOR) / P2_REPAIR_MAX_SHARE_DENOMINATOR,
+        )
+        val remainingP2Cap = (maxP2Total - p2BudgetAlreadyUsed).coerceAtLeast(0)
+        val remainingStep = budget.limit - budget.used
+        val p2Limit = minOf(remainingStep, remainingP2Cap)
+        if (p2Limit <= 0) return 0
+        val p2SubBudget = PathWorkBudget(p2Limit)
         val p2UsedBefore = p2SubBudget.used
         processQueue(
             p2Repairs, pathPolicy, p2SubBudget, snapshot, publish, samples, liveUnitCount, executionStep,
@@ -295,25 +255,19 @@ internal class MovePlanning {
                     record(completed = false)
                     return
                 }
-                val current = snapshot(order.actions, order.group, order.repair)
-                if (!previousWork.rebind(current)) previousWork = Work(current, order.group)
+                val current = snapshot(order.actions, null, order.repair)
+                if (!previousWork.rebind(current)) previousWork = Work(current)
                 previousWork.requestKey = order.requestKey
                 workByOrder[order] = previousWork
             }
-            if (previousWork == null && (order.group != null || order.repair != null) && !budget.take()) {
+            if (previousWork == null && order.repair != null && !budget.take()) {
                 record(completed = false)
                 return
             }
-            val work = previousWork ?: Work(snapshot(order.actions, order.group, order.repair), order.group).also {
+            val work = previousWork ?: Work(snapshot(order.actions, null, order.repair)).also {
                 it.requestKey = order.requestKey
             }
             var result = work.advance(pathPolicy, budget)
-            if (work.restartTail) {
-                record(completed = false, restarted = true)
-                workByOrder.remove(order)
-                queued.remove(); queue.add(order)
-                return
-            }
             if (result == null) {
                 record(completed = false)
                 workByOrder[order] = work
@@ -322,38 +276,27 @@ internal class MovePlanning {
             var liveInput: MovePlanningInput? = null
             if (previousWork != null && order.repair == ManeuverRepair.SHORE_REJOIN) {
                 if (result.isNotEmpty()) {
-                    // The final live snapshot and equality check must fit this step. A dense,
-                    // stale, or blocked optional shortcut never invalidates the original route.
-                    // Size is O(1). Reserve the full live enumeration and a comparison
-                    // for every possible current entrant before materializing any of them.
                     val cost = 8L + 2L * liveUnitCount()
                     if (cost > budget.limit) result = emptyMap()
                     else if (!budget.take(cost.toInt())) {
                         workByOrder[order] = work
                         record(completed = false)
                         return
-                    } else if (!work.input.matches(snapshot(order.actions, order.group, order.repair))) result = emptyMap()
+                    } else if (!work.input.matches(snapshot(order.actions, null, order.repair))) result = emptyMap()
                 }
             } else if (previousWork != null) {
-                val current = snapshot(order.actions, order.group, order.repair)
+                val current = snapshot(order.actions, null, order.repair)
                 liveInput = current
                 val valid = work.stillValid(current, result)
                 val spliced = if (valid) result else work.trySpliceMicroNudge(current, result)
                 if (spliced == null) {
                     record(completed = true, restarted = true)
-                    // The retry waits behind other orders. Bind its next pose
-                    // when it actually gets budget, rather than saving a fresh
-                    // but already unworked snapshot that can move while queued.
                     workByOrder.remove(order)
-                    // A moving member or occupant must not keep independent orders behind
-                    // a search that is repeatedly invalidated before publication.
                     queued.remove()
                     queue.add(order)
                     return
                 }
                 if (!valid) {
-                    // Atomically adopt live start/pose AND spliced routes so any cross-step suspension
-                    // (e.g. checkFirstSegment running out of budget) stays consistent with live pose.
                     work.adoptSpliced(current, spliced)
                 }
                 result = spliced
@@ -363,7 +306,8 @@ internal class MovePlanning {
                 val end = result[member.action.unitId]?.slot?.path?.firstOrNull { it != member.start }
                 if (end != null) {
                     val live = liveInput ?: work.input
-                    val blockers = work.checkFirstSegment(member, end, live.segmentPeers, budget)
+                    val peers = live.segmentPeers(member, end)
+                    val blockers = work.checkFirstSegment(member, end, peers, budget)
                     if (blockers == null) {
                         workByOrder[order] = work
                         queued.remove(); queue.add(order)
@@ -371,9 +315,9 @@ internal class MovePlanning {
                         return
                     }
                     if (samples != null) firstSegment = FirstSegmentDecision(member.action.actionId, member.action.unitId,
-                        member.start, end, blockers.map { it.body.unitId }, if (blockers.isEmpty()) "adopt" else "replan-member")
+                        member.start, end, blockers.map { it.body.unitId }, if (blockers.isEmpty()) "adopt" else "replan-member", peers.size)
                     if (blockers.isNotEmpty()) {
-                        val retry = Work(live, order.group)
+                        val retry = Work(live)
                         retry.localObstacles = blockers
                         retry.requestKey = order.requestKey
                         workByOrder[order] = retry
@@ -383,66 +327,37 @@ internal class MovePlanning {
                     }
                 }
             }
-            val partial = work.moreRoutes
-            record(completed = !partial)
-            for (member in work.input.members) {
-                if ((order.repair == ManeuverRepair.SHORE_REJOIN || partial || work.hasReleased) && member.action.unitId !in result) continue
-                val planned = result[member.action.unitId] ?: PlannedMove(null, null, 0)
+            record(completed = true)
+            for (plannedMember in work.input.members) {
+                if (order.repair == ManeuverRepair.SHORE_REJOIN && plannedMember.action.unitId !in result) continue
+                val planned = result[plannedMember.action.unitId] ?: PlannedMove(null, null, 0)
                 val occupants = if (order.repair == null) emptyList()
                     else work.input.occupants.filter { it.obstructsRoute }.map { it.body.unitId }
-                publish(member, order.group, order.repair, occupants, planned)
-            }
-            if (partial) {
-                work.noteReleased(checkNotNull(order.group), result)
-                for (id in result.keys) byMember.remove(id)
-                order.actions.removeAll { it.unitId in result }
-                workByOrder[order] = work
-                return
+                publish(plannedMember, null, order.repair, occupants, planned)
             }
             for (action in order.actions) byMember.remove(action.unitId)
-            if (order.repair == null) order.group?.let(byGroup::remove)
             workByOrder.remove(order)
             queued.remove()
         }
     }
 
-    private class Work(var input: MovePlanningInput, private val group: GroupMoveRequest?,
-                       private var batchSize: Int = initialBatchSize(input)) {
-        private var pointSource = group?.let { GroupMoveDestinations.Points(input.map, it.click) }
-        private var groupPoints = mutableListOf<Position>()
-        private var openGround: OpenGroundGroup? = null
-        private var released: Map<String, GroupMoveReservation> = emptyMap()
-        val hasReleased get() = released.isNotEmpty()
-        val moreRoutes get() = openGround?.pendingRoutes == true
-        var restartTail = false
-            private set
-        fun heldSlot(id: String) = if (hasReleased) openGround?.heldSlot(id) else null
-        fun noteReleased(group: GroupMoveRequest, ready: Map<String, PlannedMove>) {
-            released = released + ready.mapValues { GroupMoveReservation(group, checkNotNull(it.value.slot)) }
-        }
-        private var triedOpenGround = false
-        private companion object {
-            fun initialBatchSize(input: MovePlanningInput): Int {
-                val members = input.members
-                if (input.repair != null || members.size !in 2..28) return 113
-                return if (members.all { it.pose.shape is MovementCollisionShape.Circle && !it.hasBirthDelay && it.body?.definition?.movement?.type == MovementType.LAND })
-                    maxOf(1, members.size * 4) else 113
-            }
-        }
-        private var generating = true
-        private var outerDistance = 0.0
+    private class Work(var input: MovePlanningInput) {
         var requestKey: Any? = null
         private var searchedResult: Map<String, PlannedMove>? = null
-        private var cursor = 0
-        private var pointIndex = 0
         private var search: ExactPathSearch? = null
         private var searchingNearest = false
         var localObstacles = emptyList<MovePlanningOccupant>()
         private var checkedPeers = mutableMapOf<String, Pair<MovePlanningPose, Boolean>>()
+        private var searchNanos = 0L
+        private var checkingSlot: PlannedMove? = null
+        private var occupantIndex = -1
+        private var cache: PathClearanceCache? = PathClearanceCache(reuseApproach = false)
+        private var rollback: PathSearchRollback? = null
 
         fun adoptSpliced(liveInput: MovePlanningInput, spliced: Map<String, PlannedMove>) {
             input = liveInput
             searchedResult = spliced
+            checkedPeers.clear()
         }
 
         fun checkFirstSegment(member: MovePlanningMember, end: Position, peers: List<MovePlanningOccupant>,
@@ -450,10 +365,8 @@ internal class MovePlanning {
             val body = checkNotNull(member.body)
             val blocked = mutableListOf<MovePlanningOccupant>()
             for (peer in peers) {
-                // Only stationary/parked/immovable peers force a pre-launch detour; moving peers
-                // in other groups are resolved dynamically by 2D local velocity avoidance (ENG-P016-006).
-                val peerActiveGroup = peer.body.landingMember?.group
-                if (!peer.idle && !peer.fixed && peerActiveGroup != null && peerActiveGroup !== body.landingMember?.group) continue
+                // Moving bodies are handled by local avoidance. Only a stationary obstruction invalidates publication.
+                if (!peer.idle && !peer.fixed) continue
                 val id = peer.body.unitId
                 if (!UnitContact.withinSweptBounds(body, member.start, end, peer.body)) continue
                 val previous = checkedPeers[id]
@@ -469,33 +382,15 @@ internal class MovePlanning {
             return blocked
         }
 
-        private var searchNanos = 0L
-        private var checkingSlot: PlannedMove? = null
-        private var occupantIndex = -1
-        private var cache: PathClearanceCache? = PathClearanceCache(reuseApproach = group != null && input.repair == null && input.members.size >= 2)
-        private var rollback: PathSearchRollback? = null
-        private val candidates = mutableListOf<Pair<MutableUnit, MutableList<PlannedMove>>>()
-        private var immobileMembers = mutableMapOf<String, PlannedMove>()
-        private var assignment: GroupMoveDestinations.Assignment? = null
-
         fun rebind(current: MovePlanningInput): Boolean {
-            if (!scoped(input).matchesRepeatedCommand(scoped(current))) return false
+            if (!input.matchesRepeatedCommand(current)) return false
             input = current
             return true
         }
 
-        fun fork(rollback: PathSearchRollback): Work = Work(input, group, batchSize).also { copy ->
-            copy.pointSource = pointSource?.fork(rollback)
-            copy.groupPoints = groupPoints
-            copy.openGround = openGround?.fork(rollback)
-            copy.released = released; copy.restartTail = restartTail
-            copy.triedOpenGround = triedOpenGround
-            copy.generating = generating
-            copy.outerDistance = outerDistance
+        fun fork(rollback: PathSearchRollback): Work = Work(input).also { copy ->
             copy.requestKey = requestKey
             copy.searchedResult = searchedResult
-            copy.cursor = cursor
-            copy.pointIndex = pointIndex
             copy.localObstacles = localObstacles
             copy.checkedPeers.putAll(checkedPeers)
             copy.search = search?.fork(rollback)
@@ -505,87 +400,38 @@ internal class MovePlanning {
             copy.occupantIndex = occupantIndex
             copy.cache = cache?.fork()
             copy.rollback = rollback
-            copy.candidates.addAll(candidates)
-            copy.immobileMembers = immobileMembers
-            copy.assignment = assignment?.fork(rollback)
         }
 
         fun stillValid(current: MovePlanningInput, result: Map<String, PlannedMove>): Boolean {
-            if (hasReleased) {
-                // Only already released holders still driving the very same reserved slot are internal.
-                // A replacement order, new parking position or external entrant invalidates the proof.
-                val remaining = input.copy(members = input.members.filterNot { it.action.unitId in released })
-                val external = current.occupants.filterNot { o ->
-                    val held = released[o.body.unitId]
-                    held != null && o.body.groupMoveReservation?.plan === held.plan && o.reserved == held.slot
-                }
-                return scoped(remaining).matches(scoped(current.copy(occupants = external)))
-            }
-            if (input.repair != ManeuverRepair.GROUP_SLOT) {
-                if (!scoped(input).matches(scoped(current))) return false
-                val member = current.members.singleOrNull()
-                return input.repair != ManeuverRepair.CONTACT || member == null ||
-                    result[member.action.unitId]?.nearest != true || canStopAfterContact(member, current.occupants)
-            }
-            val chosen = input.members.singleOrNull()?.let { result[it.action.unitId]?.slot }
-            val rejoiningCircle = chosen != null && input.members.singleOrNull()?.pose?.shape is MovementCollisionShape.Circle &&
-                current.members.size == input.members.size
-            val requests = if (rejoiningCircle) current.copy(members = current.members.mapIndexed { index, live ->
-                live.copy(start = input.members[index].start, pose = live.pose.copy(position = input.members[index].pose.position))
-            }) else current
-            if (!input.matchesMembers(requests)) return false
-            // A slowly moving holder must not restart replacement forever. Its
-            // current pose is checked at the chosen slot below, and live hard
-            // contact still guards every route step. A changed set of blockers
-            // changes the routing problem and does require another search.
-            if (input.occupants.filter { it.obstructsRoute }.map { it.body.unitId } !=
-                current.occupants.filter { it.obstructsRoute }.map { it.body.unitId }) return false
-            val member = input.members.singleOrNull() ?: return true
-            val body = checkNotNull(member.body)
-            if (chosen != null) return current.occupants.none { blocks(body, chosen, it) }
-
-            // Exhaustion is valid only against the same current occupancy. There
-            // is no need to retain and rescan a list of every rejected map point.
-            return input.matches(current)
+            if (!input.matches(current)) return false
+            val member = current.members.singleOrNull()
+            return input.repair != ManeuverRepair.CONTACT || member == null ||
+                result[member.action.unitId]?.nearest != true || canStopAfterContact(member, current.occupants)
         }
 
         /**
          * Anti-livelock micro-nudge splice (ENG-P016-005):
          * When a circular unit was nudged slightly by a peer while its multi-step search was in flight,
-         * exact `saved.start == live.start` equality would otherwise discard the completed path and
-         * send the unit to the back of the queue in an infinite livelock.
-         *
-         * If the unit's command, terrain snapshot, hull/radius, and obstructing blockers are unchanged,
-         * and the live position drifted by at most 1.5 tiles (and > 0) while keeping a clear segment
-         * (either directly to the first waypoint or via a 1-tile cell-center bend), splice the route
-         * directly and publish without restarting the whole search.
+         * splice the route directly without discarding and restarting the whole search.
          */
         fun trySpliceMicroNudge(
             current: MovePlanningInput,
             result: Map<String, PlannedMove>,
         ): Map<String, PlannedMove>? {
-            if (hasReleased || input.repair == ManeuverRepair.GROUP_SLOT || input.repair == ManeuverRepair.SHORE_REJOIN) return null
+            if (input.repair == ManeuverRepair.SHORE_REJOIN) return null
             if (input.map !== current.map || input.members.size != 1 || current.members.size != 1) return null
             val saved = input.members[0]
             val live = current.members[0]
             if (saved.action != live.action || saved.terrain !== live.terrain ||
                 saved.radius != live.radius || saved.hull != live.hull || saved.hasBirthDelay != live.hasBirthDelay) return null
-            // Only splice circular non-rectangular bodies (rectangles require exact swept turn proofs).
             if (live.pose.shape !is MovementCollisionShape.Circle) return null
-            // If exact start didn't move, failure came from heading rotation (for circular units heading is
-            // irrelevant to path validity!), or terrain/occupant changes.
             val nudgeDistSq = ScreenPlane.distanceSquared(saved.start, live.start)
             val maxNudge = minOf(input.map.tileWidth, input.map.tileHeight).toDouble() * 1.5
             if (nudgeDistSq > maxNudge * maxNudge) return null
-            // Significant continuous push or blocker order change during a CONTACT repair still yields
-            // to preserve stalled contact-repair invalidation and live-order recheck semantics.
             if (input.repair == ManeuverRepair.CONTACT) return null
-            // Obstructing route blockers must still match (or have only drifted slightly without blocking the splice).
             val savedBlockers = input.occupants.filter { it.obstructsRoute }.map { it.body.unitId }
             val liveBlockers = current.occupants.filter { it.obstructsRoute }.map { it.body.unitId }
             if (savedBlockers != liveBlockers) return null
-            // If position didn't move at all (only heading changed, e.g. optimistic turn in place) and
-            // occupants still match, publish directly without splicing waypoints!
             if (nudgeDistSq == 0.0) {
                 return if (saved.pose.layer == live.pose.layer &&
                     saved.pose.shape == live.pose.shape &&
@@ -608,7 +454,7 @@ internal class MovePlanning {
                 UnitContact.routeAround(body, current.occupants.filter { it.obstructsRoute }.map { it.body })
             }
             fun legClear(from: Position, to: Position): Boolean {
-                if (!com.rustedwarfare.reforge.core.path.PlanningSegmentClearance.allows(live.terrain, from, to, live.radius)) {
+                if (!PlanningSegmentClearance.allows(live.terrain, from, to, live.radius)) {
                     return false
                 }
                 val hull = live.hull
@@ -635,18 +481,6 @@ internal class MovePlanning {
             return mapOf(live.action.unitId to planned.copy(slot = updatedSlot))
         }
 
-        /** Distant changes only invalidate a search after its frontier reaches them. */
-        private fun scoped(value: MovePlanningInput): MovePlanningInput {
-            val request = group ?: return value
-            openGround?.let { open -> return value.copy(occupants = value.occupants.filter(open::dependsOn)) }
-            val radius = value.members.maxOfOrNull { checkNotNull(it.body).definition.contactBufferCollision.boundingRadius } ?: 0.0
-            return value.copy(occupants = value.occupants.filter { holder ->
-                val reach = outerDistance + radius + holder.body.definition.contactBufferCollision.boundingRadius
-                ScreenPlane.distanceSquared(request.click, holder.pose.position) <= reach * reach ||
-                    holder.reserved?.let { ScreenPlane.distanceSquared(request.click, it.position) <= reach * reach } == true
-            })
-        }
-
         private fun checkShoreSuccessor(member: MovePlanningMember, budget: PathWorkBudget): Map<String, PlannedMove>? {
             val body = checkNotNull(member.body)
             val next = body.pathPoints.getOrNull(1) ?: return emptyMap()
@@ -671,112 +505,14 @@ internal class MovePlanning {
 
         fun advance(pathPolicy: PathPolicy, budget: PathWorkBudget): Map<String, PlannedMove>? {
             searchedResult?.let { return it }
-            if (group == null) {
-                val member = input.members.singleOrNull() ?: return emptyMap()
-                if (input.repair == ManeuverRepair.SHORE_REJOIN) return checkShoreSuccessor(member, budget)?.also { searchedResult = it }
-                val point = member.action.target
-                val attempt = if (member.hasBirthDelay) {
-                    if (!budget.take()) return null
-                    birthRoute(member, point)
-                } else planRoute(member, point, pathPolicy, budget) ?: return null
-                return mapOf(member.action.unitId to attempt).also { searchedResult = it }
-            }
-            if (input.members.isEmpty()) return emptyMap()
-            if (!triedOpenGround && input.repair == null && input.members.size >= 2 &&
-                input.members.first().body != null && input.members.first().pose.shape is MovementCollisionShape.Circle &&
-                input.members.first().hull == null && pathPolicy is ClearanceAStarPolicy) {
-                val open = openGround ?: OpenGroundGroup(input, group).also { openGround = it }
-                val result = open.advance(budget) { m, point -> planRoute(m, point, pathPolicy, budget, clearApproach = true) }
-                outerDistance = open.outerDistance
-                if (!open.rejected) return result
-                if (hasReleased) { restartTail = true; return null }
-                openGround = null; triedOpenGround = true
-            }
-            val source = checkNotNull(pointSource)
-            if (generating) {
-                while (groupPoints.size < batchSize && !source.exhausted) {
-                    if (!budget.take()) return null
-                    val point = checkNotNull(source.next())
-                    outerDistance = kotlin.math.sqrt(ScreenPlane.distanceSquared(checkNotNull(group).click, point))
-                    if (input.repair != ManeuverRepair.GROUP_SLOT || point != input.members.single().action.target) {
-                        groupPoints += point
-                        val points = groupPoints
-                        rollback?.record { points.removeAt(points.lastIndex) }
-                    }
-                }
-                generating = false
-            }
-            while (groupPoints.isNotEmpty() && cursor < input.members.size && !budget.exhausted) {
-                val member = input.members[cursor]
-                if (member.action.unitId in immobileMembers) {
-                    if (!budget.take()) return null
-                    cursor++
-                    pointIndex = 0
-                    continue
-                }
-                if (cursor == candidates.size) candidates += checkNotNull(member.body) to mutableListOf<PlannedMove>()
-                val point = groupPoints[pointIndex]
-                // A circle's destination clearance is independent of its arrival
-                // heading. Reject occupied replacement points before paying for
-                // a full route to each one; vacant() retains its budgeted cursor
-                // across steps and the later slot check reuses that result.
-                val precheck = input.repair == ManeuverRepair.GROUP_SLOT && member.pose.shape is MovementCollisionShape.Circle
-                val available = if (precheck && checkingSlot == null)
-                    vacant(member, slot(member, point, emptyList()), budget) ?: return null else true
-                val attempt = if (!available) PlannedMove(null, null, 0) else checkingSlot ?: run {
-                    if (member.hasBirthDelay) {
-                        if (!budget.take()) return null
-                        birthRoute(member, point)
-                    } else planRoute(member, point, pathPolicy, budget) ?: return null
-                }.also {
-                    checkingSlot = it
-                    // A nearest route or positional capture can end somewhere
-                    // other than the prechecked lattice point. Check that pose
-                    // with its own cursor before accepting this replacement.
-                    if (precheck && it.slot?.position != point) occupantIndex = -1
-                }
-                val slot = attempt.slot
-                if (slot == null && attempt.nearest && point == group.click) {
-                    val id = member.action.unitId
-                    val rejected = immobileMembers
-                    rejected[id] = attempt
-                    rollback?.record { rejected.remove(id) }
-                    checkingSlot = null
-                    occupantIndex = -1
-                    cursor++
-                    pointIndex = 0
-                    continue
-                }
-                if (slot != null && (vacant(member, slot, budget) ?: return null)) {
-                    if (input.repair == ManeuverRepair.GROUP_SLOT) return mapOf(member.action.unitId to attempt)
-                    val options = candidates[cursor].second
-                    options += attempt
-                    rollback?.record { options.removeAt(options.lastIndex) }
-                }
-                checkingSlot = null
-                occupantIndex = -1
-                pointIndex++
-                if (pointIndex == groupPoints.size) {
-                    cursor++
-                    pointIndex = 0
-                }
-            }
-            if (groupPoints.isNotEmpty() && cursor < input.members.size) return null
-            val result = if (input.repair == ManeuverRepair.GROUP_SLOT) emptyMap() else {
-                val ongoing = assignment ?: GroupMoveDestinations.Assignment(candidates.toList()).also { assignment = it }
-                ongoing.advance(budget)
-                ongoing.destinations ?: return null
-            }
-            if (result.size + immobileMembers.size == input.members.size || source.exhausted) return result + immobileMembers
-            // Try the next nearest batch with accumulated choices. No fixed radius
-            // can end a reachable member's search; only finite map exhaustion can.
-            groupPoints = mutableListOf()
-            batchSize = (batchSize.toLong() * 2).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-            cursor = 0
-            pointIndex = 0
-            assignment = null
-            generating = true
-            return null
+            val member = input.members.singleOrNull() ?: return emptyMap()
+            if (input.repair == ManeuverRepair.SHORE_REJOIN) return checkShoreSuccessor(member, budget)?.also { searchedResult = it }
+            val point = member.action.target
+            val attempt = if (member.hasBirthDelay) {
+                if (!budget.take()) return null
+                birthRoute(member, point)
+            } else planRoute(member, point, pathPolicy, budget) ?: return null
+            return mapOf(member.action.unitId to attempt).also { searchedResult = it }
         }
 
         private fun birthRoute(member: MovePlanningMember, point: Position): PlannedMove {
@@ -787,11 +523,9 @@ internal class MovePlanning {
         }
 
         private fun planRoute(member: MovePlanningMember, point: Position, policy: PathPolicy,
-                              budget: PathWorkBudget, clearApproach: Boolean = false): PlannedMove? {
+                              budget: PathWorkBudget): PlannedMove? {
             val active = search ?: run {
-                // The open-ground solver checks every relevant holder once, and only accepts
-                // direct segments inside that checked area. Do not reread the world per slot.
-                val occupancy = if (clearApproach) null else member.body?.let { body ->
+                val occupancy = member.body?.let { body ->
                     UnitContact.routeAround(body, (input.occupants.filter { it.obstructsRoute } + localObstacles).map { it.body })
                 }
                 val counters = if (input.collectDiagnostics) PathSearchCounters() else null
@@ -812,14 +546,9 @@ internal class MovePlanning {
                 return result
             }
             val stationaryPath = active.path?.all { it == member.start } == true
-            val ownsGroupSlot = member.body?.groupMoveReservation != null && input.repair != null && input.repair != ManeuverRepair.GROUP_SLOT
-            // Ordinary non-maneuver MOVE repairs (KNOWLEDGE / CONNECTION) preserve the legacy
-            // unreachable-route cancellation contract instead of switching to searchingNearest;
-            // dead-end / island nearest-edge routing is handled by flow-field saturation in ENG-P016-008.
             val ordinaryRepairWithoutManeuver = (input.repair == ManeuverRepair.KNOWLEDGE || input.repair == ManeuverRepair.CONNECTION) &&
-                member.body?.followsManeuverRoute == false
-            if ((active.path == null || stationaryPath) && !searchingNearest && (group == null || point == group.click) &&
-                !ownsGroupSlot &&
+                member.body?.followsManeuverRoute == false && member.body.landingMember == null
+            if ((active.path == null || stationaryPath) && !searchingNearest &&
                 !ordinaryRepairWithoutManeuver &&
                 input.repair != ManeuverRepair.CONTACT) {
                 searchingNearest = true
@@ -830,7 +559,7 @@ internal class MovePlanning {
             val result = PlannedMove(slot, active.counters, searchNanos, nearest = searchingNearest)
             search = null
             searchingNearest = false
-            searchNanos = 0
+            searchNanos = 0L
             return result
         }
 
@@ -838,7 +567,7 @@ internal class MovePlanning {
             val unit = member.body ?: return false
             if (unit.stalledRouteTicks < 420L) return false
             val blockers = occupants.filter { it.obstructsRoute }
-            if (unit.landingMember != null || unit.groupMoveReservation != null)
+            if (unit.landingMember != null)
                 return blockers.isEmpty() || blockers.any { it.fixed }
             return blockers.all {
                 it.fixed && it.body.moveTarget == null || opposingBlockedMoves(unit, it.body)
@@ -847,9 +576,7 @@ internal class MovePlanning {
 
         private fun opposingBlockedMoves(unit: MutableUnit, other: MutableUnit): Boolean {
             if (other.ownerPlayerId != unit.ownerPlayerId || other.landingMember != null ||
-                other.groupMoveReservation != null || other.stalledRouteTicks < 420L) return false
-            // Each current route must lead into the other hull. A new order can
-            // change that fact before either unit has changed pose.
+                other.stalledRouteTicks < 420L) return false
             fun blockedBy(driver: MutableUnit, blocker: MutableUnit): Boolean {
                 val task = driver.tasks.firstOrNull() ?: return false
                 if (task.kind != UnitTaskKind.MOVE || task.target != driver.moveTarget) return false
@@ -861,39 +588,8 @@ internal class MovePlanning {
             return blockedBy(unit, other) && blockedBy(other, unit)
         }
 
-        private fun slot(member: MovePlanningMember, point: Position, path: List<Position>): GroupMoveSlot {
-            // Positional arrival can finish a group member at its existing pose.
-            // Reserve that actual footprint, rather than a final orientation it
-            // must never manoeuvre merely to match. Nearest search keeps its
-            // precise endpoint and birth departure keeps its separate contract.
-            if (group != null && !searchingNearest && !member.hasBirthDelay && path.size == 1 &&
-                ScreenPlane.distanceSquared(member.start, point) < 49.0) {
-                return GroupMoveSlot(member.start, checkNotNull(member.body).heading, listOf(member.start))
-            }
-            return member.body?.let { GroupMoveDestinations.slot(it, point, path) }
+        private fun slot(member: MovePlanningMember, point: Position, path: List<Position>): GroupMoveSlot =
+            member.body?.let { GroupMoveDestinations.slot(it, point, path) }
                 ?: GroupMoveSlot(point, member.pose.heading, path)
-        }
-
-        private fun vacant(member: MovePlanningMember, slot: GroupMoveSlot, budget: PathWorkBudget): Boolean? {
-            if (occupantIndex == -1) {
-                if (!budget.take()) return null
-                if (!UnitContact.poseFits(member.pose.shape, slot.position, slot.heading,
-                        HullTerrainGrid.authorized(member.terrain))) return false
-                occupantIndex = 0
-            }
-            val body = checkNotNull(member.body)
-            while (occupantIndex < input.occupants.size) {
-                if (!budget.take()) return null
-                val holder = input.occupants[occupantIndex++]
-                if (blocks(body, slot, holder)) {
-                    return false
-                }
-            }
-            return true
-        }
-
-        private fun blocks(body: MutableUnit, slot: GroupMoveSlot, holder: MovePlanningOccupant): Boolean =
-            holder.reserved?.let { GroupMoveDestinations.overlaps(body, slot, holder.body, it) } == true ||
-                holder.idle && GroupMoveDestinations.overlaps(body, slot, holder.body)
     }
 }

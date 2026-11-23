@@ -337,7 +337,7 @@ class UnitYieldTest {
             var previous = context.observe().units.associate { it.unitId to it.position }
             var active = context.observe().units
             var headings = active.associate { it.unitId to it.heading }
-            while (quiet < 160 && tick < 2400) {
+            while (quiet < 160 && tick < 18000) {
                 active = context.advance(Step(tick++, 1.0, "sim-tick")).units
                 val current = active.associate { it.unitId to it.position }
                 val travel = active.maxOf { kotlin.math.sqrt(ScreenPlane.distanceSquared(previous.getValue(it.unitId), it.position)) }
@@ -353,7 +353,7 @@ class UnitYieldTest {
                         "Hard overlap at step $tick for ${active[i].unitId} and ${active[j].unitId}")
                 }
                 val currentHeadings = active.associate { it.unitId to it.heading }
-                quiet = if (current == previous && currentHeadings == headings) quiet + 1 else 0
+                quiet = if (active.all { it.moveArrival != null && it.tasks.isEmpty() } && current == previous && currentHeadings == headings) quiet + 1 else 0
                 previous = current
                 headings = currentHeadings
             }

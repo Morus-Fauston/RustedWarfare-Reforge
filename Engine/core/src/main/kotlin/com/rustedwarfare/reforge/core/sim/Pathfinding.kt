@@ -32,7 +32,9 @@ internal class PathWorkBudget(val limit: Int) {
     val used: Int get() = limit - _remaining
     val exhausted: Boolean get() = _remaining == 0
 
-    fun take(cost: Int = 8): Boolean {
+    companion object { const val OPERATION_COST = 8 }
+
+    fun take(cost: Int = OPERATION_COST): Boolean {
         if (_remaining < cost) {
             _remaining = 0
             return false

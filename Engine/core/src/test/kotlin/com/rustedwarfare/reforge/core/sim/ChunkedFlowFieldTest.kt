@@ -433,7 +433,7 @@ class ChunkedFlowFieldTest {
         val pureMembers = (0 until 5).map { "p-$it" }.toSet()
         val pureReq = GroupMoveRequest(
             world = WorldHandle("w"), completedStep = 0L, actor = "p1", click = goal,
-            members = pureMembers, sharedLanding = true,
+            members = pureMembers,
             maxRadiusByMovement = mapOf(MovementType.LAND to 6.0),
         )
         val pureUnit = MutableUnit("p-0", "p1", "sm", smallDef, Position(240.0, 230.0), 90.0)
@@ -444,7 +444,7 @@ class ChunkedFlowFieldTest {
 
         val mixedReq = GroupMoveRequest(
             world = WorldHandle("w"), completedStep = 0L, actor = "p1", click = goal,
-            members = pureMembers, sharedLanding = true,
+            members = pureMembers,
             maxRadiusByMovement = mapOf(MovementType.LAND to 14.0),
         )
         val mixedUnit = MutableUnit("m-0", "p1", "sm", smallDef, Position(240.0, 230.0), 90.0)

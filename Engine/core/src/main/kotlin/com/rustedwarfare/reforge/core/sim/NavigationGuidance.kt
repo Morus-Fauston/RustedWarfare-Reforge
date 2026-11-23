@@ -31,7 +31,6 @@ internal interface NavigationGuidance {
         val corridorClearanceWorld: Double,
         val finalApproach: Boolean,
         val fromFlowField: Boolean,
-        val overflowSettled: Boolean = false,
     )
 
     fun sampleGuidance(
@@ -74,7 +73,6 @@ internal object WaypointRouteAdapter : NavigationGuidance {
             corridorClearanceWorld = clearWorld,
             finalApproach = finalPoint,
             fromFlowField = false,
-            overflowSettled = false,
         )
     }
 }
@@ -756,7 +754,6 @@ internal class ChunkedFlowFieldAdapter(
 
         val clearRings = terrain.clearanceField().clearanceRings(col, row)
         val clearWorld = if (clearRings <= 0) 0.0 else (clearRings * 2.0 - 1.0) * minTile
-        val overflowSettled = checkCulDeSacSaturationOverflow(host, unit, field, cellCost, vx, vy, unitRadius, minTile, executionStep)
 
         return NavigationGuidance.Sample(
             aimPosition = safeAim,
@@ -766,145 +763,7 @@ internal class ChunkedFlowFieldAdapter(
             corridorClearanceWorld = clearWorld,
             finalApproach = finalPoint || remainingWorld <= minTile * 2.0,
             fromFlowField = true,
-            overflowSettled = overflowSettled,
         )
-    }
-
-    private fun checkCulDeSacSaturationOverflow(
-        host: UnitMovementHost,
-        unit: MutableUnit,
-        field: ChunkedField,
-        ownCellCost: Int,
-        dirX: Double,
-        dirY: Double,
-        unitRadius: Double,
-        minTile: Double,
-        executionStep: Long,
-    ): Boolean {
-        val member = unit.landingMember ?: return false
-        if (member.parked) return false
-        if (ownCellCost <= 40 && unit.nearestMoveTarget != null && member.claimed == null) {
-            val maxSpd0 = max(0.2, UnitLocomotion.effectiveMaximumSpeed(unit, UnitLocomotion.movement(unit)))
-            val closeToShoreClick = hypot(unit.position.x - (unit.moveTarget?.x ?: field.goalWorld.x),
-                unit.position.y - (unit.moveTarget?.y ?: field.goalWorld.y)) <= max(unitRadius * 4.5, minTile * 2.5)
-            if (abs(unit.speed) < 0.35 * maxSpd0 && closeToShoreClick &&
-                (unit.stalledRouteTicks >= 8L || unit.nearTargetTime > 20.0 || unit.terrainCorrectionTime >= 10.0)
-            ) {
-                return true
-            }
-        }
-        val group = member.group
-        val goalClearRings = field.terrain.clearanceField().clearanceRings(field.key.goalCol, field.key.goalRow)
-        val isConfinedPocketOrShore = goalClearRings <= 3 || unit.nearestMoveTarget != null
-        if (!isConfinedPocketOrShore) return false
-        val stallTicksThreshold = 55L
-        val deepStallThreshold = 85L
-        val anchorStalled = unit.nav.progressAnchorStep >= 0L && (executionStep - unit.nav.progressAnchorStep) >= stallTicksThreshold
-        val deeplyAnchorStalled = unit.nav.progressAnchorStep >= 0L && (executionStep - unit.nav.progressAnchorStep) >= deepStallThreshold
-        val claimedOrIngressStalled = (member.claimed != null || member.ingress != null) &&
-            (unit.stalledRouteTicks >= 12L || unit.localProgressTime > 36.0 || unit.terrainCorrectionTime >= 14.0 ||
-                unit.nearTargetTime >= 120.0 || anchorStalled)
-        if (member.claimed != null && !claimedOrIngressStalled) return false
-        if (group.members.size < MIN_GROUP_SIZE) return false
-        val searchRadius = max(unitRadius * 5.0, minTile * 2.5)
-        val nearby = host.spatialIndex.queryFrozenTopK(
-            observer = unit,
-            layer = SpatialLayer.SURFACE,
-            radius = searchRadius,
-            limit = 16,
-            includeBufferPadding = false,
-        ) { cand ->
-            cand.ownerPlayerId == unit.ownerPlayerId
-        }
-        if (nearby.isEmpty()) return false
-
-        // When a claimed/ingress unit has a concrete slot target, check blockage along the direction to its
-        // target as well as along the flow-field direction so units fanning around a pocket mouth still detect
-        // the settled wall in front of them.
-        val aimTarget = member.claimed ?: member.ingress
-        var checkDx = dirX
-        var checkDy = dirY
-        if (aimTarget != null) {
-            val adx = aimTarget.x - unit.position.x
-            val ady = aimTarget.y - unit.position.y
-            val adist = hypot(adx, ady)
-            if (adist > 1e-4) {
-                checkDx = adx / adist
-                checkDy = ady / adist
-            }
-        }
-
-        var parkedAhead = 0
-        var parkedCloseAny = 0
-        var closestParkedDist = Double.POSITIVE_INFINITY
-        for (i in 0 until nearby.size) {
-            val peer = nearby[i]
-            val peerUnit = host.units[peer.unitId] ?: continue
-            val peerMember = peerUnit.landingMember ?: continue
-            if (peerMember.group !== group) continue
-            if (!peerMember.parked && peerUnit.moveTarget != null) continue
-            val dx = peer.position.x - unit.position.x
-            val dy = peer.position.y - unit.position.y
-            val dist = hypot(dx, dy)
-            if (dist < 1e-4) continue
-            val dotFlow = (dx * dirX + dy * dirY) / dist
-            val dotAim = (dx * checkDx + dy * checkDy) / dist
-            val dot = max(dotFlow, dotAim)
-            val peerCol = floor(peer.position.x / field.tileWidth).toInt().coerceIn(0, field.width - 1)
-            val peerRow = floor(peer.position.y / field.tileHeight).toInt().coerceIn(0, field.height - 1)
-            val peerCost = field.cost[peerRow * field.width + peerCol]
-            val closeRange = (unitRadius + peer.hardRadius) * 3.0
-            if (dist <= closeRange) {
-                parkedCloseAny++
-                if (dist < closestParkedDist) closestParkedDist = dist
-                if (dot > 0.10 && (peerCost <= ownCellCost + 8 || aimTarget != null)) {
-                    parkedAhead++
-                }
-            }
-        }
-        if (parkedAhead == 0 && parkedCloseAny < 2) return false
-        val ownCol = floor(unit.position.x / field.tileWidth).toInt().coerceIn(0, field.width - 1)
-        val ownRow = floor(unit.position.y / field.tileHeight).toInt().coerceIn(0, field.height - 1)
-        var openForwardTile = false
-        for (d in 0 until 8) {
-            val nc = ownCol + DX[d]
-            val nr = ownRow + DY[d]
-            if (nc !in 0 until field.width || nr !in 0 until field.height) continue
-            val nCost = field.cost[nr * field.width + nc]
-            if (nCost < ownCellCost - 5) {
-                val nCenter = Position((nc + 0.5) * field.tileWidth, (nr + 0.5) * field.tileHeight)
-                val occupiedByParked = nearby.any { peer ->
-                    val pu = host.units[peer.unitId]
-                    val isGroupPeer = pu?.landingMember?.group === group
-                    val isSettled = isGroupPeer && (pu?.landingMember?.parked == true || pu?.moveTarget == null)
-                    isSettled && hypot(peer.position.x - nCenter.x, peer.position.y - nCenter.y) < unitRadius + peer.hardRadius + 4.0
-                }
-                if (!occupiedByParked) {
-                    openForwardTile = true
-                    break
-                }
-            }
-        }
-        val maxSpd = max(0.2, UnitLocomotion.effectiveMaximumSpeed(unit, UnitLocomotion.movement(unit)))
-        val slow = abs(unit.speed) < 0.45 * maxSpd
-        // True saturation indicator: unit is either slow/blocked OR hasn't improved road progress in >= 45 ticks
-        // while boxed against settled group teammates.
-        val stalledAtFrontier = unit.stalledRouteTicks >= 12L || unit.localProgressTime > 55.0 ||
-            unit.terrainCorrectionTime >= 18.0 || unit.nearTargetTime >= 110.0 || anchorStalled
-        if (deeplyAnchorStalled && (parkedAhead >= 1 || parkedCloseAny >= 1) && closestParkedDist <= unitRadius * 5.0) {
-            return true
-        }
-        if (openForwardTile) {
-            return closestParkedDist <= unitRadius * 4.5 &&
-                ((parkedAhead >= 2 && (slow || anchorStalled) &&
-                    (unit.stalledRouteTicks >= 18L || unit.localProgressTime > 55.0 || unit.terrainCorrectionTime >= 18.0 || anchorStalled)) ||
-                    (claimedOrIngressStalled && (parkedAhead >= 1 || parkedCloseAny >= 2) && (slow || anchorStalled)) ||
-                    (parkedCloseAny >= 3 && slow && (anchorStalled || unit.nearTargetTime >= 90.0 || unit.terrainCorrectionTime >= 18.0)))
-        }
-        return (parkedAhead >= 2 && (slow || anchorStalled) && closestParkedDist <= unitRadius * 4.2 &&
-            (unit.stalledRouteTicks >= 8L || unit.localProgressTime > 35.0 || anchorStalled)) ||
-            (parkedAhead >= 1 && slow && (stalledAtFrontier || claimedOrIngressStalled)) ||
-            (parkedCloseAny >= 2 && (slow || anchorStalled) && anchorStalled)
     }
 
     private fun seedGoalCells(field: ChunkedField, goalCol: Int, goalRow: Int) {

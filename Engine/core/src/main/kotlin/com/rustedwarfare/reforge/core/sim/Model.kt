@@ -580,12 +580,6 @@ internal data class MutableUnit(
     var passageEntry: PassageEntry?
         get() = nav.passageEntry
         set(value) { if (nav.passageEntry != value) nav = nav.copy(passageEntry = value) }
-    var groupMoveReservation: GroupMoveReservation?
-        get() = nav.groupMoveReservation
-        set(value) { nav = nav.withGroupMoveReservation(value) }
-    var parkedReservationOwner: GroupMoveRequest?
-        get() = nav.parkedReservationOwner
-        set(value) { nav = nav.withParkedReservationOwner(value) }
     var indexedLandingBody: LandingOccupancy.IndexedBody?
         get() = nav.indexedLandingBody
         set(value) { if (nav.indexedLandingBody !== value) nav = nav.copy(indexedLandingBody = value) }

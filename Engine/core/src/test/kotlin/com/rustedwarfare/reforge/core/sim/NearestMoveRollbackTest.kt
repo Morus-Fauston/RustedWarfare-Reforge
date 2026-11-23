@@ -46,6 +46,7 @@ class NearestMoveRollbackTest {
                 val steps = CandidateSteps()
                 members.forEach { steps.current.movePlanning.enqueue(it.action, group) }
                 val consumed = mutableListOf<Int>()
+                val completed = linkedMapOf<String, Pair<Boolean, GroupMoveSlot?>>()
                 for (tick in 0L..12000L) {
                     fun advance(fail: Boolean): Pair<Map<String, Pair<Boolean, GroupMoveSlot?>>, Int> {
                         val published = linkedMapOf<String, Pair<Boolean, GroupMoveSlot?>>()
@@ -56,7 +57,9 @@ class NearestMoveRollbackTest {
                                 emptyList(), emptyList(), emptyList())
                         }) { candidate ->
                             val budget = PathWorkBudget(128)
-                            candidate.state.movePlanning.advance(ExperimentalPolicies().path, budget, { _, _, _ -> input },
+                            candidate.state.movePlanning.advance(ExperimentalPolicies().path, budget, { actions, _, _ ->
+                                input.copy(members = members.filter { it.action in actions })
+                            },
                                 { member, _, _, _, plan -> published[member.action.unitId] = plan.nearest to plan.slot })
                             used = budget.used
                             assertTrue(used in 0..128)
@@ -65,9 +68,11 @@ class NearestMoveRollbackTest {
                     }
                     if (retry && tick % 7 == 1L) assertEquals("observer failure",
                         assertFailsWith<IllegalStateException> { advance(true) }.message)
-                    val (plans, used) = advance(false)
+                    val (newPlans, used) = advance(false)
+                    completed.putAll(newPlans)
                     consumed += used
-                    if (plans.isNotEmpty()) {
+                    if (completed.size == members.size) {
+                        val plans = completed.toMap()
                         assertEquals(setOf("boxed", "left", "right"), plans.keys)
                         assertEquals(true to null, plans.getValue("boxed"))
                         assertTrue(plans.getValue("left").first)

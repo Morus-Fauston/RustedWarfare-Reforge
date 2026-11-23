@@ -104,14 +104,19 @@ class LatestMovePlanningTest {
                 val group = assertNotNull(context.requestGroupMove("p1", ids, target))
                 ids.forEach { id -> assertIs<ActionResult.Accepted>(context.submitGroupMove(
                     MoveAction("bay-$id", "p1", id, target, context.world), group)) }
+                val started = mutableSetOf<String>()
                 var finishedAt: Long? = null
                 for (tick in 0L..12000L) {
                     val frame = context.advance(Step(tick, 1.0, "sim-tick"))
                     context.drainPlanningWorkDiagnostics(context.world).forEach { assertTrue(it.used in 0..512) }
                     context.drainPathDiagnostics(context.world)
                     assertTrue(frame.events.none { it.kind == "group-destination-unavailable" })
-                    if (frame.events.count { it.kind == "movement-started" } == ids.size) {
-                        assertTrue(frame.units.all { assertNotNull(it.moveTarget).x < 240.0 })
+                    for (event in frame.events.filter { it.kind == "movement-started" }) {
+                        val id = assertNotNull(event.unitId)
+                        assertTrue(assertNotNull(frame.units.single { it.unitId == id }.moveTarget).x < 240.0)
+                        started += id
+                    }
+                    if (started.containsAll(ids)) {
                         finishedAt = tick; break
                     }
                 }
@@ -172,39 +177,55 @@ class LatestMovePlanningTest {
             submit("first", target)
             val first = linkedMapOf<String, Long>()
             val destinations = linkedMapOf<String, Position>()
-            val published = linkedSetOf<String>()
+            val published = linkedMapOf<String, String>()
+            val expected = ids.associateWith { "first-$it" }.toMutableMap()
+            var stopIssued = false
             for (tick in 0L..900L) {
                 if (reissue && tick in 2L..repeatThrough) {
-                    assertTrue(context.observe().units.all { it.moveTarget == null })
-                    submit(if (tick == 2L) "latest" else "latest-$tick", replacement, reissueMembers)
+                    val prefix = if (tick == 2L) "latest" else "latest-$tick"
+                    submit(prefix, replacement, reissueMembers)
+                    for (id in reissueMembers) {
+                        expected[id] = "$prefix-$id"
+                        published.remove(id)
+                        destinations.remove(id)
+                    }
                 }
                 if (stopped != null && tick == 3L) {
+                    stopIssued = true
                     assertIs<ActionResult.Accepted>(context.submit(StopAction("stop", "p1", stopped, context.world)))
+                    first.remove(stopped)
+                    expected.remove(stopped)
+                    published.remove(stopped)
+                    destinations.remove(stopped)
                 }
                 val frame = context.advance(Step(tick, 1.0, "sim-tick"))
                 for (sample in context.drainMotionDiagnostics(context.world)) {
                     val ownMotion = sample.finalPosition != sample.positionBefore || sample.finalHeading != sample.headingBefore
-                    if (ownMotion && sample.steeringInvoked) {
+                    if (ownMotion && sample.steeringInvoked && (!stopIssued || sample.unitId != stopped)) {
                         assertEquals(Position(0.0, 0.0), sample.pushedDisplacement)
                         first.putIfAbsent(sample.unitId, tick)
                     }
                 }
                 for (sample in context.drainPathDiagnostics(context.world)) {
-                    if (sample.reason == PathSearchReason.USER_MOVE) published += sample.actionId
+                    if (sample.reason == PathSearchReason.USER_MOVE) {
+                        assertEquals(expected[sample.unitId], sample.actionId, "Obsolete publication at step $tick")
+                        published[sample.unitId] = sample.actionId
+                    }
                 }
                 for (work in context.drainPlanningWorkDiagnostics(context.world)) {
                     assertTrue(work.used in 0..512)
                     assertEquals(work.used, work.slices.sumOf { it.workUnits })
                 }
                 for (unit in frame.units) unit.moveTarget?.let { destinations[unit.unitId] = it }
-                if (stopped != null) {
+                if (stopIssued) {
                     val halted = frame.units.single { it.unitId == stopped }
-                    assertEquals(Position(475.0, 140.0 + 45.0 * ids.indexOf(stopped)), halted.position)
+                    assertTrue(halted.pathPoints.isEmpty() && halted.tasks.isEmpty())
                     assertEquals(null, halted.moveTarget)
                 }
-                if (first.size == ids.size - (if (stopped == null) 0 else 1)) {
+                if (tick >= (if (reissue) repeatThrough else 0L) && (stopped == null || stopIssued) &&
+                    published == expected && first.keys == expected.keys && destinations.keys == expected.keys) {
                     println("same-point reissue=$reissue firstOwnMotion=$first published=$published")
-                    return Result(first, destinations, published)
+                    return Result(first, destinations, published.values.toSet())
                 }
             }
             error("Not every actionable member moved: $first")

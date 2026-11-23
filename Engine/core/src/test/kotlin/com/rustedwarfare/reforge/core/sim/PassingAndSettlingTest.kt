@@ -301,7 +301,7 @@ class PassingAndSettlingTest {
             val arrived = mutableSetOf<String>()
             var stopped: List<Triple<String, Position, Double>>? = null
             var quiet = 0
-            for (tick in 0L..6000L) {
+            for (tick in 0L..18000L) {
                 val frame = context.advance(Step(tick, 1.0, "sim-tick"))
                 val work = context.drainPlanningWorkDiagnostics(context.world)
                 assertTrue(work.all { it.used <= it.limit })

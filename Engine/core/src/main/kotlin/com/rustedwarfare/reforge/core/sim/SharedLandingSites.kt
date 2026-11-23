@@ -47,6 +47,7 @@ internal class LandingOccupancy(private val bySite: MutableMap<Position, Set<Str
                                 private val stopped: MutableMap<String, StopPose> = hashMapOf(),
                                 private val stamps: MutableMap<Long, Long> = hashMapOf(),
                                 private val watchers: MutableMap<Long, java.util.WeakHashMap<LandingFootprint, Boolean>> = hashMapOf(),
+                                private val reservedCells: MutableMap<Long, MutableSet<String>> = hashMapOf(),
                                 private val undo: PathSearchRollback? = null) {
     internal data class StopPose(val pose: Position, val heading: Double, val layer: ContactLayer,
                                 val order: GroupMoveRequest?, val parked: Boolean, val radius: Double)
@@ -55,7 +56,38 @@ internal class LandingOccupancy(private val bySite: MutableMap<Position, Set<Str
 
     var revision = 0L
         private set
-    fun fork(rollback: PathSearchRollback) = LandingOccupancy(bySite, byUnit, stopped, stamps, watchers, rollback).also { it.revision = revision }
+    fun fork(rollback: PathSearchRollback) = LandingOccupancy(bySite, byUnit, stopped, stamps, watchers, reservedCells, rollback).also {
+        it.revision = revision
+    }
+
+    private fun indexReservation(id: String, site: Position, radius: Double, add: Boolean) {
+        LandingFootprint.eachCell(site, site, radius) { key ->
+            if (add) reservedCells.getOrPut(key) { hashSetOf() }.add(id)
+            else reservedCells[key]?.let { ids ->
+                ids.remove(id)
+                if (ids.isEmpty()) reservedCells.remove(key)
+            }
+        }
+    }
+
+    fun leavesReservedSitesClear(car: MutableUnit, units: Map<String, MutableUnit>,
+                                at: Position = car.position, facing: Double = car.heading): Boolean {
+        val hull = car.definition.movementCollision
+        LandingFootprint.eachCell(at, at, hull.boundingRadius) { key ->
+            for (id in reservedCells[key].orEmpty()) {
+                val peer = units[id] ?: continue
+                if (peer === car || peer.ownerPlayerId != car.ownerPlayerId || peer.moveTarget == null ||
+                    !UnitContact.shareLayer(car, peer)) continue
+                val member = peer.landingMember ?: continue
+                val site = member.claimed ?: member.ingress ?: continue
+                val otherHull = peer.definition.movementCollision
+                val heading = member.claimHeading ?: if (otherHull is MovementCollisionShape.Rectangle)
+                    GroupMoveDestinations.slot(peer, site, peer.pathPoints).heading else peer.heading
+                if (UnitContact.posesOverlap(hull, at, facing, otherHull, site, heading)) return false
+            }
+        }
+        return true
+    }
 
     /** A cell change reaches only searches that visited that cell. Retired searches need no world scan to detach. */
     fun watch(key: Long, footprint: LandingFootprint, since: Long, rollback: PathSearchRollback?) {
@@ -104,6 +136,16 @@ internal class LandingOccupancy(private val bySite: MutableMap<Position, Set<Str
         val body = unit.position.takeIf { unit.alive && member?.parked == true }
         val layer = if (unit.moveTarget == null) UnitContact.layer(unit) else null
         val indexed = unit.indexedLandingBody
+        val previousSite = indexed?.takeIf { it.owner === bySite }?.site
+        if (reservation != previousSite) {
+            val radius = unit.definition.movementCollision.boundingRadius
+            previousSite?.let { indexReservation(unit.unitId, it, radius, false) }
+            reservation?.let { indexReservation(unit.unitId, it, radius, true) }
+            undo?.record {
+                reservation?.let { indexReservation(unit.unitId, it, radius, false) }
+                previousSite?.let { indexReservation(unit.unitId, it, radius, true) }
+            }
+        }
         if (indexed != null && indexed.owner === bySite && indexed.site == reservation && indexed.body == body) {
             val stop = indexed.stop
             if (layer == null && stop == null || stop != null && layer == stop.layer && stop.pose == unit.position &&
@@ -149,12 +191,13 @@ internal fun landingApproachesSeparate(first: MutableUnit, firstSite: Position, 
 }
 
 /** Physical locations belong to the command. A travelling vehicle has no claim until it enters the landing area. */
-internal data class LandingMember(val group: GroupMoveRequest, val claimed: Position? = null, val parked: Boolean = false, val ingress: Position? = null, val guided: Boolean = false, val preciseApproach: Boolean = false,
+internal data class LandingMember(val group: GroupMoveRequest, val claimed: Position? = null, val parked: Boolean = false, val ingress: Position? = null, val preciseApproach: Boolean = false,
                                   val pushed: Boolean = false, val restingSite: Position? = null, val restingPose: Position? = null,
-                                  val pushedPose: Position? = null, val releasedSite: Position? = null, val noRouteTicks: Long? = null, val stoppedOrder: UnitTask? = null, val waitingForBay: String? = null)
+                                  val pushedPose: Position? = null, val releasedSite: Position? = null, val noRouteTicks: Long? = null, val stoppedOrder: UnitTask? = null, val waitingForBay: String? = null,
+                                  val claimHeading: Double? = null)
 
 internal class SharedLandingSites(private val map: MapDefinition, private val group: GroupMoveRequest,
-                                  private val spacing: Double, private val fillOrigin: Position, private val spread: Double, private val outside: Boolean) {
+                                  private val spacing: Double, private val fillOrigin: Position, private val outside: Boolean) {
     var mixedBays: MixedLandingBays? = null
         private set
     private var points = GroupMoveDestinations.Points(map, group.click, spacing)
@@ -165,53 +208,11 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                             val index: Int, val best: Position?, val score: Double,
                             val bestBlocked: Position?, val blockedScore: Double, val allTaken: Boolean)
     private val scans = mutableMapOf<String, Scan>()
+    private data class EntryScan(val start: Position, val terrain: PlanningTerrain, val index: Int, val nearest: Position?)
+    private val entryScans = mutableMapOf<String, EntryScan>()
+    fun surveyingEntry(id: String) = id in entryScans || id in scans
 
-    // Resume the pair sweep on the next candidate step. Leave most of the queue for arrivals.
-    private var smallTurn = 0
-    fun beginService() { smallTurn = (smallTurn + 1) % 3 }
-
-    private fun quota(budget: PathWorkBudget, divisor: Int, phase: Int): Int {
-        val available = budget.limit - budget.used
-        return if (available >= divisor) available / divisor else if (smallTurn == phase) available else 0
-    }
-
-    private var pairRow = 0
-    private var pairColumn = 1
-
-    fun visitApproachingPairs(members: List<MutableUnit>, budget: PathWorkBudget, visit: (MutableUnit, MutableUnit) -> Unit) {
-        if (members.size < 2) return
-        val count = members.size.toLong() * (members.size - 1) / 2
-        val allowance = minOf(count, quota(budget, 4, 0).toLong()).toInt()
-        repeat(allowance) {
-            if (pairRow >= members.lastIndex) { pairRow = 0; pairColumn = 1 }
-            if (pairColumn >= members.size) { pairRow++; pairColumn = pairRow + 1 }
-            if (pairRow >= members.lastIndex) { pairRow = 0; pairColumn = 1 }
-            if (!budget.take(1)) return
-            visit(members[pairRow], members[pairColumn])
-            pairColumn++
-        }
-    }
-
-    private var entryCursor = 0
-    private var followerCursor = 0
     private var drivingCursor = 0
-
-    /** A partial sweep leaves capacity for new arrivals and resumes at the first unvisited peer. */
-    fun visitEntrances(entering: List<MutableUnit>, members: List<MutableUnit>, budget: PathWorkBudget,
-                       exchange: (MutableUnit, MutableUnit) -> Unit) {
-        if (entering.isEmpty() || members.isEmpty()) return
-        val limit = minOf(entering.size.toLong() * members.size, quota(budget, 3, 1).toLong()).toInt()
-        repeat(limit) {
-            entryCursor %= entering.size
-            followerCursor %= members.size
-            val front = entering[entryCursor]
-            val other = members[followerCursor]
-            if (!budget.take(1)) return
-            followerCursor++
-            if (followerCursor == members.size) { followerCursor = 0; entryCursor++ }
-            if (front.moveTarget != null && other.moveTarget != null && wouldSeal(front, other)) exchange(front, other)
-        }
-    }
 
     fun visitDriving(driving: List<MutableUnit>, budget: PathWorkBudget, visit: (MutableUnit) -> Unit) {
         repeat(driving.size) {
@@ -222,39 +223,8 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         }
     }
 
-    private data class LaneSearch(val entrance: Position, val index: Int, val deepestId: String?, val deepestSite: Position?)
-    private val laneSearches = mutableMapOf<String, LaneSearch>()
     private val memberIds = group.members.toList()
     private val memberRanks = memberIds.withIndex().associate { it.value to it.index }
-
-    /** Scan stable command identities across steps. Never hand off an old ingress after a new claim. */
-    fun deepestEntering(unit: MutableUnit, entrance: Position, budget: PathWorkBudget,
-                        lookup: (String) -> MutableUnit?): MutableUnit? {
-        val saved = laneSearches[unit.unitId]?.takeIf { it.entrance == entrance }
-        fun currentSite(id: String?): Position? {
-            val other = id?.let(lookup) ?: return null
-            val landing = other.landingMember ?: return null
-            return landing.ingress?.takeIf { other.alive && other.moveTarget != null && landing.group === group &&
-                landing.claimed == null && sameLane(entrance, it) && (other === unit || depth(other.position) < depth(entrance)) }
-        }
-        val resume = saved?.takeIf { it.deepestSite == currentSite(it.deepestId) }
-        var deepest = resume?.deepestId
-        var site = resume?.deepestSite
-        for (index in (resume?.index ?: 0) until memberIds.size) {
-            if (!budget.take(1)) {
-                laneSearches[unit.unitId] = LaneSearch(entrance, index, deepest, site)
-                return null
-            }
-            val id = memberIds[index]
-            val candidate = currentSite(id) ?: continue
-            if (site == null || depth(candidate) > depth(site)) {
-                deepest = id
-                site = candidate
-            }
-        }
-        laneSearches.remove(unit.unitId)
-        return deepest?.let(lookup)
-    }
 
     private var repairTerrain: Pair<PlanningTerrain, PlanningTerrain>? = null
 
@@ -268,17 +238,12 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         return refined
     }
 
-    fun fork(rollback: PathSearchRollback) = SharedLandingSites(map, group, spacing, fillOrigin, spread, outside).also {
+    fun fork(rollback: PathSearchRollback) = SharedLandingSites(map, group, spacing, fillOrigin, outside).also {
         it.mixedBays = mixedBays?.fork(rollback)
         it.points = points.fork(rollback)
-        it.smallTurn = smallTurn
-        it.entryCursor = entryCursor
-        it.followerCursor = followerCursor
         it.drivingCursor = drivingCursor
-        it.pairRow = pairRow
-        it.pairColumn = pairColumn
         it.scans.putAll(scans)
-        it.laneSearches.putAll(laneSearches)
+        it.entryScans.putAll(entryScans)
         it.pushScans.putAll(pushScans)
         it.pushCursor = pushCursor
         it.needed = needed
@@ -286,8 +251,6 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         it.suppliedSites = suppliedSites
         it.survey = survey?.fork(rollback)
         it.searchCredit = searchCredit
-        entrancePair?.footprint?.journal(rollback)
-        it.entrancePair = entrancePair
         it.movedAside = movedAside
         it.yieldScan = yieldScan?.let { scan -> scan.copy(query = scan.query?.fork(rollback), extra = scan.extra?.fork(rollback)) }
         it.lastArrival = lastArrival?.fork(rollback)
@@ -321,7 +284,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                                 val terrain: PlanningTerrain)
     private val pushScans = mutableMapOf<String, PushScan>()
     private var pushCursor = 0
-    val checkingTraffic get() = pushScans.isNotEmpty() || entrancePair != null
+    val checkingTraffic get() = pushScans.isNotEmpty()
     fun routePublished(peer: MutableUnit) {
         val index = memberRanks[peer.unitId] ?: return
         for ((id, scan) in pushScans) {
@@ -334,17 +297,6 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
 
     /** Only a newly obstructed leg (or a replaced suffix) invalidates a route the cursor has already visited. */
     fun trafficChanged(body: MutableUnit, previous: MutableUnit?, worldIndex: Int, lookup: (String) -> MutableUnit?) {
-        entrancePair?.let { scan ->
-            val first = lookup(scan.first)
-            val second = lookup(scan.second)
-            val a = if (scan.swapped) scan.b else scan.a
-            val b = if (scan.swapped) scan.a else scan.b
-            if (worldIndex < scan.swept && first != null && second != null && body !== first && body !== second &&
-                a != null && b != null && (UnitContact.withinSweptBounds(first, first.position, a, body) ||
-                    UnitContact.withinSweptBounds(second, second.position, b, body))) {
-                entrancePair = scan.copy(swept = worldIndex.coerceAtLeast(0))
-            }
-        }
         if (!body.alive) return
         val own = body.landingMember?.group === group
         val route = own && body.moveTarget != null && body.pathPoints.isNotEmpty()
@@ -444,64 +396,6 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                     }
                 }
             }
-        }
-    }
-
-    private data class EntrancePair(val first: String, val second: String, val revision: Long,
-        val groundA: PlanningTerrain, val groundB: PlanningTerrain, val footprint: LandingFootprint, val cursor: Int = 0,
-        val a: Position? = null, val b: Position? = null, val swapped: Boolean = false,
-        val swept: Int = 0, val fromA: Position? = null, val fromB: Position? = null,
-        val headingA: Double = 0.0, val headingB: Double = 0.0)
-    private var entrancePair: EntrancePair? = null
-
-    /** Charge a pad or a traffic body per visit. A short slice resumes at the first unread entry. */
-    fun separateEntrances(first: MutableUnit, second: MutableUnit, budget: PathWorkBudget, world: List<MutableUnit>, index: LandingOccupancy,
-                          groundA: PlanningTerrain, groundB: PlanningTerrain, occupied: (Position) -> Boolean, clearGround: (MutableUnit, Position) -> Boolean,
-                          blocks: (MutableUnit, Position, MutableUnit) -> Boolean): Pair<Position, Position>? {
-        if (budget.exhausted) return null
-        var job = entrancePair?.takeIf { it.first == first.unitId && it.second == second.unitId && !it.footprint.stale &&
-            it.groundA === groundA && it.groundB === groundB }
-            ?: EntrancePair(first.unitId, second.unitId, index.revision, groundA, groundB, LandingFootprint(index, index.revision))
-        fun finish(): Pair<Position, Position>? { entrancePair = null; return null }
-        while (job.cursor < sites.size) {
-            if (!budget.take(1)) { entrancePair = job; return null }
-            val site = sites[job.cursor]
-            job.footprint.visit(site)
-            job = job.copy(cursor = job.cursor + 1)
-            if (occupied(site)) continue
-            job = when {
-                job.a == null -> job.copy(a = site)
-                job.b == null -> job.copy(b = site)
-                else -> return finish()
-            }
-        }
-        val reach = spacing * (sqrt(group.members.size.toDouble()) + 3.0)
-        while (true) {
-            val a = (if (job.swapped) job.b else job.a) ?: return finish()
-            val b = (if (job.swapped) job.a else job.b) ?: return finish()
-            if (occupied(a) || occupied(b)) return finish()
-            if (job.fromA != first.position || job.fromB != second.position ||
-                job.headingA != first.heading || job.headingB != second.heading) {
-                if (!budget.take(1)) { entrancePair = job; return null }
-                if (ScreenPlane.distanceSquared(first.position, a) > reach * reach ||
-                    ScreenPlane.distanceSquared(second.position, b) > reach * reach ||
-                    !landingApproachesSeparate(first, a, second, b) || !clearGround(first, a) || !clearGround(second, b)) {
-                    if (job.swapped) return finish()
-                    job = job.copy(swapped = true, swept = 0, fromA = null)
-                    continue
-                }
-                job.footprint.visit(first.position, a, first.definition.movementCollision.boundingRadius)
-                job.footprint.visit(second.position, b, second.definition.movementCollision.boundingRadius)
-                job = job.copy(swept = 0, fromA = first.position, fromB = second.position,
-                    headingA = first.heading, headingB = second.heading)
-            }
-            if (job.swept == world.size) { entrancePair = null; return if (job.footprint.stale) null else a to b }
-            if (!budget.take(1)) { entrancePair = job; return null }
-            val other = world[job.swept]
-            if (blocks(first, a, other) || blocks(second, b, other)) {
-                if (job.swapped) return finish()
-                job = job.copy(swapped = true, swept = 0, fromA = null)
-            } else job = job.copy(swept = job.swept + 1)
         }
     }
 
@@ -719,26 +613,79 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
             ScreenPlane.distanceSquared(p, anchor) <= reach * reach
     }
 
+    /** The final route target and a stationary queue are both admissible destinations inside the landing area. */
+    fun canPark(host: UnitMovementHost, car: MutableUnit, map: MapDefinition): Boolean {
+        val at = car.position
+        if (!near(at)) return false
+        val hull = car.definition.movementCollision
+        val layer = UnitContact.layer(car) ?: return false
+        val target = car.moveTarget ?: return false
+        val member = car.landingMember ?: return false
+        val dist = sqrt(ScreenPlane.distanceSquared(at, target))
+        val grid = HullTerrainGrid.authorized(host.planningTerrainFor(car, map))
+        // A centred bay must accommodate the stopping error on both sides.
+        // A nearest endpoint can itself be tangent to the shoreline.
+        val mirrored = Position(target.x + (target.x - at.x), target.y + (target.y - at.y))
+        val coversClick = car.speed == 0.0 && MoveArrival.distanceToHull(hull, at, car.heading, group.click) == 0.0
+        val reached = coversClick || dist <= minOf(host.movementContract.targetRadius, hull.boundingRadius / 2) &&
+            (member.claimed == null || UnitContact.poseFits(hull, mirrored, car.heading, grid))
+        val blocked = car.stalledRouteTicks > 0L || car.hardContactLimitedTicks > 0L || car.routeTranslationClipped
+        if (!reached && !blocked) return false
+        val lookAhead = car.definition.contactBufferCollision.boundingRadius
+        val fraction = if (dist > lookAhead) lookAhead / dist else 1.0
+        val toward = Position(at.x + (target.x - at.x) * fraction, at.y + (target.y - at.y) * fraction)
+        val nearby = host.spatialIndex.querySwept(SpatialLayer.fromContact(layer), at, toward, hull.boundingRadius)
+        var queued = false
+        for (peer in nearby) {
+            if (car === peer || !UnitContact.shareLayer(car, peer)) continue
+            if (UnitContact.posesOverlap(hull, at, car.heading, peer.definition.movementCollision,
+                    peer.position, peer.heading)) return false
+            if (reached || peer.ownerPlayerId != car.ownerPlayerId || peer.moveTarget != null ||
+                peer.tasks.isNotEmpty() || peer.speed != 0.0 || peer.angularVelocity != 0.0) continue
+            if (UnitContact.routeAroundLayer(car, listOf(peer))?.allows(at, toward, car.heading, car.heading) == false)
+                queued = true
+        }
+        return (reached || queued) && host.leavesReservedSitesClear(car) && UnitContact.poseFits(hull, at, car.heading, grid)
+    }
+
     fun choose(
         unit: MutableUnit,
         terrain: PlanningTerrain,
         occupied: (Position) -> Boolean,
-        centre: Position,
         budget: PathWorkBudget,
         unobstructed: ((Position) -> Boolean)? = null,
     ): Position? {
         if (sites.size < group.members.size && !points.exhausted) return null
         val saved = scans[unit.unitId]?.takeIf { it.terrain === terrain }
-        val start = saved?.start ?: unit.position
-        val entry = saved?.entry ?: Position(group.click.x + (unit.position.x - centre.x) * spread,
-            group.click.y + (unit.position.y - centre.y) * spread)
-        val axisX = fillOrigin.x - group.click.x
-        val axisY = fillOrigin.y - group.click.y
-        val axisLength = maxOf(1.0, sqrt(axisX * axisX + axisY * axisY))
-        val clickCol = kotlin.math.floor(group.click.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
-        val clickRow = kotlin.math.floor(group.click.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
-        val confinedPocketClick = terrain.clearanceField().clearanceRings(clickCol, clickRow) in 1..2 &&
-            group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE
+        val partial = entryScans[unit.unitId]?.takeIf { it.terrain === terrain }
+        val start = saved?.start ?: partial?.start ?: unit.position
+        val radius = unit.definition.movementCollision.boundingRadius
+        val entry = saved?.entry ?: run {
+            var nearest = partial?.nearest
+            var distance = nearest?.let { ScreenPlane.distanceSquared(start, it) } ?: Double.POSITIVE_INFINITY
+            for (i in (partial?.index ?: 0) until sites.size) {
+                if (!budget.take(1)) {
+                    entryScans[unit.unitId] = EntryScan(start, terrain, i, nearest)
+                    return null
+                }
+                val candidate = sites[i]
+                val d = ScreenPlane.distanceSquared(start, candidate)
+                if (d < distance && MixedLandingBays.clears(unit, listOf(candidate), terrain)) {
+                    nearest = candidate
+                    distance = d
+                }
+            }
+            entryScans.remove(unit.unitId)
+            nearest ?: return null
+        }
+        fun hasPassingRoom(point: Position): Boolean {
+            val col = (point.x / terrain.tileWidth).toInt()
+            val row = (point.y / terrain.tileHeight).toInt()
+            if (col !in 0 until terrain.widthTiles || row !in 0 until terrain.heightTiles) return false
+            val rings = terrain.clearanceRings(col, row)
+            return (rings - 1).toDouble() * minOf(terrain.tileWidth, terrain.tileHeight) >= spacing + radius
+        }
+        val openEntry = hasPassingRoom(entry) && hasPassingRoom(group.click)
         val released = unit.landingMember?.releasedSite
         fun better(candidate: Position, dist: Double, current: Position?, currentDist: Double): Boolean {
             if (current == null) return true
@@ -757,24 +704,22 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                 return null
             }
             val site = sites[index]
-            val distance = if (confinedPocketClick) {
-                // In confined pockets / cul-de-sacs, fill strictly from the deepest interior outward to the mouth
-                // rather than letting outer-lane units claim outside-mouth slots early and seal the pocket.
-                sqrt(ScreenPlane.distanceSquared(site, group.click)) * 4.0 +
-                    0.25 * sqrt(ScreenPlane.distanceSquared(entry, site))
-            } else if (outside) {
-                val lateral = kotlin.math.abs((site.x - entry.x) * axisY - (site.y - entry.y) * axisX) / axisLength
-                val depth = ((site.x - group.click.x) * axisX + (site.y - group.click.y) * axisY) / axisLength
-                lateral * (sqrt(group.members.size.toDouble()) + 1.0) - depth
-            } else sqrt(ScreenPlane.distanceSquared(entry, site)) +
-                0.25 * sqrt(ScreenPlane.distanceSquared(fillOrigin, site))
+            // Fill through the pad at this vehicle's entrance before parking across it.
+            // Pads on separate approaches compete by travel distance.
+            val dx = site.x - start.x
+            val dy = site.y - start.y
+            val travel = dx * dx + dy * dy
+            val projection = (entry.x - start.x) * dx + (entry.y - start.y) * dy
+            val cross = (entry.x - start.x) * dy - (entry.y - start.y) * dx
+            val throughEntry = site == entry || projection > 0 && projection <= travel && cross * cross <= radius * radius * travel
+            val distance = if (throughEntry && !openEntry) -travel else travel
             if (occupied(site)) continue
             allTaken = false
             val beatsClear = better(site, distance, best, bestDistance)
             val beatsBlocked = best == null && better(site, distance, bestBlocked, bestBlockedDistance)
             if (!beatsClear && !beatsBlocked) continue
-            val terrainClear = if (mixedBays == null) PlanningSegmentClearance.allows(terrain, start, site, unit.definition.movementCollision.boundingRadius)
-                else MixedLandingBays.clears(unit, listOf(site), terrain)
+            val route = approach(unit, site, terrain)
+            val terrainClear = MixedLandingBays.clears(unit, route, terrain)
             if (!terrainClear) continue
             val isUnobstructed = if (unobstructed == null) true else {
                 val res = unobstructed(site)
@@ -799,13 +744,14 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         if ((allTaken || (released != null && (chosen == null || chosen == released))) && sites.isNotEmpty()) {
             needed = maxOf(needed, sites.size + 1)
         }
-        return chosen?.takeIf { !occupied(it) && (start == unit.position ||
-            PlanningSegmentClearance.allows(terrain, unit.position, it, unit.definition.movementCollision.boundingRadius)) }
+        return chosen?.takeUnless(occupied)
     }
 
     /** Join the final lane outside the parking area before driving between parked bodies. */
     fun approach(unit: MutableUnit, target: Position, terrain: PlanningTerrain): List<Position> {
         if (!outside || mixedBays?.openApron(terrain) == false) return listOf(target)
+        if (mixedBays == null && PlanningSegmentClearance.allows(terrain, unit.position, target,
+                unit.definition.movementCollision.boundingRadius)) return listOf(target)
         val dx = fillOrigin.x - group.click.x
         val dy = fillOrigin.y - group.click.y
         val length = sqrt(dx * dx + dy * dy)
@@ -817,59 +763,14 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
         val entry = Position(target.x - approachDistance * ax, target.y - approachDistance * ay)
         if ((entry.x - unit.position.x) * ax + (entry.y - unit.position.y) * ay <= 0.0) return listOf(target)
         val radius = unit.definition.movementCollision.boundingRadius
-        if (!PlanningSegmentClearance.allows(terrain, unit.position, entry, radius) ||
-            !PlanningSegmentClearance.allows(terrain, entry, target, radius)) return listOf(target)
-        return listOf(entry, target)
+        if (PlanningSegmentClearance.allows(terrain, unit.position, entry, radius) &&
+            PlanningSegmentClearance.allows(terrain, entry, target, radius)) return listOf(entry, target)
+        val travel = (target.x - unit.position.x) * ax + (target.y - unit.position.y) * ay
+        val lane = Position(target.x - travel * ax, target.y - travel * ay)
+        if (travel > 0 && PlanningSegmentClearance.allows(terrain, unit.position, lane, radius) &&
+            PlanningSegmentClearance.allows(terrain, lane, target, radius)) return listOf(lane, target)
+        return listOf(target)
     }
-
-    fun incomingGuide(unit: MutableUnit, centre: Position, terrain: PlanningTerrain): Position? {
-        if (!outside) return null
-        val dx = fillOrigin.x - group.click.x
-        val dy = fillOrigin.y - group.click.y
-        val length = sqrt(dx * dx + dy * dy)
-        if (length == 0.0) return null
-        val side = ((unit.position.y - centre.y) * dx - (unit.position.x - centre.x) * dy) * spread / length
-        val distance = spacing * (sqrt(group.members.size / Math.PI) + 1.0)
-        val p = Position(group.click.x - (distance * dx + side * dy) / length,
-            group.click.y + (side * dx - distance * dy) / length)
-        val radius = unit.definition.movementCollision.boundingRadius
-        return p.takeIf { PlanningSegmentClearance.allows(terrain, unit.position, p, radius) &&
-            PlanningSegmentClearance.allows(terrain, p, group.click, radius) }
-    }
-
-    fun atEntrance(position: Position, preview: Position): Boolean {
-        val dx = fillOrigin.x - group.click.x
-        val dy = fillOrigin.y - group.click.y
-        val length = sqrt(dx * dx + dy * dy)
-        return depth(position) >= -spacing * (sqrt(group.members.size / Math.PI) + 1.0) * length &&
-            kotlin.math.abs((position.x - preview.x) * dy - (position.y - preview.y) * dx) <= spacing * length
-    }
-
-    fun sameLane(a: Position, b: Position): Boolean {
-        val dx = fillOrigin.x - group.click.x
-        val dy = fillOrigin.y - group.click.y
-        return kotlin.math.abs((a.x - b.x) * dy - (a.y - b.y) * dx) < spacing * sqrt(dx * dx + dy * dy) * 0.5
-    }
-
-    fun wouldSeal(near: MutableUnit, far: MutableUnit): Boolean {
-        val a = near.landingMember?.claimed ?: return false
-        val b = far.landingMember?.claimed ?: return false
-        if (a == b) return false
-        if (!outside) {
-            // Fill through the entrance before parking a disk across the remaining approach.
-            return ScreenPlane.distanceSquared(near.position, b) < ScreenPlane.distanceSquared(far.position, b) &&
-                UnitContact.withinSweptBounds(far, far.position, b, near)
-        }
-        if (!sameLane(a, b) || depth(a) >= depth(b)) return false
-        if (sameLane(far.position, b) && depth(far.position) >= depth(near.position)) return false
-        val dx = fillOrigin.x - group.click.x
-        val dy = fillOrigin.y - group.click.y
-        val length = sqrt(dx * dx + dy * dy)
-        return depth(far.position) < depth(a) + length * near.definition.movementCollision.boundingRadius * 2.0
-    }
-
-    fun depth(p: Position): Double = (p.x - group.click.x) * (fillOrigin.x - group.click.x) +
-        (p.y - group.click.y) * (fillOrigin.y - group.click.y)
 
     companion object {
         fun forGroup(map: MapDefinition, group: GroupMoveRequest, members: List<MutableUnit>): SharedLandingSites {
@@ -890,7 +791,7 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
             val centre = Position(group.click.x - dx, group.click.y - dy)
             val extent = sqrt(members.sumOf { ScreenPlane.distanceSquared(centre, it.position) } / members.size)
             return SharedLandingSites(map, group, spacing, Position(group.click.x + dx * fraction, group.click.y + dy * fraction),
-                minOf(1.0, radius / maxOf(spacing, extent * sqrt(2.0))), sqrt(dx * dx + dy * dy) > extent + radius).also { pool ->
+                sqrt(dx * dx + dy * dy) > extent + radius).also { pool ->
                     if (members.any { it.definition.movementCollision != members.first().definition.movementCollision })
                         pool.mixedBays = MixedLandingBays.forApproach(group.click, dx, dy, spacing * (sqrt(group.members.size.toDouble()) + 2.0))
                 }

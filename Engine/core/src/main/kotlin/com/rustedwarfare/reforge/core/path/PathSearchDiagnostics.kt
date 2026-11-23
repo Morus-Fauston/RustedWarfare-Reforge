@@ -19,7 +19,7 @@ enum class PathSearchOutcome { FOUND, UNREACHABLE, FAILED }
 enum class PathSearchReason { USER_MOVE, KNOWLEDGE_REPLAN, ROUTE_REPAIR, ATTACK_PURSUIT, CONSTRUCTION_APPROACH }
 
 data class FirstSegmentDecision(val actionId: String, val unitId: String, val start: Position, val end: Position,
-                                val blockers: List<String>, val outcome: String)
+                                val blockers: List<String>, val outcome: String, val candidateCount: Int = 0)
 
 /** Trusted-host accounting of the shared move queue, separate from wall-clock duration. */
 data class PlanningWorkSlice(

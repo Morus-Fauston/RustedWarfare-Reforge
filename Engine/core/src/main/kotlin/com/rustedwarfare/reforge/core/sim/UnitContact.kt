@@ -404,11 +404,9 @@ internal object UnitContact {
             unitsById: Map<String, MutableUnit>, map: MapDefinition, ground: MapDefinition,
         ): Translation? {
             if (unit.moveTarget == null || other.moveTarget != null || movePending(other.unitId)) return null
-            val reservation = unit.groupMoveReservation
             val sameLandingParked = unit.landingMember != null &&
-                other.landingMember?.group === unit.landingMember?.group &&
-                other.landingMember?.parked == true
-            val parkedPeer = (reservation?.plan?.hasParkedMember(other) == true || sameLandingParked) &&
+                unit.landingMember!!.group.hasParkedMember(other)
+            val parkedPeer = sameLandingParked &&
                 unit.definition.movementCollision is MovementCollisionShape.Circle &&
                 other.definition.movementCollision is MovementCollisionShape.Circle
             if (!parkedPeer) return null

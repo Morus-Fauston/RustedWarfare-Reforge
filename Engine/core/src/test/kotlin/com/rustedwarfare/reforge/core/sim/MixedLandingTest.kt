@@ -18,10 +18,12 @@ class MixedLandingTest {
             units = listOf(UnitSpawn("a", "p1", "big", Position(180.0, 260.0), 90.0), UnitSpawn("b", "p1", "small", smallStart, 90.0)))
     }
 
-    private fun drive(scene: Scenario, target: Position = click, checkStep: (Observation, List<MotionStepSample>) -> Boolean) {
-        val ctx = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+    private fun drive(scene: Scenario, target: Position = click, moving: Set<String> = setOf("a", "b"),
+                      policies: ExperimentalPolicies = ExperimentalPolicies(),
+                      checkStep: (Observation, List<MotionStepSample>) -> Boolean) {
+        val ctx = assertIs<InitResult.Accepted>(SimulationContext(policies).initialize(scene)).context
         try {
-            val ids = scene.units.filter { it.unitId == "a" || it.unitId == "b" }.map { it.unitId }
+            val ids = scene.units.map { it.unitId }.filter { it in moving }
             val group = assertNotNull(ctx.requestGroupMove("p1", ids, target))
             for (id in ids) assertIs<ActionResult.Accepted>(ctx.submitGroupMove(MoveAction("go-$id", "p1", id, target, ctx.world), group))
             ctx.enableMotionDiagnostics(ctx.world)
@@ -31,6 +33,167 @@ class MixedLandingTest {
             }
             fail("Group did not settle: ${ctx.observe().units.map { listOf(it.unitId, it.position, it.moveTarget, it.moveArrival) }}")
         } finally { ctx.close() }
+    }
+
+    @Test fun first_car_through_a_single_entrance_parks_deeper_regardless_of_id() =
+        checkSingleEntrance(ExperimentalPolicies())
+
+    @Test fun a_sliced_parking_search_preserves_the_followers_shallow_approach() =
+        checkSingleEntrance(ExperimentalPolicies(movePlanningBudgetPerStep = 8))
+
+    private fun checkSingleEntrance(policies: ExperimentalPolicies) {
+        val mouth = 360.0
+        val end = Position(450.0, 270.0)
+        for (frontId in listOf("a", "b")) {
+            val room = scenario({ x, y -> x >= 23 || x >= 18 && y != 13 }, Position(200.0, 270.0))
+            val cars = room.units.map { spawn ->
+                spawn.copy(typeId = "small", position = Position(if (spawn.unitId == frontId) 320.0 else 220.0, end.y))
+            }
+            var firstIn: String? = null
+            val firstRights = mutableMapOf<String, Pair<Long, Position>>()
+            var furthestRearX = cars.single { it.unitId != frontId }.position.x
+            var quiet = 0
+            var stopped: List<Position>? = null
+            drive(room.copy(units = cars), end, policies = policies) { observation, motion ->
+                val front = observation.units.single { it.unitId == frontId }
+                val rear = observation.units.single { it.unitId != frontId }
+                for (sample in motion) {
+                    val site = sample.landingClaim ?: sample.landingIngress ?: continue
+                    firstRights.putIfAbsent(sample.unitId, sample.stepIndex to site)
+                }
+                furthestRearX = maxOf(furthestRearX, rear.position.x)
+                if (firstIn == null) firstIn = observation.units.firstOrNull { it.position.x >= mouth }?.unitId
+                assertTrue(ScreenPlane.distanceSquared(front.position, rear.position) >= 12.0 * 12.0 - 1e-6)
+                if (observation.units.all { it.moveArrival != null && it.moveTarget == null }) {
+                    assertEquals(frontId, firstIn)
+                    val (frontStep, deep) = firstRights.getValue(frontId)
+                    val (rearStep, shallow) = firstRights.getValue(rear.unitId)
+                    assertTrue(deep.x > shallow.x, "First rights: $firstRights")
+                    assertTrue(frontStep <= rearStep, "Entry order: $firstRights")
+                    assertTrue(furthestRearX <= shallow.x + 6.0,
+                        "Follower passed its shallow pad $shallow with the whole hull at x=$furthestRearX")
+                    if (quiet == 0) println("front=$frontId rights=$firstRights stopped=${observation.stepIndex} " +
+                        "deepPose=${front.position} shallowPose=${rear.position} furthestRearX=$furthestRearX")
+                    assertTrue(rear.position.x >= mouth && front.position.x > rear.position.x,
+                        "front=$frontId at ${front.position}, follower at ${rear.position}")
+                    val poses = listOf(front.position, rear.position)
+                    stopped?.let { assertEquals(it, poses) }
+                    stopped = poses
+                    quiet++
+                } else {
+                    quiet = 0
+                    stopped = null
+                }
+                quiet >= 60
+            }
+        }
+    }
+
+    @Test fun four_cars_release_independent_approaches_from_the_same_group_order() {
+        for (bypass in listOf(false, true)) checkIndependentEntrances(bypass, false, ExperimentalPolicies())
+    }
+
+    @Test fun independent_approaches_survive_reversed_ids_and_sliced_work() {
+        for (bypass in listOf(false, true)) checkIndependentEntrances(bypass, true, ExperimentalPolicies(movePlanningBudgetPerStep = 8))
+    }
+
+    private fun checkIndependentEntrances(bypass: Boolean, swap: Boolean, policies: ExperimentalPolicies) {
+        val goal = Position(450.0, 270.0)
+        fun wall(x: Int, y: Int): Boolean {
+            val main = y == 13 && x in 16..25
+            val feeder = x == 21 && y in 13..18
+            val right = x in 22..26 && y in 12..14
+            val detour = bypass && x in 19..21 && y == 12
+            return !(main || feeder || right || detour)
+        }
+        val room = scenario(::wall, goal)
+        val early = if (swap) "late" else "early"
+        val late = if (swap) "early" else "late"
+        val cars = listOf(
+            UnitSpawn(early, "p1", "small", Position(391.0, 270.0), 270.0),
+            UnitSpawn(late, "p1", "small", Position(430.0, 351.0), 270.0),
+            UnitSpawn("upper", "p1", "small", Position(497.0, 250.0), 270.0),
+            UnitSpawn("lower", "p1", "small", Position(497.0, 290.0), 270.0),
+        )
+        val first = mutableMapOf<String, Pair<Long, Position>>()
+        val stopped = mutableMapOf<String, Long>()
+        var quiet = 0
+        drive(room.copy(units = cars), goal, cars.map { it.unitId }.toSet(), policies) { frame, motion ->
+            for (sample in motion) {
+                val site = sample.landingClaim ?: sample.landingIngress ?: continue
+                if (first.putIfAbsent(sample.unitId, frame.stepIndex to site) == null)
+                    println("bypass=$bypass first ${sample.unitId} ${frame.stepIndex} $site")
+            }
+            for ((i, car) in frame.units.withIndex()) {
+                val p = car.position
+                for (x in ((p.x - 6) / 20).toInt()..((p.x + 6) / 20).toInt()) {
+                    for (y in ((p.y - 6) / 20).toInt()..((p.y + 6) / 20).toInt()) {
+                        if (wall(x, y)) {
+                            val nearest = Position(p.x.coerceIn(x * 20.0, (x + 1) * 20.0), p.y.coerceIn(y * 20.0, (y + 1) * 20.0))
+                            assertTrue(ScreenPlane.distanceSquared(p, nearest) >= 36.0 - 1e-6, "Wall at ($x,$y), car ${car.unitId} at $p")
+                        }
+                    }
+                }
+                for (peer in frame.units.drop(i + 1))
+                    assertTrue(ScreenPlane.distanceSquared(car.position, peer.position) >= 144.0 - 1e-6)
+                if (car.moveArrival != null && stopped.putIfAbsent(car.unitId, frame.stepIndex) == null)
+                    println("bypass=$bypass parked ${car.unitId} ${frame.stepIndex} ${car.position}")
+            }
+            val parked = frame.units.all { it.moveArrival?.originalTarget == goal && it.tasks.isEmpty() && it.speed == 0.0 }
+            quiet = if (parked) quiet + 1 else 0
+            quiet >= 60
+        }
+    }
+
+    @Test fun a_pad_overlapped_by_a_stationary_hull_cannot_be_reserved() {
+        val target = Position(450.0, 270.0)
+        val room = scenario({ x, y -> x >= 23 || x >= 18 && y !in 12..14 }, Position(220.0, 270.0))
+        val obstacle = UnitSpawn("parked", "p1", "small", Position(452.75, 270.0), 90.0)
+        val cars = listOf(UnitSpawn("a", "p1", "small", Position(320.0, 265.0), 90.0),
+            UnitSpawn("b", "p1", "small", Position(240.0, 275.0), 90.0), obstacle)
+        var settled = 0
+        drive(room.copy(units = cars), target) { frame, samples ->
+            val parked = frame.units.single { it.unitId == obstacle.unitId }
+            for (sample in samples) {
+                val site = sample.landingClaim ?: sample.landingIngress ?: continue
+                assertTrue(ScreenPlane.distanceSquared(site, parked.position) >= 144.0 - 1e-6,
+                    "Step ${frame.stepIndex}: ${sample.unitId} reserved $site under stationary tank at ${parked.position}")
+            }
+            if (frame.units.filter { it.unitId != obstacle.unitId }.all { it.moveArrival != null }) settled++ else settled = 0
+            settled >= 60
+        }
+    }
+
+    @Test fun a_click_short_of_the_end_leaves_the_deepest_pad_for_the_leading_car() {
+        val room = scenario({ x, y -> x >= 26 || x >= 18 && y != 13 }, Position(200.0, 270.0))
+        val cars = listOf("d", "c", "b", "a").mapIndexed { i, id ->
+            UnitSpawn(id, "p1", "small", Position(340.0 - 50.0 * i, 270.0), 90.0)
+        }
+        val target = Position(450.0, 270.0)
+        drive(room.copy(units = cars), target, cars.map { it.unitId }.toSet()) { frame, motion ->
+            // All four cars share the same single-file entrance. A free pad beyond the click is reachable.
+            val leading = motion.single { it.unitId == "d" }
+            val site = leading.landingClaim
+            if (site != null) assertTrue(site.x > target.x, "First car was assigned $site")
+            frame.units.all { it.moveArrival != null } && frame.units.maxBy { it.position.x }.unitId == "d"
+        }
+    }
+
+    @Test fun parking_preserves_another_drivers_reserved_footprint() {
+        val room = scenario({ _, _ -> false }, Position(390.0, 270.0))
+        val goal = Position(470.0, 270.0)
+        val order = GroupMoveRequest(WorldHandle("landing"), null, "p1", goal, setOf("early", "late"))
+        val definition = room.unitDefinitions.getValue("small")
+        val early = MutableUnit("early", "p1", "small", definition, Position(370.0, 270.0), 90.0).apply {
+            landingMember = LandingMember(order, claimed = goal)
+            moveTarget = goal
+        }
+        val late = MutableUnit("late", "p1", "small", definition, goal, 90.0)
+        val units = listOf(early, late).associateBy { it.unitId }
+        val occupancy = LandingOccupancy().apply { update(units.values) }
+        assertFalse(occupancy.leavesReservedSitesClear(late, units))
+        late.position = Position(410.0, 270.0)
+        assertTrue(occupancy.leavesReservedSitesClear(late, units))
     }
 
     @Test fun mixed_radii_move_towards_the_click_before_claiming_separate_sites() {
@@ -56,7 +219,7 @@ class MixedLandingTest {
             MutableUnit(spawn.unitId, "p1", spawn.typeId, scene.unitDefinitions.getValue(spawn.typeId),
                 spawn.position, 90.0)
         }
-        val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"), true)
+        val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"))
         val pool = SharedLandingSites.forGroup(scene.map, group, cars)
         fun ground() = com.rustedwarfare.reforge.core.path.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
         val terrain = ground()
@@ -92,7 +255,7 @@ class MixedLandingTest {
             car.adoptRoute(listOf(Position(200.0, 300.0), click), click, car.lastPlannedKnowledgeRevision,
                 car.lastPlannedBuildingRevision, listOf("parked"))
             car.followsManeuverRoute = true
-            car.landingMember = LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked"), true))
+            car.landingMember = LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked")))
             val first = state.stepIndex + 1
             for (tick in first until first + 600) {
                 val frame = ctx.advance(Step(tick, 1.0, "sim-tick"))
@@ -146,7 +309,7 @@ class MixedLandingTest {
             fun serve(survey: MixedLandingBays, sites: List<Position> = listOf(site)): MixedLandingBays.Decision {
                 car.heading += 0.1 // A circular body can keep steering between slices of the same swept route.
                 val slice = PathWorkBudget(1)
-                return survey.choose(listOf(car), sites, { false }, { true }, { ground }, paths, slice,
+                return survey.choose(listOf(car), sites, { _, _ -> false }, { true }, { ground }, paths, slice,
                     { _, _ -> fail("Clear elbow should not need an exact search") }, { blockers })
             }
             val bay = MixedLandingBays(click, true, 110.0)

@@ -4,7 +4,7 @@ import com.rustedwarfare.reforge.core.content.MovementType
 import kotlin.test.*
 
 class AmphibiousJetRecoveryTest {
-    @Test fun a_new_group_order_waits_for_planning_when_an_old_paused_route_can_fly_again() =
+    @Test fun a_new_group_order_replaces_the_old_paused_route_when_flight_resumes() =
         WaterTestScene.withMap { map ->
             val context = AmphibiousJetScene.open(AmphibiousJetScene.scenario().copy(map = map,
                 units = listOf(UnitSpawn("jet", "p1", "amphibiousJet", Position(500.0, 200.0), 270.0),
@@ -31,10 +31,19 @@ class AmphibiousJetRecoveryTest {
                 val request = assertNotNull(context.requestGroupMove("p1", members, target))
                 for (id in members) assertIs<ActionResult.Accepted>(context.submitGroupMove(
                     MoveAction("group-$id", "p1", id, target, context.world), request))
-                val waiting = context.advance(Step(step, 1.0, "sim-tick"))
-                assertTrue(waiting.units.all { it.moveTarget == null && it.pathPoints.isEmpty() })
-                assertTrue(waiting.events.none { it.kind == "movement-started" })
-                assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+                val published = mutableSetOf<String>()
+                for (tick in step..step + 120) {
+                    val frame = context.advance(Step(tick, 1.0, "sim-tick"))
+                    for (unit in frame.units) {
+                        if (unit.moveTarget == null) continue
+                        assertEquals("group-${unit.unitId}", unit.tasks.first().actionId)
+                        assertEquals(target, unit.moveTarget)
+                        published += unit.unitId
+                    }
+                    assertTrue(context.drainPathDiagnostics(context.world).none { it.actionId == "old" })
+                    if (published.containsAll(members)) break
+                }
+                assertEquals(members.toSet(), published)
             } finally { context.close() }
         }
 

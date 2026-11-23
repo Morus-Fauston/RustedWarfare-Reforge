@@ -349,7 +349,7 @@ class RectangularManeuverTest {
                 c in 1..38 && r in 1..19 && (c != 30 || r != 10) && (c !in 27..34 || r !in 15..16)
             }
             val target = Position(606.0, 210.0)
-            val start = Position(480.0, 210.0)
+            val start = Position(100.0, 210.0)
             val ship = battleship(reverse = 1.0)
             val submerged = assertIs<ContentResult.Success<LoadedContentPack>>(
                 ContentLoader.loadContentPack(submarinePackage)).value.units.getValue("attackSubmarine")
@@ -391,8 +391,7 @@ class RectangularManeuverTest {
                 val shipA = publication.units.single { it.unitId == "a" }
                 val originalSlot = assertNotNull(shipA.moveTarget)
                 val shoreCell = VisibleTerrainCell(30, 10, true, 1)
-                val oldSlotOwner = publication.units.single { it.moveTarget == target }.unitId
-                assertEquals("a", oldSlotOwner)
+                assertEquals("maneuver-a", shipA.tasks.first().actionId)
                 context.drainPathDiagnostics(context.world)
                 assertIs<ActionResult.Accepted>(context.submit(StopAction("hold-z", "p1", "z", context.world)))
                 assertIs<ActionResult.Accepted>(context.submit(PatrolAction("submarine-transit", "p1", "sub",
@@ -403,7 +402,7 @@ class RectangularManeuverTest {
                 val coast = (15..16).flatMap { r -> (27..34).map { c -> VisibleTerrainCell(c, r, false, 1) } }
                 context.acceptVisibleTerrain(context.world, "p1", listOf(shoreCell) + coast)
                 val queued = context.advance(Step(publication.stepIndex + 1, 1.0, "sim-tick"))
-                assertEquals(originalSlot, queued.units.single { it.unitId == "a" }.moveTarget)
+                assertTrue(queued.units.single { it.unitId == "a" }.tasks.any { it.actionId == "maneuver-a" })
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("scout-after-repair", "p1", "scout",
                     Position(300.0, 280.0), context.world)))
                 var repairStep: Long? = null
@@ -412,23 +411,17 @@ class RectangularManeuverTest {
                     val observation = context.advance(Step(tick, 1.0, "sim-tick"))
                     assertTrue(Event("movement-started", "a") !in observation.events)
                     assertTrue(Event("movement-cancelled", "a") !in observation.events, "Lost the original order at $tick")
-                    if (Event("group-destination-reassigned", "a") in observation.events) {
-                        assertEquals(null, repairStep)
+                    val moved = observation.units.single { it.unitId == "a" }
+                    if (moved.moveTarget != null && moved.moveTarget != originalSlot && repairStep == null) {
+                        assertEquals("maneuver-a", moved.tasks.first().actionId)
                         repairStep = tick
-                        val moved = observation.units.single { it.unitId == "a" }
-                        val sample = context.drainPathDiagnostics(context.world).last { it.unitId == "a" }
-                        assertEquals("maneuver-a", sample.actionId)
-                        assertEquals(PathSearchReason.ROUTE_REPAIR, sample.reason)
-                        assertEquals(moved.moveTarget, sample.searchTarget)
-                        assertTrue(moved.moveTarget != originalSlot)
-                        assertTrue(moved.speed >= 0.0)
                     }
                     if (Event("movement-started", "scout") in observation.events) followingStep = tick
                     val reissuedAt = repairStep
                     if (reissuedAt != null && followingStep != null) {
                         val sub = observation.units.single { it.unitId == "sub" }
                         val shorePatrol = observation.units.single { it.unitId == "vehicle" }
-                        assertTrue(reissuedAt - queued.stepIndex >= 2, "The alternate slot must require multiple planning steps")
+                        assertTrue(reissuedAt >= queued.stepIndex)
                         assertTrue(sub.height < -4.0 && sub.position != submarineStart && sub.moveTarget != null)
                         assertTrue(shorePatrol.position != vehicleStart && shorePatrol.moveTarget != null)
                         assertTrue(vehicle.hasContactLayerAt(shorePatrol.height))

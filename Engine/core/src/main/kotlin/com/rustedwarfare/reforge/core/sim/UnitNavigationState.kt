@@ -3,32 +3,21 @@ package com.rustedwarfare.reforge.core.sim
 import java.util.Collections
 
 /**
- * Unified immutable group-reservation contract consolidating legacy slot reservations
- * ([GroupMoveReservation] / [GroupMoveRequest]) and shared landing reservations ([LandingMember])
- * into a single value object carried inside [UnitNavigationState].
+ * Single-track immutable group-landing reservation carried inside [UnitNavigationState] (ENG-P016-009B).
  *
- * During the transition window before ENG-P016-009 removes the legacy slot system, a shared-landing
- * unit can carry both its active [landing] claim and a concrete final-bay [slot] reservation at the
- * same time; holding them in one immutable [GroupReservation] guarantees atomic clearing on cancel,
- * retarget, or arrival with zero leftover dirty state.
+ * Legacy dual-track slot/parkedOwner fields were physically removed; all group parking claims,
+ * parked ownership, and saturation-overflow settlements share this single [landing] state.
  */
 internal data class GroupReservation(
-    val slot: GroupMoveReservation? = null,
-    val parkedOwner: GroupMoveRequest? = null,
-    val landing: LandingMember? = null,
+    val landing: LandingMember,
 ) {
-    val active: Boolean get() = slot != null || parkedOwner != null || landing != null
+    val active: Boolean get() = true
 
-    val group: GroupMoveRequest? get() = landing?.group ?: slot?.plan ?: parkedOwner
+    val group: GroupMoveRequest get() = landing.group
 
     companion object {
-        fun of(
-            slot: GroupMoveReservation? = null,
-            parkedOwner: GroupMoveRequest? = null,
-            landing: LandingMember? = null,
-        ): GroupReservation? =
-            if (slot == null && parkedOwner == null && landing == null) null
-            else GroupReservation(slot, parkedOwner, landing)
+        fun of(landing: LandingMember? = null): GroupReservation? =
+            landing?.let(::GroupReservation)
     }
 }
 
@@ -84,27 +73,11 @@ internal data class UnitNavigationState(
 
     fun withRouteOccupantIds(ids: List<String>): UnitNavigationState =
         copy(routeOccupantIds = immutableList(ids))
-    val groupMoveReservation: GroupMoveReservation?
-        get() = groupReservation?.slot
-
-    val parkedReservationOwner: GroupMoveRequest?
-        get() = groupReservation?.parkedOwner
-
     val landingMember: LandingMember?
         get() = groupReservation?.landing
 
-    fun withGroupMoveReservation(value: GroupMoveReservation?): UnitNavigationState {
-        val next = GroupReservation.of(slot = value, parkedOwner = parkedReservationOwner, landing = landingMember)
-        return if (next == groupReservation) this else copy(groupReservation = next)
-    }
-
-    fun withParkedReservationOwner(value: GroupMoveRequest?): UnitNavigationState {
-        val next = GroupReservation.of(slot = groupMoveReservation, parkedOwner = value, landing = landingMember)
-        return if (next == groupReservation) this else copy(groupReservation = next)
-    }
-
     fun withLandingMember(value: LandingMember?): UnitNavigationState {
-        val next = GroupReservation.of(slot = groupMoveReservation, parkedOwner = parkedReservationOwner, landing = value)
+        val next = GroupReservation.of(landing = value)
         return if (next == groupReservation) this else copy(groupReservation = next)
     }
 
@@ -235,10 +208,9 @@ internal data class UnitNavigationState(
     /** Transitions atomically to an arrived/parked state while preserving arrival metadata. */
     fun markArrived(
         parkedLanding: LandingMember?,
-        parkedOwner: GroupMoveRequest?,
         arrival: MoveArrival?,
     ): UnitNavigationState = pauseRoute().copy(
-        groupReservation = GroupReservation.of(slot = null, parkedOwner = parkedOwner, landing = parkedLanding),
+        groupReservation = GroupReservation.of(landing = parkedLanding),
         moveArrival = arrival ?: moveArrival,
     )
 

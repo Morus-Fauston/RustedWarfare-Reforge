@@ -306,9 +306,8 @@ internal object LocomotionModule {
             if (dist > maxInteractDist) continue
 
             // If approaching a final destination directly occupied by an anchored/very-slow peer
-            // (non-sharedLanding), allow closing straight into hard-contact/slot-buffer range without
-            // orbiting around the occupant onto adjacent slots; ADR-009 UnitContact resolves contact/stop
-            // and refreshGroupDestinations observes the persistent occupant cleanly.
+            // on a single-unit order, allow closing straight into hard-contact range so ADR-009
+            // UnitContact resolves contact/stop cleanly.
             val peerVerySlow = peerAnchored || peerVel.length() < 0.05 * maximumSpeed
             if (finalPoint && unit.landingMember == null && peerVerySlow) {
                 val peerToGoal = hypot(peer.position.x - desiredTarget.x, peer.position.y - desiredTarget.y)

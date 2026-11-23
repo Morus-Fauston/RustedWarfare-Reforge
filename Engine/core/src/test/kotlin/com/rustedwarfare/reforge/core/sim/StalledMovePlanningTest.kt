@@ -73,8 +73,8 @@ class StalledMovePlanningTest {
 
     @Test
     fun a_repair_invalidated_by_continuing_pushes_yields_to_the_waiting_tail() = WaterTestScene.withMap { source ->
-        val width = 160
-        val height = 100
+        val width = 40
+        val height = 32
         val map = MapDefinition(width, height, 20, 20, emptyList(), IntArray(width * height),
             BlockingGrid(width, height, BooleanArray(width * height)))
         val base = jam(source)
@@ -92,16 +92,37 @@ class StalledMovePlanningTest {
         ).context
         try {
             context.enablePathDiagnostics(context.world)
-                context.enablePlanningWorkDiagnostics(context.world)
+            context.enablePlanningWorkDiagnostics(context.world)
+            context.enableMotionDiagnostics(context.world)
             for ((id, target) in listOf("m0" to Position(340.0, 70.0), "m1" to Position(340.0, 500.0),
                 "z-pusher" to Position(150.0, 20.0))) assertIs<ActionResult.Accepted>(context.submit(
                 MoveAction("go-$id", "p1", id, target, context.world)))
-            for (tick in 0L..150L) context.advance(Step(tick, 1.0, "sim-tick"))
-            val work = context.drainPlanningWorkDiagnostics(context.world)
-            val repairs = context.drainPathDiagnostics(context.world).filter { it.reason == PathSearchReason.ROUTE_REPAIR }
-            println("invalidated queue work=${work.filter { it.used > 0 }}; published=$repairs")
-            assertTrue(work.any { it.slices.any { s -> "m0" in s.unitIds && s.restarted } }, "Fixture must invalidate a real active search")
-            assertTrue(repairs.any { it.unitId == "m1" }, "Independent tail must finish while the pushed head keeps invalidating")
+            var pendingHeadSince: Long? = null
+            var pushedDuringSearch = false
+            var tailServedDuringSearch = false
+            var tailPublished = false
+            for (tick in 0L..12000L) {
+                val frame = context.advance(Step(tick, 1.0, "sim-tick"))
+                val work = context.drainPlanningWorkDiagnostics(context.world).single()
+                assertTrue(work.used <= work.limit)
+                val repairs = work.slices.filter { it.reason == PathSearchReason.ROUTE_REPAIR }
+                val head = repairs.lastOrNull { "m0" in it.unitIds }
+                if (head != null && !head.completed && pendingHeadSince == null) pendingHeadSince = tick
+                if (pendingHeadSince != null) {
+                    if (repairs.any { "m1" in it.unitIds && it.workUnits > 0 }) tailServedDuringSearch = true
+                    val moved = context.drainMotionDiagnostics(context.world)
+                    if (moved.any { it.unitId == "m0" && it.pushedDisplacement != Position(0.0, 0.0) })
+                        pushedDuringSearch = true
+                    if (head?.completed == true) pendingHeadSince = null
+                } else context.drainMotionDiagnostics(context.world)
+                if (context.drainPathDiagnostics(context.world).any {
+                        it.reason == PathSearchReason.ROUTE_REPAIR && it.unitId == "m1" }) tailPublished = true
+                if (pushedDuringSearch && tailServedDuringSearch && tailPublished &&
+                    frame.units.single { it.unitId == "m1" }.position.x > 150.0) break
+            }
+            assertTrue(pushedDuringSearch, "The head must be displaced by contact during its pending repair")
+            assertTrue(tailServedDuringSearch, "The tail must receive budget while the head repair is pending")
+            assertTrue(tailPublished, "The independent tail repair must publish")
             assertTrue(context.observe().units.single { it.unitId == "m1" }.position.x > 150.0)
         } finally { context.close() }
     }
