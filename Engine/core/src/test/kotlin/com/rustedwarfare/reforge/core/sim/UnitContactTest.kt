@@ -191,7 +191,7 @@ class UnitContactTest {
     }
 
     @Test
-    fun a_rectangular_ship_stops_at_first_contact_with_a_stationary_circle() = WaterTestScene.withMap { map ->
+    fun a_rectangular_ship_passes_a_stationary_circle_without_penetrating_it() = WaterTestScene.withMap { map ->
         val circle = WaterTestScene.unit(MovementType.WATER)
         val rectangle = contactUnit("long-ship", MovementType.WATER, MovementCollisionShape.Rectangle(24.0, 8.0))
         val opening = WaterTestScene.scenario(map, MovementType.WATER, Position(500.0, 190.0))
@@ -207,20 +207,23 @@ class UnitContactTest {
                 MoveAction("cross-water", "p1", "mover", target, context.world)))
             assertTrue(move.events.isEmpty())
             var started = false
-            var blocked = false
             repeat(320) { tick ->
                 val visible = context.advance(Step(tick.toLong(), 1.0, "sim-tick"))
                 started = started || Event("movement-started", "mover") in visible.events
-                blocked = blocked || visible.events.any { it.kind == "movement-blocked" && it.unitId == "mover" }
-                val center = visible.units.single { it.unitId == "mover" }.position
-                assertTrue(center.x <= 542.0 + 1e-9,
-                    "The bow penetrated the stationary circle at tick $tick: $center")
+                val mover = visible.units.single { it.unitId == "mover" }
+                val obstacle = visible.units.single { it.unitId == "stationary" }
+                val dx = obstacle.position.x - mover.position.x
+                val dy = obstacle.position.y - mover.position.y
+                val forward = ScreenPlane.displacement(mover.heading, 1.0)
+                val along = kotlin.math.abs(dx * forward.x + dy * forward.y)
+                val across = kotlin.math.abs(dy * forward.x - dx * forward.y)
+                val gap = kotlin.math.hypot(maxOf(0.0, along - 12.0), maxOf(0.0, across - 4.0))
+                assertTrue(gap >= circle.radius - 1e-8, "Circle penetrated ship at tick $tick, gap=$gap")
             }
             assertTrue(started)
             val units = context.observePlayer(context.world, "p1").units.associateBy { it.unitId }
-            assertEquals(542.0, units.getValue("mover").position.x, 1e-9)
+            assertTrue(units.getValue("mover").position.x > 560.0)
             assertEquals(Position(560.0, 190.0), units.getValue("stationary").position)
-            assertTrue(blocked)
         } finally {
             context.close()
         }

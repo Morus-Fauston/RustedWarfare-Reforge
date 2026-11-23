@@ -158,7 +158,7 @@ internal object LocomotionModule {
             return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
         }
         val collision = unit.definition.movementCollision
-        if (collision !is MovementCollisionShape.Circle || collision.boundingRadius <= 0.0) {
+        if (collision.boundingRadius <= 0.0) {
             return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
         }
         val contactLayer = UnitContact.layer(unit)
@@ -198,8 +198,6 @@ internal object LocomotionModule {
             includeBufferPadding = true,
         ) { candidate ->
             if (candidate.hardRadius <= 0.0) return@queryFrozenTopK false
-            val peerUnit = host.units[candidate.unitId]
-            if (peerUnit == null || UnitContact.layer(peerUnit) != contactLayer) return@queryFrozenTopK false
             candidate.ownerPlayerId == unit.ownerPlayerId ||
                 host.isVisibleTo(unit.ownerPlayerId, candidate.position, candidate.nativeTransportPlacement)
         }
@@ -217,8 +215,6 @@ internal object LocomotionModule {
                 includeBufferPadding = false,
             ) { candidate ->
                 if (candidate.hardRadius <= 0.0 || !candidate.moving || candidate.speed <= 0.12 * maximumSpeed) return@queryFrozenTopK false
-                val peerUnit = host.units[candidate.unitId]
-                if (peerUnit == null || UnitContact.layer(peerUnit) != contactLayer) return@queryFrozenTopK false
                 val pDir = Vec2.fromHeading(candidate.heading, 1.0)
                 if (desiredDir.dot(pDir) >= -0.25) return@queryFrozenTopK false
                 val rx = candidate.position.x - unit.position.x

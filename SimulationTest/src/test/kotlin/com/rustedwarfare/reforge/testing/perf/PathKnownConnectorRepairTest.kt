@@ -50,7 +50,6 @@ class PathKnownConnectorRepairTest {
             var lastStartStep = 0
             val pendingRepair = mutableSetOf<String>()
             val repairedUnits = mutableSetOf<String>()
-            var exercised = 0
             for(step in 0 until stepLimit) {
                 val before=previous?.units?.associateBy { it.unitId }.orEmpty()
                 val invalid=before.values.filter { it.pathPoints.isNotEmpty() && !clear(listOf(it.position,it.pathPoints.first()),walls) }
@@ -77,7 +76,6 @@ class PathKnownConnectorRepairTest {
                     assertTrue(clear(listOf(start,u.position),walls),"physical center crosses known wall: step=$step ${u.unitId}")
                 }
                 for(sample in searches.filter { it.reason == PathSearchReason.ROUTE_REPAIR }) {
-                    exercised++
                     assertEquals("perf-move"+sample.unitId.removePrefix("perf-u"),sample.actionId)
                     assertEquals(0L,sample.scheduledStep);assertEquals(step.toLong(),sample.executionStep)
                     assertEquals(0,sample.preservedPrefixPointCount)
@@ -85,8 +83,7 @@ class PathKnownConnectorRepairTest {
                     assertEquals(PathSearchOutcome.FOUND,sample.outcome)
                     val current=observation.units.single { it.unitId==sample.unitId }
                     assertTrue(clear(listOf(checkNotNull(sample.searchStart))+current.pathPoints,walls),"repaired global path invalid: step=$step ${sample.unitId}")
-                    pendingRepair.remove(sample.unitId)
-                    repairedUnits.add(sample.unitId)
+                    if (pendingRepair.remove(sample.unitId)) repairedUnits.add(sample.unitId)
                 }
                 previous=observation
                 if (started.size == 50 && pendingRepair.isEmpty() && step - lastStartStep >= tailSteps) break
@@ -94,7 +91,7 @@ class PathKnownConnectorRepairTest {
             assertEquals((0 until 50).map(::id).toSet(), started)
             assertTrue(pendingRepair.isEmpty(), "unrepaired invalid connectors remaining: $pendingRepair")
             assertTrue(firstConnectors.all { it in repairedUnits }, "first connectors not repaired: $firstConnectors vs $repairedUnits")
-            assertTrue(exercised>=5,"required post-movement connector cases were not exercised")
+            assertTrue(repairedUnits.size >= 5, "Expected five distinct observed invalid connectors repaired; found $repairedUnits")
         } finally {
             Files.write(directory.resolve("raw.jsonl"),records.map { it.toString() })
             context.close()

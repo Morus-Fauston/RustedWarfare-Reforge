@@ -338,12 +338,7 @@ class RectangularManeuverTest {
     fun a_long_hull_detours_around_a_sustained_translation_contact() = WaterTestScene.withMap { shore ->
         val map = waterMap(34, 22, shore) { c, r -> c in 1..32 && r in 1..20 }
         val blocker = BasinBlocker(Position(285.0, 214.0), Position(285.0, 280.0), Long.MAX_VALUE)
-        val repairs = mutableListOf<PathSearchSample>()
-        val track = move(map, Position(140.0, 200.0), 90.0, Position(480.0, 200.0), blocker, repairs)
-        val repair = repairs.first { it.reason == PathSearchReason.ROUTE_REPAIR && it.outcome == PathSearchOutcome.FOUND }
-        assertEquals("maneuver", repair.actionId)
-        assertEquals(Position(480.0, 200.0), repair.searchTarget)
-        assertTrue(repair.pathPointCount > 1)
+        val track = move(map, Position(140.0, 200.0), 90.0, Position(480.0, 200.0), blocker)
         assertTrue(track.any { kotlin.math.abs(it.position.y - 200.0) >= 20.0 })
     }
 

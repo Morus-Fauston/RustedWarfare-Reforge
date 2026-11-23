@@ -206,12 +206,16 @@ class GroupMoveDestinationsTest {
     fun a_visible_long_hull_can_confirm_occupation_before_the_mover_gets_within_a_tile() =
         WaterTestScene.withMap { map ->
             val click = Position(600.0, 200.0)
-            val opening = WaterTestScene.scenario(map, MovementType.WATER, Position(475.0, 187.0))
+            // Start within the long hull's approach range and stay outside the ordinary
+            // confirmation range throughout the 420-tick observation window.
+            val approach = Position(545.0, 183.0)
+            val opening = WaterTestScene.scenario(map, MovementType.WATER, approach)
             val water = opening.unitDefinitions.getValue("water-test")
+            val observer = variant(water, "observer", 0.025)
             val holder = variant(water, "long-holder", 0.001, MovementCollisionShape.Rectangle(102.0, 20.0))
             val scene = opening.copy(players = listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.LOCAL)),
-                unitDefinitions = opening.unitDefinitions + (holder.id to holder), units = listOf(
-                    UnitSpawn("a", "p1", water.id, Position(475.0, 187.0), 90.0),
+                unitDefinitions = opening.unitDefinitions + listOf(observer, holder).associateBy { it.id }, units = listOf(
+                    UnitSpawn("a", "p1", observer.id, approach, 90.0),
                     UnitSpawn("z", "p1", water.id, Position(610.0, 130.0), 180.0),
                     UnitSpawn("holding", "p2", holder.id, click, 90.0)))
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context

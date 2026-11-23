@@ -356,6 +356,49 @@ class LocomotionModuleTest {
     }
 
     @Test
+    fun approaching_rectangular_hulls_adjust_course_before_hard_contact() {
+        val base = TestContentFactory.openScenario()
+        val tank = base.unitDefinitions.getValue("tank")
+        val hull = MovementCollisionShape.Rectangle(length = 26.0, width = 12.0)
+        val ship = UnitDefinition(
+            id = "ship", className = tank.className, radius = 13.0, displayRadius = 13.0,
+            totalFrames = tank.totalFrames, imagePath = tank.imagePath, imageScale = tank.imageScale,
+            movement = tank.movement.copy(type = MovementType.WATER, moveSpeed = 1.0, maxTurnSpeed = 2.0),
+            retainedUnconsumed = emptySet(), movementCollision = hull, mass = 3000.0,
+        )
+        val width = 40
+        val height = 20
+        lateinit var map: MapDefinition
+        WaterTestScene.withMap { shore ->
+            val water = shore.groundGids.last()
+            map = MapDefinition(width, height, 20, 20, shore.tileSets, IntArray(width * height) { water },
+                BlockingGrid(width, height, BooleanArray(width * height)))
+        }
+        val scene = base.copy(map = map, unitDefinitions = mapOf("ship" to ship), units = listOf(
+            UnitSpawn("east", "p1", "ship", Position(160.0, 210.0), 90.0),
+            UnitSpawn("west", "p1", "ship", Position(480.0, 210.0), 270.0),
+        ))
+        val ctx = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            for ((id, goalX) in listOf("east" to 600.0, "west" to 80.0)) {
+                assertIs<ActionResult.Accepted>(ctx.submit(MoveAction("cross-$id", "p1", id, Position(goalX, 210.0), ctx.world)))
+            }
+            var lateralSeparation = 0.0
+            for (step in 0L until 450L) {
+                val frame = ctx.advance(Step(step, 1.0, "sim-tick"))
+                val east = frame.units.single { it.unitId == "east" }
+                val west = frame.units.single { it.unitId == "west" }
+                if (west.position.x - east.position.x > 2 * hull.boundingRadius) {
+                    lateralSeparation = max(lateralSeparation, abs(east.position.y - west.position.y))
+                } else break
+            }
+            assertTrue(lateralSeparation > 1.0, "Opposing hulls should steer apart before contact: $lateralSeparation")
+        } finally {
+            ctx.close()
+        }
+    }
+
+    @Test
     fun slow_turn_rectangular_hull_avoids_tail_into_wall_and_high_frequency_head_jitter() {
         val base = TestContentFactory.openScenario()
         val shipBase = base.unitDefinitions.getValue("tank")

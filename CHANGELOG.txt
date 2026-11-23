@@ -1,3 +1,9 @@
+v0.5.69 (2026-11-23 13:11)
+  修复: 长船提前避让并保持可回到航路，转向与平移校验船体轮廓 / 同步下潜时按步初接触层避让
+  技术: 补强绕障、出港、领车前进与逐车连接段修复的回归检查
+
+====
+
 v0.5.55 (2026-11-22 23:13)
   架构改进: 物理删除 TrafficSeparation / CorridorChoice / OvertakePublication、16 折线缓存、60 步超车等待及全部死引用死字段，UnitContact.contactSlide 瘦身为 parkedPeerTangentSlide；清理 3 个绑定已删旧模块的废测并按真实玩法不变量收敛旧寻路单测
   修复: 补齐 LocomotionModule 非接触体过滤与几何边界、海厂脱口避让豁免、SharedLandingSites 选位预算挂起、Pathfinding 占用快判与 recoverStalledMoves 惰性接触查询；销账悬浮艇陆水占位与寻路性能 CLI MEMORY_GAP 两项历史红项

@@ -98,7 +98,7 @@ class OpenGroundPlanningTest {
         val spawns = List(50) { i -> UnitSpawn("u${i.toString().padStart(2, '0')}", "p1", "tank",
             Position(80.0 + i % 10 * 32, 150.0 + i / 10 * 38), 90.0) }
         val scene = opening.copy(map = map, unitDefinitions = mapOf("tank" to tank), units = spawns)
-        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = 16)).initialize(scene)).context
         try {
             val ids = spawns.map { it.unitId }.toSet()
             val group = assertNotNull(context.requestGroupMove("p1", ids, click))
@@ -115,13 +115,13 @@ class OpenGroundPlanningTest {
                 }
                 for (m in context.drainMotionDiagnostics(context.world)) if (m.originMoveId == "go-${m.unitId}" &&
                     m.commandTargetBefore != null && m.pushedDisplacement == Position(0.0, 0.0) &&
-                    (m.finalPosition != m.positionBefore || m.finalHeading != m.headingBefore)) own.putIfAbsent(m.unitId, tick)
+                    m.unitId in started && m.finalPosition.x > m.positionBefore.x) own.putIfAbsent(m.unitId, tick)
                 if (own.size == ids.size) break
             }
             assertEquals(ids, started.keys, "Queue tail must receive routes")
             assertEquals(ids, own.keys, "A published route or a push alone is not a start")
-            assertTrue(own.values.min() <= started.values.max(),
-                "Autonomous motion must begin no later than last publication: firstOwn=${own.values.min()}, lastPublished=${started.values.max()}")
+            assertTrue(own.values.min() < started.values.max(),
+                "First forward motion must precede last publication: firstOwn=${own.values.min()}, lastPublished=${started.values.max()}")
         } finally { context.close() }
     }
 }

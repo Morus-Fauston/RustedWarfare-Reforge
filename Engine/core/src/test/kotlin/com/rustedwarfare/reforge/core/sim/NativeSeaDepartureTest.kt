@@ -122,7 +122,9 @@ class NativeSeaDepartureTest {
                     previous = blocker.position
                 }
                 assertTrue(displacedSteps > 1, "$owner/$team never received gradual push")
-                assertTrue(context.observe().unit(ship).position.y > 260.0, "$owner/$team did not leave")
+                val departed = context.observe().unit(ship)
+                assertTrue(departed.position.y > 260.0,
+                    "$owner/$team did not leave: ${departed.position}, heading=${departed.heading}, target=${departed.moveTarget}, blocker=$previous")
                 assertEquals(24000L, context.observePlayer(context.world, "p1").balance)
                 assertEquals(listOf(ship), context.observe().production!!.units.map { it.unitId })
                 println("departure relation=$owner/$team displacedSteps=$displacedSteps blocker=$previous")

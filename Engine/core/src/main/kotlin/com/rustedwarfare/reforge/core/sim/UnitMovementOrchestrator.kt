@@ -533,9 +533,7 @@ internal object UnitMovementOrchestrator {
             if (maneuverGuidance?.overflowSettled == true) {
                 return settleSaturationOverflow(host, unit, step, executionStep)
             }
-            val maneuverAvoid = if (host.trafficSeparationEnabled &&
-                unit.definition.movementCollision is MovementCollisionShape.Circle &&
-                !preciseCircleApproach
+            val maneuverAvoid = if (host.trafficSeparationEnabled && !preciseCircleApproach
             ) LocomotionModule.solveGroundLocomotion(
                     host = host,
                     unit = unit,
@@ -547,7 +545,9 @@ internal object UnitMovementOrchestrator {
                     finalPoint = finalForSample,
                     delta = delta,
                     coordinates = policies.coordinates,
-                ).takeIf { it.applied } else null
+                ).takeIf { candidate ->
+                    candidate.applied && canRejoinManeuver(host, unit, map, leg, candidate.targetHeadingDeg)
+                } else null
             if (maneuverAvoid != null) {
                 avoidanceApplied = true
                 unit.nav = unit.nav.copy(lastAvoidHeadingDeg = maneuverAvoid.nextAvoidHeadingDeg)
@@ -872,6 +872,21 @@ internal object UnitMovementOrchestrator {
         return SteeringIntent(null, 0.0, 0.0, null, null, false, 0.0, normalCompleted = true)
     }
 
+    /** A local change of heading must leave a swept route back to the planned waypoint. */
+    private fun canRejoinManeuver(host: UnitMovementHost, unit: MutableUnit, map: MapDefinition,
+                                  leg: ManeuverLeg, heading: Double): Boolean {
+        val hull = HullRoute.forUnit(unit, maneuver = true) as? RectangularDeparture ?: return true
+        val terrain = host.planningTerrainFor(unit, map)
+        val occupancy = host.routeOccupancy(unit)
+        val reach = hull.shape.boundingRadius
+        val offset = ScreenPlane.displacement(heading, reach)
+        val probe = Position(unit.position.x + offset.x, unit.position.y + offset.y)
+        if (ScreenPlane.distanceSquared(probe, leg.target) >= ScreenPlane.distanceSquared(unit.position, leg.target)) return false
+        val radius = host.routeRadius(unit)
+        return host.continuationFits(terrain, unit.position, probe, unit.heading, hull, radius, occupancy) &&
+            host.continuationFits(terrain, probe, leg.target, heading, hull, radius, occupancy)
+    }
+
     /** Phase 3: Hull turn terrain/attachment/contact clamping and escape probing. */
     private fun resolveHeadingAndTurn(
         host: UnitMovementHost,
@@ -1094,7 +1109,7 @@ internal object UnitMovementOrchestrator {
                 map.takeIf { host.buildingTerrain != null }, movement.type, unit.nativeTransportPlacement,
             )
         }
-        val legalTerrainEnd = if (heading.nearShoreLeg) UnitContact.lastLegalPoint(unit.position, terrainResolved) {
+        val legalTerrainEnd = if (hull != null && producerCells.isEmpty()) UnitContact.lastLegalPoint(unit.position, terrainResolved) {
             UnitContact.poseFits(checkNotNull(hull), it, unit.heading, checkNotNull(translationTerrain))
         } else terrainResolved
         val boundedPosition = UnitAttachments.limitTranslation(host.units, unit, map, legalTerrainEnd)
