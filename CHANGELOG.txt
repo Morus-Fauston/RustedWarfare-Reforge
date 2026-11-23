@@ -1,3 +1,9 @@
+v0.5.70 (2026-11-24 03:05)
+  新增: 以统一 90° 俯视工业像素风全量补绘 phase-seven-sandbox 全 65 单位（136 张活体/残骸/阴影 PNG，含 18 蜘蛛模块与炮艇/重战舰/实验厂/核弹井等）及随包 visuals/placeholder/units 全部 28 张单位图，同步更新 manifest.json 哈希与真实来源（100% 保原尺寸/多帧动效与纯绿合规，残骸/阴影零纯绿误染，不动地形与 phase-six-a-sandbox）
+  技术: 新增 PublicUnitSpriteIntegrityTest 全量校验 145+28 张 PNG 尺寸/帧间变化/纯绿阈值与 manifest 来源一致，受影响 :client:test/:pc:test/:pc:installDist 全绿，workspace_layout.py --root 返回 ok: true / 完成双色全阵容拼图与公开占位 1920x1080 5 态实窗采集 / Hydrogen 9 图视觉审查首轮 APPROVED，独立 Neon 代码与清单整审返修闭合后定向复核 APPROVED（0 必修）
+
+====
+
 v0.5.69 (2026-11-23 23:01)
   调整: CompositeUnitIconBuilder.compose 接入 UiTheme.unitIconTuning（默认 gamma=0.82/lift=0.05/sat=1.08、保黑描边不改战场贴图）并将默认 iconWell 抬至 #282E33；HudSidebarProjection 对已完工己方工厂/建造者/可升级建筑常驻空队列 5 虚线格防动作键跳动（无队列单位不占行）；InGameHudOverlay 队列行改为两趟绘制并将 count>=2 红底白字角标相对格右上外探 +3 配 1px 深色隔离描边置顶显示
   修复: 打通 --original-assets 直开本地 Steam PC 原版目录（含 game-lib.jar）自动选用已校验 66 单位 PC 映射（修复 repairbay/experimentalLandFactory/nukeLauncherC/antiNukeLauncherC/hoverTank 回退占位图并同步两栖战机朝向与启动诊断），同时闭环未托管主题受限回读 P2

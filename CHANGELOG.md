@@ -1,4 +1,18 @@
 # Changelog
+## v0.5.70 (2026-11-24 03:05)
+
+### 新增
+
+- **自有公开占位单位素材全量补绘（`phase-seven-sandbox` 65 单位与随包 `reforge:base` 28 图）**：
+  - 以统一的 90° 俯视工业/构成主义像素风（1px 深色外描边、金属斜面高光与暗部层次、黄黑斜纹警示带、清晰兵种结构轮廓与规范纯绿可染色装甲区）全量重绘 `SimulationTest/public/inputs/phase-seven-sandbox/json/package/` 下的 136 张活体、残骸与阴影 PNG（覆盖指挥中心、陆/空/机甲/海/实验工厂、矿机与制造机 T1–T3、炮塔 T1/T2/火炮、激光防御、修理湾、核弹井与反核井、坦克/建造者/气垫船/悬浮坦克、运兵机/轰炸机/防空光束炮艇/两栖喷气机/直升机、炮艇/重型战列舰/攻击潜艇、轻重机甲/工程机甲/移动碉堡/喷火机甲、鹦鹉螺与机械蟹、模块蜘蛛本体及全部 18 个蜘蛛模块），彻底消除旧大方块占位图。
+  - 保留全部 9 张光束、护盾、槽位覆盖与 1×1 空图原样不动；全部 145 张 PNG 100% 保持既有宽高、多帧帧数与挂点对齐，9 组多帧动效表全部具备相邻帧动态变化；全部 28 张残骸与 8 张阴影保持焦黑锈蚀或深色半透明且零纯绿像素误染。
+  - 同步更新随包内置占位单位目录 `Engine/client/src/main/resources/visuals/placeholder/units/` 全部 28 张 PNG（含 `demo-tank.png`），同步回写 `Engine/client/src/main/resources/visuals/placeholder/manifest.json` 的 `provenance`、`source`、字节数与 SHA-256（保留 6 张地形条目与 13 张占位 tilesets 零改动，严守不触碰 `phase-six-a-sandbox`、`Engine/core/sim` 与 `Engine/core/path`）。
+
+### 技术
+
+- **自动化契约检验与双审收据（`UI-P003-003`）**：新增 `PublicUnitSpriteIntegrityTest`，覆盖 `phase-seven-sandbox` 全 145 张与随包 28 张单位图的精确尺寸、多帧相邻帧差异、基于 `MatchPlayerColors.PURE_GREEN_THRESHOLD` 的活体纯绿合规与残骸/阴影/非染色图零纯绿断言，以及 `manifest.json` 来源路径逐字节一致性校验；受影响 `:client:test`、`:pc:test` 与 `:pc:installDist`（`--rerun-tasks`）全绿，`workspace_layout.py --root` 返回 `ok: true`；完成全阵容 P1 绿 / P2 红 / 18 蜘蛛模块 / 28 残骸着色器验证拼图与 1920×1080 公开占位模式 `river_crossing.tmx` 5 态 Windows 实窗采集；Hydrogen 9 张目视审查首轮 0 必修 `APPROVED`，全新上下文 Neon 独立代码与清单整审经 2 项 P1 返修后定向复核 `APPROVED`（0 必修）。
+
+---
 ## v0.5.69 (2026-11-23 23:01)
 
 ### 调整
