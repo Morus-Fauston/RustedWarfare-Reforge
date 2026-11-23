@@ -350,7 +350,7 @@ class SandboxGraphics private constructor(
         val localPlayerRgb = resources.playerColorRgb("p1")
         for ((id, definition) in resources.units) {
             val layers = CompositeUnitIconBuilder.planLayers(definition, loader)
-            val composed = CompositeUnitIconBuilder.compose(layers, localPlayerRgb) ?: continue
+            val composed = CompositeUnitIconBuilder.compose(layers, localPlayerRgb, uiTheme.unitIconTuning) ?: continue
             val pixmap = CompositeUnitIconBuilder.toPixmap(composed)
             val tex = try {
                 Texture(pixmap).also {

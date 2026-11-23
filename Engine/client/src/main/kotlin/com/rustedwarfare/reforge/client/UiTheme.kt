@@ -81,6 +81,15 @@ data class UiUnitIconTuning(
         get() = kotlin.math.abs(gamma - 1f) < 1e-4f &&
             kotlin.math.abs(brightnessLift) < 1e-4f &&
             kotlin.math.abs(saturationScale - 1f) < 1e-4f
+
+    companion object {
+        val IDENTITY = UiUnitIconTuning(
+            gamma = 1f,
+            brightnessLift = 0f,
+            saturationScale = 1f,
+            outlineLumaThreshold = 0.14f,
+        )
+    }
 }
 
 data class UiThemeAssets(

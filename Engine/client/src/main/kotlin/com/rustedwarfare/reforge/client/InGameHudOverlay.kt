@@ -75,6 +75,7 @@ internal class InGameHudOverlay(
 ) : Group() {
     private val theme: UiTheme get() = themeProvider.currentTheme()
     private val colors: UiThemeColors get() = theme.colors
+    private val metrics: UiThemeMetrics get() = theme.metrics
 
     private var snapshot: HudSnapshot? = null
     private var notices: List<HudNoticeItem> = emptyList()
@@ -763,6 +764,7 @@ internal class InGameHudOverlay(
         drawTextLeft(batch, smallFont(), UiStrings.get(queue.labelKey, lang), rect.x + padH, centerY, colors.dim, alpha)
 
         val slotRects = computeQueueSlotRects(rect, lang)
+        // Pass 1: draw all 5 queue slot wells, progress fills, borders, and unit icons (UI-P003 §3.2)
         queue.slots.forEachIndexed { idx, slot ->
             val sr = slotRects.getOrNull(idx) ?: return@forEachIndexed
             val sx = sr.x
@@ -799,23 +801,35 @@ internal class InGameHudOverlay(
                         batch.setColor(1f, 1f, 1f, alpha)
                         batch.draw(region, sx + (slotSize - dw) * 0.5f, slotY + (slotSize - dh) * 0.5f, dw, dh)
                     }
-                    // Top-right red-background white-text count badge when count >= 2 (UI-P002 §5.2)
-                    if (slot.count >= 2) {
-                        val badgeText = slot.count.toString()
-                        val badgeFont = captionMonoFont()
-                        glyphLayout.setText(badgeFont, badgeText)
-                        val padX = 2f
-                        val badgeW = (glyphLayout.width + padX * 2f).coerceAtLeast(9f).coerceAtMost(slotSize - 2f)
-                        val badgeH = (glyphLayout.height + 2.5f).coerceAtLeast(9.5f).coerceAtMost(11.5f)
-                        val bx = sx + slotSize - badgeW
-                        val by = slotY + slotSize - badgeH
-                        fillRect(batch, white, bx, by, badgeW, badgeH, colors.queueCountBadgeBg, alpha)
-                        drawTextCenter(batch, badgeFont, badgeText, bx + badgeW * 0.5f, by + badgeH * 0.5f + 0.5f, colors.queueCountBadgeText, alpha)
-                    }
                 }
             } else {
                 drawDashedRect(batch, white, sx, slotY, slotSize, slotSize, colors.line, alpha * 0.65f)
             }
+        }
+
+        // Pass 2: draw all count >= 2 protruding red-background white-text badges on top so neighbor borders never clip them (UI-P003 §3.2)
+        val badgeFont = captionMonoFont()
+        val strokeW = metrics.queueBadgeStrokeWidth.coerceAtLeast(0f)
+        queue.slots.forEachIndexed { idx, slot ->
+            if (slot.overflowCount > 0 || slot.typeId == null || slot.count < 2) return@forEachIndexed
+            val sr = slotRects.getOrNull(idx) ?: return@forEachIndexed
+            val badgeText = slot.count.toString()
+            glyphLayout.setText(badgeFont, badgeText)
+            val badgeRect = computeQueueBadgeRect(sr, glyphLayout.width, glyphLayout.height, metrics)
+            if (strokeW > 0.01f) {
+                fillRect(
+                    batch, white,
+                    badgeRect.x - strokeW, badgeRect.y - strokeW,
+                    badgeRect.width + strokeW * 2f, badgeRect.height + strokeW * 2f,
+                    colors.queueCountBadgeStroke, alpha,
+                )
+            }
+            fillRect(batch, white, badgeRect.x, badgeRect.y, badgeRect.width, badgeRect.height, colors.queueCountBadgeBg, alpha)
+            drawTextCenter(
+                batch, badgeFont, badgeText,
+                badgeRect.x + badgeRect.width * 0.5f, badgeRect.y + badgeRect.height * 0.5f + 0.5f,
+                colors.queueCountBadgeText, alpha,
+            )
         }
 
         queue.progressPercent?.let { pct ->
@@ -1159,6 +1173,24 @@ internal class InGameHudOverlay(
                 sx += slotSize + slotGap
                 r
             }
+        }
+
+        /**
+         * Deterministic protruding count-badge rect relative to a queue slot's top-right corner (UI-P003 §3.2).
+         * Keeps the outer badge (including its isolation stroke) cleanly separated while staying inside the queue row top edge.
+         */
+        fun computeQueueBadgeRect(
+            slotRect: Rectangle,
+            textWidth: Float,
+            textHeight: Float,
+            metrics: UiThemeMetrics = UiTheme.DEFAULT.metrics,
+        ): Rectangle {
+            val padX = 2f
+            val badgeW = (textWidth + padX * 2f).coerceAtLeast(9.5f).coerceAtMost(slotRect.width)
+            val badgeH = (textHeight + 2.5f).coerceAtLeast(9.5f).coerceAtMost(11.5f)
+            val bx = slotRect.x + slotRect.width + metrics.queueBadgeOffsetX - badgeW
+            val by = slotRect.y + slotRect.height + metrics.queueBadgeOffsetY - badgeH
+            return Rectangle(bx, by, badgeW, badgeH)
         }
 
         /** Pure deterministic layout calculation for unit tests and runtime rendering. */

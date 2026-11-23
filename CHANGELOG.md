@@ -1,4 +1,25 @@
 # Changelog
+## v0.5.69 (2026-11-23 23:01)
+
+### 调整
+
+- **HUD 复合单位图标温和提亮与暗井分离（`CompositeUnitIconBuilder.kt`、`SandboxGraphics.kt`、`ui/theme.json`）**：
+  - 在 `CompositeUnitIconBuilder.compose()` 离线输出阶段接入 `UiTheme.unitIconTuning`（内置默认主题启用 `gamma=0.82`、`brightnessLift=0.05`、`saturationScale=1.08`、`outlineLumaThreshold=0.14`），仅对 HUD 5 处复合单位图标温和抬高深钢灰暗部细节，同时通过阈值平滑权重保护纯黑外描边锐利不泛白、保持纯绿对局玩家色鲜明度，绝不触碰战场世界贴图与着色器。
+  - 将默认主题 `iconWell` 由 `#1A1E20FF` 略微抬亮至 `#282E33FF`，使带黑描边的复合单位图标在选中卡 40×40 图标框与队列格内与暗底利落分离。
+- **有队列能力单位空队列常驻防跳动与红底白字角标右上出界置顶（`HudSidebarModel.kt`、`InGameHudOverlay.kt`）**：
+  - `HudSidebarProjection.buildQueueSection()` 对已完工己方工厂（`production`/`factoryQueue`）、建造者（`construction`）与可升级建筑（`upgrades`）在队列为空时常驻保留 5 个虚线空格且不显示 `0%` 噪音，彻底消除首次下单时下方动作键坐标跳动；普通作战单位、在建建筑与敌方/中立单位保持不占行。
+  - `InGameHudOverlay.drawQueueSection()` 拆分为两趟绘制（先绘 5 格底板/进度/边框/图标，再统一置顶绘全部 `count >= 2` 角标），角标按主题度量（默认 `+3, +3` 外探与 `1px` 深色隔离描边）向队列格右上角轻度出界，中英文模式下无顶界裁切、无邻格边框压切。
+
+### 修复
+
+- **排查并打通 `--original-assets` 直开 PC 66 单位原版映射（`PcVisualAssetSettings.kt`、`SandboxRenderResources.kt`）**：
+  - 修复桌面端 `--original-assets` 指向 Steam PC 原版目录（含普通文件 `game-lib.jar`）时仍走 Android 25 单位 `original-profile.json` 导致 `repairbay`、`experimentalLandFactory`、`nukeLauncherC`、`antiNukeLauncherC`、`hoverTank` 等回退占位图的问题；现自动选用随包已校验的 `PcOriginalImageProfile.bundled().mappedImages` 66 单位映射（严守 `ADR-008` 完整 jar/PNG 校验与缓存隔离），同步覆盖直开 `rw.pc.*` 路径的两栖战机朝向回正，并在启动诊断登记 `activeProfileId` / `activeUnitVisualCount` / `resolvedUnitImageCount`；同步闭环 `001` 遗留的未托管主题受限回读建议。
+
+### 技术
+
+- **验证与双审收据（`UI-P003-002`）**：新增 `UiHudBrightQueueAndBadgeTest` 与 `PcOriginalDirectLaunchTest`，受影响 `:client:test`、`:pc:test` 与 `:pc:installDist` 全绿，`workspace_layout.py --root` 返回 `ok: true`；完成 Steam PC 原版目录直开 `[p2]Big Island (2p).tmx` 1920×1080 Windows 实窗 6 态采集（证实 `activeProfileId=rw.pc.steam.9902063.images.v8.mapped`、`resolvedUnitImageCount=188`、空队列→入队动作键 Y 差值 `0.0`、相邻出界红标 `3`/`2`/`4` 置顶无压切、`repairbay`/`experimentalLandFactory`/`nukeLauncherC`/`antiNukeLauncherC`/`hoverTank` 全部显示原版美术）；全新上下文 Neon 独立代码整审与 Hydrogen 6 张实窗目视审查均首轮 0 必修 `APPROVED`。
+
+---
 ## v0.5.68 (2026-11-23 00:25)
 
 ### 新增

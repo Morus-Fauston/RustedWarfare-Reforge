@@ -18,11 +18,11 @@ import java.util.concurrent.CancellationException
 
 internal enum class PcResourcePreparationPath { FULL_AUDIT, PROCESS_REUSE, DISK_REUSE, MANAGED_REUSE }
 
-internal class PcVisualAssetSettings @JvmOverloads constructor(private val store: VisualAssetSettingsStore, cache: Path,
+internal class PcVisualAssetSettings @JvmOverloads constructor(private val store: VisualAssetSettingsStore, private val cache: Path,
     private val applicationRoot: Path, private val options: WindowsLaunchOptions,
-    private val prepareOriginal: (VisualAssetSelection) -> PreparedVisualAssets = PcVisualAssetService(cache)::prepareVisuals,
+    private val prepareOriginal: ((VisualAssetSelection) -> PreparedVisualAssets)? = null,
     private val imageExtractionProfile: PcOriginalImageProfile? = null,
-    imageExtractionMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically,
+    private val imageExtractionMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically,
     private val resourceExtractionProfile: PcOriginalResourceProfile? = null,
     private val trustedOutputs: PcTrustedOutputIndex = PcTrustedOutputIndex.bundled(),
 ) : VisualAssetSettings {
@@ -114,7 +114,7 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                     requireNotNull(available[id]).also { require(it.path == path) { "RESOURCE_PACK_BINDING_INVALID: $id" } }
                 }, base.identity)
             }
-            val original = if (resolved.source == VisualAssetSource.ORIGINAL) prepareOriginal(resolved) else null
+            val original = if (resolved.source == VisualAssetSource.ORIGINAL) prepareOriginalVisuals(resolved) else null
             preparationStatus = "Preparing built-in sounds..."
             val baseSounds = baseSoundResources.prepare()
             preparationStatus = "Reading selected pictures and sounds..."
@@ -173,8 +173,13 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
             val used = (base.resourcePack.resources.keys.map { images.images.getValue(it).path } + sounds.sounds.values.map { it.path }).toSet()
             val userPackRootsHighToLow = users.mapNotNull { it.manifest.parent }
             val themePatches = mutableListOf<com.rustedwarfare.reforge.client.UiThemePatch>()
-            val unmanagedThemeHashes = linkedMapOf<Path, Pair<Long, String>>()
+            val unmanagedThemeHashes = linkedMapOf<Pair<Path, String>, Triple<Int, Long, String>>()
             val unmanagedAbsentThemes = mutableListOf<Path>()
+            fun readBoundedFile(file: Path, limit: Int): ByteArray = Files.newInputStream(file).use {
+                it.readNBytes(limit + 1)
+            }.also {
+                require(it.size <= limit) { "UI_THEME_INVALID: $file: File exceeds $limit byte limit" }
+            }
             for (pack in users) {
                 val root = pack.manifest.parent ?: continue
                 val themeFile = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(
@@ -185,25 +190,22 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                     if (!pack.clientHeld) unmanagedAbsentThemes.add(root)
                     continue
                 }
+                val themeLimit = com.rustedwarfare.reforge.client.UiThemeComposer.MAX_THEME_BYTES
                 val themeBytes = if (!pack.clientHeld && inputs != null) {
-                    inputs.read(themeFile, com.rustedwarfare.reforge.client.UiThemeComposer.MAX_THEME_BYTES)
+                    inputs.read(themeFile, themeLimit)
                 } else {
-                    Files.newInputStream(themeFile).use {
-                        it.readNBytes(com.rustedwarfare.reforge.client.UiThemeComposer.MAX_THEME_BYTES + 1)
-                    }.also {
-                        require(it.size <= com.rustedwarfare.reforge.client.UiThemeComposer.MAX_THEME_BYTES) {
-                            "UI_THEME_INVALID: $themeFile: Theme exceeds 512 KiB limit"
-                        }
-                    }
+                    readBoundedFile(themeFile, themeLimit)
                 }
                 val patch = com.rustedwarfare.reforge.client.UiThemePatch.read(themeBytes, themeFile.toString(), requireFull = false)
                 themePatches += patch
                 if (!pack.clientHeld) {
-                    unmanagedThemeHashes[themeFile] = themeBytes.size.toLong() to visualHash(themeBytes)
+                    unmanagedThemeHashes[root to com.rustedwarfare.reforge.client.UiThemeComposer.PACK_THEME_FILE] =
+                        Triple(themeLimit, themeBytes.size.toLong(), visualHash(themeBytes))
                     for (relAsset in patch.assets.values.filterNotNull().distinct()) {
                         val assetFile = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(root, relAsset) ?: continue
-                        val assetBytes = if (inputs != null) inputs.read(assetFile, 16 * 1024 * 1024) else Files.readAllBytes(assetFile)
-                        unmanagedThemeHashes[assetFile] = assetBytes.size.toLong() to visualHash(assetBytes)
+                        val assetLimit = 16 * 1024 * 1024
+                        val assetBytes = if (inputs != null) inputs.read(assetFile, assetLimit) else readBoundedFile(assetFile, assetLimit)
+                        unmanagedThemeHashes[root to relAsset] = Triple(assetLimit, assetBytes.size.toLong(), visualHash(assetBytes))
                     }
                 }
             }
@@ -217,16 +219,14 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                     )
                     require(nowPresent == null) { "RESOURCE_PACK_SOURCE_CHANGED: $nowPresent: Theme appeared after checking; check this pack again" }
                 }
-                for ((file, expectedDigest) in unmanagedThemeHashes) {
-                    val parentRoot = userPackRootsHighToLow.firstOrNull { file.startsWith(it.toAbsolutePath().normalize()) }
-                    val rel = parentRoot?.toAbsolutePath()?.normalize()?.relativize(file)?.toString()?.replace('\\', '/')
-                    val rechecked = if (parentRoot != null && rel != null) {
-                        com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(parentRoot, rel)
-                    } else null
-                    require(rechecked != null) { "RESOURCE_PACK_SOURCE_CHANGED: $file: Theme resource missing after checking" }
-                    val currentBytes = Files.readAllBytes(rechecked)
-                    require(currentBytes.size.toLong() == expectedDigest.first && visualHash(currentBytes) == expectedDigest.second) {
-                        "RESOURCE_PACK_SOURCE_CHANGED: $file: Theme resource changed after checking; check this pack again"
+                for ((keyPair, expected) in unmanagedThemeHashes) {
+                    val (parentRoot, rel) = keyPair
+                    val (limit, expectedSize, expectedSha) = expected
+                    val rechecked = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(parentRoot, rel)
+                    require(rechecked != null) { "RESOURCE_PACK_SOURCE_CHANGED: $parentRoot/$rel: Theme resource missing after checking" }
+                    val currentBytes = readBoundedFile(rechecked, limit)
+                    require(currentBytes.size.toLong() == expectedSize && visualHash(currentBytes) == expectedSha) {
+                        "RESOURCE_PACK_SOURCE_CHANGED: $rechecked: Theme resource changed after checking; check this pack again"
                     }
                 }
             }
@@ -272,8 +272,31 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
         }
         preparationDiagnostics = mapOf("path" to preparationPath.name, "wholePackImports" to fullPackImports,
             "externalSourceTreeRoots" to roots.map { it.toString() }, "acceptedVersions" to acceptedVersions,
+            "activeProfileId" to result.profileId,
+            "activeUnitVisualCount" to result.units.size, "resolvedUnitImageCount" to (result.resolvedImages?.images?.keys?.count { it.value.startsWith("reforge:units/") } ?: 0),
             "boundary" to "Worker branch receipt; media integrity checks remain on selected fixed paths")
         return result
+    }
+
+    /**
+     * Resolves the verified original visual profile for direct `--original-assets` launch (UI-P003 §4.2):
+     * - When the supplied original directory contains `game-lib.jar` (PC Steam installation) and no explicit
+     *   custom preparer was injected, selects the bundled qualified PC 66-unit mapped profile
+     *   (`pc-original-images-profile.json`, strict jar + 768/85 PNG SHA-256 verification under ADR-008).
+     * - Otherwise retains the existing verified Android 25-unit `original-profile.json` path.
+     */
+    private fun prepareOriginalVisuals(selection: VisualAssetSelection): PreparedVisualAssets {
+        prepareOriginal?.let { return it(selection) }
+        val root = selection.originalDirectory?.toAbsolutePath()?.normalize()
+        val isPcInstall = root != null &&
+            Files.isRegularFile(root.resolve("game-lib.jar"), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        val profile = if (isPcInstall) {
+            val pcProfile = imageExtractionProfile ?: resourceExtractionProfile?.images ?: PcOriginalImageProfile.bundled()
+            requireNotNull(pcProfile.mappedImages) { "VISUAL_MAPPING_UNSUPPORTED: PC original profile lacks mappedImages" }
+        } else {
+            VisualAssetProfile.bundled()
+        }
+        return PcVisualAssetService(cache, profile, imageExtractionMove).prepareVisuals(selection)
     }
 
     /** Complete fresh qualification may use independently derived distribution facts as

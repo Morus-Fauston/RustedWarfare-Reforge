@@ -9,7 +9,7 @@
     "cellFlash": "#4D565CFF",
     "consoleCellHover": "#3D454BFF",
     "well": "#1A1E20FF",
-    "iconWell": "#1A1E20FF",
+    "iconWell": "#282E33FF",
     "line": "#596167FF",
     "popupBorder": "#727B81FF",
     "hair": "#FFFFFF@0.11",
@@ -46,14 +46,14 @@
     "keyRadius": 4.0,
     "keyShadowHeight": 3.0,
     "commonKeyShadowHeight": 2.0,
-    "queueBadgeOffsetX": 0.0,
-    "queueBadgeOffsetY": 0.0,
-    "queueBadgeStrokeWidth": 0.0
+    "queueBadgeOffsetX": 3.0,
+    "queueBadgeOffsetY": 3.0,
+    "queueBadgeStrokeWidth": 1.0
   },
   "unitIconTuning": {
-    "gamma": 1.0,
-    "brightnessLift": 0.0,
-    "saturationScale": 1.0,
+    "gamma": 0.82,
+    "brightnessLift": 0.05,
+    "saturationScale": 1.08,
     "outlineLumaThreshold": 0.14
   },
   "assets": {

@@ -464,7 +464,29 @@ object HudSidebarProjection {
                 }
             }
         }
-        return null
+        // Permanent empty queue row for queue-capable finished own units so repeated clicks never shift action buttons (UI-P003 §3.1)
+        val emptySlots = List(MAX_QUEUE_SLOTS) { HudQueueSlot(typeId = null, progress = null, count = 0) }
+        return when {
+            menu.production.isNotEmpty() || menu.factoryQueue != null -> HudQueueSection(
+                labelKey = "queue",
+                slots = emptySlots,
+                progressPercent = null,
+                kind = HudQueueKind.PRODUCTION,
+            )
+            menu.construction.isNotEmpty() -> HudQueueSection(
+                labelKey = "build",
+                slots = emptySlots,
+                progressPercent = null,
+                kind = HudQueueKind.BUILD,
+            )
+            menu.upgrades.isNotEmpty() -> HudQueueSection(
+                labelKey = "upgradeQ",
+                slots = emptySlots,
+                progressPercent = null,
+                kind = HudQueueKind.UPGRADE,
+            )
+            else -> null
+        }
     }
 
     /**

@@ -1,3 +1,10 @@
+v0.5.69 (2026-11-23 23:01)
+  调整: CompositeUnitIconBuilder.compose 接入 UiTheme.unitIconTuning（默认 gamma=0.82/lift=0.05/sat=1.08、保黑描边不改战场贴图）并将默认 iconWell 抬至 #282E33；HudSidebarProjection 对已完工己方工厂/建造者/可升级建筑常驻空队列 5 虚线格防动作键跳动（无队列单位不占行）；InGameHudOverlay 队列行改为两趟绘制并将 count>=2 红底白字角标相对格右上外探 +3 配 1px 深色隔离描边置顶显示
+  修复: 打通 --original-assets 直开本地 Steam PC 原版目录（含 game-lib.jar）自动选用已校验 66 单位 PC 映射（修复 repairbay/experimentalLandFactory/nukeLauncherC/antiNukeLauncherC/hoverTank 回退占位图并同步两栖战机朝向与启动诊断），同时闭环未托管主题受限回读 P2
+  技术: 新增 UiHudBrightQueueAndBadgeTest 与 PcOriginalDirectLaunchTest，受影响 :client:test/:pc:test/:pc:installDist 全绿，workspace_layout.py --root 返回 ok: true / 完成 PC 原版直开 Big Island 1920x1080 6 态实窗采集（动作键跳动 diff=0.0）/ 全新上下文 Neon 代码整审与 Hydrogen 6 张实窗视觉审查均首轮 0 必修 APPROVED
+
+====
+
 v0.5.68 (2026-11-23 00:25)
   新增: 落地 ADR-014 轻量化界面样式主题（UiTheme.kt 与内置默认 ui/theme.json），支持表现资源包声明式局部覆写配色、装饰度量、图标提亮调参及可选图标/字体/九宫格路径（严守只改样式不改 HUD 组织方式与交互状态机），提供 cobalt-steel 最小覆写样例与 PC 调试参数 --theme-pack
   调整: 全 HUD 渲染组件（InGameHudOverlay/HudActionPanel/HudControlGroupBar/HudDebugOverlay/HudSandboxConsole/HudCommandIconAtlas/UiFontSet/BootstrapScreen）接入 UiThemeProvider 与完整主题值相等性重建；PcAcceptedResourceStore 与 PcVisualAssetSettings 将 ui/theme.json 及引用资产纳入 ADR-008 托管校验、保留文件名拦截与未托管外部包发布复核
