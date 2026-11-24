@@ -18,6 +18,20 @@ import kotlin.test.assertTrue
 
 class TerrainClearanceAndPrimitiveKernelTest {
     @Test
+    fun circular_worker_reaches_interaction_range_along_the_axis_of_a_two_tile_road() {
+        val blocked = BooleanArray(12 * 4) { index ->
+            val row = index / 12
+            row == 0 || row == 3 || index % 12 == 10
+        }
+        val map = PlanningTerrain(12, 4, 20, 20, blocked)
+        val policy = ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain)
+        val path = assertNotNull(policy.findPath(map, Position(30.0, 40.0), Position(210.0, 40.0),
+            radius = 15.0, targetRange = 30.0, hull = HullRoute.Circle(15.0)))
+        val endpoint = path.last()
+        assertTrue(endpoint.x > 180.0 && endpoint.x <= 185.000001)
+        assertEquals(40.0, endpoint.y, 1e-6)
+    }
+    @Test
     fun chebyshev_clearance_field_matches_exact_distance_and_incremental_updates() {
         val w = 24
         val h = 18

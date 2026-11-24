@@ -4,6 +4,9 @@ import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
+import kotlin.math.max
+import kotlin.math.min
 import java.util.WeakHashMap
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -43,12 +46,14 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
         }
         val ruledOut = HashMap<String, Double>()
         val ownTerrain = HashMap<String, PlanningTerrain>(moving.size)
+        val routes = OpposingRoutes(moving, maxOf(longestHull, 32.0), knows)
         val proposals = linkedMapOf<String, Approach>()
         for (unit in moving) {
             val type = UnitLocomotion.movement(unit).type
             val terrain = terrainFor(unit, type)
             ownTerrain[unit.unitId] = terrain
-            val next = approach(unit, terrain, type, step, survey, budget, ruledOut = ruledOut) ?: continue
+            val next = approach(unit, terrain, type, step, survey, budget, ruledOut = ruledOut,
+                opposingRoute = { plane, inbound -> routes.crosses(unit, plane, !inbound) }) ?: continue
             proposals[unit.unitId] = next
         }
         val identified = proposals.values.groupBy { it.entry.passage }
@@ -77,16 +82,59 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             // Entered units retain priority over entrance queues. If both sides
             // are already inside, the same priority also selects which mover
             // yields its own propulsion while being pushed back with its order.
-            val blocked = approaches.any { other ->
+            val contenders = approaches.filter { other ->
                 other.entry.side != own.entry.side && own.width + other.width > own.entry.passage.width &&
-                    UnitContact.shareLayer(own.unit, other.unit) && knows(own.unit, other.unit) &&
-                    knows(other.unit, own.unit) && priority.compare(other, own) < 0 &&
-                    !independentLandings(own.unit, other.unit)
+                    UnitContact.shareLayer(own.unit, other.unit) && knows(own.unit, other.unit) && knows(other.unit, own.unit)
             }
+            if (contenders.isEmpty()) continue
+            val blocked = contenders.any { priority.compare(it, own) < 0 }
             if (own.unit.passageEntry == null || blocked) own.unit.passageEntry = own.entry.copy(admitted = !blocked)
             if (blocked) waiting += own.unit.unitId
         }
         return waiting
+    }
+
+    /** A cheap spatial index of planned segments. Same-direction traffic never asks for a terrain survey. */
+    private class OpposingRoutes(units: List<MutableUnit>, val pitch: Double,
+                                 val knows: (MutableUnit, MutableUnit) -> Boolean) {
+        private data class Bin(val axis: Boolean, val station: Int, val side: Int, val inbound: Boolean)
+        private data class Leg(val driver: MutableUnit, val from: Position, val to: Position)
+        private val bins = HashMap<Bin, MutableList<Leg>>()
+        private fun bin(value: Double) = kotlin.math.floor(value / pitch).toInt()
+
+        init {
+            for (unit in units) {
+                var from = unit.position
+                for (to in unit.pathPoints) {
+                    val leg = Leg(unit, from, to)
+                    for (horizontal in listOf(true, false)) {
+                        val start = if (horizontal) from.x else from.y
+                        val end = if (horizontal) to.x else to.y
+                        if (start == end) continue
+                        val first = if (horizontal) from.y else from.x
+                        val last = if (horizontal) to.y else to.x
+                        for (station in bin(min(start, end))..bin(max(start, end))) {
+                            fun side(at: Double) = first + (last - first) * ((at - start) / (end - start)).coerceIn(0.0, 1.0)
+                            val l = side(station * pitch)
+                            val r = side((station + 1) * pitch)
+                            for (cross in bin(min(l, r))..bin(max(l, r))) {
+                                bins.getOrPut(Bin(horizontal, station, cross, end < start)) { ArrayList() }.add(leg)
+                            }
+                        }
+                    }
+                    from = to
+                }
+            }
+        }
+
+        fun crosses(unit: MutableUnit, opening: PassageOpening, inbound: Boolean): Boolean {
+            for (side in bin(opening.low)..bin(opening.high)) {
+                val legs = bins[Bin(opening.horizontal, bin(opening.plane), side, inbound)] ?: continue
+                for (leg in legs) if (leg.driver !== unit && opening.crossing(leg.from, leg.to)?.inbound == inbound &&
+                    UnitContact.shareLayer(unit, leg.driver) && knows(unit, leg.driver) && knows(leg.driver, unit)) return true
+            }
+            return false
+        }
     }
 
     /** Supplemental surveys have two parallel mouths and a straight throat. A
@@ -103,18 +151,10 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             across >= mouth.low - reach && across <= mouth.high + reach
     }
 
-    private fun independentLandings(a: MutableUnit, b: MutableUnit): Boolean {
-        val member = a.landingMember ?: return false
-        if (b.landingMember?.group !== member.group) return false
-        val aSite = member.claimed ?: return false
-        val bSite = b.landingMember?.claimed ?: return false
-        return a.pathPoints.singleOrNull() == aSite && b.pathPoints.singleOrNull() == bSite &&
-            landingApproachesSeparate(a, aSite, b, bSite)
-    }
-
     private fun approach(unit: MutableUnit, terrain: PlanningTerrain, type: MovementType, step: Step,
                          survey: DriverPassageSurvey, budget: PathWorkBudget, required: PassageEntry? = null,
-                         ruledOut: MutableMap<String, Double>? = null): Approach? {
+                         ruledOut: MutableMap<String, Double>? = null,
+                         opposingRoute: (PassageOpening, Boolean) -> Boolean = { _, _ -> true }): Approach? {
         val tile = maxOf(terrain.tileWidth, terrain.tileHeight).toDouble()
         if (twoHullWidth <= minOf(terrain.tileWidth, terrain.tileHeight)) return null
         val shape = unit.definition.movementCollision
@@ -129,7 +169,7 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             // The route can turn away from the opening before the stern and its exit path clear.
             val outlet = passage.mouths[1 - previous.side]
             if (passage.overlaps(unit.position, halfX, halfY) ||
-                outlet.overlapsOutlet(unit.position, halfX, halfY, maxOf(tile, travelLength(shape)) / 2.0))
+                outlet.overlapsOutlet(unit.position, halfX, halfY, maxOf(tile, width) / 2.0))
                 return Approach(unit, previous, width)
         }
 
@@ -145,7 +185,7 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
         // with many mouths. Also resolve the single-file geometry for these drivers.
         val driverWidth = 2.0 * width
         val localWidth = if (required != null) required.surveyWidth else driverWidth.takeIf {
-            unit.landingMember != null && shape is MovementCollisionShape.Circle &&
+            shape is MovementCollisionShape.Circle &&
                 it < twoHullWidth && it > minOf(terrain.tileWidth, terrain.tileHeight)
         }
         var masked = false
@@ -174,6 +214,13 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
                 lastColumn = column
                 lastRow = row
                 val shared = required?.takeIf { it.terrain === terrain }
+                if (required == null && previous?.passage?.contains(column, row) != true) {
+                    val horizontal = abs(dx) >= abs(dy)
+                    val along = if (horizontal) (column + 0.5) * terrain.tileWidth else (row + 0.5) * terrain.tileHeight
+                    val across = if (horizontal) (row + 0.5) * terrain.tileHeight else (column + 0.5) * terrain.tileWidth
+                    val plane = PassageOpening(horizontal, 1, along, across - twoHullWidth / 2, across + twoHullWidth / 2)
+                    if (!opposingRoute(plane, (if (horizontal) dx else dy) < 0)) continue
+                }
                 val tileInfo = if (shared == null && required?.surveyWidth == null) known.tileAt(terrain, column, row) else null
                 val global = tileInfo?.passage
                 val passage = when {
@@ -221,4 +268,87 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             (abs(along) * shape.length + abs(across) * shape.width) / 2.0
         }
     }
+}
+
+/**
+ * Computes a deterministic side-clearing staging aim outside a single-lane narrow mouth for a unit
+ * waiting on PassageAdmission (ENG-P016-007).
+ *
+ * When a unit is denied entry because opposing traffic has priority inside the passage, if it sits
+ * directly in front of the mouth outlet it would block exiting vehicles. This returns a terrain-legal
+ * lateral staging position offset to the right (or fallback left) outside the mouth so exiting units
+ * clear the throat cleanly, or null if the unit is already clear of the outlet lane or no legal bay exists.
+ */
+internal fun computeNarrowMouthStagingAim(
+    host: UnitMovementHost,
+    unit: MutableUnit,
+    terrain: PlanningTerrain,
+): Position? {
+    val entry = unit.passageEntry ?: return null
+    if (entry.admitted || entry.entered) return null
+    // Rectangular hulls manage narrow-mouth staging via HullRoute turnRoom & PassageAdmission;
+    // lateral side-stepping off the planned maneuver leg applies to circular hulls that can pivot freely.
+    if (unit.definition.movementCollision is MovementCollisionShape.Rectangle) return null
+    // Maneuver-routed hulls (e.g. naval vessels following pre-planned hull corridors) rely on
+    // HullRoute turnRoom & PassageAdmission; lateral off-corridor side-stepping applies to free grid movers.
+    if (unit.followsManeuverRoute) return null
+    val movement = UnitLocomotion.movement(unit)
+    // Very slow-turning naval vessels (e.g. maxTurnSpeed < 2.5 deg/tick) cannot pivot 90 deg sideways and
+    // back within the passage gate without losing hundreds of ticks; hold at gate instead.
+    if (movement.type == MovementType.WATER && movement.maxTurnSpeed < 2.5) return null
+    val mouth = entry.passage.mouths[entry.side]
+    val radius = max(1.0, unit.definition.movementCollision.boundingRadius)
+    val tile = max(terrain.tileWidth, terrain.tileHeight).toDouble()
+    val depthOutside = mouth.depth(unit.position)
+    val across = if (mouth.horizontal) unit.position.y else unit.position.x
+    // Only intervene when outside the mouth and actually obstructing the mouth's exit corridor.
+    val mouthClearBand = max(radius * 1.85, tile * 0.8)
+    val outletReach = max(entry.passage.width * 2.5, radius * 4.5)
+    if (depthOutside < radius * 0.25 || depthOutside > outletReach) return null
+    val obstructingOutlet = across >= mouth.low - mouthClearBand && across <= mouth.high + mouthClearBand
+    if (!obstructingOutlet) return null
+
+    val passageTerrain = entry.terrain
+    // When a unit uses a wider terrain mask than the shared passage (e.g. HOVER sharing a WATER strait),
+    // stepping onto dry banks outside the water mouth would let it bypass the water mouth or cross the plane;
+    // let PassageAdmission hold it cleanly at the gate instead.
+    if (passageTerrain !== terrain) return null
+
+    val mouthCenterAcross = (mouth.low + mouth.high) * 0.5
+    val mouthOutsideAnchor = mouth.plane + mouth.outward * max(radius * 1.1, 6.0)
+    val mouthApproachTarget = if (mouth.horizontal) Position(mouthOutsideAnchor, mouthCenterAcross)
+        else Position(mouthCenterAcross, mouthOutsideAnchor)
+
+    // Ensure the staging position stays strictly outside the mouth plane (within PassageAdmission's gate depth)
+    // and maintains a direct unobstructed return segment back to the mouth entrance anchor.
+    val gateCap = max(depthOutside, tile + radius * 0.85)
+    val stageDepth = min(max(depthOutside, radius * 1.9 + 3.0), gateCap)
+    val desiredPlane = mouth.plane + mouth.outward * stageDepth
+    // Clear the entire PassageAdmission outlet box laterally so exiting traffic clears the throat cleanly.
+    val margin = max(radius * 2.2 + 6.0, tile * 0.95 + radius)
+    val preferHigh = (mouth.horizontal && mouth.outward < 0) || (!mouth.horizontal && mouth.outward > 0)
+    val firstAcross = if (preferHigh) mouth.high + margin else mouth.low - margin
+    val secondAcross = if (preferHigh) mouth.low - margin else mouth.high + margin
+
+    fun makePos(planeCoord: Double, acrossCoord: Double): Position =
+        if (mouth.horizontal) Position(planeCoord, acrossCoord) else Position(acrossCoord, planeCoord)
+
+    val candidates = arrayOf(
+        makePos(desiredPlane, firstAcross),
+        makePos(desiredPlane, secondAcross),
+        makePos(mouth.plane + mouth.outward * min(stageDepth + radius * 1.25, gateCap), firstAcross),
+        makePos(mouth.plane + mouth.outward * min(stageDepth + radius * 1.25, gateCap), secondAcross),
+    )
+    val routeR = host.routeRadius(unit)
+    for (cand in candidates) {
+        if (mouth.depth(cand) < radius * 0.9) continue
+        // Verify both clearance to the candidate and unobstructed return to the mouth entrance.
+        if (PlanningSegmentClearance.allows(terrain, unit.position, cand, routeR) &&
+            PlanningSegmentClearance.allows(terrain, cand, mouthApproachTarget, routeR)
+        ) {
+            val distSq = ScreenPlane.distanceSquared(unit.position, cand)
+            if (distSq > 9.0) return cand
+        }
+    }
+    return null
 }

@@ -529,9 +529,13 @@ internal class MovePlanning {
                     UnitContact.routeAround(body, (input.occupants.filter { it.obstructsRoute } + localObstacles).map { it.body })
                 }
                 val counters = if (input.collectDiagnostics) PathSearchCounters() else null
-                val started = if (searchingNearest) policy.beginNearest(member.terrain, member.start, point, member.radius,
-                    member.hull, occupancy, counters) else policy.beginExact(member.terrain, member.start, point, member.radius,
-                    member.hull, occupancy, counters)
+                val started = if (searchingNearest) {
+                    val shape = member.body?.let(UnitLocomotion::terrainHull) as? MovementCollisionShape.Circle
+                    val hull = shape?.let { HullRoute.Circle(it.radius, simplify = true) } ?: member.hull
+                    policy.beginNearest(member.terrain, member.start, point, member.radius, hull, occupancy, counters)
+                } else {
+                    policy.beginExact(member.terrain, member.start, point, member.radius, member.hull, occupancy, counters)
+                }
                 (rollback?.let { started.fork(it) } ?: started).also { search = it }
             }
             val startTime = if (input.collectDiagnostics) System.nanoTime() else 0

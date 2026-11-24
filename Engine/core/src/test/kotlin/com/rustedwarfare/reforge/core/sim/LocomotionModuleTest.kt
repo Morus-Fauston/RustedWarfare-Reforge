@@ -531,8 +531,10 @@ class LocomotionModuleTest {
             retainedUnconsumed = emptySet(), movementCollision = MovementCollisionShape.Circle(6.0), mass = 3000.0,
         )
         val openTerrain = PlanningTerrain(20, 20, 20, 20, BooleanArray(400))
-        val edgeClearance = LocomotionModule.estimateLocalClearanceWorld(openTerrain, Position(100.0, 10.0))
-        assertTrue(edgeClearance <= 20.5, "Map-edge clearance must reflect border distance (<=20.5), got $edgeClearance")
+        val lateral = LocomotionModule.Vec2(0.0, 1.0)
+        assertEquals(90.0, LocomotionModule.lateralWidth(openTerrain, Position(100.0, 10.0), lateral, 80.0))
+        val twoLanes = PlanningTerrain(20, 20, 20, 20, BooleanArray(400) { it / 20 !in 4..5 })
+        assertEquals(40.0, LocomotionModule.lateralWidth(twoLanes, Position(100.0, 82.0), lateral, 80.0))
 
         val w = 30; val h = 15
         val blocked = BooleanArray(w * h) { idx ->

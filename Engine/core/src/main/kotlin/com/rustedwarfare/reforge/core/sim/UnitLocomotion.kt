@@ -21,12 +21,23 @@ internal object UnitLocomotion {
     fun isSubmerged(definition: UnitDefinition, height: Double): Boolean =
         definition.locomotionStates != null && height < SUBMERGED_DEPTH
 
-    fun terrainHull(unit: MutableUnit): MovementCollisionShape? {
+    // Planning can reuse a center-line search. Actual translation always sweeps the physical hull.
+    fun routingHull(unit: MutableUnit): MovementCollisionShape? {
         if (unit.nativeTransportPlacement) return null
         return when (val shape = unit.definition.movementCollision) {
             is MovementCollisionShape.Rectangle -> shape
             is MovementCollisionShape.Circle -> shape.takeIf {
                 it.radius > 0.0 && (unit.landingMember != null || movement(unit).type == MovementType.WATER || it.radius != unit.definition.radius)
+            }
+        }
+    }
+
+    fun terrainHull(unit: MutableUnit): MovementCollisionShape? {
+        if (unit.nativeTransportPlacement) return null
+        return when (val shape = unit.definition.movementCollision) {
+            is MovementCollisionShape.Rectangle -> shape
+            is MovementCollisionShape.Circle -> shape.takeIf {
+                it.radius > 0.0 && movement(unit).type != MovementType.AIR
             }
         }
     }

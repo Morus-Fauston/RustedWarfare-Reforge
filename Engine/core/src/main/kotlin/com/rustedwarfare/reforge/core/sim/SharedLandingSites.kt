@@ -4,6 +4,9 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.round
 import kotlin.math.ceil
 import kotlin.math.sqrt
@@ -797,4 +800,74 @@ internal class SharedLandingSites(private val map: MapDefinition, private val gr
                 }
         }
     }
+}
+
+internal fun isAirRallyRingArrived(
+    host: UnitMovementHost,
+    unit: MutableUnit,
+    target: Position,
+): Boolean {
+    val hardR = max(6.0, max(unit.definition.radius, unit.definition.movementCollision.boundingRadius))
+    val distToTarget = hypot(unit.position.x - target.x, unit.position.y - target.y)
+    val outerRing = max(hardR * 12.0, 140.0)
+    if (distToTarget > outerRing) return false
+    val allPeers = host.spatialIndex.queryFrozenTopK(
+        observer = unit,
+        layer = SpatialLayer.AIR,
+        radius = outerRing + hardR * 3.0,
+        limit = 24,
+        includeBufferPadding = false,
+    ) { candidate ->
+        val peerUnit = host.units[candidate.unitId]
+        candidate.ownerPlayerId == unit.ownerPlayerId &&
+            peerUnit != null && peerUnit.attachment == null && peerUnit.definition.building == null
+    }
+    if (allPeers.isEmpty()) return false
+    var innerCount = 0
+    var closestPeerDistToTarget = Double.POSITIVE_INFINITY
+    var nearestPeerClearRatio = Double.POSITIVE_INFINITY
+    var blockingPeerAhead = false
+    val toTargetX = target.x - unit.position.x
+    val toTargetY = target.y - unit.position.y
+    val toTargetLen = max(1e-4, distToTarget)
+    val maxSpeed = max(0.5, UnitLocomotion.effectiveMaximumSpeed(unit, UnitLocomotion.movement(unit)))
+    val ownAirVel = LocomotionModule.frozenVelocity(host.spatialIndex.frozenUnit(unit.unitId), unit)
+    val closingSpeed = (ownAirVel.x * toTargetX + ownAirVel.y * toTargetY) / toTargetLen
+    for (i in 0 until allPeers.size) {
+        val peer = allPeers[i]
+        val peerUnit = host.units[peer.unitId]
+        val peerFlight = peerUnit?.definition?.movement?.flight
+        if (peerFlight != null && peerUnit.height < peerFlight.targetHeight * 0.5) continue
+        val peerR = max(6.0, max(peerUnit?.definition?.radius ?: 0.0, peer.hardRadius))
+        val peerDistToTarget = hypot(peer.position.x - target.x, peer.position.y - target.y)
+        if (peerDistToTarget < closestPeerDistToTarget) closestPeerDistToTarget = peerDistToTarget
+        val peerArrived = peerUnit == null || peerUnit.moveTarget == null
+        if (peerDistToTarget < distToTarget - hardR * 0.15) {
+            innerCount++
+        }
+        val pairDist = hypot(peer.position.x - unit.position.x, peer.position.y - unit.position.y)
+        val combinedHard = hardR + peerR
+        val ratio = pairDist / max(1.0, combinedHard)
+        if (ratio < nearestPeerClearRatio) nearestPeerClearRatio = ratio
+        // Check whether a settled or slow peer sits in our comfort zone between us and the rally click
+        val comfort = max(combinedHard + 14.0, combinedHard * 1.50)
+        val peerVel = LocomotionModule.frozenVelocity(peer, peerUnit)
+        val peerSlow = peerArrived || peerVel.length() < maxSpeed * 0.55
+        if (peerSlow && pairDist <= comfort) {
+            val dot = ((peer.position.x - unit.position.x) * toTargetX +
+                (peer.position.y - unit.position.y) * toTargetY) / (max(1e-4, pairDist) * toTargetLen)
+            if (dot > 0.15) blockingPeerAhead = true
+        }
+    }
+    val peerOccupiesCore = closestPeerDistToTarget <= max(hardR * 2.0, 24.0)
+    if (!peerOccupiesCore) return false
+    // Also check whether separation push roughly cancels approach pull (near equilibrium around settled flock).
+    val atEquilibrium = closingSpeed < maxSpeed * 0.45
+    val leaderSettled = distToTarget <= max(hardR * 1.6, 18.0) && atEquilibrium && (blockingPeerAhead || nearestPeerClearRatio < 1.35)
+    // Once inner aircraft occupy the rally core and block our radial approach, settle immediately
+    // (even if snug at ratio >= 0.80) so idle soft separation smoothly expands the entire flock to full
+    // non-overlapping comfort spacing without hovering in active-move stall!
+    val ringSettled = innerCount > 0 && (distToTarget <= max(hardR * 2.8, 30.0) || blockingPeerAhead) &&
+        (nearestPeerClearRatio >= 0.98 || (atEquilibrium && nearestPeerClearRatio >= 0.78))
+    return leaderSettled || ringSettled
 }

@@ -229,7 +229,7 @@ internal class WorldSpatialIndex private constructor(
                         hardRadius = hard,
                         bufferRadius = buf,
                         nativeTransportPlacement = u.nativeTransportPlacement,
-                        moving = u.moveTarget != null || u.speed != 0.0,
+                        moving = u.speed != 0.0 || u.flightVelocity.x != 0.0 || u.flightVelocity.y != 0.0,
                     )
                     frozenList.add(snap)
                     nextFrozenById[u.unitId] = snap

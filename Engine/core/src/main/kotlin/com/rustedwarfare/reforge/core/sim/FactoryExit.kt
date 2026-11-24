@@ -134,12 +134,37 @@ internal object FactoryExit {
         return FactoryBirth(birth, heading, exit, 30f)
     }
 
-    fun departingSeaFactoryCells(map: MapDefinition, unit: MutableUnit, producer: MutableUnit?,
+    /** Cells on the outward side of a paid birth, as seen by its owner's planner. */
+    fun planningExitCells(map: MapDefinition, unit: MutableUnit, producer: MutableUnit?,
+                          knownBuildings: Set<Pair<Int, Int>>): Set<Pair<Int, Int>> {
+        if (producer == null || !producer.alive || producer.ownerPlayerId != unit.ownerPlayerId) return emptySet()
+        val building = producer.definition.building ?: return emptySet()
+        val circle = UnitLocomotion.terrainHull(unit) as? MovementCollisionShape.Circle ?: return emptySet()
+        val cells = BuildingTerrain.footprint(map, producer.position, building.footprint, building.anchor)
+        val origin = MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles) to
+            MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles)
+        if (origin !in cells || !knownBuildings.containsAll(cells)) return emptySet()
+        // A clearance-aware planner sweeps the whole body at its start. The producing
+        // footprint already overlaps that body; translation checks its outward progress.
+        if (UnitLocomotion.routingHull(unit) != null) return cells
+
+        val left = cells.minOf { it.first } * map.tileWidth.toDouble()
+        val right = (cells.maxOf { it.first } + 1.0) * map.tileWidth
+        val top = cells.minOf { it.second } * map.tileHeight.toDouble()
+        val bottom = (cells.maxOf { it.second } + 1.0) * map.tileHeight
+        return cells.filterTo(mutableSetOf()) { cell ->
+            cell == origin || CircularTerrain.separatesFrom(unit.position,
+                (cell.first + 0.5) * map.tileWidth - unit.position.x,
+                (cell.second + 0.5) * map.tileHeight - unit.position.y, circle.radius, left, right, top, bottom)
+        }
+    }
+
+    fun departingProducerCells(map: MapDefinition, unit: MutableUnit, producer: MutableUnit?,
                                  next: Position, shape: MovementCollisionShape,
                                  requireExitOrder: Boolean = true): Set<Pair<Int, Int>> {
-        if (producer?.alive != true || producer.definition.production?.exitProfile != FactoryExitProfile.NATIVE_SEA ||
+        if (producer?.alive != true || producer.unitId != unit.productionOrigin?.producerId ||
             (requireExitOrder && unit.originMoveId == null) || next == unit.position) return emptySet()
-        val building = checkNotNull(producer.definition.building)
+        val building = producer.definition.building ?: return emptySet()
         val producerCells = BuildingTerrain.footprint(map, producer.position, building.footprint, building.anchor)
         val north = producerCells.minOf { it.second }.toDouble() * map.tileHeight
         val west = producerCells.minOf { it.first }.toDouble() * map.tileWidth
@@ -152,6 +177,7 @@ internal object FactoryExit {
                     west, east, north, south)
             }
             is MovementCollisionShape.Rectangle ->
+                producer.definition.production?.exitProfile == FactoryExitProfile.NATIVE_SEA &&
                 (producer.definition.id in nativeSeaFactoryIds || unit.originMoveId == "production-exit:${unit.unitId}") &&
                 start.y >= producer.position.y && next.y > start.y &&
                 start.y - kotlin.math.hypot(shape.length / 2.0, shape.width / 2.0) < south &&

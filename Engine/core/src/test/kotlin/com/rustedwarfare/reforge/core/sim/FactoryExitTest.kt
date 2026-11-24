@@ -269,7 +269,9 @@ class FactoryExitTest {
                     assertTrue(first.candidate.y > 260.0, "The candidate must cross an intermediate wall, with a clear endpoint")
                     assertFalse(map.blocking.isBlocked((first.candidate.x / 20).toInt(), (first.candidate.y / 20).toInt()))
                     assertEquals(MotionTerrainDisposition.CORRECTED, first.terrainDisposition)
-                    assertEquals(Position(310.0, 215.0), first.finalPosition)
+                    assertTrue(first.finalPosition.y >= 215.0)
+                    assertTrue(first.finalPosition.y + tank.radius <= 240.0 + 1e-9,
+                        "The high-speed step must keep the whole body on the near side of the wall")
                 }
                 assertIs<ActionResult.Accepted>(c.submit(MoveAction("reverse", "p1", id, Position(310.0, 150.0), c.world)))
                 for (step in 590L..1089L) c.advance(Step(step, 1.0, "sim-tick"))

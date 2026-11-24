@@ -1002,7 +1002,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     }
 
     /** Ground follows the configured source; dynamic buildings always follow owner visibility. */
-    private fun routeRadius(unit: MutableUnit): Double = when (val shape = UnitLocomotion.terrainHull(unit)) {
+    private fun routeRadius(unit: MutableUnit): Double = when (val shape = UnitLocomotion.routingHull(unit)) {
         is MovementCollisionShape.Rectangle -> minOf(shape.length, shape.width) / 2.0
         is MovementCollisionShape.Circle -> shape.radius
         null -> Transport.boundaryRadius(unit)
@@ -1036,7 +1036,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val snapshot = if (usesKnowledge) checkNotNull(stores?.get(unit.ownerPlayerId)).snapshot(world) else null
         val cacheKey = PlayerPlanningKey(unit.ownerPlayerId, movementType, escaping)
         val cached = playerPlanning[cacheKey]?.takeIf { it.world === activeWorld && it.map === map }
-        if (cached != null && cached.knowledge === snapshot && cached.buildings === ownerBuildings) return cached.terrain
+        val exitCells = if (escaping && unit.productionOrigin != null) {
+            FactoryExit.planningExitCells(map, unit, units[unit.productionOrigin!!.producerId], checkNotNull(ownerBuildings))
+        } else emptySet()
+        if (cached != null && cached.knowledge === snapshot && cached.buildings === ownerBuildings &&
+            cached.producerExitCells == exitCells) return cached.terrain
         val previous = cached?.knowledge
         val ground = when {
             snapshot === previous && cached != null -> cached.ground
@@ -1045,11 +1049,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             else -> PlanningTerrain.fromNoFog(map, movementType)
         }
         val terrain = when {
+            exitCells.isNotEmpty() -> ground.withBuildings(checkNotNull(ownerBuildings) - exitCells)
             escaping -> ground
             cached != null && ground === cached.ground && cached.buildings === ownerBuildings -> cached.terrain
             else -> ground.withBuildings(ownerBuildings ?: emptySet())
         }
-        playerPlanning[cacheKey] = CachedPlanningTerrain(world, map, snapshot, terrain, ownerBuildings, escaping, movementType, ground)
+        playerPlanning[cacheKey] = CachedPlanningTerrain(world, map, snapshot, terrain, ownerBuildings, escaping, movementType, ground, exitCells)
         return terrain
     }
 
@@ -1078,7 +1083,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             searchStart = System.nanoTime()
             searchEntered = true
             val path = policies.path.findPath(terrain, Transport.queryPosition(unit, map, start), target,
-                routeRadius(unit), counters, targetRange, HullRoute.forUnit(unit), occupancy)
+                routeRadius(unit), counters, targetRange, if (targetRange > 0.0) HullRoute.forRange(unit) else HullRoute.forUnit(unit), occupancy)
             outcome = if (path == null) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
             pathPointCount = path?.size ?: 0
             return path
@@ -1544,7 +1549,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             val samples = pathDiagnostics
             val path = if (worker.birthRemaining > 0f) listOf(target)
                 else if (samples == null) policies.path.findPath(planningTerrainFor(worker, map), Transport.queryPosition(worker, map), target,
-                    Transport.boundaryRadius(worker), targetRange = range)
+                    routeRadius(worker), targetRange = range, hull = HullRoute.forRange(worker))
                 else findPathWithDiagnostics(task.actionId, task.atStep, target, worker, map, samples,
                     reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = step, targetRange = range)
             return path?.let { BuildingRoute(it, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)) }
@@ -2133,7 +2138,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     val endpoint = unit.moveTarget
                     if (endpoint == null || ScreenPlane.distanceSquared(endpoint, target) >= 441.0 || unit.pathPoints.isEmpty()) {
                         val path = policies.path.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit, currentScenario.map), target,
-                            routeRadius(unit), targetRange = 21.0)
+                            routeRadius(unit), targetRange = 21.0, hull = HullRoute.forRange(unit))
                         if (path == null) unit.cancelRoute() else {
                             unit.moveTarget = path.last()
                             unit.originMoveId = unit.tasks.first().actionId
@@ -3043,7 +3048,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 listOf(destination) else null
         } else if (samples == null) {
             policies.path.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), destination, routeRadius(unit),
-                targetRange = targetRange)
+                targetRange = targetRange, hull = if (targetRange > 0.0) HullRoute.forRange(unit) else null)
         } else findPathWithDiagnostics(command.actionId, command.atStep, destination, unit, map, samples,
             reason = PathSearchReason.ATTACK_PURSUIT, executionStep = executionStep, targetRange = targetRange)
         if (path == null) {

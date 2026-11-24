@@ -14,7 +14,7 @@ internal data class CachedPlanningTerrain(val world: WorldHandle, val map: MapDe
     val knowledge: KnowledgeSnapshot?, val terrain: PlanningTerrain, val buildings: Set<Pair<Int, Int>>? = null,
     val escapingBuildings: Boolean = false,
     val movementType: com.rustedwarfare.reforge.core.content.MovementType = com.rustedwarfare.reforge.core.content.MovementType.LAND,
-    val ground: PlanningTerrain = terrain)
+    val ground: PlanningTerrain = terrain, val producerExitCells: Set<Pair<Int, Int>> = emptySet())
 
 internal data class PlayerPlanningKey(val owner: String, val movementType: MovementType, val escaping: Boolean)
 

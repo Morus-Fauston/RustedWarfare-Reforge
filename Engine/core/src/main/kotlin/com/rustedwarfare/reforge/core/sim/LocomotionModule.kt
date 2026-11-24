@@ -1,10 +1,8 @@
 package com.rustedwarfare.reforge.core.sim
 
-import com.rustedwarfare.reforge.core.content.AttackMovementProfile
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementProfile
 import com.rustedwarfare.reforge.core.content.MovementType
-import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import kotlin.math.PI
 import kotlin.math.abs
@@ -153,6 +151,7 @@ internal object LocomotionModule {
         finalPoint: Boolean,
         delta: Double,
         coordinates: CoordinatePolicy,
+        contactTarget: MutableUnit? = null,
     ): SolveResult {
         if (maximumSpeed <= EPS || delta <= 0.0) {
             return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
@@ -173,21 +172,6 @@ internal object LocomotionModule {
         }
         val desiredDir = Vec2(toTarget.x / distToTarget, toTarget.y / distToTarget)
 
-        // Inside a single-lane narrow passage managed by PassageAdmission, follow the admitted passage line
-        // without lateral deflection into the narrow walls.
-        val entry = unit.passageEntry
-        if (entry != null && entry.passage.width < 3.6 * scale.hardRadius) {
-            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
-        }
-        val preciseFinalLanding = finalPoint && (
-            unit.landingMember?.preciseApproach == true ||
-                (unit.landingMember?.claimed != null && distToTarget <= scale.hardRadius * 1.4) ||
-                (unit.nearestMoveTarget != null && distToTarget <= scale.hardRadius * 2.0)
-            )
-        if (preciseFinalLanding) {
-            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
-        }
-
         // 1. Fog-of-war isolated Top-K neighbor sampling from the step-start frozen snapshot.
         val queryRadius = scale.perceptionRadius + scale.hardRadius * 2.0
         val neighbors = host.spatialIndex.queryFrozenTopK(
@@ -197,7 +181,7 @@ internal object LocomotionModule {
             limit = TOP_K_NEIGHBORS,
             includeBufferPadding = true,
         ) { candidate ->
-            if (candidate.hardRadius <= 0.0) return@queryFrozenTopK false
+            if (candidate.hardRadius <= 0.0 || candidate.unitId == contactTarget?.unitId) return@queryFrozenTopK false
             candidate.ownerPlayerId == unit.ownerPlayerId ||
                 host.isVisibleTo(unit.ownerPlayerId, candidate.position, candidate.nativeTransportPlacement)
         }
@@ -214,7 +198,7 @@ internal object LocomotionModule {
                 limit = 8,
                 includeBufferPadding = false,
             ) { candidate ->
-                if (candidate.hardRadius <= 0.0 || !candidate.moving || candidate.speed <= 0.12 * maximumSpeed) return@queryFrozenTopK false
+                if (candidate.unitId == contactTarget?.unitId || candidate.hardRadius <= 0.0 || !candidate.moving || candidate.speed <= 0.12 * maximumSpeed) return@queryFrozenTopK false
                 val pDir = Vec2.fromHeading(candidate.heading, 1.0)
                 if (desiredDir.dot(pDir) >= -0.25) return@queryFrozenTopK false
                 val rx = candidate.position.x - unit.position.x
@@ -237,66 +221,39 @@ internal object LocomotionModule {
         val basePrefVel = desiredDir * desiredSpeed
 
         // Measure local corridor clearance to attenuate lateral separation in true single-lane passages.
-        val localClearanceWorld = estimateLocalClearanceWorld(terrain, ownPos)
-        val singleLaneWidth = 3.6 * scale.hardRadius
-        val wideOpenWidth = 6.5 * scale.hardRadius
-        val corridorOpenness = clamp(
-            (localClearanceWorld - singleLaneWidth) / max(1.0, wideOpenWidth - singleLaneWidth),
-            0.0,
-            1.0,
-        )
+        val rightVec = Vec2(-desiredDir.y, desiredDir.x)
+        val ownWidth = projectedWidth(collision, unit.heading, rightVec)
+        val maxPeerWidth = neighbors.maxOfOrNull { it.hardRadius * 2.0 } ?: ownWidth
+        val localClearanceWorld = lateralWidth(terrain, ownPos, rightVec, (ownWidth + maxPeerWidth) * 2)
+        val corridorOpenness = clamp((localClearanceWorld - ownWidth) / ownWidth, 0.0, 1.0)
+        val approachFade = if (finalPoint) clamp(distToTarget / (4.0 * scale.hardRadius), 0.0, 1.0) else 1.0
 
-        val attackTargetId = unit.attackCommand?.targetUnitId ?: unit.primaryCombatTargetId
-
-        // 2. Dimensionless 2D Boids soft separation + preemptive right-hand lane shift + wide-road overtaking + range-arc spread.
         var sepX = 0.0
         var sepY = 0.0
         var rightShift = 0.0
         var overtakeShift = 0.0
         var activeDynamicConstraints = 0
-        val rightVec = Vec2(-desiredDir.y, desiredDir.x) // 90 deg CW (right-hand in ScreenPlane x-right, y-down)
-        val attackUnit = attackTargetId?.let { host.units[it] }?.takeIf {
-            it.alive && (it.ownerPlayerId == unit.ownerPlayerId || host.isVisibleTo(unit.ownerPlayerId, it.position))
-        }
-        val combatWeaponRange = if (attackUnit != null) UnitCombat.profile(unit)?.attackRange ?: 0.0 else 0.0
-        val isRangedPursuer = attackUnit != null && combatWeaponRange > scale.hardRadius * 4.0
-
         val dynamicLines = ArrayList<HalfPlane>(neighbors.size)
 
         for (i in 0 until neighbors.size) {
             val peer = neighbors[i]
             val peerUnit = host.units[peer.unitId]
 
-            // Do not back away from an explicit visible combat target we are actively pursuing to engage.
-            if (attackTargetId != null && peer.unitId == attackTargetId) continue
-            // Same-group parked peers around a shared-landing cluster:
-            // - If we already claimed a validated bay, never let parked peers repel us off our bay approach.
-            // - If we are still approaching the shared click to claim a bay, keep ORCA skin tight (1.005)
-            //   and zero out backward Boids push so we glide around the cluster edge into open perimeter bays.
-            val sameGroupParked = unit.landingMember != null &&
-                peerUnit?.landingMember?.group === unit.landingMember?.group &&
-                peerUnit?.landingMember?.parked == true
-            if (sameGroupParked && unit.landingMember?.claimed != null && distToTarget <= scale.hardRadius * 3.0) {
-                val toPeerX = peer.position.x - ownPos.x
-                val toPeerY = peer.position.y - ownPos.y
-                val fwdToPeer = toPeerX * desiredDir.x + toPeerY * desiredDir.y
-                val latToPeer = abs(toPeerX * rightVec.x + toPeerY * rightVec.y)
-                if (fwdToPeer <= 0.0 || latToPeer > (scale.hardRadius + peer.hardRadius) * 0.98) {
-                    continue
-                }
-            }
-
             val relPos = Vec2(peer.position.x - ownPos.x, peer.position.y - ownPos.y)
             val distSq = relPos.lengthSq()
             val dist = sqrt(distSq)
-            val combinedHard = scale.hardRadius + peer.hardRadius
+            val radial = if (dist > EPS) relPos * (1.0 / dist) else desiredDir
+            val combinedHard = projectedWidth(collision, unit.heading, radial) * 0.5 +
+                (peerUnit?.definition?.movementCollision?.let { projectedWidth(it, peer.heading, radial) * 0.5 } ?: peer.hardRadius)
             val combinedComfort = max(
                 scale.comfortSpacing + peer.hardRadius * 1.15,
                 scale.bufferRadius + peer.bufferRadius + 0.15 * min(scale.hardRadius, peer.hardRadius),
             )
             val peerVel = frozenVelocity(peer, peerUnit)
 
-            val peerAnchored = isAnchoredOrStationary(peer, peerUnit)
+            val pairWidth = ownWidth + (peerUnit?.definition?.movementCollision?.let { projectedWidth(it, peer.heading, rightVec) } ?: peer.hardRadius * 2)
+            val lateralGain = clamp((localClearanceWorld - pairWidth) / ownWidth, 0.0, 1.0)
+            val peerAnchored = !peer.moving
             val peerMoving = !peerAnchored
             val maxInteractDist = if (peerAnchored) {
                 max(combinedComfort * 2.5, combinedHard * 3.8)
@@ -305,85 +262,24 @@ internal object LocomotionModule {
             }
             if (dist > maxInteractDist) continue
 
-            // If approaching a final destination directly occupied by an anchored/very-slow peer
-            // on a single-unit order, allow closing straight into hard-contact range so ADR-009
-            // UnitContact resolves contact/stop cleanly.
-            val peerVerySlow = peerAnchored || peerVel.length() < 0.05 * maximumSpeed
-            if (finalPoint && unit.landingMember == null && peerVerySlow) {
-                val peerToGoal = hypot(peer.position.x - desiredTarget.x, peer.position.y - desiredTarget.y)
-                if (peerToGoal <= combinedHard + 6.0) {
-                    continue
-                }
-            }
-            // ADR-009 hard-contact harmony:
-            // (a) Inside a true single-lane corridor (or 1-tile gate) with no passing width, defer stationary
-            //     blockers directly ahead to UnitContact so exact contact/stop and mass-transfer work cleanly.
-            // (b) For single-unit moves against an isolated stationary blocker directly ahead on the centerline
-            //     (same-layer pushable blocker, e.g. submerged submarine pushing a stationary submerged blocker),
-            //     or when already in direct bow contact, defer to ADR-009 contact/push when appropriate.
-            if (peerAnchored && peerUnit != null) {
-                val fwdDot = relPos.dot(desiredDir)
-                val latAbs = abs(relPos.dot(rightVec))
-                if (corridorOpenness <= 0.05 && unit.landingMember == null && fwdDot > 0.0 && latAbs < combinedHard) {
-                    continue
-                }
-                // If stationary blocker is directly ahead and BOTH perpendicular sides are blocked (true 1-tile pinch),
-                // defer to ADR-009 UnitContact so units close cleanly to contact/push boundary.
-                if (unit.landingMember == null && fwdDot > 0.0 && latAbs < combinedHard * 0.5 && dist < combinedHard * 3.0) {
-                    val leftPos = Position(ownPos.x - rightVec.x * combinedHard * 1.2, ownPos.y - rightVec.y * combinedHard * 1.2)
-                    val rightPos = Position(ownPos.x + rightVec.x * combinedHard * 1.2, ownPos.y + rightVec.y * combinedHard * 1.2)
-                    val leftCol = floor(leftPos.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
-                    val leftRow = floor(leftPos.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
-                    val rightCol = floor(rightPos.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
-                    val rightRow = floor(rightPos.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
-                    if (terrain.isBlocked(leftCol, leftRow) && terrain.isBlocked(rightCol, rightRow)) {
-                        continue
-                    }
-                }
-                if (unit.landingMember == null && dist <= combinedHard * 1.03 && fwdDot > 0.0 && latAbs < combinedHard * 0.35) {
-                    if (!host.canDisplaceInContact(peerUnit)) {
-                        return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
-                    }
-                    continue
-                }
-                if (contactLayer == ContactLayer.SUBMERGED && neighbors.size == 1 &&
-                    fwdDot > 0.0 && latAbs < combinedHard * 0.25 &&
-                    UnitContact.canPushMass(unit, peerUnit)
-                ) {
-                    continue
-                }
-            }
-            // Heavy pusher (mass >= 10x peer mass, e.g. experimental / heavy crusher) driving straight into a
-            // lighter peer on its centerline defers to ADR-009 mass-transfer push rather than taking a wide detour.
-            if (peerUnit != null) {
-                val selfMass = unit.definition.mass
-                val peerMass = peerUnit.definition.mass
-                if (selfMass != null && peerMass != null && selfMass >= peerMass * 10.0 &&
-                    relPos.dot(desiredDir) > 0.0 && abs(relPos.dot(rightVec)) < combinedHard * 0.35 &&
-                    UnitContact.canPushMass(unit, peerUnit)
-                ) {
-                    continue
-                }
-            }
+            // Let hard contact transfer momentum to a displaceable body on the line of travel.
+            val forward = relPos.dot(desiredDir)
+            val side = abs(relPos.dot(rightVec))
+            if (peerAnchored && peerUnit != null && forward > 0.0 && side < combinedHard * 0.35 &&
+                host.canDisplaceInContact(peerUnit) && UnitContact.canPushMass(unit, peerUnit) &&
+                (localClearanceWorld < pairWidth || dist <= combinedHard * 1.03 && side < pairWidth * 0.25 ||
+                    (unit.definition.mass ?: 0.0) >= 10 * (peerUnit.definition.mass ?: Double.POSITIVE_INFINITY))) continue
 
             val ownWeight = computeResponsibility(unit, scale.hardRadius, peer, peerUnit, peerAnchored)
 
             // --- Boids soft separation ---
             val sameFlow = peerMoving && peerVel.length() > 0.1 * maximumSpeed &&
                 peerVel.normalized().dot(desiredDir) > 0.35
-            val hasClaimedBay = unit.landingMember?.let { it.claimed != null || it.ingress != null } == true
-            val finalApproachFade = when {
-                sameGroupParked && hasClaimedBay -> 0.0
-                sameGroupParked -> 0.35
-                finalPoint -> clamp((distToTarget - scale.hardRadius * 1.5) / (scale.hardRadius * 4.0), 0.12, 1.0)
-                else -> 1.0
-            }
             val softRange = when {
-                sameGroupParked -> combinedHard * 1.55
                 sameFlow -> combinedComfort * (1.05 + 0.25 * corridorOpenness)
                 else -> combinedComfort * (1.20 + 0.40 * corridorOpenness)
             }
-            if (dist < softRange && finalApproachFade > 0.05) {
+            if (dist < softRange) {
                 val away = if (dist > EPS) {
                     Vec2(-relPos.x / dist, -relPos.y / dist)
                 } else {
@@ -394,22 +290,11 @@ internal object LocomotionModule {
                 val along = away.dot(desiredDir)
                 val lateral = away.dot(rightVec)
 
-                val lateralGain = if (unit.landingMember != null) 0.08 + 0.92 * corridorOpenness else corridorOpenness
                 val flowScale = if (sameFlow) 0.55 + 0.12 * corridorOpenness else 1.0
-                val sepGain = (0.38 + 0.42 * ownWeight) * flowScale * closeness * closeness * maximumSpeed * finalApproachFade
+                val sepGain = (0.38 + 0.42 * ownWeight) * flowScale * closeness * closeness * maximumSpeed * approachFade
                 val alongWeight = if (sameFlow) 0.25 else 0.55
-                val effAlong = if (sameGroupParked && along < 0.0) 0.0 else along * alongWeight
-                val effLateral = if (sameGroupParked && abs(lateral) < 0.25) {
-                    // Break symmetry smoothly around a parked teammate directly on our nose toward an open bay
-                    val click = unit.landingMember?.group?.click
-                    val sideFromClick = if (click != null) {
-                        val toSelf = Vec2(ownPos.x - click.x, ownPos.y - click.y)
-                        if (toSelf.dot(rightVec) >= 0.0) 0.75 else -0.75
-                    } else 0.75
-                    sideFromClick
-                } else lateral
-                val pushX = desiredDir.x * effAlong + rightVec.x * (effLateral * lateralGain)
-                val pushY = desiredDir.y * effAlong + rightVec.y * (effLateral * lateralGain)
+                val pushX = desiredDir.x * along * alongWeight + rightVec.x * lateral * lateralGain
+                val pushY = desiredDir.y * along * alongWeight + rightVec.y * lateral * lateralGain
                 sepX += pushX * sepGain
                 sepY += pushY * sepGain
             }
@@ -438,7 +323,7 @@ internal object LocomotionModule {
                             val sideBoost = if (lateralOffset >= -combinedHard * 0.6) 1.35 else {
                                 clamp(1.0 - (-lateralOffset) / laneMargin, 0.20, 1.0)
                             }
-                            rightShift += (0.75 + 0.65 * corridorOpenness) * urgency * alignment * sideBoost * maximumSpeed
+                            rightShift += lateralGain * (0.75 + 0.65 * corridorOpenness) * urgency * alignment * sideBoost * maximumSpeed
                         }
                     }
                 }
@@ -448,29 +333,20 @@ internal object LocomotionModule {
             // When a faster unit catches a slower same-direction vehicle ahead in a passable corridor/open field,
             // choose the clearer lateral side (left or right, respecting walls via terrain check) and apply a smooth
             // oblique lane-change bias in prefVel so 2D ORCA glides around at cruise speed without bumping or waiting 60 ticks.
-            val sameLandingGroup = unit.landingMember != null &&
-                peerUnit?.landingMember?.group === unit.landingMember?.group
-            val peerMaxSpeed = peerUnit?.let { UnitLocomotion.effectiveMaximumSpeed(it, UnitLocomotion.movement(it)) } ?: maximumSpeed
-            val slowerClassPeer = peerMaxSpeed < maximumSpeed * 0.90
-            val canOvertakeHere = corridorOpenness > 0.15 && localClearanceWorld >= combinedHard * 2.15
-            if (canOvertakeHere && !sameGroupParked) {
+            val canOvertakeHere = lateralGain > 0.0
+            if (canOvertakeHere) {
                 val forwardProj = relPos.dot(desiredDir)
                 val lateralOffset = relPos.dot(rightVec)
                 val peerAlongSpeed = peerVel.dot(desiredDir)
                 val closingRate = desiredSpeed - peerAlongSpeed
-                // Overtake when catching a slower vehicle class (mixed speeds), a stationary/anchored non-group unit,
-                // or a genuinely stalled peer outside our own dense homogeneous landing crowd.
-                val sameClassInLandingGroup = sameLandingGroup && !slowerClassPeer
-                val allowSameClassOvertake = !sameClassInLandingGroup ||
-                    (corridorOpenness >= 0.75 && distToTarget > combinedHard * 14.0)
-                val isSignificantlySlower = (peerAnchored && !sameLandingGroup) ||
-                    (sameFlow && closingRate > max(0.12 * maximumSpeed, 0.18 * desiredSpeed) && allowSameClassOvertake)
+                val isSignificantlySlower = peerAnchored || sameFlow &&
+                    closingRate > max(0.12 * maximumSpeed, 0.18 * desiredSpeed)
                 val overtakeHorizon = min(distToTarget, max(combinedHard * 5.0, closingRate * scale.timeHorizon * 1.65))
                 val overtakeLatLimit = if (peerAnchored) combinedHard * 1.15 else combinedComfort * 1.15
                 if (isSignificantlySlower && forwardProj > 0.0 && forwardProj < overtakeHorizon &&
                     abs(lateralOffset) < overtakeLatLimit
                 ) {
-                    val passClear = combinedHard * 1.35 + scale.hardRadius * 0.4
+                    val passClear = pairWidth * 0.5 + min(ownWidth, pairWidth - ownWidth) * 0.15
                     val rightProbe = Position(
                         peer.position.x + rightVec.x * passClear,
                         peer.position.y + rightVec.y * passClear,
@@ -479,8 +355,13 @@ internal object LocomotionModule {
                         peer.position.x - rightVec.x * passClear,
                         peer.position.y - rightVec.y * passClear,
                     )
-                    val rightClear = isPointClearOnTerrain(terrain, rightProbe, scale.hardRadius * 0.9)
-                    val leftClear = isPointClearOnTerrain(terrain, leftProbe, scale.hardRadius * 0.9)
+                    val grid = HullTerrainGrid.authorized(terrain)
+                    val hull = when (collision) {
+                        is MovementCollisionShape.Circle -> HullRoute.Circle(collision.radius)
+                        is MovementCollisionShape.Rectangle -> RectangularDeparture(collision, unit.heading, reverse = false)
+                    }
+                    val rightClear = hull.arrival(grid, ownPos, rightProbe, unit.heading) != null
+                    val leftClear = hull.arrival(grid, ownPos, leftProbe, unit.heading) != null
                     if (rightClear || leftClear) {
                         val sideSign = when {
                             rightClear && !leftClear -> 1.0
@@ -497,55 +378,13 @@ internal object LocomotionModule {
                 }
             }
 
-            // --- Combat ranged-arc natural flanking spread (ENG-P016-007) ---
-            // When pursuing a combat target and approaching its range rim behind a friendly unit that is already
-            // stationary/firing (or closing slowly) along our sightline to the enemy, fan tangentially around the
-            // firing arc instead of queueing in a dead column behind the front row.
-            if (isRangedPursuer && peer.ownerPlayerId == unit.ownerPlayerId) {
-                val toEnemy = Vec2(attackUnit.position.x - ownPos.x, attackUnit.position.y - ownPos.y)
-                val distToEnemy = toEnemy.length()
-                if (distToEnemy > combatWeaponRange * 0.95 && distToEnemy < combatWeaponRange * 2.4) {
-                    val fwdToPeer = relPos.dot(desiredDir)
-                    val latToPeer = relPos.dot(rightVec)
-                    if (fwdToPeer > 0.0 && fwdToPeer < combinedComfort * 3.0 && abs(latToPeer) < combinedComfort * 1.45 &&
-                        (peerAnchored || peerVel.length() < 0.25 * maximumSpeed)
-                    ) {
-                        val fanSign = when {
-                            latToPeer > scale.hardRadius * 0.2 -> -1.0
-                            latToPeer < -scale.hardRadius * 0.2 -> 1.0
-                            else -> if ((stableTieHash(unit.updateKey) and 1L) == 0L) -1.0 else 1.0
-                        }
-                        val arcPush = fanSign * (0.78 * desiredSpeed) * clamp(1.0 - fwdToPeer / (combinedComfort * 3.0), 0.35, 1.0)
-                        overtakeShift += arcPush
-                    }
-                }
-            }
-
-            // --- 3. Full 2D ORCA half-plane for this peer ---
-            if (preciseFinalLanding && dist > combinedHard * 1.25) continue
-            if (sameGroupParked && dist > combinedHard * 1.85) continue
-            // Inside a true 1-tile pinch (both perpendicular sides blocked by walls), skip ORCA lateral
-            // deflection for a peer clearing perpendicular off the centerline (e.g. hovercraft entering a
-            // 1-tile canal as a blocker vacates) so the unit tracks the corridor centerline cleanly.
-            if (corridorOpenness <= 0.05 && abs(relPos.dot(rightVec)) < combinedHard * 1.25 &&
-                unit.landingMember == null && peerMoving && peerVel.length() > EPS &&
-                abs(peerVel.normalized().dot(desiredDir)) < 0.35
-            ) {
-                continue
-            }
-
-            val skinFactor = when {
-                sameGroupParked -> 1.002
-                finalPoint && distToTarget < scale.hardRadius * 5.0 -> 1.01
-                else -> 1.06
-            }
+            val skinFactor = 1.0 + 0.06 * approachFade
             val orcaPlane = buildDynamicOrcaPlane(
                 relPos = relPos,
                 ownVel = ownVel,
                 peerVel = peerVel,
                 combinedRadius = combinedHard * skinFactor,
                 timeHorizon = when {
-                    sameGroupParked -> scale.timeHorizon * 0.45
                     peerAnchored -> scale.timeHorizon * 0.70
                     peerMoving && peerVel.length() > EPS && peerVel.normalized().dot(desiredDir) < -0.2 -> scale.timeHorizon * 1.25
                     else -> scale.timeHorizon * 0.85
@@ -568,7 +407,6 @@ internal object LocomotionModule {
             var oppAccum = 0.0
             for (i in 0 until opposingPeers.size) {
                 val peer = opposingPeers[i]
-                if (attackTargetId != null && peer.unitId == attackTargetId) continue
                 val relPos = Vec2(peer.position.x - ownPos.x, peer.position.y - ownPos.y)
                 val forwardProj = relPos.dot(desiredDir)
                 val lateralOffset = relPos.dot(rightVec)
@@ -588,7 +426,7 @@ internal object LocomotionModule {
             }
             if (oppAccum > 0.0) {
                 val scaledOpp = min(1.0, oppAccum / 1.5) * (0.65 + 0.55 * corridorOpenness) * maximumSpeed
-                rightShift = max(rightShift, scaledOpp)
+                rightShift = max(rightShift, scaledOpp * clamp((localClearanceWorld - ownWidth * 2) / ownWidth, 0.0, 1.0))
             }
         }
 
@@ -617,7 +455,7 @@ internal object LocomotionModule {
             }
         }
 
-        val totalLateralShift = clampedRight + clampedOvertake
+        val totalLateralShift = (clampedRight + clampedOvertake) * approachFade
         var prefVel = Vec2(
             basePrefVel.x + clampedSep.x + rightVec.x * totalLateralShift,
             basePrefVel.y + clampedSep.y + rightVec.y * totalLateralShift,
@@ -653,8 +491,7 @@ internal object LocomotionModule {
         // approaching a convex cluster or gate edge glide smoothly around instead of stalling at v = 0.
         val vFinal = if (vSolved.length() < 0.08 * maximumSpeed && desiredSpeed > 0.1 * maximumSpeed) {
             val worstDyn = if (lpOut.used3dFallback) dynamicLines.minOfOrNull { it.signedMargin(vSolved) } ?: 0.0 else 0.0
-            val click = unit.landingMember?.group?.click
-            val prefSign = if (click != null && Vec2(ownPos.x - click.x, ownPos.y - click.y).dot(rightVec) < 0.0) -1.0 else 1.0
+            val prefSign = if (vSolved.dot(rightVec) < 0.0) -1.0 else 1.0
             val spd = min(desiredSpeed, maximumSpeed * 0.35)
             val candidates = arrayOf(
                 (desiredDir * 0.45 + rightVec * (0.89 * prefSign)).normalized() * spd,
@@ -672,25 +509,6 @@ internal object LocomotionModule {
 
         // 5. Short-horizon reachable steering sector + anti-jitter hysteresis + cosine smooth throttle.
         val solvedSpeed = vFinal.length()
-        if (solvedSpeed <= 0.05 * maximumSpeed && lpOut.used3dFallback) {
-            // If already hard-overlapping and 3D LP produces near-zero velocity (e.g. boxed in on all 4 sides),
-            // fall through to ADR-009 UnitContact so hard overlap resolution / movement-blocked fires cleanly
-            // instead of silently idling with candidate == position.
-            var overlapping = false
-            for (i in 0 until neighbors.size) {
-                val peer = neighbors[i]
-                val dx = peer.position.x - ownPos.x
-                val dy = peer.position.y - ownPos.y
-                val hard = scale.hardRadius + peer.hardRadius
-                if (dx * dx + dy * dy < hard * hard) {
-                    overlapping = true
-                    break
-                }
-            }
-            if (overlapping) {
-                return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
-            }
-        }
         if (solvedSpeed <= EPS) {
             return SolveResult(
                 applied = true,
@@ -706,6 +524,10 @@ internal object LocomotionModule {
             )
         }
 
+        // The constraints are satisfied by the route velocity. Preserve its planned turn and waypoint capture.
+        if ((vFinal - basePrefVel).length() <= EPS) {
+            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
+        }
         val rawTargetHeading = headingFromVector(vFinal)
 
         val isRect = unit.definition.movementCollision is MovementCollisionShape.Rectangle
@@ -1135,41 +957,37 @@ internal object LocomotionModule {
         }
     }
 
-    internal fun estimateLocalClearanceWorld(terrain: PlanningTerrain, pos: Position): Double {
-        val tw = terrain.tileWidth.toDouble()
-        val th = terrain.tileHeight.toDouble()
-        val worldW = terrain.widthTiles * tw
-        val worldH = terrain.heightTiles * th
-        val col = floor(pos.x / tw).toInt().coerceIn(0, terrain.widthTiles - 1)
-        val row = floor(pos.y / th).toInt().coerceIn(0, terrain.heightTiles - 1)
-        val rings = terrain.clearanceRings(col, row)
-        val obstacleClearance = max(0.0, (2 * rings - 1) * min(tw, th))
-        // TerrainClearanceField only measures blocked obstacle tiles, not map edges; include border clearance
-        // so corridors bounded on one side by a map edge also attenuate lateral separation properly.
-        val distToBorder = min(min(pos.x, worldW - pos.x), min(pos.y, worldH - pos.y))
-        val borderClearance = max(0.0, 2.0 * distToBorder)
-        return min(obstacleClearance, borderClearance)
+    private fun projectedWidth(shape: MovementCollisionShape, heading: Double, axis: Vec2): Double = when (shape) {
+        is MovementCollisionShape.Circle -> shape.radius * 2
+        is MovementCollisionShape.Rectangle -> {
+            val forward = Vec2.fromHeading(heading, 1.0)
+            abs(forward.dot(axis)) * shape.length + abs(forward.x * axis.y - forward.y * axis.x) * shape.width
+        }
     }
 
-    private fun isAnchoredOrStationary(peer: FrozenSpatialUnit, peerUnit: MutableUnit?): Boolean {
-        if (!peer.moving) return true
-        if (peerUnit == null) return false
-        if (peerUnit.moveTarget == null && peerUnit.speed <= EPS) return true
-        if (peerUnit.landingMember?.parked == true) return true
-        if (peerUnit.constructionWorking) return true
-        if (peerUnit.spiderBlink != null) return true
-        // Standing-to-fire units (either explicit attack hold or patrol engage hold) bear 0.0 yield responsibility.
-        if (peerUnit.moveTarget == null && (peerUnit.primaryCombatTargetId != null || peerUnit.attackCommand != null)) return true
-        val waitingEntry = peerUnit.passageEntry
-        if (waitingEntry != null && !waitingEntry.admitted && !waitingEntry.entered && abs(peerUnit.speed) < 0.05) {
-            val mouth = waitingEntry.passage.mouths[waitingEntry.side]
-            val peerRadius = max(1.0, peerUnit.definition.movementCollision.boundingRadius)
-            val across = if (mouth.horizontal) peerUnit.position.y else peerUnit.position.x
-            val clearBand = peerRadius * 1.25
-            val clearedOutlet = across < mouth.low - clearBand || across > mouth.high + clearBand
-            if (clearedOutlet) return true
+    /** Ray traversal in both directions measures free width even beside a single wall. */
+    internal fun lateralWidth(terrain: PlanningTerrain, pos: Position, lateral: Vec2, reach: Double): Double {
+        fun distance(dx: Double, dy: Double): Double {
+            val tw = terrain.tileWidth
+            val th = terrain.tileHeight
+            var col = floor(pos.x / tw).toInt()
+            var row = floor(pos.y / th).toInt()
+            val sx = dx.compareTo(0.0)
+            val sy = dy.compareTo(0.0)
+            val stepX = if (abs(dx) > EPS) tw / abs(dx) else Double.POSITIVE_INFINITY
+            val stepY = if (abs(dy) > EPS) th / abs(dy) else Double.POSITIVE_INFINITY
+            var x = if (stepX.isFinite()) (((col + if (sx > 0) 1 else 0) * tw) - pos.x) / dx else stepX
+            var y = if (stepY.isFinite()) (((row + if (sy > 0) 1 else 0) * th) - pos.y) / dy else stepY
+            var walked = 0.0
+            while (walked < reach && col in 0 until terrain.widthTiles && row in 0 until terrain.heightTiles &&
+                !terrain.isBlocked(col, row)) {
+                walked = min(x, y)
+                if (x <= walked) { col += sx; x += stepX }
+                if (y <= walked) { row += sy; y += stepY }
+            }
+            return min(reach, walked)
         }
-        return false
+        return distance(lateral.x, lateral.y) + distance(-lateral.x, -lateral.y)
     }
 
     internal fun computeResponsibility(
@@ -1198,7 +1016,7 @@ internal object LocomotionModule {
         return clamp(0.10 + 0.80 * ratio, 0.10, 0.90)
     }
 
-    private fun frozenVelocity(snap: FrozenSpatialUnit?, unit: MutableUnit?, movement: MovementProfile? = null): Vec2 {
+    internal fun frozenVelocity(snap: FrozenSpatialUnit?, unit: MutableUnit?, movement: MovementProfile? = null): Vec2 {
         val useSliding = movement?.slidingMode == true ||
             (unit != null && UnitLocomotion.movement(unit).slidingMode)
         if (snap != null) {
@@ -1243,121 +1061,6 @@ internal object LocomotionModule {
 
 
     /**
-     * Computes a deterministic side-clearing staging aim outside a single-lane narrow mouth for a unit
-     * waiting on PassageAdmission (ENG-P016-007).
-     *
-     * When a unit is denied entry because opposing traffic has priority inside the passage, if it sits
-     * directly in front of the mouth outlet it would block exiting vehicles. This returns a terrain-legal
-     * lateral staging position offset to the right (or fallback left) outside the mouth so exiting units
-     * clear the throat cleanly, or null if the unit is already clear of the outlet lane or no legal bay exists.
-     */
-    internal fun computeNarrowMouthStagingAim(
-        host: UnitMovementHost,
-        unit: MutableUnit,
-        terrain: PlanningTerrain,
-    ): Position? {
-        val entry = unit.passageEntry ?: return null
-        if (entry.admitted || entry.entered) return null
-        // Rectangular hulls manage narrow-mouth staging via HullRoute turnRoom & PassageAdmission;
-        // lateral side-stepping off the planned maneuver leg applies to circular hulls that can pivot freely.
-        if (unit.definition.movementCollision is MovementCollisionShape.Rectangle) return null
-        // Maneuver-routed hulls (e.g. naval vessels following pre-planned hull corridors) rely on
-        // HullRoute turnRoom & PassageAdmission; lateral off-corridor side-stepping applies to free grid movers.
-        if (unit.followsManeuverRoute) return null
-        val movement = UnitLocomotion.movement(unit)
-        // Very slow-turning naval vessels (e.g. maxTurnSpeed < 2.5 deg/tick) cannot pivot 90 deg sideways and
-        // back within the passage gate without losing hundreds of ticks; hold at gate instead.
-        if (movement.type == MovementType.WATER && movement.maxTurnSpeed < 2.5) return null
-        val mouth = entry.passage.mouths[entry.side]
-        val radius = max(1.0, unit.definition.movementCollision.boundingRadius)
-        val tile = max(terrain.tileWidth, terrain.tileHeight).toDouble()
-        val depthOutside = mouth.depth(unit.position)
-        val across = if (mouth.horizontal) unit.position.y else unit.position.x
-        // Only intervene when outside the mouth and actually obstructing the mouth's exit corridor.
-        val mouthClearBand = max(radius * 1.85, tile * 0.8)
-        val outletReach = max(entry.passage.width * 2.5, radius * 4.5)
-        if (depthOutside < radius * 0.25 || depthOutside > outletReach) return null
-        val obstructingOutlet = across >= mouth.low - mouthClearBand && across <= mouth.high + mouthClearBand
-        if (!obstructingOutlet) return null
-
-        val passageTerrain = entry.terrain
-        // When a unit uses a wider terrain mask than the shared passage (e.g. HOVER sharing a WATER strait),
-        // stepping onto dry banks outside the water mouth would let it bypass the water mouth or cross the plane;
-        // let PassageAdmission hold it cleanly at the gate instead.
-        if (passageTerrain !== terrain) return null
-
-        val mouthCenterAcross = (mouth.low + mouth.high) * 0.5
-        val mouthOutsideAnchor = mouth.plane + mouth.outward * max(radius * 1.1, 6.0)
-        val mouthApproachTarget = if (mouth.horizontal) Position(mouthOutsideAnchor, mouthCenterAcross)
-            else Position(mouthCenterAcross, mouthOutsideAnchor)
-
-        // Ensure the staging position stays strictly outside the mouth plane (within PassageAdmission's gate depth)
-        // and maintains a direct unobstructed return segment back to the mouth entrance anchor.
-        val gateCap = max(depthOutside, tile + radius * 0.85)
-        val stageDepth = min(max(depthOutside, radius * 1.9 + 3.0), gateCap)
-        val desiredPlane = mouth.plane + mouth.outward * stageDepth
-        // Clear the entire PassageAdmission outlet box laterally so exiting traffic clears the throat cleanly.
-        val margin = max(radius * 2.2 + 6.0, tile * 0.95 + radius)
-        val preferHigh = (mouth.horizontal && mouth.outward < 0) || (!mouth.horizontal && mouth.outward > 0)
-        val firstAcross = if (preferHigh) mouth.high + margin else mouth.low - margin
-        val secondAcross = if (preferHigh) mouth.low - margin else mouth.high + margin
-
-        fun makePos(planeCoord: Double, acrossCoord: Double): Position =
-            if (mouth.horizontal) Position(planeCoord, acrossCoord) else Position(acrossCoord, planeCoord)
-
-        val candidates = arrayOf(
-            makePos(desiredPlane, firstAcross),
-            makePos(desiredPlane, secondAcross),
-            makePos(mouth.plane + mouth.outward * min(stageDepth + radius * 1.25, gateCap), firstAcross),
-            makePos(mouth.plane + mouth.outward * min(stageDepth + radius * 1.25, gateCap), secondAcross),
-        )
-        val routeR = host.routeRadius(unit)
-        for (cand in candidates) {
-            if (mouth.depth(cand) < radius * 0.9) continue
-            // Verify both clearance to the candidate and unobstructed return to the mouth entrance.
-            if (isPointClearOnTerrain(terrain, cand, radius * 0.95) &&
-                PlanningSegmentClearance.allows(terrain, unit.position, cand, routeR) &&
-                PlanningSegmentClearance.allows(terrain, cand, mouthApproachTarget, routeR)
-            ) {
-                val distSq = ScreenPlane.distanceSquared(unit.position, cand)
-                if (distSq > 9.0) return cand
-            }
-        }
-        return null
-    }
-
-    /**
-     * Aligns an admitted circular unit back in front of the narrow-passage mouth centerline before
-     * diving into the throat (ENG-P016-007).
-     *
-     * When a waiting unit stepped laterally clear of the outlet outside a narrow mouth, its original
-     * first waypoint inside the throat may sit behind the corner wall of the mouth. Returning the
-     * mouth entrance anchor until the unit is laterally lined up with the throat ensures clean re-entry
-     * for all ground/water/hover units (not just landingMember land squads).
-     */
-    internal fun alignNarrowMouthReentryAim(
-        unit: MutableUnit,
-        plannedAim: Position,
-    ): Position {
-        val entry = unit.passageEntry ?: return plannedAim
-        if (!entry.admitted || entry.entered) return plannedAim
-        val shape = unit.definition.movementCollision as? MovementCollisionShape.Circle ?: return plannedAim
-        val mouth = entry.passage.mouths[entry.side]
-        val depth = mouth.depth(unit.position)
-        if (depth < 0.0) return plannedAim
-        // Only intervene when the planned aim leads inside or closer to the throat than our current depth.
-        if (mouth.depth(plannedAim) >= depth) return plannedAim
-        val mid = (mouth.low + mouth.high) * 0.5
-        val across = if (mouth.horizontal) unit.position.y else unit.position.x
-        val halfSpan = (mouth.high - mouth.low) * 0.5
-        val clearance = max(0.0, halfSpan - shape.radius * 0.85)
-        if (abs(across - mid) <= clearance) return plannedAim
-        val anchorDepth = max(shape.radius * 1.15, min(depth, shape.radius * 1.8 + 4.0))
-        val anchorPlane = mouth.plane + mouth.outward * anchorDepth
-        return if (mouth.horizontal) Position(anchorPlane, mid) else Position(mid, anchorPlane)
-    }
-
-    /**
      * Independent AIR-layer lightweight 2D Boids soft separation (ENG-P016-007).
      *
      * Operates strictly on the step-start frozen [SpatialLayer.AIR] bucket with fog-of-war isolation.
@@ -1374,17 +1077,6 @@ internal object LocomotionModule {
     ): Vec2? {
         if (maximumSpeed <= EPS || delta <= 0.0) return null
         if (unit.carriedBy != null || unit.attachment != null || unit.birthRemaining > 0f) return null
-        val flight = movement.flight
-        // Passive airborne units that have never been given a move order remain stationary at spawn.
-        if (desiredTarget == null && unit.moveArrival == null && unit.originMoveId == null) return null
-        // Do not interfere when an aircraft is actively descending to land/idle-park on ground.
-        if (flight != null && unit.moveTarget == null && (flight.landWhenStationary || unit.definition.attackMovement == AttackMovementProfile.BOMBER)) {
-            if (unit.flightIdleTime > 2.5f || unit.height < flight.targetHeight * 0.6) return null
-        }
-        if (unit.definition.attackMovement == AttackMovementProfile.BOMBER && unit.bomberApproach != null) {
-            return null
-        }
-
         // Airborne units have movementCollision = None (boundingRadius = 0.0) by ADR-009, so use
         // max(definition.radius, movementCollision.boundingRadius) for visual/physical air spacing!
         val hardR = max(6.0, max(unit.definition.radius, unit.definition.movementCollision.boundingRadius))
@@ -1461,101 +1153,6 @@ internal object LocomotionModule {
         val gain = if (desiredTarget == null) 1.15 else 1.55
         val scaleMag = min(maxSepSpeed, pushLen * maximumSpeed * gain)
         return Vec2(pushX / pushLen * scaleMag, pushY / pushLen * scaleMag)
-    }
-
-    /**
-     * Checks whether an airborne unit approaching a shared rally click is already comfortably positioned
-     * in the spread formation around that click while another airborne peer occupies the center,
-     * allowing the flock to settle smoothly into a ring without fighting the 7u point-capture radius.
-     */
-    internal fun isAirRallyRingArrived(
-        host: UnitMovementHost,
-        unit: MutableUnit,
-        target: Position,
-    ): Boolean {
-        val hardR = max(6.0, max(unit.definition.radius, unit.definition.movementCollision.boundingRadius))
-        val distToTarget = hypot(unit.position.x - target.x, unit.position.y - target.y)
-        val outerRing = max(hardR * 12.0, 140.0)
-        if (distToTarget > outerRing) return false
-        val allPeers = host.spatialIndex.queryFrozenTopK(
-            observer = unit,
-            layer = SpatialLayer.AIR,
-            radius = outerRing + hardR * 3.0,
-            limit = 24,
-            includeBufferPadding = false,
-        ) { candidate ->
-            val peerUnit = host.units[candidate.unitId]
-            candidate.ownerPlayerId == unit.ownerPlayerId &&
-                peerUnit != null && peerUnit.attachment == null && peerUnit.definition.building == null
-        }
-        if (allPeers.isEmpty()) return false
-        var innerCount = 0
-        var closestPeerDistToTarget = Double.POSITIVE_INFINITY
-        var nearestPeerClearRatio = Double.POSITIVE_INFINITY
-        var blockingPeerAhead = false
-        val toTargetX = target.x - unit.position.x
-        val toTargetY = target.y - unit.position.y
-        val toTargetLen = max(1e-4, distToTarget)
-        val maxSpeed = max(0.5, UnitLocomotion.effectiveMaximumSpeed(unit, UnitLocomotion.movement(unit)))
-        val ownAirVel = frozenVelocity(host.spatialIndex.frozenUnit(unit.unitId), unit)
-        val closingSpeed = (ownAirVel.x * toTargetX + ownAirVel.y * toTargetY) / toTargetLen
-        for (i in 0 until allPeers.size) {
-            val peer = allPeers[i]
-            val peerUnit = host.units[peer.unitId]
-            val peerFlight = peerUnit?.definition?.movement?.flight
-            if (peerFlight != null && peerUnit.height < peerFlight.targetHeight * 0.5) continue
-            val peerR = max(6.0, max(peerUnit?.definition?.radius ?: 0.0, peer.hardRadius))
-            val peerDistToTarget = hypot(peer.position.x - target.x, peer.position.y - target.y)
-            if (peerDistToTarget < closestPeerDistToTarget) closestPeerDistToTarget = peerDistToTarget
-            val peerArrived = peerUnit == null || peerUnit.moveTarget == null
-            if (peerDistToTarget < distToTarget - hardR * 0.15) {
-                innerCount++
-            }
-            val pairDist = hypot(peer.position.x - unit.position.x, peer.position.y - unit.position.y)
-            val combinedHard = hardR + peerR
-            val ratio = pairDist / max(1.0, combinedHard)
-            if (ratio < nearestPeerClearRatio) nearestPeerClearRatio = ratio
-            // Check whether a settled or slow peer sits in our comfort zone between us and the rally click
-            val comfort = max(combinedHard + 14.0, combinedHard * 1.50)
-            val peerVel = frozenVelocity(peer, peerUnit)
-            val peerSlow = peerArrived || peerVel.length() < maxSpeed * 0.55
-            if (peerSlow && pairDist <= comfort) {
-                val dot = ((peer.position.x - unit.position.x) * toTargetX +
-                    (peer.position.y - unit.position.y) * toTargetY) / (max(1e-4, pairDist) * toTargetLen)
-                if (dot > 0.15) blockingPeerAhead = true
-            }
-        }
-        val peerOccupiesCore = closestPeerDistToTarget <= max(hardR * 2.0, 24.0)
-        if (!peerOccupiesCore) return false
-        // Also check whether separation push roughly cancels approach pull (near equilibrium around settled flock).
-        val atEquilibrium = closingSpeed < maxSpeed * 0.45
-        val leaderSettled = distToTarget <= max(hardR * 1.6, 18.0) && atEquilibrium && (blockingPeerAhead || nearestPeerClearRatio < 1.35)
-        // Once inner aircraft occupy the rally core and block our radial approach, settle immediately
-        // (even if snug at ratio >= 0.80) so idle soft separation smoothly expands the entire flock to full
-        // non-overlapping comfort spacing without hovering in active-move stall!
-        val ringSettled = innerCount > 0 && (distToTarget <= max(hardR * 2.8, 30.0) || blockingPeerAhead) &&
-            (nearestPeerClearRatio >= 0.98 || (atEquilibrium && nearestPeerClearRatio >= 0.78))
-        return leaderSettled || ringSettled
-    }
-
-    private fun isPointClearOnTerrain(terrain: PlanningTerrain, pos: Position, radius: Double): Boolean {
-        val tw = terrain.tileWidth.toDouble()
-        val th = terrain.tileHeight.toDouble()
-        val worldW = terrain.widthTiles * tw
-        val worldH = terrain.heightTiles * th
-        if (pos.x - radius < 0.0 || pos.x + radius > worldW || pos.y - radius < 0.0 || pos.y + radius > worldH) {
-            return false
-        }
-        val minCol = floor((pos.x - radius) / tw).toInt().coerceIn(0, terrain.widthTiles - 1)
-        val maxCol = floor((pos.x + radius) / tw).toInt().coerceIn(0, terrain.widthTiles - 1)
-        val minRow = floor((pos.y - radius) / th).toInt().coerceIn(0, terrain.heightTiles - 1)
-        val maxRow = floor((pos.y + radius) / th).toInt().coerceIn(0, terrain.heightTiles - 1)
-        for (r in minRow..maxRow) {
-            for (c in minCol..maxCol) {
-                if (terrain.isBlocked(c, r)) return false
-            }
-        }
-        return true
     }
 
     /** Explicit deterministic 32-bit FNV-1a hash over stable simulation key (cross-JVM / replay safe). */

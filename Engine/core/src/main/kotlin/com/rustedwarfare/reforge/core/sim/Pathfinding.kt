@@ -241,7 +241,7 @@ internal class ClearanceAStarPolicy(
         require(targetRange.isFinite() && targetRange >= 0.0)
         if (targetRange > 0.0) {
             if (counters != null) counters.actualSearchCalls++
-            return findPathToRange(map, start, target, radius, targetRange, counters)
+            return findPathToRange(map, start, target, radius, targetRange, counters, hull as? HullRoute.Circle)
         }
         val search = beginExact(map, start, target, radius, hull, occupancy, counters)
         while (!search.finished) search.advance(PathWorkBudget(Int.MAX_VALUE))
@@ -884,7 +884,7 @@ internal class ClearanceAStarPolicy(
             points.reverse()
             rollback?.record { points.reverse() }
             if (points.lastOrNull() != endpoint) appendRoutePoint(points, endpoint)
-            if (checkEverySegment && ((hull as? HullRoute.Circle)?.simplify != true || occupancy?.simplifyRoute == false)) {
+            if (checkEverySegment && ((hull as? HullRoute.Circle)?.simplify != true || !nearest && occupancy?.simplifyRoute == false)) {
                 complete(points)
             } else {
                 simplifyProbe = points.lastIndex
@@ -929,10 +929,20 @@ internal class ClearanceAStarPolicy(
 
     /** Reach a continuous legal stance; the blocked target center is never opened for traversal. */
     private fun findPathToRange(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                                range: Double, counters: PathSearchCounters?): List<Position>? {
+                                range: Double, counters: PathSearchCounters?, hull: HullRoute.Circle?): List<Position>? {
+        val circle = hull?.let { CircularTerrain(it.radius) }
+        val grid = HullTerrainGrid.authorized(map)
+        fun clear(from: Position, to: Position): Boolean =
+            PlanningSegmentClearance.allows(map, from, to, radius) &&
+                (circle == null || circle.contains(grid, from) && circle.resolve(grid, from, to) == to)
         val width = map.widthTiles.toDouble() * map.tileWidth
         val height = map.heightTiles.toDouble() * map.tileHeight
         if (!MapBounds.contains(width, height, start, radius) || terrain.intersects(map, start, radius)) return null
+        if (circle != null && circle.contains(grid, start)) {
+            val endpoint = circle.resolve(grid, start, target)
+            if (ScreenPlane.distanceSquared(endpoint, target) < range * range &&
+                PlanningSegmentClearance.allows(map, start, endpoint, radius)) return listOf(endpoint)
+        }
         val startKey = checkNotNull(cellOf(map, start))
         val w = map.widthTiles
         val h = map.heightTiles
@@ -973,7 +983,11 @@ internal class ClearanceAStarPolicy(
             val curRow = curIdx / w
             val from = if (curIdx == startIdx) start else checkNotNull(points[curIdx])
             val goalPos = goals[curIdx]
-            if (goalPos != null && PlanningSegmentClearance.allows(map, from, goalPos, radius)) {
+            // A cell may meet the work radius only along part of its shoreline edge.
+            // Clip the approach to the physical clearance boundary before accepting the endpoint.
+            val endpoint = goalPos?.let { circle?.resolve(grid, from, it) ?: it }
+            if (endpoint != null && ScreenPlane.distanceSquared(endpoint, target) < range * range &&
+                clear(from, endpoint)) {
                 val cellIndices = ArrayList<Int>()
                 var cursor = curIdx
                 cellIndices += cursor
@@ -987,8 +1001,8 @@ internal class ClearanceAStarPolicy(
                 for (k in 1 until cellIndices.size) {
                     path += checkNotNull(points[cellIndices[k]])
                 }
-                if (path.lastOrNull() != goalPos) path += goalPos
-                return simplify(map, start, path, radius)
+                if (path.lastOrNull() != endpoint) path += endpoint
+                return simplify(start, path, ::clear)
             }
             if (counters != null) counters.expanded++
             val nextG = curG + 1
@@ -1000,7 +1014,7 @@ internal class ClearanceAStarPolicy(
                 val nextIdx = row * w + col
                 val point = points[nextIdx] ?: continue
                 if (nextG >= pf.costOf(nextIdx)) continue
-                if (!PlanningSegmentClearance.allows(map, from, point, radius)) continue
+                if (!clear(from, point)) continue
                 if (pf.tryRelaxWithStart(nextIdx, curIdx, nextG, nextG, startKey.first, startKey.second, rollback = null)) {
                     if (counters != null) counters.enqueued++
                 }
@@ -1009,13 +1023,13 @@ internal class ClearanceAStarPolicy(
         return null
     }
 
-    private fun simplify(map: PlanningTerrain, start: Position, points: List<Position>, radius: Double): List<Position>? {
+    private fun simplify(start: Position, points: List<Position>, clear: (Position, Position) -> Boolean): List<Position>? {
         val result = ArrayList<Position>()
         var anchor = start
         var next = 0
         while (next < points.size) {
             val farthest = (points.lastIndex downTo next).firstOrNull {
-                PlanningSegmentClearance.allows(map, anchor, points[it], radius)
+                clear(anchor, points[it])
             } ?: return null
             anchor = points[farthest]
             result += anchor
@@ -1053,7 +1067,11 @@ internal sealed interface HullRoute {
     }
 
     companion object {
-        fun forUnit(unit: MutableUnit, maneuver: Boolean = false): HullRoute? = when (val shape = UnitLocomotion.terrainHull(unit)) {
+        fun forRange(unit: MutableUnit): HullRoute? =
+            (UnitLocomotion.terrainHull(unit) as? MovementCollisionShape.Circle)?.let { Circle(it.radius) }
+                ?: forUnit(unit)
+
+        fun forUnit(unit: MutableUnit, maneuver: Boolean = false): HullRoute? = when (val shape = UnitLocomotion.routingHull(unit)) {
             is MovementCollisionShape.Rectangle -> {
                 val movement = UnitLocomotion.movement(unit)
                 val useManeuver = maneuver && unit.mechState == null && !movement.slidingMode

@@ -41,6 +41,43 @@ internal class CircularTerrain(private val radius: Double) {
         }
     }
 
+    /** Slide along the contacted face or rounded corner of a blocked tile. */
+    fun move(map: HullTerrainGrid, start: Position, end: Position): Position {
+        val contact = resolve(map, start, end)
+        if (contact == end) return end
+        val dx = end.x - contact.x
+        val dy = end.y - contact.y
+        val tolerance = 16.0 * Math.ulp(maxOf(map.width, map.height, radius))
+        var best = contact
+        var bestProgress = 0.0
+        fun slide(normalX: Double, normalY: Double) {
+            val inward = dx * normalX + dy * normalY
+            if (inward >= 0.0) return
+            val tangent = Position(contact.x + dx - inward * normalX, contact.y + dy - inward * normalY)
+            val candidate = resolve(map, start, tangent)
+            val progress = (candidate.x - contact.x) * dx + (candidate.y - contact.y) * dy
+            if (progress > bestProgress) {
+                best = candidate
+                bestProgress = progress
+            }
+        }
+        if (contact.x <= radius + tolerance) slide(1.0, 0.0)
+        if (contact.y <= radius + tolerance) slide(0.0, 1.0)
+        if (contact.x >= map.width - radius - tolerance) slide(-1.0, 0.0)
+        if (contact.y >= map.height - radius - tolerance) slide(0.0, -1.0)
+        val reach = radius + tolerance
+        map.anyBlocked(contact.x - reach, contact.x + reach, contact.y - reach, contact.y + reach) { column, row ->
+            val left = column.toDouble() * map.tileWidth
+            val top = row.toDouble() * map.tileHeight
+            val nx = contact.x - contact.x.coerceIn(left, left + map.tileWidth)
+            val ny = contact.y - contact.y.coerceIn(top, top + map.tileHeight)
+            val distance = hypot(nx, ny)
+            if (distance > 0.0 && abs(distance - radius) <= tolerance) slide(nx / distance, ny / distance)
+            false
+        }
+        return best
+    }
+
     fun contains(map: HullTerrainGrid, position: Position): Boolean =
         MapBounds.contains(map.width, map.height, position, radius)
 
