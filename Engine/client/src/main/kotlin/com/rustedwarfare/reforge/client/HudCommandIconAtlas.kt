@@ -77,10 +77,21 @@ class HudCommandIconAtlas private constructor(
 
     companion object {
         fun load(
+            theme: UiTheme = UiTheme.DEFAULT,
+            assetResolver: UiThemeAssetResolver = UiThemeAssetResolver(),
+        ): HudCommandIconAtlas = load(
+            jsonPath = theme.assets.commandIconsJson,
+            pngPath = theme.assets.commandIconsPng,
+            fileResolver = assetResolver::resolve,
+        )
+
+        fun load(
             fileResolver: (String) -> FileHandle = { path -> Gdx.files.classpath(path) },
+            jsonPath: String = HudCommandIconManifest.ATLAS_JSON_PATH,
+            pngPath: String = HudCommandIconManifest.ATLAS_PNG_PATH,
         ): HudCommandIconAtlas {
-            val manifest = HudCommandIconManifest.parse(fileResolver(HudCommandIconManifest.ATLAS_JSON_PATH).readString("UTF-8"))
-            val texture = Texture(fileResolver(HudCommandIconManifest.ATLAS_PNG_PATH), true).apply {
+            val manifest = HudCommandIconManifest.parse(fileResolver(jsonPath).readString("UTF-8"))
+            val texture = Texture(fileResolver(pngPath), true).apply {
                 setFilter(Texture.TextureFilter.MipMapLinearLinear, Texture.TextureFilter.Linear)
                 setWrap(Texture.TextureWrap.ClampToEdge, Texture.TextureWrap.ClampToEdge)
             }

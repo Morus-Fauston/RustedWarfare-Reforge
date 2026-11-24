@@ -153,7 +153,8 @@ class SandboxRenderResources private constructor(
                 // renderer used their original axes, so undo that rotation only on winning PC parts.
                 mapped.copy(rotatedAmphibiousImages = amphibiousImageSlots.filterTo(mutableSetOf()) { slot ->
                     val provider = addresses[slot]?.resource?.let { visuals.resolvedImages?.providers?.get(it) }
-                    provider?.startsWith("reforge:pc-original-resources-") == true
+                    provider?.startsWith("reforge:pc-original-resources-") == true ||
+                        (provider == VisualAssetSource.ORIGINAL.resourcePackId && visuals.profileId.startsWith("rw.pc."))
                 })
             }
         }

@@ -82,19 +82,36 @@ class UiFontSet private constructor(
          */
         fun create(
             scale: Float,
+            theme: UiTheme,
+            assetResolver: UiThemeAssetResolver = UiThemeAssetResolver(),
+            preloadChars: String = UiStrings.preloadCharacters(),
+        ): UiFontSet = create(
+            scale = scale,
+            preloadChars = preloadChars,
+            fileResolver = assetResolver::resolve,
+            regularPath = theme.assets.fontRegular,
+            boldPath = theme.assets.fontBold,
+            monoPath = theme.assets.fontMono,
+        )
+
+        fun create(
+            scale: Float,
             preloadChars: String = UiStrings.preloadCharacters(),
             fileResolver: (String) -> FileHandle = { path -> Gdx.files.classpath(path) },
+            regularPath: String = REGULAR_FONT_PATH,
+            boldPath: String = BOLD_FONT_PATH,
+            monoPath: String = MONO_FONT_PATH,
         ): UiFontSet {
             val safeScale = scale.coerceAtLeast(0.5f)
-            val regularGen = FreeTypeFontGenerator(fileResolver(REGULAR_FONT_PATH))
+            val regularGen = FreeTypeFontGenerator(fileResolver(regularPath))
             val boldGen = try {
-                FreeTypeFontGenerator(fileResolver(BOLD_FONT_PATH))
+                FreeTypeFontGenerator(fileResolver(boldPath))
             } catch (e: Throwable) {
                 regularGen.dispose()
                 throw e
             }
             val monoGen = try {
-                FreeTypeFontGenerator(fileResolver(MONO_FONT_PATH))
+                FreeTypeFontGenerator(fileResolver(monoPath))
             } catch (e: Throwable) {
                 boldGen.dispose()
                 regularGen.dispose()

@@ -1,4 +1,59 @@
 # Changelog
+## v0.5.70 (2026-11-24 03:05)
+
+### 新增
+
+- **自有公开占位单位素材全量补绘（`phase-seven-sandbox` 65 单位与随包 `reforge:base` 28 图）**：
+  - 以统一的 90° 俯视工业/构成主义像素风（1px 深色外描边、金属斜面高光与暗部层次、黄黑斜纹警示带、清晰兵种结构轮廓与规范纯绿可染色装甲区）全量重绘 `SimulationTest/public/inputs/phase-seven-sandbox/json/package/` 下的 136 张活体、残骸与阴影 PNG（覆盖指挥中心、陆/空/机甲/海/实验工厂、矿机与制造机 T1–T3、炮塔 T1/T2/火炮、激光防御、修理湾、核弹井与反核井、坦克/建造者/气垫船/悬浮坦克、运兵机/轰炸机/防空光束炮艇/两栖喷气机/直升机、炮艇/重型战列舰/攻击潜艇、轻重机甲/工程机甲/移动碉堡/喷火机甲、鹦鹉螺与机械蟹、模块蜘蛛本体及全部 18 个蜘蛛模块），彻底消除旧大方块占位图。
+  - 保留全部 9 张光束、护盾、槽位覆盖与 1×1 空图原样不动；全部 145 张 PNG 100% 保持既有宽高、多帧帧数与挂点对齐，9 组多帧动效表全部具备相邻帧动态变化；全部 28 张残骸与 8 张阴影保持焦黑锈蚀或深色半透明且零纯绿像素误染。
+  - 同步更新随包内置占位单位目录 `Engine/client/src/main/resources/visuals/placeholder/units/` 全部 28 张 PNG（含 `demo-tank.png`），同步回写 `Engine/client/src/main/resources/visuals/placeholder/manifest.json` 的 `provenance`、`source`、字节数与 SHA-256（保留 6 张地形条目与 13 张占位 tilesets 零改动，严守不触碰 `phase-six-a-sandbox`、`Engine/core/sim` 与 `Engine/core/path`）。
+
+### 技术
+
+- **自动化契约检验与双审收据（`UI-P003-003`）**：新增 `PublicUnitSpriteIntegrityTest`，覆盖 `phase-seven-sandbox` 全 145 张与随包 28 张单位图的精确尺寸、多帧相邻帧差异、基于 `MatchPlayerColors.PURE_GREEN_THRESHOLD` 的活体纯绿合规与残骸/阴影/非染色图零纯绿断言，以及 `manifest.json` 来源路径逐字节一致性校验；受影响 `:client:test`、`:pc:test` 与 `:pc:installDist`（`--rerun-tasks`）全绿，`workspace_layout.py --root` 返回 `ok: true`；完成全阵容 P1 绿 / P2 红 / 18 蜘蛛模块 / 28 残骸着色器验证拼图与 1920×1080 公开占位模式 `river_crossing.tmx` 5 态 Windows 实窗采集；Hydrogen 9 张目视审查首轮 0 必修 `APPROVED`，全新上下文 Neon 独立代码与清单整审经 2 项 P1 返修后定向复核 `APPROVED`（0 必修）。
+
+---
+## v0.5.69 (2026-11-23 23:01)
+
+### 调整
+
+- **HUD 复合单位图标温和提亮与暗井分离（`CompositeUnitIconBuilder.kt`、`SandboxGraphics.kt`、`ui/theme.json`）**：
+  - 在 `CompositeUnitIconBuilder.compose()` 离线输出阶段接入 `UiTheme.unitIconTuning`（内置默认主题启用 `gamma=0.82`、`brightnessLift=0.05`、`saturationScale=1.08`、`outlineLumaThreshold=0.14`），仅对 HUD 5 处复合单位图标温和抬高深钢灰暗部细节，同时通过阈值平滑权重保护纯黑外描边锐利不泛白、保持纯绿对局玩家色鲜明度，绝不触碰战场世界贴图与着色器。
+  - 将默认主题 `iconWell` 由 `#1A1E20FF` 略微抬亮至 `#282E33FF`，使带黑描边的复合单位图标在选中卡 40×40 图标框与队列格内与暗底利落分离。
+- **有队列能力单位空队列常驻防跳动与红底白字角标右上出界置顶（`HudSidebarModel.kt`、`InGameHudOverlay.kt`）**：
+  - `HudSidebarProjection.buildQueueSection()` 对已完工己方工厂（`production`/`factoryQueue`）、建造者（`construction`）与可升级建筑（`upgrades`）在队列为空时常驻保留 5 个虚线空格且不显示 `0%` 噪音，彻底消除首次下单时下方动作键坐标跳动；普通作战单位、在建建筑与敌方/中立单位保持不占行。
+  - `InGameHudOverlay.drawQueueSection()` 拆分为两趟绘制（先绘 5 格底板/进度/边框/图标，再统一置顶绘全部 `count >= 2` 角标），角标按主题度量（默认 `+3, +3` 外探与 `1px` 深色隔离描边）向队列格右上角轻度出界，中英文模式下无顶界裁切、无邻格边框压切。
+
+### 修复
+
+- **排查并打通 `--original-assets` 直开 PC 66 单位原版映射（`PcVisualAssetSettings.kt`、`SandboxRenderResources.kt`）**：
+  - 修复桌面端 `--original-assets` 指向 Steam PC 原版目录（含普通文件 `game-lib.jar`）时仍走 Android 25 单位 `original-profile.json` 导致 `repairbay`、`experimentalLandFactory`、`nukeLauncherC`、`antiNukeLauncherC`、`hoverTank` 等回退占位图的问题；现自动选用随包已校验的 `PcOriginalImageProfile.bundled().mappedImages` 66 单位映射（严守 `ADR-008` 完整 jar/PNG 校验与缓存隔离），同步覆盖直开 `rw.pc.*` 路径的两栖战机朝向回正，并在启动诊断登记 `activeProfileId` / `activeUnitVisualCount` / `resolvedUnitImageCount`；同步闭环 `001` 遗留的未托管主题受限回读建议。
+
+### 技术
+
+- **验证与双审收据（`UI-P003-002`）**：新增 `UiHudBrightQueueAndBadgeTest` 与 `PcOriginalDirectLaunchTest`，受影响 `:client:test`、`:pc:test` 与 `:pc:installDist` 全绿，`workspace_layout.py --root` 返回 `ok: true`；完成 Steam PC 原版目录直开 `[p2]Big Island (2p).tmx` 1920×1080 Windows 实窗 6 态采集（证实 `activeProfileId=rw.pc.steam.9902063.images.v8.mapped`、`resolvedUnitImageCount=188`、空队列→入队动作键 Y 差值 `0.0`、相邻出界红标 `3`/`2`/`4` 置顶无压切、`repairbay`/`experimentalLandFactory`/`nukeLauncherC`/`antiNukeLauncherC`/`hoverTank` 全部显示原版美术）；全新上下文 Neon 独立代码整审与 Hydrogen 6 张实窗目视审查均首轮 0 必修 `APPROVED`。
+
+---
+## v0.5.68 (2026-11-23 00:25)
+
+### 新增
+
+- **轻量化界面样式主题（`UiTheme`）与表现资源包声明式分层覆写（`UiTheme.kt`、`ui/theme.json`、`ADR-014`）**：
+  - 将局内 HUD 全部颜色令牌、装饰性圆角/描边/阴影/角标偏移度量、单位图标提亮调参及可选图标/字体/九宫格贴图路径收拢至随包内置默认主题 `Engine/client/src/main/resources/ui/theme.json`（保留现行构成主义默认视觉零回归，支持 `#RRGGBB` / `#RRGGBBAA` / `#RRGGBB@alpha` 精确浮点透明通道），严格恪守“只改样式、不改 HUD 组织方式、交互状态机与触控安全底线”约束。
+  - 新增纯 Kotlin 分层合并器 `UiThemeComposer` 与只读 `UiThemeProvider` / `UiThemeAssetResolver`，按表现资源包优先级（高优先级用户包 → 低优先级用户包 → 内置默认）逐键局部覆写 `ui/theme.json`，缺失键自动逐层回退，严格校验 JSON 512 KiB 上限、有限浮点/合理区间及逐段拒绝符号链接与路径穿越（`UI_THEME_INVALID`）。
+  - 随仓提供最小主题覆写样例 `Engine/client/src/test/resources/ui-theme-samples/cobalt-steel/ui/theme.json`，并新增桌面调试直开参数 `--theme-pack <dir>`（`WindowsLaunchOptions.kt`、`WindowsLauncher.kt`）。
+
+### 调整
+
+- **全 HUD 渲染链路接入 `UiThemeProvider` 与 `ADR-008` 资源托管闭环**：
+  - `InGameHudOverlay`、`HudActionPanel`、`HudControlGroupBar`、`HudDebugOverlay`、`HudSandboxConsole`、`HudCommandIconAtlas`、`UiFontSet` 与 `BootstrapScreen` 全部改为从活动 `UiTheme` 读取颜色、装饰度量与可覆写资产，切换主题时完整比较主题值相等性以重建样式与资源，并安全释放旧图集/字体、在自定义图集失败时自动兜底默认图集。
+  - `PcAcceptedResourceStore` 与 `PcVisualAssetSettings` 将用户表现资源包内的 `ui/theme.json` 及声明的包内资产纳入 `ADR-008` 客户端托管收据校验与未托管外部包冻结快照/发布复核，并拦截与 `pack.json`/`receipt.*`/`media-*` 冲突的保留文件名。
+
+### 技术
+
+- **验证与独立审阅收据（`UI-P003-001`）**：新增 `UiThemeAndOverlayTest`（覆盖内置默认与历史 `UiTokens` 零回归、三层局部覆写、恶意/越界/超限/NaN 拦截、匿名同 ID 主题值比较）与 `PcUiThemeResourcePackTest`（覆盖受托包删源复原、非 `ui/` 托管资产篡改检测、保留文件名拒绝、未托管主题篡改与事后新增拦截）；受影响 `:client:test`、`:pc:test` 与 `:pc:installDist` 全绿，`workspace_layout.py --root` 返回 `ok: true`；全新上下文 Neon 独立非作者代码整审首轮提出 3 项 P1（非 `ui/` 托管与 `JsonValue` 链表复验、未托管外部包冻结读取复核、完整主题值比较）及 4 项 P2 均完成返修，经原审定向复核 `APPROVED`（0 必修）。
+
+---
 ## v0.5.67 (2026-11-22 21:41)
 
 ### 修复

@@ -33,7 +33,10 @@ internal class HudSandboxConsole(
     private val onPickSpawnRepeat: () -> Unit,
     private val onPickDestroy: () -> Unit,
     private val onPickHealth: () -> Unit,
+    private val themeProvider: UiThemeProvider = UiThemeProvider { UiTheme.DEFAULT },
 ) : Group() {
+    private val colors: UiThemeColors get() = themeProvider.currentTheme().colors
+    private var appliedFieldTheme: UiTheme? = null
 
     private val glyphLayout = GlyphLayout()
     private val panelRect = Rectangle()
@@ -156,17 +159,19 @@ internal class HudSandboxConsole(
     private fun syncFieldStyle() {
         val mono = monoFont()
         val currentStyle = field.style
-        if (currentStyle.font !== mono || currentStyle.fontColor != UiTokens.TEXT) {
+        val activeTheme = themeProvider.currentTheme()
+        if (currentStyle.font !== mono || appliedFieldTheme != activeTheme) {
+            appliedFieldTheme = activeTheme
             val style = TextField.TextFieldStyle(currentStyle).apply {
                 font = mono
-                fontColor = UiTokens.TEXT
-                focusedFontColor = UiTokens.TEXT
+                fontColor = colors.text
+                focusedFontColor = colors.text
                 messageFont = mono
-                messageFontColor = UiTokens.DIM
-                background = skin.newDrawable("white", UiTokens.WELL)
-                focusedBackground = skin.newDrawable("white", UiTokens.WELL)
-                cursor = skin.newDrawable("white", UiTokens.VALUE)
-                selection = skin.newDrawable("white", UiTokens.CELL)
+                messageFontColor = colors.dim
+                background = skin.newDrawable("white", colors.well)
+                focusedBackground = skin.newDrawable("white", colors.well)
+                cursor = skin.newDrawable("white", colors.value)
+                selection = skin.newDrawable("white", colors.cell)
             }
             style.background?.leftWidth = 8f
             style.background?.rightWidth = 8f
@@ -183,20 +188,20 @@ internal class HudSandboxConsole(
         val alpha = parentAlpha * color.a
 
         // Outer panel box (#252A2E solid + #727B81 border)
-        fillRect(batch, white, panelRect.x, panelRect.y, panelRect.width, panelRect.height, UiTokens.SOLID, alpha)
-        strokeRect(batch, white, panelRect.x, panelRect.y, panelRect.width, panelRect.height, BORDER_COLOR, alpha)
+        fillRect(batch, white, panelRect.x, panelRect.y, panelRect.width, panelRect.height, colors.solid, alpha)
+        strokeRect(batch, white, panelRect.x, panelRect.y, panelRect.width, panelRect.height, colors.popupBorder, alpha)
 
         // Pick mode chips
         val chipFont = bodyFont()
         for (btn in pickButtons) {
-            val bg = if (btn.hovered) CELL_HOVER else UiTokens.CELL
+            val bg = if (btn.hovered) colors.consoleCellHover else colors.cell
             fillRect(batch, white, btn.x, btn.y, btn.width, btn.height, bg, alpha)
-            drawTextCenter(batch, chipFont, labelFor(btn.labelKey, language), btn.x + btn.width * 0.5f, btn.y + btn.height * 0.5f, UiTokens.TEXT, alpha)
+            drawTextCenter(batch, chipFont, labelFor(btn.labelKey, language), btn.x + btn.width * 0.5f, btn.y + btn.height * 0.5f, colors.text, alpha)
         }
 
         // Draw TextField (via super.draw) and stroke its well border
         super.draw(batch, parentAlpha)
-        strokeRect(batch, white, field.x, field.y, field.width, field.height, UiTokens.LINE, alpha)
+        strokeRect(batch, white, field.x, field.y, field.width, field.height, colors.line, alpha)
 
         // Feedback lines (optional, multiline-safe) & footnote
         val innerX = panelRect.x + PAD
@@ -204,11 +209,11 @@ internal class HudSandboxConsole(
             val fbFont = smallFont()
             var lineTopCenterY = panelRect.y + PAD + FOOT_H + 4f + feedbackLines.size * FEEDBACK_H - FEEDBACK_H * 0.5f
             for (line in feedbackLines) {
-                drawTextLeft(batch, fbFont, line, innerX, lineTopCenterY, UiTokens.VALUE, alpha)
+                drawTextLeft(batch, fbFont, line, innerX, lineTopCenterY, colors.value, alpha)
                 lineTopCenterY -= FEEDBACK_H
             }
         }
-        drawTextLeft(batch, smallFont(), UiStrings.get("escClose", language), innerX, panelRect.y + PAD + FOOT_H * 0.5f, UiTokens.DIM, alpha)
+        drawTextLeft(batch, smallFont(), UiStrings.get("escClose", language), innerX, panelRect.y + PAD + FOOT_H * 0.5f, colors.dim, alpha)
 
         batch.packedColor = orig
     }
@@ -302,7 +307,5 @@ internal class HudSandboxConsole(
         private const val FOOT_H: Float = 15f
         private const val FEEDBACK_H: Float = 15f
         private const val MAX_FEEDBACK_LINES: Int = 8
-        private val BORDER_COLOR: Color = UiTokens.hex(0x727B81)
-        private val CELL_HOVER: Color = UiTokens.hex(0x3D454B)
     }
 }

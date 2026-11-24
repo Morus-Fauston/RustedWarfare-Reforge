@@ -24,6 +24,7 @@ data class WindowsLaunchOptions(
     val development: Boolean = false,
     val diagnostics: Boolean = false,
     val skirmishMap: Path? = null,
+    val themePackDir: Path? = null,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
@@ -36,7 +37,7 @@ data class WindowsLaunchOptions(
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--map", "--development", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--map", "--theme-pack", "--development", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
@@ -88,13 +89,14 @@ data class WindowsLaunchOptions(
                 require(value.isNotBlank()) { "--original-assets requires a directory" }; resolve(value)
             }
             if (mode == "demo") {
-                require("--inputs" !in options && "--map" !in options) { "Demo uses packaged self-owned inputs" }
+                require("--inputs" !in options && "--map" !in options && "--theme-pack" !in options) { "Demo uses packaged self-owned inputs" }
                 return WindowsLaunchOptions(mode, null,
                     resolve(options["--evidence"] ?: "Engine/pc/build/demo-runs/$runId"), runId,
                     "RustedWarfare-Reforge | Field Demo", visualSource, originalAssets)
             }
             val explicitInputs = options["--inputs"]
             val skirmishMap = options["--map"]?.let { value -> require(value.isNotBlank()) { "--map requires a .tmx path" }; resolve(value) }
+            val themePackDir = options["--theme-pack"]?.let { value -> require(value.isNotBlank()) { "--theme-pack requires a directory" }; resolve(value) }
             val seed = defaultScenarioSeed.toAbsolutePath().normalize()
             val defaultInputs = if (skirmishMap != null)
                 seed.parent.resolve("../inputs/phase-seven-sandbox/json/package").normalize()
@@ -109,7 +111,7 @@ data class WindowsLaunchOptions(
                     else -> "RustedWarfare-Reforge"
                 }, visualSource, originalAssets,
                 if (development && explicitInputs == null && skirmishMap == null) seed else null, backgroundInput, backgroundCompact,
-                bgWidth, bgHeight, touchSimulation, development, development || "--evidence" in options, skirmishMap)
+                bgWidth, bgHeight, touchSimulation, development, development || "--evidence" in options, skirmishMap, themePackDir)
         }
     }
 }

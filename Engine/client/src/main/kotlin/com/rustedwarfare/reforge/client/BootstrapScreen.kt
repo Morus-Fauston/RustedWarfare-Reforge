@@ -45,6 +45,7 @@ class BootstrapScreen(
     openSetup: Boolean = true,
     private val cameraStartSeed: Path? = null,
     private val initialSkirmishMap: Path? = null,
+    private val initialUiThemePacks: List<Path> = emptyList(),
 ) : ApplicationAdapter() {
     private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT, MAPS }
     private data class ContentCandidate(val root: Path, val content: ContentPackChoice?)
@@ -59,6 +60,9 @@ class BootstrapScreen(
     private lateinit var hudGroupBar: HudControlGroupBar
     private lateinit var hudDebugOverlay: HudDebugOverlay
     private lateinit var hudConsole: HudSandboxConsole
+    private var activeUiTheme: UiTheme = if (initialUiThemePacks.isEmpty()) UiTheme.DEFAULT else UiThemeComposer.composeFromPackDirectories(initialUiThemePacks)
+    private var activeThemeAssetResolver: UiThemeAssetResolver = UiThemeAssetResolver(initialUiThemePacks)
+    private val uiThemeProvider: UiThemeProvider = UiThemeProvider { activeUiTheme }
     private var commandIcons: HudCommandIconAtlas? = null
     private val hudEvents = HudEventStream()
     private var hudMenuOpen = false
@@ -670,7 +674,7 @@ class BootstrapScreen(
                 updateHud()
             })
         for (index in 1..3) groupButtons += button("$index (0)", 508f + (index - 1) * 72f, 12f, 64f) { mapInput.group(index) }
-        commandIcons = runCatching { HudCommandIconAtlas.load() }.onFailure { err ->
+        commandIcons = runCatching { HudCommandIconAtlas.load(activeUiTheme, activeThemeAssetResolver) }.onFailure { err ->
             Gdx.app?.error("ui-p001-icons", "Failed to load HudCommandIconAtlas", err)
         }.getOrNull()
         created += { commandIcons?.close(); commandIcons = null }
@@ -680,6 +684,7 @@ class BootstrapScreen(
             fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
             unitIconProvider = { graphics?.unitIcon(it) },
             commandIconProvider = { name -> commandIcons?.icon(name) },
+            themeProvider = uiThemeProvider,
             callbacks = object : InGameHudCallbacks {
                 override fun onToggleMenu() {
                     if (paused || loading || session?.isOpen != true) return
@@ -858,6 +863,7 @@ class BootstrapScreen(
                 lastHudState = null
                 updateHud()
             },
+            themeProvider = uiThemeProvider,
         )
         hudGroupBar = HudControlGroupBar(
             skin = skin,
@@ -908,6 +914,7 @@ class BootstrapScreen(
                     mapInput.constructionTypeId == null && !mapInput.reclaimMode &&
                     !mapInput.repairMode && !mapInput.patrolMode && mapInput.groundActionName == null
             },
+            themeProvider = uiThemeProvider,
         ).also(stage::addActor)
         hudDebugOverlay = HudDebugOverlay(
             skin = skin,
@@ -918,6 +925,7 @@ class BootstrapScreen(
             onToggleRoutes = { toggleDebugSubLayer("routes") },
             onToggleDetails = { toggleDebugSubLayer("details") },
             onToggleGrid = { toggleDebugSubLayer("grid") },
+            themeProvider = uiThemeProvider,
         ).also(stage::addActor)
         battleActions = BattleActionList(skin, stage, { session }, { graphics?.unitIcon(it) }, { owner, row, cancel ->
             val key = row.id.substringAfter(':')
@@ -992,6 +1000,7 @@ class BootstrapScreen(
             onPickHealth = {
                 beginPickedCommand(SandboxPick.parseHealth(commandField.text), "Enter a signed health amount")
             },
+            themeProvider = uiThemeProvider,
         ).also(stage::addActor)
         commandPickHint = label("", 0f, 0f, 1f, 1f).also { it.isVisible = false }
         commandHintLabel = label("", 0f, 0f, 1f, 1f).also { it.isVisible = false }
@@ -1169,8 +1178,38 @@ class BootstrapScreen(
         }
     }
 
+    private fun applyLoadedUiTheme(nextTheme: UiTheme, nextResolver: UiThemeAssetResolver) {
+        val prevTheme = activeUiTheme
+        val iconsChanged = prevTheme.assets.commandIconsJson != nextTheme.assets.commandIconsJson ||
+            prevTheme.assets.commandIconsPng != nextTheme.assets.commandIconsPng ||
+            activeThemeAssetResolver != nextResolver
+        val fontsChanged = prevTheme.assets.fontRegular != nextTheme.assets.fontRegular ||
+            prevTheme.assets.fontBold != nextTheme.assets.fontBold ||
+            prevTheme.assets.fontMono != nextTheme.assets.fontMono ||
+            activeThemeAssetResolver != nextResolver
+        activeUiTheme = nextTheme
+        activeThemeAssetResolver = nextResolver
+        if (iconsChanged && presentationReady) {
+            val loadedAtlas = runCatching { HudCommandIconAtlas.load(nextTheme, nextResolver) }.onFailure { err ->
+                Gdx.app?.error("ui-theme-icons", "Failed to reload HudCommandIconAtlas for theme ${nextTheme.id}, falling back to default", err)
+            }.getOrNull() ?: runCatching {
+                HudCommandIconAtlas.load(UiTheme.DEFAULT, UiThemeAssetResolver())
+            }.getOrNull()
+            if (loadedAtlas != null) {
+                val oldAtlas = commandIcons
+                commandIcons = loadedAtlas
+                oldAtlas?.close()
+            }
+        }
+        if (fontsChanged && presentationReady) {
+            rebuildFontsForScale(uiMetrics.scale)
+        }
+    }
+
     private fun createSafeFontSet(scale: Float, preloadExtras: Iterable<String> = emptyList()): UiFontSet? =
-        runCatching { UiFontSet.create(scale, UiStrings.preloadCharacters(preloadExtras)) }.onFailure { err ->
+        runCatching {
+            UiFontSet.create(scale, activeUiTheme, activeThemeAssetResolver, UiStrings.preloadCharacters(preloadExtras))
+        }.onFailure { err ->
             Gdx.app?.error("ui-p001-fonts", "Failed to create FreeType UiFontSet, falling back to default BitmapFont", err)
         }.getOrNull()
 
@@ -1533,7 +1572,7 @@ class BootstrapScreen(
                     "visualsPreparedNanos" to timing.visualsPreparedNanos, "completedNanos" to timing.completedNanos,
                     "observedNanos" to System.nanoTime())) }
                 val graphicsStartedNanos = System.nanoTime()
-                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = true)
+                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = true, uiTheme = if (initialUiThemePacks.isEmpty()) loaded.visuals?.uiTheme ?: activeUiTheme else activeUiTheme)
                 pendingGraphics.projection.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
                 evidence.record("load-graphics-ready", mapOf("generation" to generation,
                     "startedNanos" to graphicsStartedNanos, "completedNanos" to System.nanoTime(),
@@ -1585,6 +1624,11 @@ class BootstrapScreen(
                 syncMinimapActorBounds(pendingGraphics)
                 graphics = pendingGraphics
                 activeVisuals = loaded.visuals
+                if (initialUiThemePacks.isEmpty()) {
+                    loaded.visuals?.let { visuals ->
+                        applyLoadedUiTheme(visuals.uiTheme, visuals.uiThemeAssetResolver)
+                    }
+                }
                 session = pendingSession
                 scriptedCamera = camera
                 if (touchControls) recordCameraJoystick("opened", null)
@@ -2820,7 +2864,7 @@ class BootstrapScreen(
                     ).firstOrNull()
                     val bound = activeVisuals?.let { v -> it.renderResources.bindVisuals(v, originalTilesetRoot = origRoot) }
                         ?: it.renderResources.resolveTileAtlases(null, origRoot)
-                    SandboxGraphics.load(bound, activeRoot, fullBattlefield = true)
+                    SandboxGraphics.load(bound, activeRoot, fullBattlefield = true, uiTheme = activeUiTheme)
                 }
                 graphics?.let { g ->
                     g.updateMinimapAspect(viewport.screenWidth, viewport.screenHeight, viewport.worldWidth, viewport.worldHeight)

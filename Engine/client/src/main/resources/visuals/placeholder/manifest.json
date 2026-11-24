@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "profileId": "reforge.placeholder.visual.v2",
-  "provenance": "Byte-identical copies of repository-authored public fixture and demo PNGs; no original-game images.",
+  "provenance": "Self-authored public industrial pixel-art unit sprites (27 byte-identical copies of phase-seven-sandbox sprites + self-authored demo-tank.png) and repository-authored public terrain strips; no original-game images.",
   "files": [
     {
       "id": "tank",
       "resource": "units/tank.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/tank.png",
-      "bytes": 302,
-      "sha256": "f6d6c006b868439f09387a9dce381f95a927b71a63db98a423a6687cae9871fc",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/sea-factory/land/tank.png",
+      "bytes": 366,
+      "sha256": "64bcae338ef574f6b27c9409c5c95365001eaddb9ef1fed6ed612769c6846ff5",
       "width": 60,
       "height": 20,
       "frames": 3
@@ -16,9 +16,9 @@
     {
       "id": "tank-turret",
       "resource": "units/tank-turret.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/tank_turret.png",
-      "bytes": 139,
-      "sha256": "5b29c8a63534c732f26c65c9bfbeaa32b6802dfddc8c120220c7db4c9f12fc9d",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/sea-factory/land/tank_turret.png",
+      "bytes": 188,
+      "sha256": "29bc2815940f968df1a7fc7fd69575bc1960dcbbe3f8be069187b83cf12e4f72",
       "width": 20,
       "height": 20,
       "frames": 1
@@ -26,9 +26,9 @@
     {
       "id": "tank-dead",
       "resource": "units/tank-dead.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/tank_dead.png",
-      "bytes": 87,
-      "sha256": "cbab7f92fa0cbef203e94823e2cbdc3e0116df3dab205f2ce0296e399a1a4ffa",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/sea-factory/land/tank_dead.png",
+      "bytes": 619,
+      "sha256": "bb73479de0111eb562e0c7542a2f7ef48c7543b03610065280accafb212d7df4",
       "width": 20,
       "height": 20,
       "frames": 1
@@ -36,9 +36,9 @@
     {
       "id": "builder",
       "resource": "units/builder.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/builder.png",
-      "bytes": 184,
-      "sha256": "7e3611cc55205a370bdfaa0f3d5df04e96a9d7570f77aaab9999b9dbfec2a05b",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/mech-factory/builder.png",
+      "bytes": 274,
+      "sha256": "b746260ca8e4d506c48e465fa85a4695cb9ae41523040c4e8947f83188de0789",
       "width": 20,
       "height": 20,
       "frames": 1
@@ -46,9 +46,9 @@
     {
       "id": "builder-dead",
       "resource": "units/builder-dead.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/builder_dead.png",
-      "bytes": 87,
-      "sha256": "15060aa3fb36bffd4414e803beb8f5d9b2982ed14bb497fbca6cadd3de18cc1b",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/mech-factory/builder_dead.png",
+      "bytes": 470,
+      "sha256": "1e58a3f0b0177eabb19b1fe886ca0d35ce1ef53a0396737d25b89ae1e04e4baf",
       "width": 20,
       "height": 20,
       "frames": 1
@@ -56,9 +56,9 @@
     {
       "id": "center",
       "resource": "units/center.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/base.png",
-      "bytes": 889,
-      "sha256": "c4f4aedd9a68d6f9a18e99b3c897f0f168d7fb2b4b3bcb6fb77e4e59cb9994e2",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/extra/command-center/units/commandCenter/base.png",
+      "bytes": 1630,
+      "sha256": "dd4f93274a8586040f170f86e105f0bfc3724071c6ed74fec6587ffbd27dad68",
       "width": 212,
       "height": 68,
       "frames": 4
@@ -66,9 +66,9 @@
     {
       "id": "center-back",
       "resource": "units/center-back.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/base_back.png",
-      "bytes": 230,
-      "sha256": "5eb56ae419ba4082bbe7a4cd8d8ec137118c71bf8a92dcd78ec9edc8df8ea557",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/extra/command-center/units/commandCenter/base_back.png",
+      "bytes": 423,
+      "sha256": "c5cd5bc712a203798e18b35e149f0448ab7f334e9b2ab4fd27e830e91ba18866",
       "width": 53,
       "height": 68,
       "frames": 1
@@ -76,9 +76,9 @@
     {
       "id": "center-dead",
       "resource": "units/center-dead.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/base_dead.png",
-      "bytes": 171,
-      "sha256": "940b030d8a9c0161c69b1831041186c97409e85d404aa5c5f6ec58fa5d831b16",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/extra/command-center/units/commandCenter/base_dead.png",
+      "bytes": 2235,
+      "sha256": "fcf625bef3984fc8f1eb6efe1b3c609c9da8715dc1aac6dc68a3124a09d82eed",
       "width": 53,
       "height": 74,
       "frames": 1
@@ -86,9 +86,9 @@
     {
       "id": "factory",
       "resource": "units/factory.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/factory.png",
-      "bytes": 322,
-      "sha256": "13095b35e8a1a4be9ec7399b7482ea930670b1e8f5408594a8c389dbfb4c97d3",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/factory.png",
+      "bytes": 736,
+      "sha256": "b6bb7e2a4a1b2cc90ec245554a222fac89af6bd8cb5fd85753407b82933104f6",
       "width": 50,
       "height": 74,
       "frames": 1
@@ -96,9 +96,9 @@
     {
       "id": "factory-back",
       "resource": "units/factory-back.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/factory_back.png",
-      "bytes": 223,
-      "sha256": "f15de665be2134d2437ababac04162ae0cee21261e4138fb970fea000db272f2",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/factory_back.png",
+      "bytes": 420,
+      "sha256": "baeba5b96e0fb7a274b63549253c97b8b76e3c644f9d9163fe6657cac2a0c4cf",
       "width": 50,
       "height": 74,
       "frames": 1
@@ -106,9 +106,9 @@
     {
       "id": "factory-dead",
       "resource": "units/factory-dead.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/factory_dead.png",
-      "bytes": 164,
-      "sha256": "f833d96e5b74fa0d68a2331a36338518727636a48e56b2a9e5278ab20bd4ae83",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/factory_dead.png",
+      "bytes": 1873,
+      "sha256": "bf0328ad296e9e2a02fdd1b474f64f6089c107fb38da34517d35a593281b883d",
       "width": 50,
       "height": 69,
       "frames": 1
@@ -116,9 +116,9 @@
     {
       "id": "laser",
       "resource": "units/laser.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/laser_defence.png",
-      "bytes": 514,
-      "sha256": "e8977e6b2a9d1cef1163eb1a1512eb61edaad044b63c6a0ea5b4184aa7122cb7",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/laser_defence.png",
+      "bytes": 778,
+      "sha256": "e0ff4ed90e7ae0d5e6c1a5c72d7cb9f91ad7357425c20bbe375439df132ba3b3",
       "width": 72,
       "height": 36,
       "frames": 2
@@ -126,9 +126,9 @@
     {
       "id": "laser-dead",
       "resource": "units/laser-dead.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/laser_defence_dead.png",
-      "bytes": 117,
-      "sha256": "27a58b2d63f8ab80a51744f90b615c635d75605c1859bfc0766a62469f880456",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/laser_defence_dead.png",
+      "bytes": 1029,
+      "sha256": "fceb02df62f2408b46ea1fd1028c716897db3bac93153f01089d035415370fc8",
       "width": 36,
       "height": 36,
       "frames": 1
@@ -136,9 +136,9 @@
     {
       "id": "extractor1",
       "resource": "units/extractor1.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/extractor_t1.png",
-      "bytes": 647,
-      "sha256": "0c817b0c48db5d2ba70a714be123cb43e63dd2536d02112af6764f2e022f0427",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/extractor_t1.png",
+      "bytes": 831,
+      "sha256": "9d012d1ebb73863baf2c428b2bcacf59de5b880cf885f40e392527295dd9618a",
       "width": 148,
       "height": 59,
       "frames": 4
@@ -146,9 +146,9 @@
     {
       "id": "extractor2",
       "resource": "units/extractor2.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/extractor_t2.png",
-      "bytes": 631,
-      "sha256": "cced8035f8559f0066b14078911e2eddc9576fd208e18e2f3547c9ced2b1c90e",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/extractor_t2.png",
+      "bytes": 984,
+      "sha256": "fb9bb2098020d4e29ea34dfb7a0984ec482a4ce89bfc383a733b8e426de57c70",
       "width": 148,
       "height": 59,
       "frames": 4
@@ -156,9 +156,9 @@
     {
       "id": "extractor3",
       "resource": "units/extractor3.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/extractor_t3.png",
-      "bytes": 663,
-      "sha256": "c02196dff0978f57af6076180c4af4dd633586fc29d21bd8a3ebe44162c27556",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/extractor_t3.png",
+      "bytes": 1006,
+      "sha256": "65a1579e2d7be2a230cef9822b9b73a3efdbc28fdfedd9e7d40c885e5dbeb473",
       "width": 148,
       "height": 59,
       "frames": 4
@@ -166,9 +166,9 @@
     {
       "id": "extractor-back",
       "resource": "units/extractor-back.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/extractor_back.png",
-      "bytes": 164,
-      "sha256": "c96bb97aff024fcb1b55fbf4d1df4b383983eca9c40e5418d28d49a86adb4d0a",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/extractor_back.png",
+      "bytes": 506,
+      "sha256": "0d4b9dd0807a2a1c2b686a86d891581144667ed1877459b3aad72a2370d717e3",
       "width": 51,
       "height": 44,
       "frames": 1
@@ -176,9 +176,9 @@
     {
       "id": "fabricator1",
       "resource": "units/fabricator1.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/fabricatorT1.png",
-      "bytes": 609,
-      "sha256": "66082baf2a0fe585ac84a3bf3c1066d72cd8cbf1df162066f5217dd6ff05974c",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/fabricatorT1.png",
+      "bytes": 1488,
+      "sha256": "979794ac33c334db4330dd8bc4ad8c2c1d16549a0b9bb0435fc000a96530670c",
       "width": 141,
       "height": 60,
       "frames": 3
@@ -186,9 +186,9 @@
     {
       "id": "fabricator2",
       "resource": "units/fabricator2.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/fabricatorT2.png",
-      "bytes": 613,
-      "sha256": "0d6a5cb776b468a4c7d25007a1ec399dc22155043e4d647afdc82056b640d578",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/fabricatorT2.png",
+      "bytes": 1575,
+      "sha256": "ed3ac1ba38a30e42520f749689decf50dcd413e7507c323b66bc71bf90eeb5ba",
       "width": 141,
       "height": 60,
       "frames": 3
@@ -196,9 +196,9 @@
     {
       "id": "fabricator3",
       "resource": "units/fabricator3.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/fabricatorT3.png",
-      "bytes": 614,
-      "sha256": "1cf9676c42f76a8bb0a75faaf54d60c06a26039c53cdfa8c03a1c670e416ce8d",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/fabricatorT3.png",
+      "bytes": 1675,
+      "sha256": "9dca1c7e12d5f01285994b89fb72bc563d6d3f977dd4efce2086ac7de4f2e778",
       "width": 141,
       "height": 60,
       "frames": 3
@@ -206,9 +206,9 @@
     {
       "id": "fabricator-dead",
       "resource": "units/fabricator-dead.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/fabricator_dead.png",
-      "bytes": 140,
-      "sha256": "55883ff610cb74713449cc980d2da5d04ce6a9bd57ed4fd6c29b1a3900722855",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/fabricator_dead.png",
+      "bytes": 1923,
+      "sha256": "8b2b276479d7c3514ea612b79ec5a295f785b96c844210230a20db27147408be",
       "width": 47,
       "height": 60,
       "frames": 1
@@ -216,9 +216,9 @@
     {
       "id": "turret1",
       "resource": "units/turret1.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret.png",
-      "bytes": 188,
-      "sha256": "bc19dac61981bb0ba7ad91c4187c3e367cf77f32fae889d85c3bd21db87c8781",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/turret.png",
+      "bytes": 492,
+      "sha256": "3b93bace89688052673e84027c75d7ed999e5da00e488354518b1ef8faa17c2a",
       "width": 40,
       "height": 40,
       "frames": 1
@@ -226,9 +226,9 @@
     {
       "id": "turret2",
       "resource": "units/turret2.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_base2.png",
-      "bytes": 213,
-      "sha256": "c4b51d3c37d276760ac2d06dfba58654ff201114444216c5a70d8509a51636a4",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/turret_base2.png",
+      "bytes": 545,
+      "sha256": "273211cd65a1598cc14fa4033eb8a311cb867d04fd54812a6d8444edc4aa68fc",
       "width": 40,
       "height": 40,
       "frames": 1
@@ -236,9 +236,9 @@
     {
       "id": "turret-dead",
       "resource": "units/turret-dead.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_dead.png",
-      "bytes": 127,
-      "sha256": "907d5bdfcaf8d04cd5f7cfde00bb6b77bf1973cd1191db26b8dd5f408392106a",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/turret_dead.png",
+      "bytes": 966,
+      "sha256": "5ff48d14b42a0e6c0cfd4854772314d33193d08df381132a7188e5f6ae68ba4b",
       "width": 40,
       "height": 40,
       "frames": 1
@@ -246,9 +246,9 @@
     {
       "id": "turret-top",
       "resource": "units/turret-top.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_top.png",
-      "bytes": 235,
-      "sha256": "5f1db2cbc3585ee386569d3d2271250f97862cdd701a68b763be003d4158d71f",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/turret_top.png",
+      "bytes": 322,
+      "sha256": "3f798ff89f6bec20338ba913f5de9db9ae65873b5887f88cabdfcec22dc15e46",
       "width": 40,
       "height": 40,
       "frames": 1
@@ -256,9 +256,9 @@
     {
       "id": "turret-gun",
       "resource": "units/turret-gun.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_top_l2.png",
-      "bytes": 237,
-      "sha256": "fccadbba7c0136c07b20eeb58d35d322326cb80e0f4b2a0b2b4caa6996c5d950",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/turret_top_l2.png",
+      "bytes": 340,
+      "sha256": "b8c329a8663d1cc98d0acc780d4dfc1d26176feded0e4c80a3fe220e1003b3cf",
       "width": 40,
       "height": 40,
       "frames": 1
@@ -266,9 +266,9 @@
     {
       "id": "turret-artillery",
       "resource": "units/turret-artillery.png",
-      "source": "SimulationTest/public/inputs/maintenance-defense/construction/units/turret_top_artillery.png",
-      "bytes": 242,
-      "sha256": "374069dffe2d334f3d27e88f36b6082ef3a72f68071e632b6933da55e48b26ea",
+      "source": "SimulationTest/public/inputs/phase-seven-sandbox/json/package/units/economy/turret_top_artillery.png",
+      "bytes": 334,
+      "sha256": "c78b714ab07a2a32cd7e5b04be64e2499c6da5308e334ba27ab24aad1a73f980",
       "width": 40,
       "height": 40,
       "frames": 1
@@ -276,9 +276,9 @@
     {
       "id": "demo-body",
       "resource": "units/demo-tank.png",
-      "source": "Engine/client/src/main/resources/demo/images/tank.png",
-      "bytes": 232,
-      "sha256": "08da70015121f388251afbe63a8060788b3cb2f402b67ea93f8c407795da9e33",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/units/demo-tank.png",
+      "bytes": 374,
+      "sha256": "1ca0ee7c4c9946a4a81e5e6d3d338a6146cd6d886d461ab2f76e52287b92c171",
       "width": 32,
       "height": 32,
       "frames": 1

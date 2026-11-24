@@ -7,6 +7,7 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 /**
@@ -153,11 +154,59 @@ object CompositeUnitIconBuilder {
     }
 
     /**
-     * 将有序图层列表合成为一张自动裁切、等比居中带边距的 RGBA 缓冲，并执行纯绿通道着色。
+     * 对 HUD 复合单位图标像素执行温和亮度/gamma/饱和度提拉（UI-P003 §2）：
+     * - 仅在离线图标合成阶段生效，绝不影响战场世界贴图与着色器。
+     * - 暗于 `outlineLumaThreshold` 的深黑外描边通过平滑过渡权重自动保护，保持描边清晰锐利、不发灰泛白。
+     */
+    internal fun applyIconTuning(r: Float, g: Float, b: Float, tuning: UiUnitIconTuning): FloatArray {
+        val gamma = tuning.gamma
+        val lift = tuning.brightnessLift
+        val sat = tuning.saturationScale
+        if (gamma == 1f && lift == 0f && sat == 1f) return floatArrayOf(r, g, b)
+
+        val luma = 0.2126f * r + 0.7152f * g + 0.0722f * b
+        val threshold = tuning.outlineLumaThreshold
+        val transition = 0.08f
+        val weight = when {
+            luma <= threshold -> 0f
+            luma >= threshold + transition -> 1f
+            else -> {
+                val t = (luma - threshold) / transition
+                t * t * (3f - 2f * t)
+            }
+        }
+        if (weight <= 0f) return floatArrayOf(r, g, b)
+
+        var tr = if (gamma != 1f && r > 0f) r.toDouble().pow(gamma.toDouble()).toFloat() else r
+        var tg = if (gamma != 1f && g > 0f) g.toDouble().pow(gamma.toDouble()).toFloat() else g
+        var tb = if (gamma != 1f && b > 0f) b.toDouble().pow(gamma.toDouble()).toFloat() else b
+
+        if (lift != 0f) {
+            tr += lift * (1f - tr * 0.5f)
+            tg += lift * (1f - tg * 0.5f)
+            tb += lift * (1f - tb * 0.5f)
+        }
+
+        if (sat != 1f) {
+            val tl = 0.2126f * tr + 0.7152f * tg + 0.0722f * tb
+            tr = tl + (tr - tl) * sat
+            tg = tl + (tg - tl) * sat
+            tb = tl + (tb - tl) * sat
+        }
+
+        val outR = (r + (tr.coerceIn(0f, 1f) - r) * weight).coerceIn(0f, 1f)
+        val outG = (g + (tg.coerceIn(0f, 1f) - g) * weight).coerceIn(0f, 1f)
+        val outB = (b + (tb.coerceIn(0f, 1f) - b) * weight).coerceIn(0f, 1f)
+        return floatArrayOf(outR, outG, outB)
+    }
+
+    /**
+     * 将有序图层列表合成为一张自动裁切、等比居中带边距的 RGBA 缓冲，并执行纯绿通道着色与可选 HUD 温和提亮。
      */
     fun compose(
         layers: List<CompositeLayer>,
         playerRgb: Int = MatchPlayerColors.PALETTE_RGB[0],
+        tuning: UiUnitIconTuning = UiUnitIconTuning.IDENTITY,
     ): RgbaBuffer? {
         if (layers.isEmpty()) return null
 
@@ -277,7 +326,17 @@ object CompositeUnitIconBuilder {
             for (x in 0 until contentW) {
                 val dstX = offX + x
                 if (dstX !in 0 until side) continue
-                out[dstRow + x] = canvas[srcRow + x]
+                val rgba = canvas[srcRow + x]
+                val aByte = rgba and 0xFF
+                out[dstRow + x] = if (aByte > 0 && !tuning.isIdentity) {
+                    val r = ((rgba ushr 24) and 0xFF) / 255f
+                    val g = ((rgba ushr 16) and 0xFF) / 255f
+                    val b = ((rgba ushr 8) and 0xFF) / 255f
+                    val tuned = applyIconTuning(r, g, b, tuning)
+                    packRgba(tuned[0], tuned[1], tuned[2], aByte / 255f)
+                } else {
+                    rgba
+                }
             }
         }
         return RgbaBuffer(side, side, out)
