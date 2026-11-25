@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.PathInformationSource
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
@@ -17,7 +18,8 @@ class NaturalMovementContractV2Test {
         val original = source.unitDefinitions.getValue("tank")
         assertEquals(11.0, original.radius)
         val fast = TestContentFactory.unitWith(original,
-            movement = original.movement.copy(moveSpeed = 20.0, moveAccelerationSpeed = 20.0))
+            movement = original.movement.copy(moveSpeed = 20.0, moveAccelerationSpeed = 20.0),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val cells = BooleanArray(600)
         if (blocked) {
             cells[2 * 30 + 5] = true

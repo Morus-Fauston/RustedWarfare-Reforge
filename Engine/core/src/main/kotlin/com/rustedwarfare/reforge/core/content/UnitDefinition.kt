@@ -61,10 +61,12 @@ class UnitDefinition(
     val initialWeaponFlagZero: Boolean = false,
     val authoredAirCombat: Boolean = false,
     val authoredMaintenance: AuthoredMaintenance? = null,
-    val movementCollision: MovementCollisionShape = MovementCollisionShape.Circle(radius),
+    movementCollision: MovementCollisionShape? = null,
     val mass: Double? = null,
+    val explicitMovementCollision: Boolean = movementCollision != null,
 ) {
-    internal val contactBufferCollision = movementCollision.contactBufferOutline()
+    val movementCollision: MovementCollisionShape = movementCollision ?: MovementCollisionShape.Circle(radius)
+    internal val contactBufferCollision = this.movementCollision.contactBufferOutline()
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))

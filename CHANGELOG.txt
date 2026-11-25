@@ -1,3 +1,10 @@
+v0.5.72 (2026-11-26 01:25)
+  调整: 统一单选与群移静态地形通行轮廓（UnitLocomotion.terrainHull 与 explicitMovementCollision，隐式 INI 陆地单位地形内切封顶 0.45*minTile、互碰与地图外边界保完整 radius） / 重写 WorldSpatialIndex 原始数组零分配快照、BuildingTerrain.isBuildingCell O(1) 建筑重叠预检与 Pathfinding.findPathToRange 去全图分配，收窄 NarrowPassage 为真单行窄口局部空间反查与对向门外让空 / 清除 LocomotionModule 全部上层命令特判与大面积 passthrough 旁路，收束对向视距并修复 wall-only 零分配 3D LP 退化
+  修复: 修复 NarrowPassage 单行窄桥重入提前刹停与对向推让判定，对齐自有 author-shore 测试夹具合法格位与关联地形轮廓单测
+  技术: 新增 BottleneckContractABTest（含宽半径隐式 INI 单格走廊 beginNearest 回归），:core:test 424 套 1565 用例与 public_batch.py --kind short 6/6 全绿，5 场景 :movementProbe 全达停稳；独立 Hydrogen 10 图目视 APPROVED，独立 Neon 代码整审返修复核 APPROVE（0 必修），workspace_layout.py 通过
+
+====
+
 v0.5.71 (2026-11-25 16:59)
   新增: SimulationTest 新增 :movementProbe 秒级移动微基准与 2 秒停滞标红拼图探针
   调整: 新增 ReadOnlyTestContentPacks 只读测试包进程内缓存并开启 :core:test 可控并行执行 / public_batch.py --kind short 复用带摘要校验的单次共享分发包并支持多核场景并发 / 放开 public-pr.yml 全仓 PR 并行矩阵并新增 public-long.yml 三分片并行汇总与串行回退

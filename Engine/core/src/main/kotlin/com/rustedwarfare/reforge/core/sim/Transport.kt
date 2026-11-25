@@ -21,7 +21,15 @@ internal object Transport {
         val within = if (unit.nativeTransportPlacement)
             MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
                 map.heightTiles.toDouble() * map.tileHeight, position, 0.0)
-        else MapBounds.containsHull(map, position, unit.heading, unit.definition.movementCollision)
+        else when (val shape = unit.definition.movementCollision) {
+            is MovementCollisionShape.Circle -> MapBounds.contains(
+                map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight,
+                position,
+                maxOf(shape.radius, unit.definition.radius),
+            )
+            else -> MapBounds.containsHull(map, position, unit.heading, shape)
+        }
         if (within) return true
         if (!unit.nativeTransportPlacement || !position.x.isFinite() || !position.y.isFinite()) return false
         if (unit.scoutOrigin != null) {

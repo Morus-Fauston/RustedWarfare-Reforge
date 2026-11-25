@@ -13,7 +13,10 @@ internal object MovementCollisionContent {
     val dimensions = setOf(radiusField, lengthField, widthField)
     val fields = dimensions + shapeField
 
-    fun read(path: Path, source: UnitSourceReader.EffectiveSections, defaultRadius: Double): MovementCollisionShape {
+    fun read(path: Path, source: UnitSourceReader.EffectiveSections, defaultRadius: Double): MovementCollisionShape =
+        readDeclared(path, source) ?: MovementCollisionShape.Circle(defaultRadius)
+
+    fun readDeclared(path: Path, source: UnitSourceReader.EffectiveSections): MovementCollisionShape? {
         val section = "movement"
         val values = source.values[section].orEmpty()
         fun invalid(field: String, reason: String): Nothing =
@@ -30,7 +33,7 @@ internal object MovementCollisionContent {
         return when (values[shapeField]) {
             null -> {
                 forbid(radiusField, lengthField, widthField)
-                MovementCollisionShape.Circle(defaultRadius)
+                null
             }
             "circle" -> {
                 forbid(lengthField, widthField)

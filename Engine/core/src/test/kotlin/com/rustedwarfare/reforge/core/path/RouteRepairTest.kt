@@ -65,7 +65,8 @@ class RouteRepairTest {
         val original = source.unitDefinitions.getValue("tank")
         val unit = TestContentFactory.unitWith(original, radius = 11.0,
             movement = original.movement.copy(moveSpeed = 1.1, moveAccelerationSpeed = .07,
-                moveDecelerationSpeed = .17, maxTurnSpeed = 4.1, turnAcceleration = .25))
+                moveDecelerationSpeed = .17, maxTurnSpeed = 4.1, turnAcceleration = .25),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
             scenarioId = "route-repair-drift",
             map = MapDefinition(10, 10, 20, 20, emptyList(), IntArray(100), BlockingGrid(10, 10, BooleanArray(100) { truth && it == 22 })),

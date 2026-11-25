@@ -75,7 +75,8 @@ class MotionDiagnosticsTest {
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
                 map = MapDefinition(30, 20, 20, 20, emptyList(), IntArray(600), BlockingGrid(30, 20, BooleanArray(600) { it == example.wall })),
                 unitDefinitions = mapOf("tank" to TestContentFactory.unitWith(tank, radius = example.radius,
-                    movement = tank.movement.copy(moveSpeed = example.speed, moveAccelerationSpeed = 1.0, moveDecelerationSpeed = 1.0))),
+                    movement = tank.movement.copy(moveSpeed = example.speed, moveAccelerationSpeed = 1.0, moveDecelerationSpeed = 1.0),
+                    movementCollision = MovementCollisionShape.Circle(0.0))),
                 units = listOf(UnitSpawn("u1", "p1", "tank", example.start, example.heading)), automaticVision = null))).context
             try {
                 context.enableKnowledge(context.world, com.rustedwarfare.reforge.core.knowledge.KnowledgeRules(

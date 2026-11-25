@@ -239,7 +239,7 @@ internal class ClearanceAStarPolicy(
         require(targetRange.isFinite() && targetRange >= 0.0)
         if (targetRange > 0.0) {
             if (counters != null) counters.actualSearchCalls++
-            return findPathToRange(map, start, target, radius, targetRange, counters)
+            return findPathToRange(map, start, target, radius, targetRange, hull, counters)
         }
         val search = beginExact(map, start, target, radius, hull, occupancy, counters)
         while (!search.finished) search.advance(PathWorkBudget(Int.MAX_VALUE))
@@ -274,6 +274,9 @@ internal class ClearanceAStarPolicy(
         private val nearest: Boolean = false,
     ) : ExactPathSearch {
         private val checkEverySegment = hull != null || occupancy != null
+        private val fastOrthogonalCircleStep = hull is HullRoute.Circle &&
+            hull.radius <= 0.5 * minOf(map.tileWidth, map.tileHeight).toDouble() &&
+            occupancy == null && pointPolicy === TileCenters
         private val usesPrimitiveFrontier = hull !is RectangularDeparture
         private val offsets = if (hull is RectangularDeparture) rectangleOffsets else orthogonal
         private var phase = SearchPhase.START
@@ -303,6 +306,7 @@ internal class ClearanceAStarPolicy(
         private var boundaryKey: PathGridKey? = null
         private var boundaryState: Int = -1
         private var boundaryIndex = 0
+        private var localExpanded = 0
         override var path: List<Position>? = null
             private set
         override val finished: Boolean get() = phase == SearchPhase.FINISHED
@@ -337,6 +341,7 @@ internal class ClearanceAStarPolicy(
                 it.boundaryKey = boundaryKey
                 it.boundaryState = boundaryState
                 it.boundaryIndex = boundaryIndex
+                it.localExpanded = localExpanded
             }
 
         override fun advance(budget: PathWorkBudget, cache: PathClearanceCache?) {
@@ -474,6 +479,9 @@ internal class ClearanceAStarPolicy(
                 routes.costs[first] = 0
                 enqueue(routes, first, 0)
             }
+            val prevExpanded = localExpanded
+            localExpanded = 0
+            rollback?.record { localExpanded = prevExpanded }
             phase = SearchPhase.SEARCH
         }
 
@@ -488,7 +496,9 @@ internal class ClearanceAStarPolicy(
         // A legal center can lie between tile centers, for example in a two-tile canal.
         // Keep the grid spacing while preserving the departure's offset within each cell.
         private fun canUseDepartureLattice(): Boolean {
-            val canDepartBetweenCenters = (hull as? RectangularDeparture)?.maneuver == true || hull == null && occupancy != null
+            val canDepartBetweenCenters = (hull as? RectangularDeparture)?.maneuver == true ||
+                (hull == null && occupancy != null) ||
+                (hull is HullRoute.Circle && occupancy != null && localExpanded <= 4)
             if (!canDepartBetweenCenters || useDepartureLattice) return false
             val key = checkNotNull(startKey)
             return start != pointPolicy.point(map, key.col, key.row)
@@ -564,6 +574,9 @@ internal class ClearanceAStarPolicy(
                 return
             }
             if (counters != null) counters.expanded++
+            val prevLocalExp = localExpanded
+            localExpanded = prevLocalExp + 1
+            rollback?.record { localExpanded = prevLocalExp }
             val nextG = currentG + 1
             val w = map.widthTiles
             val h = map.heightTiles
@@ -602,7 +615,9 @@ internal class ClearanceAStarPolicy(
             if (if (useDepartureLattice) map.isBlocked(col, row) else !isCandidate(col, row)) return
             val point = routePoint(col, row)
             if (checkEverySegment) {
-                if (arrival(from, point, 0.0, cache) == null) return
+                if (!(fastOrthogonalCircleStep && !isStart && !useDepartureLattice)) {
+                    if (arrival(from, point, 0.0, cache) == null) return
+                }
             } else if (isStart && !PlanningSegmentClearance.allows(map, from, point, radius)) {
                 return
             }
@@ -720,6 +735,7 @@ internal class ClearanceAStarPolicy(
                 is HullRoute.Circle -> MovementCollisionShape.Circle(hull.radius)
                 null -> MovementCollisionShape.Circle(radius)
             }
+            val circleBoundR = (hull as? HullRoute.Circle)?.boundaryRadius ?: radius
             val grid = checkNotNull(hullGrid)
             val before = hull?.heading ?: 0.0
             val headings = listOf(before, ScreenPlane.desired(start, target)) + (0..7).map { it * 45.0 }
@@ -731,7 +747,7 @@ internal class ClearanceAStarPolicy(
                 val drift = ScreenPlane.displacement(heading, travel)
                 val aim = Position(start.x + drift.x, start.y + drift.y)
                 val end = when (shape) {
-                    is MovementCollisionShape.Circle -> CircularTerrain(shape.radius).resolve(grid, start, aim)
+                    is MovementCollisionShape.Circle -> CircularTerrain(shape.radius, circleBoundR).resolve(grid, start, aim)
                     is MovementCollisionShape.Rectangle -> RectangularTerrain(shape, heading).resolve(grid, start, aim)
                 }
                 var low = 0.0
@@ -739,7 +755,8 @@ internal class ClearanceAStarPolicy(
                 repeat(48) {
                     val mid = (low + high) / 2.0
                     val point = Position(start.x + (end.x - start.x) * mid, start.y + (end.y - start.y) * mid)
-                    if (UnitContact.poseFits(shape, point, heading, grid) &&
+                    if (MapBounds.contains(grid.width, grid.height, point, if (shape is MovementCollisionShape.Circle) circleBoundR else 0.0) &&
+                        UnitContact.poseFits(shape, point, heading, grid) &&
                         occupancy?.allows(start, point, before, heading) != false) low = mid else high = mid
                 }
                 val dx = (end.x - start.x) * low
@@ -750,15 +767,18 @@ internal class ClearanceAStarPolicy(
         }
 
         private fun considerNearestPrimitive(state: Int, from: Position) {
-            val shape = when (hull) {
-                is HullRoute.Circle -> MovementCollisionShape.Circle(hull.radius)
-                else -> MovementCollisionShape.Circle(radius)
+            val circleBoundR = (hull as? HullRoute.Circle)?.boundaryRadius ?: radius
+            val terrainR = when (hull) {
+                is HullRoute.Circle -> hull.radius
+                else -> radius
             }
+            val shape = MovementCollisionShape.Circle(terrainR)
             val grid = checkNotNull(hullGrid)
             val direction = ScreenPlane.desired(from, target)
-            val end = CircularTerrain(shape.radius).resolve(grid, from, target)
+            val end = CircularTerrain(terrainR, circleBoundR).resolve(grid, from, target)
             fun legal(point: Position): Boolean =
-                UnitContact.poseFits(shape, point, direction, grid) &&
+                MapBounds.contains(grid.width, grid.height, point, circleBoundR) &&
+                    UnitContact.poseFits(shape, point, direction, grid) &&
                     occupancy?.allows(from, point, 0.0, direction) != false
             val point = if (legal(end)) end else {
                 var low = 0.0
@@ -786,6 +806,7 @@ internal class ClearanceAStarPolicy(
         }
 
         private fun considerNearest(key: PathGridKey, from: Position) {
+            val circleBoundR = (hull as? HullRoute.Circle)?.boundaryRadius ?: radius
             val shape = when (hull) {
                 is RectangularDeparture -> hull.shape
                 is HullRoute.Circle -> MovementCollisionShape.Circle(hull.radius)
@@ -804,11 +825,16 @@ internal class ClearanceAStarPolicy(
                     Position(from.x + forward.x * travel, from.y + forward.y * travel)
                 } else target
                 var point = when (shape) {
-                    is MovementCollisionShape.Circle -> CircularTerrain(shape.radius).resolve(grid, from, aim)
+                    is MovementCollisionShape.Circle -> CircularTerrain(shape.radius, circleBoundR).resolve(grid, from, aim)
                     is MovementCollisionShape.Rectangle -> RectangularTerrain(shape, heading).resolve(grid, from, aim)
                 }
-                fun legal(probe: Position) = UnitContact.poseFits(shape, probe, heading, grid) &&
-                    occupancy?.allows(from, probe, key.heading, heading) != false
+                fun legal(probe: Position): Boolean {
+                    val inBounds = if (shape is MovementCollisionShape.Circle) {
+                        MapBounds.contains(grid.width, grid.height, probe, circleBoundR)
+                    } else true
+                    return inBounds && UnitContact.poseFits(shape, probe, heading, grid) &&
+                        occupancy?.allows(from, probe, key.heading, heading) != false
+                }
                 if (!legal(point)) {
                     var low = 0.0
                     var high = 1.0
@@ -926,37 +952,122 @@ internal class ClearanceAStarPolicy(
     }
 
     /** Reach a continuous legal stance; the blocked target center is never opened for traversal. */
-    private fun findPathToRange(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                                range: Double, counters: PathSearchCounters?): List<Position>? {
+    private fun findPathToRange(
+        map: PlanningTerrain,
+        start: Position,
+        target: Position,
+        radius: Double,
+        range: Double,
+        hull: HullRoute? = null,
+        counters: PathSearchCounters?,
+    ): List<Position>? {
         val width = map.widthTiles.toDouble() * map.tileWidth
         val height = map.heightTiles.toDouble() * map.tileHeight
-        if (!MapBounds.contains(width, height, start, radius) || terrain.intersects(map, start, radius)) return null
-        val startKey = checkNotNull(cellOf(map, start))
+        val terrainR = when (hull) {
+            is HullRoute.Circle -> hull.radius
+            is RectangularDeparture -> minOf(hull.shape.length, hull.shape.width) * 0.5
+            null -> 0.0
+        }
+        val boundR = when (hull) {
+            is HullRoute.Circle -> maxOf(radius, hull.boundaryRadius)
+            else -> radius
+        }
+        if (!MapBounds.contains(width, height, start, boundR) || terrain.intersects(map, start, boundR)) return null
+        val startKey = cellOf(map, start) ?: return null
+        val hullGrid = if (terrainR > 0.0) HullTerrainGrid.authorized(map) else null
+        val circle = if (terrainR > 0.0) CircularTerrain(terrainR, boundR) else null
+        val circleShape = if (terrainR > 0.0) MovementCollisionShape.Circle(terrainR) else null
+        if (hullGrid != null && circleShape != null &&
+            !UnitContact.poseFits(MovementCollisionShape.Circle((terrainR - 1e-6).coerceAtLeast(0.0)), start, 0.0, hullGrid)
+        ) {
+            return null
+        }
+
+        val rangeSq = range * range
+        if (ScreenPlane.distanceSquared(start, target) < rangeSq &&
+            (hullGrid == null || circleShape == null || UnitContact.poseFits(circleShape, start, 0.0, hullGrid))
+        ) {
+            return listOf(start)
+        }
+
         val w = map.widthTiles
         val h = map.heightTiles
         val total = w * h
-        val points = arrayOfNulls<Position>(total)
-        val goals = arrayOfNulls<Position>(total)
-        for (row in 0 until h) for (col in 0 until w) {
+        val tw = map.tileWidth.toDouble()
+        val th = map.tileHeight.toDouble()
+        val targetCol = kotlin.math.floor(target.x / tw).toInt().coerceIn(0, w - 1)
+        val targetRow = kotlin.math.floor(target.y / th).toInt().coerceIn(0, h - 1)
+        val rangeManhattanSlack = kotlin.math.ceil(range / tw).toInt() + kotlin.math.ceil(range / th).toInt() + 1
+
+        fun segClear(from: Position, to: Position): Boolean {
+            if (circle != null && hullGrid != null) {
+                return circle.contains(hullGrid, from) && circle.resolve(hullGrid, from, to) == to
+            }
+            return PlanningSegmentClearance.allows(map, from, to, boundR)
+        }
+
+        fun poseClear(pos: Position): Boolean {
+            if (!MapBounds.contains(width, height, pos, boundR) || terrain.intersects(map, pos, boundR)) return false
+            if (hullGrid != null && circleShape != null) {
+                return UnitContact.poseFits(circleShape, pos, 0.0, hullGrid)
+            }
+            return true
+        }
+
+        fun cellPoint(col: Int, row: Int): Position? {
             if (counters != null) counters.candidatesChecked++
-            if (map.isBlocked(col, row)) continue
-            val left = maxOf(col.toDouble() * map.tileWidth, radius)
-            val top = maxOf(row.toDouble() * map.tileHeight, radius)
-            val right = minOf(Math.nextDown((col.toDouble() + 1.0) * map.tileWidth), width - radius)
-            val bottom = minOf(Math.nextDown((row.toDouble() + 1.0) * map.tileHeight), height - radius)
-            if (left > right || top > bottom) continue
+            if (map.isBlocked(col, row)) return null
+            var left = maxOf(col * tw, boundR)
+            var top = maxOf(row * th, boundR)
+            var right = minOf(Math.nextDown((col + 1.0) * tw), width - boundR)
+            var bottom = minOf(Math.nextDown((row + 1.0) * th), height - boundR)
+            if (terrainR > 0.0) {
+                if (col > 0 && map.isBlocked(col - 1, row)) left = maxOf(left, col * tw + terrainR)
+                if (col + 1 < w && map.isBlocked(col + 1, row)) right = minOf(right, (col + 1.0) * tw - terrainR)
+                if (row > 0 && map.isBlocked(col, row - 1)) top = maxOf(top, row * th + terrainR)
+                if (row + 1 < h && map.isBlocked(col, row + 1)) bottom = minOf(bottom, (row + 1.0) * th - terrainR)
+            }
+            if (left > right || top > bottom) return null
             val center = pointPolicy.point(map, col, row)
             val point = Position(center.x.coerceIn(left, right), center.y.coerceIn(top, bottom))
-            if (terrain.intersects(map, point, radius)) continue
-            val idx = row * w + col
-            points[idx] = point
-            val goal = Position(target.x.coerceIn(left, right), target.y.coerceIn(top, bottom))
-            if (ScreenPlane.distanceSquared(goal, target) < range * range && !terrain.intersects(map, goal, radius))
-                goals[idx] = goal
+            return point.takeIf(::poseClear)
         }
-        val pf = PrimitiveGridFrontier(w, h, initialPoseIndex = total)
+
+        fun cellGoal(col: Int, row: Int): Position? {
+            if (map.isBlocked(col, row)) return null
+            var left = maxOf(col * tw, boundR)
+            var top = maxOf(row * th, boundR)
+            var right = minOf(Math.nextDown((col + 1.0) * tw), width - boundR)
+            var bottom = minOf(Math.nextDown((row + 1.0) * th), height - boundR)
+            if (terrainR > 0.0) {
+                if (col > 0 && map.isBlocked(col - 1, row)) left = maxOf(left, col * tw + terrainR)
+                if (col + 1 < w && map.isBlocked(col + 1, row)) right = minOf(right, (col + 1.0) * tw - terrainR)
+                if (row > 0 && map.isBlocked(col, row - 1)) top = maxOf(top, row * th + terrainR)
+                if (row + 1 < h && map.isBlocked(col, row + 1)) bottom = minOf(bottom, (row + 1.0) * th - terrainR)
+            }
+            if (left > right || top > bottom) return null
+            var goal = Position(target.x.coerceIn(left, right), target.y.coerceIn(top, bottom))
+            if (ScreenPlane.distanceSquared(goal, target) >= rangeSq) return null
+            if (!poseClear(goal) && circle != null && hullGrid != null) {
+                val center = Position(pointPolicy.point(map, col, row).x.coerceIn(left, right), pointPolicy.point(map, col, row).y.coerceIn(top, bottom))
+                if (!poseClear(center)) return null
+                val swept = circle.resolve(hullGrid, center, goal)
+                goal = if (poseClear(swept)) swept else return null
+                if (ScreenPlane.distanceSquared(goal, target) >= rangeSq) return null
+            }
+            return goal.takeIf(::poseClear)
+        }
+
+        // Fast-path: check start cell's own clamped goal before touching any frontier!
+        val startCellGoal = cellGoal(startKey.first, startKey.second)
+        if (startCellGoal != null && segClear(start, startCellGoal)) {
+            return listOf(startCellGoal)
+        }
+
+        val pf = acquireRangeFrontier(w, h)
         val startIdx = pf.stateIndex(startKey.first, startKey.second)
-        pf.setRootWithStart(startIdx, 0, startKey.first, startKey.second, rollback = null)
+        val startRem = maxOf(0, heuristic(startKey.first, startKey.second, targetCol, targetRow) - rangeManhattanSlack)
+        pf.setRootWithStart(startIdx, startRem, startKey.first, startKey.second, rollback = null)
         if (counters != null) counters.enqueued++
         while (!pf.isEmpty()) {
             var curIdx = -1
@@ -969,9 +1080,9 @@ internal class ClearanceAStarPolicy(
             if (pf.costOf(curIdx) != curG) continue
             val curCol = curIdx % w
             val curRow = curIdx / w
-            val from = if (curIdx == startIdx) start else checkNotNull(points[curIdx])
-            val goalPos = goals[curIdx]
-            if (goalPos != null && PlanningSegmentClearance.allows(map, from, goalPos, radius)) {
+            val from = if (curIdx == startIdx) start else cellPoint(curCol, curRow) ?: continue
+            val goalPos = cellGoal(curCol, curRow)
+            if (goalPos != null && segClear(from, goalPos)) {
                 val cellIndices = ArrayList<Int>()
                 var cursor = curIdx
                 cellIndices += cursor
@@ -983,10 +1094,11 @@ internal class ClearanceAStarPolicy(
                 cellIndices.reverse()
                 val path = ArrayList<Position>(cellIndices.size)
                 for (k in 1 until cellIndices.size) {
-                    path += checkNotNull(points[cellIndices[k]])
+                    val cIdx = cellIndices[k]
+                    path += cellPoint(cIdx % w, cIdx / w) ?: return null
                 }
                 if (path.lastOrNull() != goalPos) path += goalPos
-                return simplify(map, start, path, radius)
+                return simplifyWithClearance(start, path, ::segClear)
             }
             if (counters != null) counters.expanded++
             val nextG = curG + 1
@@ -996,10 +1108,11 @@ internal class ClearanceAStarPolicy(
                 if (col !in 0 until w || row !in 0 until h) continue
                 if (counters != null) counters.neighborsChecked++
                 val nextIdx = row * w + col
-                val point = points[nextIdx] ?: continue
                 if (nextG >= pf.costOf(nextIdx)) continue
-                if (!PlanningSegmentClearance.allows(map, from, point, radius)) continue
-                if (pf.tryRelaxWithStart(nextIdx, curIdx, nextG, nextG, startKey.first, startKey.second, rollback = null)) {
+                val point = cellPoint(col, row) ?: continue
+                if (!segClear(from, point)) continue
+                val rem = maxOf(0, heuristic(col, row, targetCol, targetRow) - rangeManhattanSlack)
+                if (pf.tryRelaxWithStart(nextIdx, curIdx, nextG, nextG + rem, startKey.first, startKey.second, rollback = null)) {
                     if (counters != null) counters.enqueued++
                 }
             }
@@ -1007,13 +1120,17 @@ internal class ClearanceAStarPolicy(
         return null
     }
 
-    private fun simplify(map: PlanningTerrain, start: Position, points: List<Position>, radius: Double): List<Position>? {
-        val result = ArrayList<Position>()
+    private inline fun simplifyWithClearance(
+        start: Position,
+        points: List<Position>,
+        allows: (Position, Position) -> Boolean,
+    ): List<Position>? {
+        val result = ArrayList<Position>(points.size)
         var anchor = start
         var next = 0
         while (next < points.size) {
             val farthest = (points.lastIndex downTo next).firstOrNull {
-                PlanningSegmentClearance.allows(map, anchor, points[it], radius)
+                allows(anchor, points[it])
             } ?: return null
             anchor = points[farthest]
             result += anchor
@@ -1037,6 +1154,19 @@ internal class ClearanceAStarPolicy(
         val rectangleOffsets = orthogonal + listOf(-1 to -1, 1 to -1, -1 to 1, 1 to 1)
         val nodeOrder = compareBy<Node> { it.f }.thenBy { it.key.row }.thenBy { it.key.col }
             .thenBy { it.g }.thenBy { it.key.heading }
+
+        private val rangeFrontierPool = ThreadLocal<PrimitiveGridFrontier?>()
+
+        fun acquireRangeFrontier(w: Int, h: Int): PrimitiveGridFrontier {
+            val cached = rangeFrontierPool.get()
+            if (cached != null && cached.width == w && cached.height == h) {
+                cached.resetForNextSearch()
+                return cached
+            }
+            return PrimitiveGridFrontier(w, h, initialPoseIndex = w * h).also {
+                rangeFrontierPool.set(it)
+            }
+        }
     }
 }
 
@@ -1044,22 +1174,40 @@ internal sealed interface HullRoute {
     val heading: Double
     fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double?
 
-    data class Circle(val radius: Double, val simplify: Boolean = false) : HullRoute {
+    data class Circle(
+        val radius: Double,
+        val boundaryRadius: Double = radius,
+        val simplify: Boolean = true,
+    ) : HullRoute {
         override val heading = 0.0
         override fun arrival(terrain: HullTerrainGrid, start: Position, target: Position, from: Double): Double? =
-            CircularTerrain(radius).let { if (it.contains(terrain, start) && it.resolve(terrain, start, target) == target) heading else null }
+            CircularTerrain(radius, boundaryRadius).let {
+                if (it.contains(terrain, start) && it.resolve(terrain, start, target) == target) heading else null
+            }
     }
 
     companion object {
-        fun forUnit(unit: MutableUnit, maneuver: Boolean = false): HullRoute? = when (val shape = UnitLocomotion.terrainHull(unit)) {
+        fun forUnit(
+            unit: MutableUnit,
+            maneuver: Boolean = false,
+            tileWidth: Int = 20,
+            tileHeight: Int = 20,
+        ): HullRoute? = when (val shape = UnitLocomotion.terrainHull(unit, tileWidth, tileHeight)) {
             is MovementCollisionShape.Rectangle -> {
                 val movement = UnitLocomotion.movement(unit)
                 val useManeuver = maneuver && unit.mechState == null && !movement.slidingMode
                 RectangularDeparture(shape, unit.heading, !useManeuver && movement.reverseSpeedPercentage > 0.95, useManeuver)
             }
-            is MovementCollisionShape.Circle -> Circle(shape.radius, simplify = unit.landingMember != null)
+            is MovementCollisionShape.Circle -> Circle(
+                radius = shape.radius,
+                boundaryRadius = maxOf(shape.radius, Transport.boundaryRadius(unit)),
+                simplify = UnitLocomotion.movement(unit).type != com.rustedwarfare.reforge.core.content.MovementType.WATER,
+            )
             null -> null
         }
+
+        fun forUnit(unit: MutableUnit, map: MapDefinition, maneuver: Boolean = false): HullRoute? =
+            forUnit(unit, maneuver, map.tileWidth, map.tileHeight)
     }
 }
 

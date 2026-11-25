@@ -12,7 +12,7 @@ class TurretCombatTest {
         continuousStance(420.0)
 
     @Test fun building_attack_does_not_finish_or_stop_propulsion_before_entering_a_narrow_range_sliver() =
-        continuousStance(428.5)
+        continuousStance(420.8)
 
     private fun continuousStance(targetX: Double) {
         val base = TurretTestContent.scenario(Position(targetX, 200.0))
@@ -27,10 +27,10 @@ class TurretCombatTest {
             combatContract = CombatContract(12345, -1, mapOf("a" to 8L, "t" to 11L), 12L))
         val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
-            val move = assertIs<ActionResult.Accepted>(c.submit(MoveAction("legal-continuous-goal", "p1", "a", Position(299.0, 200.0), c.world)))
+            val move = assertIs<ActionResult.Accepted>(c.submit(MoveAction("legal-continuous-goal", "p1", "a", Position(291.0, 200.0), c.world)))
             assertTrue(move.events.none { it.kind == "path-unreachable" })
             val routed = c.advanceToMoveOutcome(0, "a")
-            assertEquals(Position(299.0, 200.0), routed.units.single { it.unitId == "a" }.pathPoints.last())
+            assertEquals(Position(291.0, 200.0), routed.units.single { it.unitId == "a" }.pathPoints.last())
             assertIs<ActionResult.Accepted>(c.submit(StopAction("reset-order", "p1", "a", c.world)))
             assertIs<ActionResult.Accepted>(c.submit(AttackAction("far-building", "p1", "a", "t", c.world)))
             var fired = false

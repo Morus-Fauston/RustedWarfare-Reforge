@@ -148,8 +148,10 @@ internal object UnitContact {
                                  offset: Position, otherHeading: Double, from: Double, limit: Double): Double {
         if (from == limit) return from
         val fixed = Body(other, otherHeading)
-        fun overlaps(heading: Double) = Body(shape, heading).overlaps(fixed, offset)
-        if (!overlaps(limit) || overlaps(from)) return limit
+        val initial = Body(shape, from)
+        val minimum = minOf(initial.clearance(fixed, offset), -4.0 * Math.ulp(maxOf(initial.reach, fixed.reach)))
+        fun overlaps(heading: Double) = Body(shape, heading).clearance(fixed, offset) < minimum
+        if (!overlaps(limit)) return limit
         val change = ScreenPlane.difference(limit, from)
         fun headingAt(fraction: Double) = if (fraction == 0.0) from else ScreenPlane.normalize(from + change * fraction)
         var safe = 0.0
@@ -807,7 +809,9 @@ internal object UnitContact {
                         is MovementCollisionShape.Rectangle -> RectangularTurn.againstRectangle(shape, fixedShape,
                             offset, occupant.heading, before, after)
                     }
-                heading == after && moving.entry(Body(fixedShape, occupant.heading), offset, drift, 1.0) == 1.0
+                val fixedBody = Body(fixedShape, occupant.heading)
+                heading == after && (if (drift.x == 0.0 && drift.y == 0.0) !moving.overlaps(fixedBody, offset)
+                    else moving.entry(fixedBody, offset, drift, 1.0) == 1.0)
             }
           }
         }

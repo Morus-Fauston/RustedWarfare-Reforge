@@ -541,7 +541,7 @@ internal class ChunkedFlowFieldAdapter(
         ) return false
         val movement = UnitLocomotion.movement(unit)
         if (movement.type == MovementType.AIR || movement.type == MovementType.NONE) return false
-        val unitRadius = max(1.0, unit.definition.movementCollision.boundingRadius)
+        val unitRadius = max(1.0, UnitLocomotion.terrainPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
         val band = clearanceBandFor(terrain, unitRadius)
         val goalCol = floor(group.click.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
         val goalRow = floor(group.click.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
@@ -580,7 +580,7 @@ internal class ChunkedFlowFieldAdapter(
         if (movement.type == MovementType.AIR || movement.type == MovementType.NONE) {
             return WaypointRouteAdapter.sampleGuidance(host, unit, terrain, fallbackAim, finalPoint)
         }
-        val unitRadius = max(1.0, unit.definition.movementCollision.boundingRadius)
+        val unitRadius = max(1.0, UnitLocomotion.terrainPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
         val band = clearanceBandFor(terrain, unitRadius)
         val goalCol = floor(group.click.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
         val goalRow = floor(group.click.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)

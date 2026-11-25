@@ -13,14 +13,23 @@ internal class BuildingInitializationException(val error: SimulationError) : Ill
 
 /** Immutable live-building cost, separate from the original ground map. */
 internal class BuildingTerrain private constructor(map: MapDefinition, occupied: Set<Pair<Int, Int>>) {
+    private val widthTiles: Int = map.widthTiles
+    private val heightTiles: Int = map.heightTiles
     val cells: Set<Pair<Int, Int>> = Collections.unmodifiableSet(LinkedHashSet(occupied.sortedWith(
         compareBy<Pair<Int, Int>> { it.second }.thenBy { it.first })))
+    private val buildingMask: BooleanArray = BooleanArray(widthTiles * heightTiles).also { mask ->
+        for ((c, r) in cells) {
+            if (c in 0 until widthTiles && r in 0 until heightTiles) mask[r * widthTiles + c] = true
+        }
+    }
+    fun isBuildingCell(column: Int, row: Int): Boolean =
+        column in 0 until widthTiles && row in 0 until heightTiles && buildingMask[row * widthTiles + column]
     val collisionMap: MapDefinition = MapDefinition(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
         map.tileSets, map.groundGids, BlockingGrid(map.widthTiles, map.heightTiles,
             BooleanArray(map.widthTiles * map.heightTiles) { index ->
                 val column = index % map.widthTiles
                 val row = index / map.widthTiles
-                map.blocking.isBlocked(column, row) || (column to row) in cells
+                map.blocking.isBlocked(column, row) || buildingMask[index]
             }), map.waterObstacles + cells)
 
     companion object {

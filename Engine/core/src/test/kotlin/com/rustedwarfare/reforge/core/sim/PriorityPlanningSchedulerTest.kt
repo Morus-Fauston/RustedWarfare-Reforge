@@ -360,10 +360,10 @@ class PriorityPlanningSchedulerTest {
             units = listOf(
                 // a-pusher (owned by p2 so friendly TrafficSeparation does not brake it) has lexicographically earlier ID
                 // than u1 and starts touching u1 on its north side (dist = 12.0 == r1 + r2) heading south (180 deg).
-                UnitSpawn("a-pusher", "p2", heavyPusher.id, Position(120.0, 143.0), 180.0),
-                // u1 starts at (120, 155) heading east; straight path to (600, 155) stays in row 7 (y < 160), clear of pillar;
-                // a-pusher pushes u1 south past y = 160 behind the rock pillar, invalidating u1's first connection.
-                UnitSpawn("u1", "p1", slowRunner.id, Position(120.0, 155.0), 90.0),
+                UnitSpawn("a-pusher", "p2", heavyPusher.id, Position(120.0, 140.0), 180.0),
+                // u1 starts at (120, 152) heading east; straight path to (600, 152) stays >= 8u clear of row 8 (y >= 160)
+                // for radius=6.0; a-pusher pushes u1 south past y = 160 behind the rock pillar, invalidating u1's first connection.
+                UnitSpawn("u1", "p1", slowRunner.id, Position(120.0, 152.0), 90.0),
             ),
         )
         val connCtx = assertIs<InitResult.Accepted>(
@@ -371,7 +371,7 @@ class PriorityPlanningSchedulerTest {
         ).context
         try {
             connCtx.enablePlanningWorkDiagnostics(connCtx.world)
-            assertIs<ActionResult.Accepted>(connCtx.submit(MoveAction("m-run", "p1", "u1", Position(600.0, 155.0), connCtx.world)))
+            assertIs<ActionResult.Accepted>(connCtx.submit(MoveAction("m-run", "p1", "u1", Position(600.0, 152.0), connCtx.world)))
             assertIs<ActionResult.Accepted>(connCtx.submit(MoveAction("m-push", "p2", "a-pusher", Position(120.0, 220.0), connCtx.world)))
             var sawBudgetedConnectionRepair = false
             val sliceLog = mutableListOf<String>()

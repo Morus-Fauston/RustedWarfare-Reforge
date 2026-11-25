@@ -279,7 +279,7 @@ internal object UnitMovementOrchestrator {
         val taskKind = unit.tasks.firstOrNull()?.kind
         val reportsStop = unit.nearestMoveTarget != null || unit.groupMoveReservation != null || unit.landingMember?.claimed != null
         val followsManeuver = (unit.followsManeuverRoute ||
-            unit.groupMoveReservation != null && unit.pathPoints.size == 1) &&
+            (unit.groupMoveReservation != null || unit.landingMember?.claimed != null) && unit.pathPoints.size == 1) &&
             taskKind == UnitTaskKind.MOVE && !air && !sliding
 
         fun maneuverAim(): Position {
@@ -294,7 +294,7 @@ internal object UnitMovementOrchestrator {
             val projection = Position(first.x + fraction * dx, first.y + fraction * dy)
             return if (projection == first || host.continuationFits(
                     host.planningTerrainFor(unit, map),
-                    unit.position, projection, unit.heading, HullRoute.forUnit(unit),
+                    unit.position, projection, unit.heading, HullRoute.forUnit(unit, map),
                     host.routeRadius(unit), host.routeOccupancy(unit, includeMoving = true),
                 )
             ) projection else first
@@ -320,7 +320,7 @@ internal object UnitMovementOrchestrator {
                     val join = Position(first.x + t * dx, first.y + t * dy)
                     if (host.continuationFits(
                             host.planningTerrainFor(unit, map), unit.position, join, unit.heading,
-                            HullRoute.forUnit(unit), host.routeRadius(unit), host.routeOccupancy(unit, includeMoving = true),
+                            HullRoute.forUnit(unit, map), host.routeRadius(unit), host.routeOccupancy(unit, includeMoving = true),
                         )
                     ) {
                         unit.nav = unit.nav.replaceFrontWaypoint(join, resetLocalSegment = true)
@@ -340,7 +340,7 @@ internal object UnitMovementOrchestrator {
                 policies.capture.inside(ScreenPlane.distanceSquared(unit.position, first), contract.pathPointRadius)
             val canJoin = (point != first || withinTurn) && host.continuationFits(
                 host.planningTerrainFor(unit, map),
-                unit.position, unit.pathPoints[1], unit.heading, HullRoute.forUnit(unit),
+                unit.position, unit.pathPoints[1], unit.heading, HullRoute.forUnit(unit, map),
                 host.routeRadius(unit), host.routeOccupancy(unit, includeMoving = true),
             )
             onSegment || canJoin
@@ -423,6 +423,8 @@ internal object UnitMovementOrchestrator {
                 finalPoint = true,
                 delta = delta,
                 coordinates = policies.coordinates,
+                terminalDockingWeight = 0.35,
+                ignoredContactUnitId = unit.attackCommand?.targetUnitId ?: unit.primaryCombatTargetId,
             )
             val effectiveAim = if (stageSolve.applied) {
                 avoidanceApplied = true
@@ -509,19 +511,29 @@ internal object UnitMovementOrchestrator {
 
         if (target != null && followsManeuver && unit.pathPoints.isNotEmpty()) {
             unit.requestMovement(host.logicalRouteTarget(unit, target))
-            val leg = ManeuverLeg(unit.position, maneuverAim(), policies.coordinates)
-            finalForSample = unit.pathPoints.size == 1
-            val groupReservationFarFromSlot = unit.landingMember == null &&
-                unit.groupMoveReservation != null &&
-                unit.nearestMoveTarget == null &&
-                policies.coordinates.distanceSquared(unit.position, leg.target) >
-                (unit.definition.movementCollision.boundingRadius * 2.2).let { it * it }
+            val rawManeuverTarget = maneuverAim()
+            val alignedManeuverTarget = if (host.trafficSeparationEnabled) {
+                LocomotionModule.alignNarrowMouthReentryAim(unit, rawManeuverTarget)
+            } else rawManeuverTarget
+            val reentryAlignedManeuver = alignedManeuverTarget != rawManeuverTarget
+            val leg = ManeuverLeg(unit.position, alignedManeuverTarget, policies.coordinates)
+            finalForSample = !reentryAlignedManeuver && unit.pathPoints.size == 1
+            val hardRadius = maxOf(1.0, unit.definition.movementCollision.boundingRadius)
+            val distSqToLeg = policies.coordinates.distanceSquared(unit.position, leg.target)
+            val isRectManeuver = unit.definition.movementCollision is MovementCollisionShape.Rectangle
+            val canRejoinRectManeuver = isRectManeuver && !approachingLoad && unit.nearestMoveTarget == null &&
+                !(finalForSample && unit.groupMoveReservation != null && distSqToLeg <= (hardRadius * 2.5).let { it * it })
+            val isExactManeuverGoal = unit.nearestMoveTarget != null ||
+                unit.groupMoveReservation != null ||
+                unit.landingMember?.claimed != null
             val preciseCircleApproach = unit.landingMember?.let {
                 it.preciseApproach || it.ingress != null || !finalForSample
             } == true ||
-                (unit.landingMember == null && (unit.nearestMoveTarget != null || (unit.groupMoveReservation != null && !groupReservationFarFromSlot))) ||
-                (finalForSample && policies.coordinates.distanceSquared(unit.position, leg.target) <=
-                    (unit.definition.movementCollision.boundingRadius * 1.4).let { it * it })
+                (finalForSample && isExactManeuverGoal && distSqToLeg <= (hardRadius * 2.2).let { it * it }) ||
+                (finalForSample && distSqToLeg <= (hardRadius * 1.4).let { it * it })
+            val maneuverDockingWeight = if (finalForSample && isExactManeuverGoal) {
+                ((3.2 * hardRadius - sqrt(distSqToLeg)) / maxOf(1.0, 1.85 * hardRadius)).coerceIn(0.0, 1.0)
+            } else 0.0
             val maneuverGuidance = if (host.trafficSeparationEnabled &&
                 unit.definition.movementCollision is MovementCollisionShape.Circle &&
                 taskKind == UnitTaskKind.MOVE && unit.landingMember != null &&
@@ -533,9 +545,9 @@ internal object UnitMovementOrchestrator {
             if (maneuverGuidance?.overflowSettled == true) {
                 return settleSaturationOverflow(host, unit, step, executionStep)
             }
+            val ignoredTargetId = unit.attackCommand?.targetUnitId ?: unit.primaryCombatTargetId
             val maneuverAvoid = if (host.trafficSeparationEnabled &&
-                unit.definition.movementCollision is MovementCollisionShape.Circle &&
-                !preciseCircleApproach
+                unit.definition.movementCollision is MovementCollisionShape.Circle && !preciseCircleApproach
             ) LocomotionModule.solveGroundLocomotion(
                     host = host,
                     unit = unit,
@@ -547,6 +559,8 @@ internal object UnitMovementOrchestrator {
                     finalPoint = finalForSample,
                     delta = delta,
                     coordinates = policies.coordinates,
+                    terminalDockingWeight = maneuverDockingWeight,
+                    ignoredContactUnitId = ignoredTargetId,
                 ).takeIf { it.applied } else null
             if (maneuverAvoid != null) {
                 avoidanceApplied = true
@@ -582,7 +596,8 @@ internal object UnitMovementOrchestrator {
                     val difference = policies.coordinates.difference(policies.coordinates.desired(unit.position, leg.target), unit.heading)
                     requestedFraction = policies.propulsion.targetFraction(
                         movement, unit.speed,
-                        if (reportsStop || unit.landingMember?.ingress == leg.target) maxOf(distanceSquared, 16.0)
+                        if (reentryAlignedManeuver) maxOf(distanceSquared, 25.0)
+                        else if (reportsStop || unit.landingMember?.ingress == leg.target) maxOf(distanceSquared, 16.0)
                         else if (finalForSample) distanceSquared else maxOf(distanceSquared, 9.0),
                         difference, finalForSample, contract.targetRadius,
                     )
@@ -607,7 +622,7 @@ internal object UnitMovementOrchestrator {
             val canHandOff = nearHandoff &&
                 host.continuationFits(
                     host.planningTerrainFor(unit, map), Transport.queryPosition(unit, map),
-                    unit.pathPoints[1], unit.heading, if (usesPreparedJoin) HullRoute.forUnit(unit) else null,
+                    unit.pathPoints[1], unit.heading, if (usesPreparedJoin) HullRoute.forUnit(unit, map) else null,
                     host.routeRadius(unit), host.routeOccupancy(unit),
                 )
             if (canHandOff && usesPreparedJoin) {
@@ -630,24 +645,28 @@ internal object UnitMovementOrchestrator {
             val steeringTarget = if (host.trafficSeparationEnabled) {
                 LocomotionModule.alignNarrowMouthReentryAim(unit, plannedAim)
             } else plannedAim
-            val finalPoint = temporaryBirth || (unit.pathPoints.size == 1 && checkNotNull(local).isLast)
+            val reentryAligned = steeringTarget != plannedAim
+            val finalPoint = temporaryBirth || (!reentryAligned && unit.pathPoints.size == 1 && checkNotNull(local).isLast)
             val d2 = policies.coordinates.distanceSquared(unit.position, steeringTarget)
             val preciseSlide = sliding && finalPoint && unit.nearestMoveTarget != null && steeringTarget == target
             val closingAnchor = usesPreparedJoin && !canHandOff && local?.isLast == true &&
                 unit.pathPoints.size > 1 && steeringTarget == unit.pathPoints.first()
             val propulsionDistance = when {
+                reentryAligned -> maxOf(d2, 25.0)
                 ((approachingBuilding || approachingWork || approachingLoad) && finalPoint) || preciseSlide -> maxOf(d2, 16.0)
                 closingAnchor -> maxOf(d2, 9.0)
                 else -> d2
             }
-            val exactLegacySlotOrNearest = unit.landingMember == null &&
-                (unit.nearestMoveTarget != null ||
-                    (unit.groupMoveReservation != null && finalPoint &&
-                        d2 <= (unit.definition.movementCollision.boundingRadius * 2.2).let { r -> r * r }))
-            val closeClaimedBay = unit.landingMember?.let {
-                it.preciseApproach || (it.claimed != null && finalPoint &&
-                    d2 <= (unit.definition.movementCollision.boundingRadius * 2.2).let { r -> r * r })
-            } == true
+            val hardR = maxOf(1.0, unit.definition.movementCollision.boundingRadius)
+            val isExactDockingGoal = unit.nearestMoveTarget != null ||
+                unit.groupMoveReservation != null ||
+                unit.landingMember?.claimed != null
+            val closeExactSnap = unit.landingMember?.preciseApproach == true ||
+                (unit.nearestMoveTarget != null && finalPoint && d2 <= (hardR * 2.5).let { r -> r * r }) ||
+                (isExactDockingGoal && finalPoint && d2 <= (hardR * 2.2).let { r -> r * r })
+            val terminalDockingWeight = if (finalPoint && isExactDockingGoal) {
+                ((3.2 * hardR - sqrt(d2)) / maxOf(1.0, 1.85 * hardR)).coerceIn(0.0, 1.0)
+            } else 0.0
             val departingProducer = unit.productionOrigin?.let { origin ->
                 val producer = host.units[origin.producerId]
                 val reach = unit.definition.movementCollision.boundingRadius + (producer?.definition?.radius ?: 0.0) + maxOf(map.tileWidth, map.tileHeight) * 2.0
@@ -659,13 +678,20 @@ internal object UnitMovementOrchestrator {
                     ).isNotEmpty()
             } == true
             val useLocomotion2d = host.trafficSeparationEnabled && !temporaryBirth && !departingProducer && !approachingLoad &&
-                movement.type != MovementType.AIR && !preciseSlide && !exactLegacySlotOrNearest && !closeClaimedBay &&
+                movement.type != MovementType.AIR && !preciseSlide && !closeExactSnap &&
                 (taskKind == null || taskKind == UnitTaskKind.MOVE || taskKind == UnitTaskKind.PATROL ||
                     taskKind == UnitTaskKind.ATTACK || taskKind == UnitTaskKind.BUILD ||
                     taskKind == UnitTaskKind.CONSTRUCT || taskKind == UnitTaskKind.RECLAIM)
             val routeWaypoint = unit.pathPoints.firstOrNull() ?: target
             val terrainForAvoid = host.planningTerrainFor(unit, map)
-            val directWaypointClear = PlanningSegmentClearance.allows(terrainForAvoid, Transport.queryPosition(unit, map), routeWaypoint, host.routeRadius(unit))
+            val directWaypointClear = host.continuationFits(
+                terrainForAvoid,
+                Transport.queryPosition(unit, map),
+                routeWaypoint,
+                unit.heading,
+                HullRoute.forUnit(unit, map),
+                host.routeRadius(unit),
+            )
             val baseAvoidTarget = if (directWaypointClear) routeWaypoint else steeringTarget
             val guidanceSample = if (host.trafficSeparationEnabled && movement.type != MovementType.AIR &&
                 unit.landingMember != null && unit.landingMember?.preciseApproach != true &&
@@ -697,6 +723,12 @@ internal object UnitMovementOrchestrator {
                 movement, unit.speed, propulsionDistance,
                 0.0, applyFinalStopCurve, contract.targetRadius,
             )
+            val explicitAttackTargetId = unit.attackCommand?.targetUnitId
+            val ignoredTargetId = explicitAttackTargetId ?: unit.primaryCombatTargetId
+            val visibleCombatTarget = explicitAttackTargetId?.let { host.units[it] }?.takeIf {
+                it.alive && host.isVisibleTo(unit.ownerPlayerId, it.position, it.nativeTransportPlacement)
+            }
+            val combatArcRadius = if (visibleCombatTarget != null) UnitCombat.profile(unit)?.attackRange ?: 0.0 else 0.0
             val locSolve = if (useLocomotion2d) {
                 LocomotionModule.solveGroundLocomotion(
                     host = host,
@@ -706,9 +738,13 @@ internal object UnitMovementOrchestrator {
                     desiredTarget = avoidanceTarget,
                     baseSpeedTarget = maximumSpeed * distanceOnlyFraction,
                     maximumSpeed = maximumSpeed,
-                    finalPoint = finalPoint,
+                    finalPoint = applyFinalStopCurve,
                     delta = delta,
                     coordinates = policies.coordinates,
+                    terminalDockingWeight = terminalDockingWeight,
+                    ignoredContactUnitId = ignoredTargetId,
+                    engagementArcCenter = visibleCombatTarget?.position,
+                    engagementArcRadius = combatArcRadius,
                 )
             } else null
             val effectiveAim = if (locSolve != null && locSolve.applied) {
@@ -735,7 +771,14 @@ internal object UnitMovementOrchestrator {
                         if (isRect) c * c else maxOf(0.0, c)
                     }
                 }
-                val rawMag = minOf(maximumSpeed, locSolve.solvedVelocity.length()) * cosThrottle
+                val effectiveThrottle = if (finalPoint && movement.maxTurnSpeed < 1.4 && distanceOnlyFraction > 1e-6) {
+                    val nativeTurnFrac = policies.propulsion.targetFraction(
+                        movement, unit.speed, propulsionDistance,
+                        if (movement.ignoringBody) 0.0 else postTurnErr, applyFinalStopCurve, contract.targetRadius,
+                    )
+                    minOf(cosThrottle, nativeTurnFrac / distanceOnlyFraction)
+                } else cosThrottle
+                val rawMag = minOf(maximumSpeed, locSolve.solvedVelocity.length()) * effectiveThrottle
                 val signedSpeed = if (unit.reversing) -rawMag * movement.reverseSpeedPercentage else rawMag
                 speedTarget = if (applyFinalStopCurve && d2 < 9.0) 0.0 else signedSpeed
                 fraction = if (maximumSpeed > 1e-7) abs(speedTarget) / maximumSpeed else 0.0
@@ -779,7 +822,7 @@ internal object UnitMovementOrchestrator {
                         val occupancy = host.routeOccupancy(unit)
                         host.continuationFits(
                             host.planningTerrainFor(unit, map), Transport.queryPosition(unit, map), next, unit.heading,
-                            if (occupancy == null) null else HullRoute.forUnit(unit), host.routeRadius(unit), occupancy,
+                            if (occupancy == null) null else HullRoute.forUnit(unit, map), host.routeRadius(unit), occupancy,
                         )
                     },
                 )
@@ -885,10 +928,19 @@ internal object UnitMovementOrchestrator {
     ): HeadingResolution {
         val policies = host.policies
         val maneuverLeg = steering.maneuverLeg
-        val shape = UnitLocomotion.terrainHull(unit)
+        val shape = if (unit.birthRemaining > 0f) null else UnitLocomotion.terrainHull(unit, map)
         val hull = shape as? MovementCollisionShape.Rectangle
-        val circle = (shape as? MovementCollisionShape.Circle)?.let { CircularTerrain(it.radius) }
-        val collisionMap = if (unit.birthRemaining > 0f) map else host.buildingTerrain?.collisionMap ?: map
+        val circle = (shape as? MovementCollisionShape.Circle)?.let {
+            CircularTerrain(it.radius, maxOf(it.radius, Transport.boundaryRadius(unit)))
+        }
+        val rawCollisionMap = if (unit.birthRemaining > 0f) map else host.buildingTerrain?.collisionMap ?: map
+        val curCol = MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles)
+        val curRow = MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles)
+        val escapingBuildingCell = unit.birthRemaining == 0f && host.buildingTerrain != null &&
+            curCol in 0 until map.widthTiles && curRow in 0 until map.heightTiles &&
+            rawCollisionMap.blockingFor(movement.type).isBlocked(curCol, curRow) &&
+            !map.blockingFor(movement.type).isBlocked(curCol, curRow)
+        val collisionMap = if (escapingBuildingCell) map else rawCollisionMap
         val hullTerrain = shape?.let { HullTerrainGrid.authoritative(collisionMap, movement.type) }
         val requestedHeading = unit.heading
         val nearShoreLeg = maneuverLeg != null && unit.nearestMoveTarget != null && hull != null && movement.type == MovementType.WATER
@@ -1068,19 +1120,26 @@ internal object UnitMovementOrchestrator {
         val circle = heading.circle
         val hullTerrain = heading.hullTerrain
         val rectangle = hull?.let { RectangularTerrain(it, unit.heading) }
-        if (shape == null && !Transport.containsPosition(unit, map, candidate)) {
+        if (hull == null && !steering.avoidanceApplied &&
+            movement.type != MovementType.WATER && !Transport.containsPosition(unit, map, candidate)
+        ) {
             host.blockAtMapBoundary(unit)
             recordMotion(null, MotionTerrainDisposition.CANDIDATE_OUTSIDE_MAP, heading.legalHeading != heading.boundedHeading)
             return
         }
-        val producerCells = if (shape != null && unit.birthRemaining == 0f && host.buildingTerrain != null)
-            FactoryExit.departingSeaFactoryCells(map, unit, unit.productionOrigin?.let { host.units[it.producerId] }, candidate, shape)
+        val buildingTerrain = host.buildingTerrain
+        val producerCells = if (shape != null && unit.birthRemaining == 0f && buildingTerrain != null)
+            FactoryExit.departingOverlappedBuildingCells(map, buildingTerrain, host.units, unit, candidate, shape)
         else emptySet()
         val translationTerrain = if (producerCells.isEmpty()) hullTerrain
         else HullTerrainGrid.leavingProducer(heading.collisionMap, map, movement.type, producerCells)
         val terrainResolved = when {
             rectangle != null -> rectangle.resolve(checkNotNull(translationTerrain), unit.position, candidate)
-            circle != null -> circle.resolve(checkNotNull(translationTerrain), unit.position, candidate)
+            circle != null -> if (producerCells.isEmpty()) {
+                circle.resolveWithSlide(checkNotNull(translationTerrain), unit.position, candidate)
+            } else {
+                circle.resolve(checkNotNull(translationTerrain), unit.position, candidate)
+            }
             air -> if (steering.airSeparationVel != null) {
                 val br = Transport.boundaryRadius(unit)
                 Position(
@@ -1094,8 +1153,8 @@ internal object UnitMovementOrchestrator {
                 map.takeIf { host.buildingTerrain != null }, movement.type, unit.nativeTransportPlacement,
             )
         }
-        val legalTerrainEnd = if (heading.nearShoreLeg) UnitContact.lastLegalPoint(unit.position, terrainResolved) {
-            UnitContact.poseFits(checkNotNull(hull), it, unit.heading, checkNotNull(translationTerrain))
+        val legalTerrainEnd = if (hull != null && producerCells.isEmpty()) UnitContact.lastLegalPoint(unit.position, terrainResolved) {
+            UnitContact.poseFits(hull, it, unit.heading, checkNotNull(translationTerrain))
         } else terrainResolved
         val boundedPosition = UnitAttachments.limitTranslation(host.units, unit, map, legalTerrainEnd)
         fun insideMap(position: Position): Boolean = when {

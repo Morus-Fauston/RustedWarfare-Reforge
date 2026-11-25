@@ -306,7 +306,7 @@ class KnowledgePathRoutingTest {
                         observation.events.any { it.kind == "movement-blocked" && it.unitId == "u1" },
                         "reaching truly blocked (3,2) must emit movement-blocked",
                     )
-                    assertEquals(59.8, unit.position.x, 1e-9)
+                    assertEquals(59.0, unit.position.x, 1e-9)
                     assertTrue(unit.speed > 0.0, "Terrain correction must retain propulsion")
                     assertEquals(MovementState.MOVING, unit.movementState)
                     sawBlocked = true

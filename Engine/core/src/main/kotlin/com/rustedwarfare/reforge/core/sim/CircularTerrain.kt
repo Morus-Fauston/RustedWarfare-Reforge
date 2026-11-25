@@ -4,15 +4,18 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
-/** Continuous circle sweep against a tile's rounded clearance boundary. */
-internal class CircularTerrain(private val radius: Double) {
+/** Continuous circle sweep against a tile's rounded clearance boundary, with verified contact-normal slide. */
+internal class CircularTerrain(
+    val radius: Double,
+    val boundaryRadius: Double = radius,
+) {
     fun resolve(map: HullTerrainGrid, start: Position, end: Position): Position {
         if (start == end || !contains(map, start)) return start
         val dx = end.x - start.x
         val dy = end.y - start.y
         fun edge(value: Double, delta: Double, maximum: Double): Double = when {
-            delta > 0.0 -> ((maximum - radius - value) / delta).coerceIn(0.0, 1.0)
-            delta < 0.0 -> ((radius - value) / delta).coerceIn(0.0, 1.0)
+            delta > 0.0 -> ((maximum - boundaryRadius - value) / delta).coerceIn(0.0, 1.0)
+            delta < 0.0 -> ((boundaryRadius - value) / delta).coerceIn(0.0, 1.0)
             else -> 1.0
         }
         var fraction = minOf(edge(start.x, dx, map.width), edge(start.y, dy, map.height))
@@ -41,8 +44,59 @@ internal class CircularTerrain(private val radius: Double) {
         }
     }
 
+    /**
+     * Sweeps [start] -> [end] and, when clipped by a blocked tile face or corner, projects the
+     * remaining displacement onto the contact tangent and runs a second verified sweep so circular
+     * units glide smoothly along walls and around convex corners with zero penetration.
+     */
+    fun resolveWithSlide(map: HullTerrainGrid, start: Position, end: Position): Position {
+        val first = resolve(map, start, end)
+        if (first == end || !contains(map, first)) return first
+        val remX = end.x - first.x
+        val remY = end.y - first.y
+        if (remX * remX + remY * remY <= 1e-18) return first
+
+        var hitNormalX = 0.0
+        var hitNormalY = 0.0
+        var bestGap = Double.POSITIVE_INFINITY
+        val probePad = radius + 2.0
+        map.anyBlocked(
+            first.x - probePad, first.x + probePad,
+            first.y - probePad, first.y + probePad,
+        ) { column, row ->
+            val left = column.toDouble() * map.tileWidth
+            val right = left + map.tileWidth
+            val top = row.toDouble() * map.tileHeight
+            val bottom = top + map.tileHeight
+            val cx = first.x.coerceIn(left, right)
+            val cy = first.y.coerceIn(top, bottom)
+            val nx = first.x - cx
+            val ny = first.y - cy
+            val d = hypot(nx, ny)
+            val gap = abs(d - radius)
+            if (d > 1e-9 && gap <= 1e-3 && (nx * remX + ny * remY) < 0.0 && gap < bestGap) {
+                bestGap = gap
+                hitNormalX = nx / d
+                hitNormalY = ny / d
+            }
+            false
+        }
+        if (bestGap.isFinite()) {
+            val into = remX * hitNormalX + remY * hitNormalY
+            if (into < 0.0) {
+                val rounding = 4.0 * Math.ulp(maxOf(map.width, map.height, radius))
+                val slideEnd = Position(
+                    first.x + (remX - hitNormalX * into) + hitNormalX * (2.0 * rounding),
+                    first.y + (remY - hitNormalY * into) + hitNormalY * (2.0 * rounding),
+                )
+                return resolve(map, first, slideEnd)
+            }
+        }
+        return first
+    }
+
     fun contains(map: HullTerrainGrid, position: Position): Boolean =
-        MapBounds.contains(map.width, map.height, position, radius)
+        MapBounds.contains(map.width, map.height, position, boundaryRadius)
 
     companion object {
         fun separatesFrom(start: Position, dx: Double, dy: Double, radius: Double,

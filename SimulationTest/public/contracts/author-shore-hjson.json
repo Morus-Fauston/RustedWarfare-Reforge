@@ -12,7 +12,7 @@
   },
   "approval": {
     "status": "tool-fixture-only",
-    "source": "Owned author constructor and WATER shipyard with existing010 spcruiser. Eastward approach to 176/210 brings the builder within the 85-unit reach before build250/210 at180 with first-step700 charge/creation180. Ready by499, existing350/.002 product queued500 births1000, legal-water move250/430 at1200. No new steering/retry/fee rule, original/performance/platform claim."
+    "source": "Owned author constructor and WATER shipyard with existing010 spcruiser. Eastward approach to 170/210 brings the builder within the 85-unit reach before build230/210 at180 with first-step700 charge/creation180. Ready by499, existing350/.002 product queued500 births1000, legal-water move250/430 at1200. No new steering/retry/fee rule, original/performance/platform claim."
   },
   "exclusions": [
     "original-compatibility",
@@ -93,7 +93,7 @@
           "path": "units.produced:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.position",
           "operator": "equals",
           "value": {
-            "x": 250,
+            "x": 230,
             "y": 230
           }
         },

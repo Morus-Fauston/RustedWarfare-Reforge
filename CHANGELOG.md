@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.5.72 (2026-11-26 01:25)
+
+### 调整
+
+- **单选与群移地形通行轮廓统一**：新增 `UnitDefinition.explicitMovementCollision` 与 `UnitLocomotion.terrainHull` / `terrainPassabilityRadius`，废除按 `landingMember != null` 或半径差异切换地形碰撞的双标规则；显式 `movementCollision` 及海军 `WATER` 单位全程实算声明轮廓，未显式声明的原版 INI 圆形陆地/悬浮单位在单位互碰与地图外边界保持完整 `radius`，静态地形通行半径统一内切封顶为 `min(radius, 0.45 * minTile)`，并在 `CircularTerrain`、`Pathfinding.considerNearest*`、`UnitContact`、`FactoryExit` 及 `SimulationContext` 全链保持一致。
+- **60Hz 热路径零分配与局部空间反查**：重写 `WorldSpatialIndex` 内部存储为可复用原始数组网格链表与步级扁平只读快照，消除每步 `beginStep()` 与 `queryFrozenTopK()` 堆分配；新增 `BuildingTerrain.isBuildingCell` O(1) 零分配掩码预检以消除 `FactoryExit.departingOverlappedBuildingCells` 60Hz 全图单位扫描；消除 `Pathfinding.findPathToRange` 全图 `Position[]` 分配与 `MovePlanningInput` 全层拷贝；将 `NarrowPassage` 收窄为仅在已知真单行窄道入口邻域经 `WorldSpatialIndex` 反查对向争用车辆、门外侧方让空与清尾交接，彻底移除顺向测绘与 `mouthAim` 门洞强拉。
+- **`LocomotionModule` 零上层命令特判净身**：彻底清除对 `landingMember`、`groupMoveReservation`、群规模、目标相等及大面积 `passthrough` 旁路的依赖，上游仅通过 `allowContactPush` 等纯抽象运动学输入协同 ADR-009 质量推挤与工厂出生脱离；收束对向预判闭合视距、修复 wall-only fallback 走零分配 3D LP 退化，保持宽通道二维 Boids 分离与群内 2D ORCA 实时超车生效。
+
+### 修复
+
+- **窄口重入防刹停与自有岸线测试夹具对齐**：修复 `NarrowPassage` 窄桥重入航向导引提前刹停与单行对向推让判定；将自有 `author-shore-{ini,json,hjson}` 公开测试夹具建造者接近点与船厂坐标对齐至统一静态地形轮廓合法格，并同步更新关联单测断言。
+
+### 技术
+
+- **契约测试、避让探针与双独立审阅（`ENG-P016-009C`）**：新增 `BottleneckContractABTest` 覆盖 A/B 瓶颈双车并行、2v2 单行窄桥清尾交接、单群同轨迹一致性及隐式 INI 宽半径单格封死走廊 `beginNearest` 回归；全量 `:core:test --rerun-tasks` 424 套 1,565 用例 0 失败、`public_batch.py --kind short` 6/6 套全绿、5 大局部避让 `:movementProbe` 场景全达停稳；经独立 Hydrogen 10 张拼图/放大图目视 `APPROVED` 及独立全新上下文 Neon 代码整审返修后定向复核 `APPROVE`（0 必修），双根目录 `workspace_layout.py` 通过。
+
+---
+
 ## v0.5.71 (2026-11-25 16:59)
 
 ### 新增

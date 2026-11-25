@@ -287,9 +287,10 @@ object MovementMicroProbe {
             spec.issueOrders(ctx)
             observations += ctx.observe()
             for (i in 0 until steps) {
+                val tickStep = Step(i.toLong(), 1.0, "sim-tick")
                 val allocBefore = sunThreadBean?.getThreadAllocatedBytes(threadId) ?: 0L
                 val t0 = System.nanoTime()
-                val obs = ctx.advance(Step(i.toLong(), 1.0, "sim-tick"))
+                val obs = ctx.advance(tickStep)
                 val dt = (System.nanoTime() - t0).coerceAtLeast(0L)
                 val allocAfter = sunThreadBean?.getThreadAllocatedBytes(threadId) ?: 0L
                 stepNanos[i] = dt

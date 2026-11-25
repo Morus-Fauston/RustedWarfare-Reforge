@@ -38,7 +38,8 @@ class MovementSweepTest {
             map=MapDefinition(30,20,20,20,emptyList(),IntArray(600),BlockingGrid(30,20,
                 BooleanArray(600) { it%30==17 && it/30 in 9..11 })),
             unitDefinitions=mapOf("tank" to TestContentFactory.unitWith(base,movement=base.movement.copy(
-                moveSpeed=60.0,moveAccelerationSpeed=1.0,moveDecelerationSpeed=.5))),
+                moveSpeed=60.0,moveAccelerationSpeed=1.0,moveDecelerationSpeed=.5),
+                movementCollision=MovementCollisionShape.Circle(0.0))),
             units=listOf(UnitSpawn("u1","p1","tank",Position(300.0,200.0),89.5))))).context
         try {
             context.enableKnowledge(context.world,KnowledgeRules(TerrainRetention.MEMORY,PathInformationSource.PLAYER_KNOWLEDGE,false))
@@ -76,7 +77,8 @@ class MovementSweepTest {
                 map=MapDefinition(30,20,20,20,emptyList(),IntArray(600),BlockingGrid(30,20,
                     BooleanArray(600) { (it%30 to it/30) in direction.walls })),
                 unitDefinitions=mapOf("tank" to TestContentFactory.unitWith(base,movement=base.movement.copy(
-                    moveSpeed=speed,moveAccelerationSpeed=1.0,moveDecelerationSpeed=.5))),
+                    moveSpeed=speed,moveAccelerationSpeed=1.0,moveDecelerationSpeed=.5),
+                    movementCollision=MovementCollisionShape.Circle(0.0))),
                 units=listOf(UnitSpawn("u1","p1","tank",Position(300.0,200.0),direction.heading))))).context
             try {
                 context.enableKnowledge(context.world,KnowledgeRules(TerrainRetention.MEMORY,PathInformationSource.PLAYER_KNOWLEDGE,false))
@@ -110,7 +112,8 @@ class MovementSweepTest {
         val source = TestContentFactory.openScenario()
         val tank = source.unitDefinitions.getValue("tank")
         val fast = TestContentFactory.unitWith(tank, radius = 1.0, movement = tank.movement.copy(
-            moveSpeed = 100.0, moveAccelerationSpeed = 100.0))
+            moveSpeed = 100.0, moveAccelerationSpeed = 100.0),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val paths = mutableListOf<List<Position>>()
         for (blocked in listOf(false, true)) {
             val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
