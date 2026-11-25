@@ -140,15 +140,29 @@ class SandboxRenderResources private constructor(
     }
 
     /** Pure worker binding. The loader verifies the complete descriptor after binding, before publishing it. */
-    internal fun bindVisuals(visuals: PreparedVisualAssets, useScenarioTerrain: Boolean = false, originalTilesetRoot: Path? = null): SandboxRenderResources {
+    internal fun bindVisuals(
+        visuals: PreparedVisualAssets,
+        useScenarioTerrain: Boolean = false,
+        originalTilesetRoot: Path? = null,
+        unitVisualAliases: Map<String, List<String>> = emptyMap(),
+    ): SandboxRenderResources {
         val mappedUnits = units.mapValues { (id, before) ->
-            val image = requireNotNull(visuals.units[id]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id" }
+            val neededSlots = before.imageBindings().images.keys
+            val resolvedId = if (id in visuals.units) {
+                id
+            } else {
+                unitVisualAliases[id]?.firstOrNull { cand ->
+                    val img = visuals.units[cand]
+                    img != null && neededSlots.all { slot -> slot in img.bindings().images }
+                } ?: id
+            }
+            val image = requireNotNull(visuals.units[resolvedId]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id" }
             val replacements = image.bindings()
             val mapped = before.withImages(before.imageBindings().map { part, _ ->
                 requireNotNull(replacements.images[part]) { "VISUAL_MAPPING_UNSUPPORTED: unit $id ${part.suffix}" }
             })
             if (before.leftWingImagePath == null || before.rightWingImagePath == null) mapped else {
-                val addresses = visuals.resourcePack.unitBindings.getValue(id).bindings()
+                val addresses = visuals.resourcePack.unitBindings.getValue(resolvedId).bindings()
                 // Certified PC imports already turned the native sprites clockwise. The native
                 // renderer used their original axes, so undo that rotation only on winning PC parts.
                 mapped.copy(rotatedAmphibiousImages = amphibiousImageSlots.filterTo(mutableSetOf()) { slot ->

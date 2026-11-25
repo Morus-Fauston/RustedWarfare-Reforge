@@ -1,3 +1,9 @@
+v0.5.75 (2026-11-26 05:48)
+  新增: 在 Engine/core 建立 ScenarioCatalog 与 MovementParameterFingerprint 统一纳管 A/B 开发组 10 个核心移动与对抗场景及程序化地形呈现 / 融合 SkirmishMapPanel 分类可滚动列表、实时地形缩略图、ADR-014 主题热切与 PC --scene <id> 直达，并支持非 pack 目录内容包回退与槽位完备视觉别名绑定 / SimulationTest 主入口与 MovementMicroProbe 统一对接 ScenarioCatalog，支持 --list、--scene、--assert、--sheets 与带安全/组别/回执校验的 --holdout-file 外部 C-F 留出加载
+  技术: 新增 ScenarioCatalogTest、SkirmishMapCatalogUiTest、PcCatalogSceneOptionTest 与 MovementMicroProbeCliTest，跨模块测试、:pc:installDist、统一 CLI、public_batch.py --kind short 6/6 与双根 workspace_layout.py 全绿；原版 PC 资源 6 态实窗与拼图经独立 Hydrogen 目视 APPROVED，独立 Neon 代码与主题整审返修复核 APPROVE（0 必修） [已知问题: culdesac-overflow-100 保留选图与回放入口并按已知限制单列提示]
+
+====
+
 v0.5.74 (2026-11-26 04:32)
   调整: 规模圆形群移落地真·共享流场 O(1) 直驱与封闭目标单次最近可达连通种子，取消百次单车 A* 陪跑并补齐驱逐降级防饥饿 / 重写 ChunkedFlowFieldAdapter 为正交 Eikonal 二次求解、2x2 双线性光滑梯度与 1 格窄门轴线对齐，废除窄门静态重罚，落地基于 shadowMinCut 不变式的 P1 影子双缓冲纯单调重算、COW 回滚与连点干道防 2-cycle 复用 / 混编小车流场宽道及肩格让大车，门区拥堵仅计迎门低速受阻车流并经滞回分流，直连捷径校验全轮廓净空且禁止跨收费门逃费 / 升级同源诊断拼图门控进入、车尾穿出与目标侧停稳吞吐指标并修正双向对穿计数
   技术: 全量 :core:test（424 套 1578 用例 0 失败，含 6 项流场与门控新增回归单测）、公开短测 6 套与历史双 14 混编（876/907 步稳停 600 步）全绿；双百石阵 rocks-small-100（1855 步 W3=7/93）与 rocks-mixed-100（3212 步 W3=23/77）均 100/100 到达停稳且真分流；经独立 Hydrogen 目视 APPROVED 与独立 Neon 代码数学整审 APPROVE，双工作区布局校验通过 [已知问题: culdesac-overflow-100 极端死胡同当前 87/100，维持已知限制单列]

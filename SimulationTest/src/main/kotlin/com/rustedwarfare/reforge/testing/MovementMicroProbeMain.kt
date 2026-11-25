@@ -11,260 +11,275 @@ import kotlin.math.min
 import kotlinx.serialization.json.*
 
 /**
- * Second-level movement micro-benchmark & 2-second stall-highlighted contact sheet probe (ENG-P016-010B).
+ * Unified ScenarioCatalog headless runner, micro-benchmark & 2-second stall-highlighted contact sheet
+ * probe (ENG-P016-010B / ENG-P016-010).
  *
- * Outputs per-scene JSON metrics and optional PNG contact sheets / peak zooms:
- * - Arrived / active / stalled-2s / hard-contact counts & first/last arrival steps
- * - Gate/corridor exit crossing counts and steady throughput (units/sec)
- * - Simulation `advance()` step latency distribution (mean, P50, P95, P99, max in ms)
- * - Simulation-only JVM thread heap allocation (total bytes, steady-state bytes/step, P50/P99 bytes/step) & GC delta
- *   strictly isolated from post-run projection and PNG rendering.
+ * Shares [ScenarioCatalog] directly with the client startup map/scenario selector and supports:
+ * - Default A/B development scenes (`--scene <id|all|dev-ab>`)
+ * - Explicit frozen-candidate holdout JSON packs (`--holdout-file <path>`, strictly excluded from dev default)
+ * - Optional strict pass assertions (`--assert true|false`)
+ * - Complete receipts with `category`, `family`, `group`, `seed`, `mapHash`, `parameterHash`, gate throughput,
+ *   step latency distribution, simulation-only heap allocation, and 2s stall-highlighted PNG sheets.
  */
 object MovementMicroProbe {
-    data class GateLine(
-        val id: String,
-        val axisX: Boolean,
-        val worldThreshold: Double,
-        val minOrtho: Double,
-        val maxOrtho: Double,
-        val positiveDirection: Boolean = true,
-    ) {
-        fun crossed(prev: Position, curr: Position): Boolean {
-            val pMain = if (axisX) prev.x else prev.y
-            val cMain = if (axisX) curr.x else curr.y
-            val cOrtho = if (axisX) curr.y else curr.x
-            if (cOrtho < minOrtho || cOrtho > maxOrtho) return false
-            return if (positiveDirection) {
-                pMain <= worldThreshold && cMain > worldThreshold
-            } else {
-                pMain >= worldThreshold && cMain < worldThreshold
-            }
-        }
-    }
-
-    data class ProbeSceneSpec(
-        val id: String,
-        val title: String,
-        val defaultSteps: Int,
-        val gates: List<GateLine>,
-        val build: (Map<String, UnitDefinition>) -> Scenario,
-        val issueOrders: (SimulationContext) -> Unit,
-    )
-
-    val ALL_SCENE_IDS: List<String> = listOf(
-        "rocks-small-100",
-        "rocks-mixed-100",
-        "opposed-open-25v25",
-        "opposed-corridor-8v8",
-        "mixed-overtake-wide",
-        "narrow-bridge-yield",
-        "air-flock-rally",
-        "open-50-217-166",
-        "culdesac-overflow-100",
-    )
+    val ALL_SCENE_IDS: List<String> get() = ScenarioCatalog.allIds()
 
     fun loadStandardDefinitions(repoRoot: Path): Map<String, UnitDefinition> {
         val packPath = repoRoot.resolve("SimulationTest/public/inputs/phase-six-a-sandbox/json/package")
         val loaded = ContentLoader.loadContentPack(packPath)
         check(loaded is ContentResult.Success) { "Failed to load phase-six-a-sandbox: $loaded" }
-        val pack = loaded.value
-        val loadedTank = pack.units.getValue("c_tank")
-        val largeMech = pack.units.getValue("mechGun")
-        val smallTank = UnitDefinition(
-            id = "c_tank", className = loadedTank.className, radius = 6.0, displayRadius = 6.0,
-            totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
-            movement = loadedTank.movement.copy(maxTurnSpeed = 4.1, turnAcceleration = 0.25),
-            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
-            combat = loadedTank.combat, durability = loadedTank.durability, build = loadedTank.build,
-            movementCollision = MovementCollisionShape.Circle(6.0), mass = 3000.0,
-        )
-        val fastScout = UnitDefinition(
-            id = "fast_scout", className = loadedTank.className, radius = 6.0, displayRadius = 6.0,
-            totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
-            movement = loadedTank.movement.copy(moveSpeed = 1.65, maxTurnSpeed = 8.0, turnAcceleration = 1.2),
-            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
-            combat = loadedTank.combat, durability = loadedTank.durability, build = loadedTank.build,
-            movementCollision = MovementCollisionShape.Circle(6.0), mass = 2200.0,
-        )
-        val slowHeavy = UnitDefinition(
-            id = "slow_heavy", className = loadedTank.className, radius = 14.0, displayRadius = 14.0,
-            totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
-            movement = loadedTank.movement.copy(moveSpeed = 0.55, maxTurnSpeed = 2.0, turnAcceleration = 0.2),
-            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
-            combat = loadedTank.combat, durability = loadedTank.durability, build = loadedTank.build,
-            movementCollision = MovementCollisionShape.Circle(14.0), mass = 36000.0,
-        )
-        val airChopper = pack.units.getValue("helicopter")
-        return mapOf(
-            "c_tank" to smallTank,
-            "mechGun" to largeMech,
-            "fast_scout" to fastScout,
-            "slow_heavy" to slowHeavy,
-            "helicopter" to airChopper,
-        )
+        return ScenarioCatalog.deriveBenchmarkDefinitions(loaded.value.units)
     }
 
-    fun sceneSpecs(): Map<String, ProbeSceneSpec> {
-        val rockGates = listOf(
-            GateLine("wall1-narrow-y12", axisX = true, worldThreshold = 26.0 * 20.0, minOrtho = 11.5 * 20.0, maxOrtho = 13.5 * 20.0),
-            GateLine("wall1-wide-y23..28", axisX = true, worldThreshold = 26.0 * 20.0, minOrtho = 22.5 * 20.0, maxOrtho = 29.5 * 20.0),
-            GateLine("wall2-narrow-y15", axisX = true, worldThreshold = 36.0 * 20.0, minOrtho = 14.5 * 20.0, maxOrtho = 16.5 * 20.0),
-            GateLine("wall2-wide-y20..25", axisX = true, worldThreshold = 36.0 * 20.0, minOrtho = 19.5 * 20.0, maxOrtho = 26.5 * 20.0),
-            GateLine("wall3-narrow-y11", axisX = true, worldThreshold = 46.0 * 20.0, minOrtho = 10.5 * 20.0, maxOrtho = 12.5 * 20.0),
-            GateLine("wall3-wide-y25..30", axisX = true, worldThreshold = 46.0 * 20.0, minOrtho = 24.5 * 20.0, maxOrtho = 31.5 * 20.0),
+    private val SAFE_SCENE_ID_REGEX = Regex("^[A-Za-z0-9._-]+$")
+    private val VALID_HOLDOUT_GROUPS = setOf("C", "D", "E", "F")
+
+    /**
+     * Loads external frozen-candidate holdout scenario definitions from JSON (C-F matrix).
+     * Never loaded unless explicitly requested via `--holdout-file`.
+     * Enforces path-safe IDs, forbids shadowing built-in dev A/B scenes, forbids duplicate IDs,
+     * and restricts holdout group labels strictly to C-F.
+     */
+    fun loadExternalHoldoutEntries(file: Path): List<ScenarioCatalogEntry> {
+        val root = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val scenes = root["scenes"]?.jsonArray ?: throw IllegalArgumentException("Holdout file missing 'scenes' array: $file")
+        val seenIds = HashSet<String>()
+        return scenes.map { el ->
+            val entry = parseExternalHoldoutScene(el.jsonObject)
+            require(seenIds.add(entry.id)) { "Duplicate holdout scene id '${entry.id}' in $file" }
+            entry
+        }
+    }
+
+    private fun parseExternalHoldoutScene(obj: JsonObject): ScenarioCatalogEntry {
+        val id = requireNotNull(obj["id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }) {
+            "Holdout scene missing required string field 'id'"
+        }
+        require(SAFE_SCENE_ID_REGEX.matches(id) && id != "." && id != "..") {
+            "Unsafe holdout scene id '$id': must match ^[A-Za-z0-9._-]+$ and cannot be '.' or '..'"
+        }
+        require(ScenarioCatalog.byId(id) == null) {
+            "Holdout scene id '$id' conflicts with built-in dev-ab catalog scene"
+        }
+        val displayName = obj["displayName"]?.jsonPrimitive?.contentOrNull ?: id
+        val family = obj["family"]?.jsonPrimitive?.contentOrNull ?: "external-holdout"
+        val group = obj["group"]?.jsonPrimitive?.contentOrNull ?: "C"
+        require(group in VALID_HOLDOUT_GROUPS) {
+            "Holdout scene '$id' has invalid group '$group': external holdouts must use C-F (cannot spoof A/B)"
+        }
+        val seed = obj["seed"]?.jsonPrimitive?.longOrNull ?: ScenarioCatalog.DEFAULT_WORLD_SEED
+        val description = obj["description"]?.jsonPrimitive?.contentOrNull ?: "External holdout scenario $id"
+        val defaultSteps = obj["defaultSteps"]?.jsonPrimitive?.intOrNull ?: 1800
+        require(defaultSteps > 0) { "Holdout scene '$id' defaultSteps must be > 0, got $defaultSteps" }
+        val knownLimitation = obj["knownLimitation"]?.jsonPrimitive?.contentOrNull
+
+        val mapObj = requireNotNull(obj["map"]?.jsonObject) { "Holdout scene '$id' missing required 'map' object" }
+        val width = requireNotNull(mapObj["width"]?.jsonPrimitive?.intOrNull) { "Holdout scene '$id' missing integer 'map.width'" }
+        val height = requireNotNull(mapObj["height"]?.jsonPrimitive?.intOrNull) { "Holdout scene '$id' missing integer 'map.height'" }
+        val tileW = mapObj["tileWidth"]?.jsonPrimitive?.intOrNull ?: 20
+        val tileH = mapObj["tileHeight"]?.jsonPrimitive?.intOrNull ?: 20
+        require(width > 0 && height > 0 && tileW > 0 && tileH > 0) {
+            "Holdout scene '$id' map dimensions must be positive: ${width}x${height}@${tileW}x${tileH}"
+        }
+        val blockedRows = mapObj["rows"]?.jsonArray
+        val blockedRects = mapObj["blockedRects"]?.jsonArray
+        val borderBlocked = mapObj["borderBlocked"]?.jsonPrimitive?.booleanOrNull ?: true
+
+        fun buildMap(): MapDefinition {
+            val blocked = BooleanArray(width * height)
+            if (borderBlocked) {
+                for (r in 0 until height) for (c in 0 until width) {
+                    if (c == 0 || c == width - 1 || r == 0 || r == height - 1) blocked[r * width + c] = true
+                }
+            }
+            if (blockedRows != null) {
+                for (r in 0 until min(height, blockedRows.size)) {
+                    val line = blockedRows[r].jsonPrimitive.content
+                    for (c in 0 until min(width, line.length)) {
+                        if (line[c] == '#' || line[c] == 'X') blocked[r * width + c] = true
+                    }
+                }
+            }
+            if (blockedRects != null) {
+                for (rectEl in blockedRects) {
+                    val rect = rectEl.jsonObject
+                    val x0 = requireNotNull(rect["x0"]?.jsonPrimitive?.intOrNull) { "Holdout '$id' blockedRect missing x0" }.coerceIn(0, width - 1)
+                    val y0 = requireNotNull(rect["y0"]?.jsonPrimitive?.intOrNull) { "Holdout '$id' blockedRect missing y0" }.coerceIn(0, height - 1)
+                    val x1 = requireNotNull(rect["x1"]?.jsonPrimitive?.intOrNull) { "Holdout '$id' blockedRect missing x1" }.coerceIn(0, width - 1)
+                    val y1 = requireNotNull(rect["y1"]?.jsonPrimitive?.intOrNull) { "Holdout '$id' blockedRect missing y1" }.coerceIn(0, height - 1)
+                    val passable = rect["passable"]?.jsonPrimitive?.booleanOrNull ?: false
+                    for (r in y0..y1) for (c in x0..x1) blocked[r * width + c] = !passable
+                }
+            }
+            return ScenarioCatalog.proceduralMap(width, height, blocked, tileW, tileH)
+        }
+
+        val unitsArr = requireNotNull(obj["units"]?.jsonArray) { "Holdout scene '$id' missing required 'units' array" }
+        val unitSpawns = unitsArr.mapIndexed { ui, uEl ->
+            val u = uEl.jsonObject
+            val uid = requireNotNull(u["unitId"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }) {
+                "Holdout '$id' unit[$ui] missing 'unitId'"
+            }
+            val ux = requireNotNull(u["x"]?.jsonPrimitive?.doubleOrNull) { "Holdout '$id' unit '$uid' missing 'x'" }
+            val uy = requireNotNull(u["y"]?.jsonPrimitive?.doubleOrNull) { "Holdout '$id' unit '$uid' missing 'y'" }
+            UnitSpawn(
+                unitId = uid,
+                ownerPlayerId = u["ownerPlayerId"]?.jsonPrimitive?.contentOrNull ?: "p1",
+                typeId = u["typeId"]?.jsonPrimitive?.contentOrNull ?: "c_tank",
+                position = Position(ux, uy),
+                heading = u["heading"]?.jsonPrimitive?.doubleOrNull ?: 90.0,
+            )
+        }
+        val playersList = obj["players"]?.jsonArray?.map { pEl ->
+            val p = pEl.jsonObject
+            Player(
+                playerId = requireNotNull(p["playerId"]?.jsonPrimitive?.contentOrNull) { "Holdout '$id' player missing 'playerId'" },
+                control = PlayerControl.LOCAL,
+                teamId = p["teamId"]?.jsonPrimitive?.contentOrNull ?: "allies",
+            )
+        } ?: listOf(Player("p1", PlayerControl.LOCAL, "allies"), Player("p2", PlayerControl.LOCAL, "allies"))
+
+        val gates = obj["gates"]?.jsonArray?.mapIndexed { gi, gEl ->
+            val g = gEl.jsonObject
+            DiagnosticGateLine(
+                id = requireNotNull(g["id"]?.jsonPrimitive?.contentOrNull) { "Holdout '$id' gate[$gi] missing 'id'" },
+                axisX = g["axisX"]?.jsonPrimitive?.booleanOrNull ?: true,
+                entryThreshold = requireNotNull(g["entryThreshold"]?.jsonPrimitive?.doubleOrNull) { "Holdout '$id' gate[$gi] missing 'entryThreshold'" },
+                exitThreshold = requireNotNull(g["exitThreshold"]?.jsonPrimitive?.doubleOrNull) { "Holdout '$id' gate[$gi] missing 'exitThreshold'" },
+                minOrtho = requireNotNull(g["minOrtho"]?.jsonPrimitive?.doubleOrNull) { "Holdout '$id' gate[$gi] missing 'minOrtho'" },
+                maxOrtho = requireNotNull(g["maxOrtho"]?.jsonPrimitive?.doubleOrNull) { "Holdout '$id' gate[$gi] missing 'maxOrtho'" },
+                positiveDirection = g["positiveDirection"]?.jsonPrimitive?.booleanOrNull ?: true,
+            )
+        }.orEmpty()
+
+        data class ScheduledOrder(
+            val atStep: Long,
+            val actionId: String,
+            val owner: String,
+            val unitIds: List<String>,
+            val target: Position,
+            val groupMove: Boolean,
         )
-        return linkedMapOf(
-            "rocks-small-100" to ProbeSceneSpec(
-                id = "rocks-small-100",
-                title = "Probe: rocks-small-100 (100x c_tank through staggered narrow+wide rock gates)",
-                defaultSteps = 2900,
-                gates = rockGates,
-                build = { defs -> buildRocksScenario("rocks-small-100", defs, mixed = false) },
-                issueOrders = { ctx ->
-                    val ids = (0 until 100).map { String.format("tank-%02d", it) }
-                    val click = Position(1260.0, 400.0)
-                    val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
-                    for (id in ids) {
-                        check(ctx.submitGroupMove(MoveAction("rocks100-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
+        val orders = obj["orders"]?.jsonArray?.mapIndexed { oi, oEl ->
+            val o = oEl.jsonObject
+            val uIds = requireNotNull(o["unitIds"]?.jsonArray) { "Holdout '$id' order[$oi] missing 'unitIds'" }
+                .map { it.jsonPrimitive.content }
+            val tx = requireNotNull(o["targetX"]?.jsonPrimitive?.doubleOrNull) { "Holdout '$id' order[$oi] missing 'targetX'" }
+            val ty = requireNotNull(o["targetY"]?.jsonPrimitive?.doubleOrNull) { "Holdout '$id' order[$oi] missing 'targetY'" }
+            ScheduledOrder(
+                atStep = o["atStep"]?.jsonPrimitive?.longOrNull ?: -1L,
+                actionId = o["actionId"]?.jsonPrimitive?.contentOrNull ?: "ho-$id-$oi",
+                owner = o["ownerPlayerId"]?.jsonPrimitive?.contentOrNull ?: "p1",
+                unitIds = uIds,
+                target = Position(tx, ty),
+                groupMove = o["groupMove"]?.jsonPrimitive?.booleanOrNull ?: (uIds.size > 1),
+            )
+        }.orEmpty()
+
+        fun dispatch(ctx: SimulationContext, ord: ScheduledOrder) {
+            if (ord.groupMove && ord.unitIds.size > 1) {
+                val grp = checkNotNull(ctx.requestGroupMove(ord.owner, ord.unitIds, ord.target)) {
+                    "Holdout '$id' order '${ord.actionId}' requestGroupMove returned null for ${ord.unitIds}"
+                }
+                for (uid in ord.unitIds) {
+                    val res = ctx.submitGroupMove(MoveAction("${ord.actionId}-$uid", ord.owner, uid, ord.target, ctx.world), grp)
+                    check(res is ActionResult.Accepted) {
+                        "Holdout '$id' group order '${ord.actionId}' rejected for unit '$uid': $res"
                     }
-                },
-            ),
-            "rocks-mixed-100" to ProbeSceneSpec(
-                id = "rocks-mixed-100",
-                title = "Probe: rocks-mixed-100 (75 small + 25 slow_heavy through staggered narrow+wide rock gates)",
-                defaultSteps = 4200,
-                gates = rockGates,
-                build = { defs -> buildRocksScenario("rocks-mixed-100", defs, mixed = true) },
-                issueOrders = { ctx ->
-                    val ids = (0 until 100).map { String.format("tank-%02d", it) }
-                    val click = Position(1260.0, 400.0)
-                    val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
-                    for (id in ids) {
-                        check(ctx.submitGroupMove(MoveAction("rocksmix-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
+                }
+                return
+            }
+            for (uid in ord.unitIds) {
+                val res = ctx.submit(MoveAction("${ord.actionId}-$uid", ord.owner, uid, ord.target, ctx.world))
+                check(res is ActionResult.Accepted) {
+                    "Holdout '$id' order '${ord.actionId}' rejected for unit '$uid': $res"
+                }
+            }
+        }
+
+        val minArrived = obj["minArrived"]?.jsonPrimitive?.intOrNull
+        val maxContacts = obj["maxHardContactPairs"]?.jsonPrimitive?.intOrNull
+        val customDefs = obj["customUnitDefinitions"]?.jsonArray
+
+        return ScenarioCatalogEntry(
+            id = id,
+            displayName = displayName,
+            category = ScenarioCategory.EXTERNAL_HOLDOUT,
+            family = family,
+            group = group,
+            seed = seed,
+            description = description,
+            defaultSteps = defaultSteps,
+            playerCount = playersList.size,
+            startingUnitCount = unitSpawns.size,
+            knownLimitation = knownLimitation,
+            gates = gates,
+            buildMap = ::buildMap,
+            buildScenario = { defs ->
+                val mergedDefs = LinkedHashMap(defs)
+                if (customDefs != null) {
+                    val baseTank = defs.getValue("c_tank")
+                    for (cdEl in customDefs) {
+                        val cd = cdEl.jsonObject
+                        val cid = cd["id"]!!.jsonPrimitive.content
+                        val radius = cd["radius"]?.jsonPrimitive?.double ?: 6.0
+                        val moveSpeed = cd["moveSpeed"]?.jsonPrimitive?.double ?: baseTank.movement.moveSpeed
+                        val mass = cd["mass"]?.jsonPrimitive?.double ?: 3000.0
+                        val rectL = cd["rectLength"]?.jsonPrimitive?.double
+                        val rectW = cd["rectWidth"]?.jsonPrimitive?.double
+                        val shape = if (rectL != null && rectW != null) MovementCollisionShape.Rectangle(rectL, rectW)
+                        else MovementCollisionShape.Circle(radius)
+                        mergedDefs[cid] = UnitDefinition(
+                            id = cid, className = baseTank.className, radius = radius, displayRadius = radius,
+                            totalFrames = baseTank.totalFrames, imagePath = baseTank.imagePath, imageScale = baseTank.imageScale,
+                            movement = baseTank.movement.copy(moveSpeed = moveSpeed),
+                            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+                            combat = baseTank.combat, durability = baseTank.durability, build = baseTank.build,
+                            movementCollision = shape, explicitMovementCollision = true, mass = mass,
+                        )
                     }
-                },
-            ),
-            "opposed-open-25v25" to ProbeSceneSpec(
-                id = "opposed-open-25v25",
-                title = "Probe: opposed-open-25v25 (25 Eastbound vs 25 Westbound head-on)",
-                defaultSteps = 2400,
-                gates = listOf(
-                    GateLine("midline-eastbound", axisX = true, worldThreshold = 500.0, minOrtho = 0.0, maxOrtho = 600.0, positiveDirection = true),
-                    GateLine("midline-westbound", axisX = true, worldThreshold = 500.0, minOrtho = 0.0, maxOrtho = 600.0, positiveDirection = false),
-                ),
-                build = { defs -> buildOpposedOpenScenario("opposed-open-25v25", defs) },
-                issueOrders = { ctx ->
-                    val eastIds = (0 until 25).map { String.format("east-%02d", it) }
-                    val westIds = (0 until 25).map { String.format("west-%02d", it) }
-                    val gEast = checkNotNull(ctx.requestGroupMove("p1", eastIds, Position(780.0, 300.0)))
-                    for (id in eastIds) check(ctx.submitGroupMove(MoveAction("east-$id", "p1", id, Position(780.0, 300.0), ctx.world), gEast) is ActionResult.Accepted)
-                    val gWest = checkNotNull(ctx.requestGroupMove("p2", westIds, Position(220.0, 300.0)))
-                    for (id in westIds) check(ctx.submitGroupMove(MoveAction("west-$id", "p2", id, Position(220.0, 300.0), ctx.world), gWest) is ActionResult.Accepted)
-                },
-            ),
-            "opposed-corridor-8v8" to ProbeSceneSpec(
-                id = "opposed-corridor-8v8",
-                title = "Probe: opposed-corridor-8v8 (3-tile corridor bidirectional 8v8)",
-                defaultSteps = 1800,
-                gates = listOf(
-                    GateLine("corridor-exit-east", axisX = true, worldThreshold = 620.0, minOrtho = 175.0, maxOrtho = 245.0, positiveDirection = true),
-                    GateLine("corridor-exit-west", axisX = true, worldThreshold = 280.0, minOrtho = 175.0, maxOrtho = 245.0, positiveDirection = false),
-                ),
-                build = { defs -> buildOpposedCorridorScenario("opposed-corridor-8v8", defs) },
-                issueOrders = { ctx ->
-                    val eastIds = (0 until 8).map { String.format("ceast-%02d", it) }
-                    val westIds = (0 until 8).map { String.format("cwest-%02d", it) }
-                    val gEast = checkNotNull(ctx.requestGroupMove("p1", eastIds, Position(760.0, 200.0)))
-                    for (id in eastIds) check(ctx.submitGroupMove(MoveAction("ceast-$id", "p1", id, Position(760.0, 200.0), ctx.world), gEast) is ActionResult.Accepted)
-                    val gWest = checkNotNull(ctx.requestGroupMove("p2", westIds, Position(140.0, 200.0)))
-                    for (id in westIds) check(ctx.submitGroupMove(MoveAction("cwest-$id", "p2", id, Position(140.0, 200.0), ctx.world), gWest) is ActionResult.Accepted)
-                },
-            ),
-            "mixed-overtake-wide" to ProbeSceneSpec(
-                id = "mixed-overtake-wide",
-                title = "Probe: mixed-overtake-wide (8 fast scouts overtaking 3 slow heavies)",
-                defaultSteps = 1300,
-                gates = listOf(
-                    GateLine("overtake-line-x540", axisX = true, worldThreshold = 540.0, minOrtho = 110.0, maxOrtho = 330.0, positiveDirection = true),
-                ),
-                build = { defs -> buildMixedOvertakeScenario("mixed-overtake-wide", defs) },
-                issueOrders = { ctx ->
-                    val ids = listOf("heavy-0", "heavy-1", "heavy-2") + (0 until 8).map { "scout-$it" }
-                    val click = Position(780.0, 220.0)
-                    val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
-                    for (id in ids) check(ctx.submitGroupMove(MoveAction("ov-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
-                },
-            ),
-            "narrow-bridge-yield" to ProbeSceneSpec(
-                id = "narrow-bridge-yield",
-                title = "Probe: narrow-bridge-yield (1-tile bridge outside-mouth yield)",
-                defaultSteps = 900,
-                gates = listOf(
-                    GateLine("bridge-east-exit", axisX = true, worldThreshold = 420.0, minOrtho = 195.0, maxOrtho = 225.0, positiveDirection = true),
-                    GateLine("bridge-west-exit", axisX = true, worldThreshold = 300.0, minOrtho = 195.0, maxOrtho = 225.0, positiveDirection = false),
-                ),
-                build = { defs -> buildNarrowBridgeYieldScenario("narrow-bridge-yield", defs) },
-                issueOrders = { ctx ->
-                    check(ctx.submit(MoveAction("nb-east", "p1", "east-0", Position(580.0, 210.0), ctx.world)) is ActionResult.Accepted)
-                    check(ctx.submit(MoveAction("nb-west", "p2", "west-0", Position(140.0, 210.0), ctx.world)) is ActionResult.Accepted)
-                },
-            ),
-            "air-flock-rally" to ProbeSceneSpec(
-                id = "air-flock-rally",
-                title = "Probe: air-flock-rally (16 airborne choppers soft-separating at shared rally)",
-                defaultSteps = 600,
-                gates = emptyList(),
-                build = { defs -> buildAirFlockScenario("air-flock-rally", defs) },
-                issueOrders = { ctx ->
-                    val click = Position(540.0, 240.0)
-                    for (i in 0 until 16) check(ctx.submit(MoveAction("air-$i", "p1", "chopper-$i", click, ctx.world)) is ActionResult.Accepted)
-                },
-            ),
-            "open-50-217-166" to ProbeSceneSpec(
-                id = "open-50-217-166",
-                title = "Probe: open-50-217-166 (50 tanks converging on (217, 166) open ground)",
-                defaultSteps = 1400,
-                gates = emptyList(),
-                build = { defs -> buildOpen50Scenario("open-50-217-166", defs) },
-                issueOrders = { ctx ->
-                    val ids = (0 until 50).map { String.format("u-%02d", it) }
-                    val click = Position(217.0, 166.0)
-                    val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
-                    for (id in ids) check(ctx.submitGroupMove(MoveAction("open50-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
-                },
-            ),
-            "culdesac-overflow-100" to ProbeSceneSpec(
-                id = "culdesac-overflow-100",
-                title = "Probe: culdesac-overflow-100 (known limitation monitor)",
-                defaultSteps = 2200,
-                gates = listOf(
-                    GateLine("pocket-mouth-x560", axisX = true, worldThreshold = 560.0, minOrtho = 215.0, maxOrtho = 305.0, positiveDirection = true),
-                ),
-                build = { defs -> buildCulDeSacScenario("culdesac-overflow-100", defs) },
-                issueOrders = { ctx ->
-                    val ids = (0 until 100).map { String.format("cds-%02d", it) }
-                    val click = Position(710.0, 260.0)
-                    val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
-                    for (id in ids) check(ctx.submitGroupMove(MoveAction("cds100-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
-                },
-            ),
+                }
+                ScenarioCatalog.baseScenario(id, buildMap(), mergedDefs, unitSpawns, worldSeed = seed, players = playersList)
+            },
+            issueOrders = { ctx ->
+                for (ord in orders) if (ord.atStep < 0L) dispatch(ctx, ord)
+            },
+            onStep = { ctx, step ->
+                for (ord in orders) if (ord.atStep == step) dispatch(ctx, ord)
+            },
+            assertOutcome = { seq ->
+                val errs = mutableListOf<String>()
+                val last = seq.frames.last()
+                if (minArrived != null && last.arrivedCount < minArrived) {
+                    errs += "Expected >= $minArrived arrived, got ${last.arrivedCount}/${last.units.size}"
+                }
+                if (maxContacts != null) {
+                    val peakContacts = seq.frames.maxOfOrNull { it.hardContactCount } ?: 0
+                    if (peakContacts > maxContacts) {
+                        errs += "Expected <= $maxContacts hard contacts, got $peakContacts"
+                    }
+                }
+                errs
+            },
         )
     }
 
     fun runSceneProbe(
-        spec: ProbeSceneSpec,
+        entry: ScenarioCatalogEntry,
         definitions: Map<String, UnitDefinition>,
         outputDir: Path,
         stepsOverride: Int? = null,
         renderSheets: Boolean = true,
     ): JsonObject {
-        val steps = stepsOverride ?: spec.defaultSteps
+        val steps = stepsOverride ?: entry.defaultSteps
         check(steps > 0) { "steps must be positive: $steps" }
         Files.createDirectories(outputDir)
 
-        val scenario = spec.build(definitions)
+        val scenario = entry.buildScenario(definitions)
+        val mapSha = ScenarioCatalog.mapHash(scenario.map)
+        val paramSha = MovementParameterFingerprint.sha256Hex()
         val init = SimulationContext.initialize(scenario)
-        check(init is InitResult.Accepted) { "Init rejected for ${spec.id}: $init" }
+        check(init is InitResult.Accepted) { "Init rejected for ${entry.id}: $init" }
         val ctx = init.context
 
         val observations = ArrayList<Observation>(steps + 1)
@@ -284,10 +299,12 @@ object MovementMicroProbe {
         val wallSimStart = System.nanoTime()
 
         try {
-            spec.issueOrders(ctx)
+            entry.issueOrders(ctx)
             observations += ctx.observe()
             for (i in 0 until steps) {
-                val tickStep = Step(i.toLong(), 1.0, "sim-tick")
+                val stepIdx = i.toLong()
+                entry.onStep(ctx, stepIdx)
+                val tickStep = Step(stepIdx, 1.0, "sim-tick")
                 val allocBefore = sunThreadBean?.getThreadAllocatedBytes(threadId) ?: 0L
                 val t0 = System.nanoTime()
                 val obs = ctx.advance(tickStep)
@@ -305,77 +322,32 @@ object MovementMicroProbe {
         val gcCountDelta = gcBeans.sumOf { max(0L, it.collectionCount) } - gcCountBefore
         val gcTimeMsDelta = gcBeans.sumOf { max(0L, it.collectionTime) } - gcTimeMsBefore
 
-        // Gate crossing throughput analysis on authoritative observations
-        val gateStats = spec.gates.map { gate ->
-            val crossedUnits = HashSet<String>()
-            var firstStep: Long? = null
-            var lastStep: Long? = null
-            var prevByUnit = observations.first().units.associate { it.unitId to it.position }
-            for (idx in 1 until observations.size) {
-                val obs = observations[idx]
-                val stepIdx = idx.toLong() - 1L
-                for (u in obs.units) {
-                    if (u.unitId in crossedUnits) continue
-                    val prev = prevByUnit[u.unitId] ?: continue
-                    if (gate.crossed(prev, u.position)) {
-                        crossedUnits += u.unitId
-                        if (firstStep == null) firstStep = stepIdx
-                        lastStep = stepIdx
-                    }
-                }
-                prevByUnit = obs.units.associate { it.unitId to it.position }
-            }
-            val activeWindowSeconds = if (firstStep != null && lastStep != null && lastStep >= firstStep) {
-                max(1L, lastStep - firstStep + 1L) / 60.0
-            } else 0.0
-            val throughputPerSec = if (activeWindowSeconds > 0.0) crossedUnits.size / activeWindowSeconds else 0.0
+        val sequence = DiagnosticSceneProjector.projectSequence(observations, scenario.unitDefinitions, gates = entry.gates)
+        val assertionFailures = entry.assertOutcome(sequence)
+        val enrichedGateStats = sequence.gateSummaries.map { gs ->
             buildJsonObject {
-                put("gateId", gate.id)
-                put("crossedUnits", crossedUnits.size)
-                put("firstCrossStep", firstStep?.let(::JsonPrimitive) ?: JsonNull)
-                put("lastCrossStep", lastStep?.let(::JsonPrimitive) ?: JsonNull)
-                put("throughputUnitsPerSec", round3(throughputPerSec))
+                put("gateId", gs.gateId)
+                put("enteredUnits", gs.enteredCount)
+                put("sternExitedUnits", gs.sternExitedCount)
+                put("crossedUnits", gs.sternExitedCount)
+                put("targetSideSettledUnits", gs.targetSideSettledCount)
+                put("firstEntryStep", gs.firstEntryStep?.let(::JsonPrimitive) ?: JsonNull)
+                put("firstCrossStep", gs.firstExitStep?.let(::JsonPrimitive) ?: JsonNull)
+                put("lastCrossStep", gs.lastExitStep?.let(::JsonPrimitive) ?: JsonNull)
+                put("maxExitGapSteps", gs.maxExitGapSteps)
+                put("throughputUnitsPerSec", round3(gs.throughputUnitsPerSec))
             }
         }
 
-        val diagnosticGates = spec.gates.map { gate ->
-            val halfDepth = 20.0
-            val entry = if (gate.positiveDirection) gate.worldThreshold - halfDepth * 2.0 else gate.worldThreshold + halfDepth * 2.0
-            DiagnosticGateLine(
-                id = gate.id,
-                axisX = gate.axisX,
-                entryThreshold = entry,
-                exitThreshold = gate.worldThreshold,
-                minOrtho = gate.minOrtho,
-                maxOrtho = gate.maxOrtho,
-                positiveDirection = gate.positiveDirection,
-            )
-        }
-        val sequence = DiagnosticSceneProjector.projectSequence(observations, scenario.unitDefinitions, gates = diagnosticGates)
-        val gateSummaryById = sequence.gateSummaries.associateBy { it.gateId }
-        val enrichedGateStats = gateStats.map { obj ->
-            val gid = obj["gateId"]!!.jsonPrimitive.content
-            val gs = gateSummaryById[gid]
-            buildJsonObject {
-                for ((k, v) in obj) put(k, v)
-                if (gs != null) {
-                    put("enteredUnits", gs.enteredCount)
-                    put("sternExitedUnits", gs.sternExitedCount)
-                    put("targetSideSettledUnits", gs.targetSideSettledCount)
-                    put("firstEntryStep", gs.firstEntryStep?.let(::JsonPrimitive) ?: JsonNull)
-                    put("maxExitGapSteps", gs.maxExitGapSteps)
-                }
-            }
-        }
         var contactSheetPathStr: String? = null
         var peakZoomPathStr: String? = null
         if (renderSheets) {
-            val contactSheet = outputDir.resolve("${spec.id}-contact-sheet.png")
-            val peakZoom = outputDir.resolve("${spec.id}-peak-zoom.png")
+            val contactSheet = outputDir.resolve("${entry.id}-contact-sheet.png")
+            val peakZoom = outputDir.resolve("${entry.id}-peak-zoom.png")
             val rendered = DiagnosticContactSheetRenderer.writeArtifacts(
                 sequence = sequence,
                 map = scenario.map,
-                title = spec.title,
+                title = "Probe: ${entry.id} (${entry.displayName})",
                 contactSheetPath = contactSheet,
                 peakZoomPath = peakZoom,
             )
@@ -394,8 +366,15 @@ object MovementMicroProbe {
         val maxContacts = sequence.frames.maxOfOrNull { it.hardContactCount } ?: 0
 
         val report = buildJsonObject {
-            put("sceneId", spec.id)
-            put("title", spec.title)
+            put("sceneId", entry.id)
+            put("title", entry.displayName)
+            put("category", entry.category.id)
+            put("family", entry.family)
+            put("group", entry.group)
+            put("seed", entry.seed)
+            put("mapHash", mapSha)
+            put("parameterHash", paramSha)
+            put("knownLimitation", entry.knownLimitation?.let(::JsonPrimitive) ?: JsonNull)
             put("steps", steps)
             put("simWallSeconds", round3(simWallSeconds))
             put("totalMobileUnits", finalFrame.units.size)
@@ -407,6 +386,8 @@ object MovementMicroProbe {
             put("lastArrivalStep", sequence.lastArrivalStep?.let(::JsonPrimitive) ?: JsonNull)
             put("maxStalled2sUnits", maxStalled)
             put("maxHardContactPairs", maxContacts)
+            put("assertionsPassed", assertionFailures.isEmpty())
+            put("assertionFailures", JsonArray(assertionFailures.map(::JsonPrimitive)))
             put("stepLatencyMs", buildJsonObject {
                 put("mean", round4(stepNanos.average() / 1_000_000.0))
                 put("p50", round4(percentileLong(sortedNanos, 0.50) / 1_000_000.0))
@@ -428,10 +409,114 @@ object MovementMicroProbe {
             put("peakZoom", peakZoomPathStr?.let(::JsonPrimitive) ?: JsonNull)
         }
         Files.writeString(
-            outputDir.resolve("${spec.id}-probe.json"),
+            outputDir.resolve("${entry.id}-probe.json"),
             Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), report) + "\n",
         )
         return report
+    }
+
+    /** Executes unified `--scene` CLI arguments and returns exit code (0 = pass, 2 = assertion failure). */
+    fun executeCli(args: Array<String>): Int {
+        var repoRoot: Path? = null
+        var outputDir: Path? = null
+        var sceneFilter = "rocks-small-100"
+        var stepsOverride: Int? = null
+        var renderSheets = true
+        var assertMode = false
+        var holdoutFile: Path? = null
+        var listMode = false
+
+        var idx = 0
+        while (idx < args.size) {
+            when (val arg = args[idx++]) {
+                "--repo-root" -> repoRoot = Path.of(args.getOrElse(idx++) { error("Missing value for --repo-root") })
+                "--output" -> outputDir = Path.of(args.getOrElse(idx++) { error("Missing value for --output") })
+                "--scene" -> sceneFilter = args.getOrElse(idx++) { error("Missing value for --scene") }
+                "--steps" -> stepsOverride = args.getOrElse(idx++) { error("Missing value for --steps") }.toInt()
+                "--sheets" -> renderSheets = args.getOrElse(idx++) { error("Missing value for --sheets") }.toBooleanStrict()
+                "--assert" -> assertMode = args.getOrElse(idx++) { error("Missing value for --assert") }.toBooleanStrict()
+                "--holdout-file" -> holdoutFile = Path.of(args.getOrElse(idx++) { error("Missing value for --holdout-file") })
+                "--list" -> listMode = true
+                else -> error("Unknown argument: $arg")
+            }
+        }
+
+        val externalEntries = holdoutFile?.let(::loadExternalHoldoutEntries).orEmpty()
+        val allEntries = linkedMapOf<String, ScenarioCatalogEntry>().apply {
+            for (e in ScenarioCatalog.devBenchmarkEntries()) put(e.id, e)
+            for (e in externalEntries) put(e.id, e)
+        }
+
+        if (listMode) {
+            val payload = buildJsonObject {
+                put("schemaVersion", 2)
+                put("parameterHash", MovementParameterFingerprint.sha256Hex())
+                put("parameters", buildJsonObject {
+                    for ((k, v) in MovementParameterFingerprint.canonicalParameters()) put(k, v)
+                })
+                put("scenes", JsonArray(allEntries.values.map { e ->
+                    buildJsonObject {
+                        put("id", e.id)
+                        put("displayName", e.displayName)
+                        put("category", e.category.id)
+                        put("family", e.family)
+                        put("group", e.group)
+                        put("seed", e.seed)
+                        put("defaultSteps", e.defaultSteps)
+                        put("knownLimitation", e.knownLimitation?.let(::JsonPrimitive) ?: JsonNull)
+                    }
+                }))
+            }
+            println(Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), payload))
+            return 0
+        }
+
+        val resolvedRepo = (repoRoot ?: generateSequence(Path.of("").toAbsolutePath().normalize()) { it.parent }
+            .firstOrNull { Files.isRegularFile(it.resolve("AGENTS.md")) || Files.isDirectory(it.resolve("SimulationTest")) }
+            ?: error("Cannot locate repository root; pass --repo-root")).toAbsolutePath().normalize()
+        val resolvedOut = (outputDir ?: Files.createTempDirectory("reforge-movement-probe-")).toAbsolutePath().normalize()
+        Files.createDirectories(resolvedOut)
+
+        val selectedIds = when (sceneFilter) {
+            "all" -> if (holdoutFile != null) allEntries.keys.toList() else ScenarioCatalog.allIds()
+            "dev-ab" -> ScenarioCatalog.allIds()
+            "holdout" -> {
+                require(externalEntries.isNotEmpty()) { "--scene holdout requires --holdout-file <json>" }
+                externalEntries.map { it.id }
+            }
+            else -> sceneFilter.split(',').map(String::trim).filter(String::isNotEmpty)
+        }
+        require(selectedIds.isNotEmpty()) { "--scene must select at least one scenario" }
+        for (id in selectedIds) {
+            require(id in allEntries) { "Unknown catalog scene '$id'; available=${allEntries.keys}" }
+        }
+
+        val definitions = loadStandardDefinitions(resolvedRepo)
+        val reports = selectedIds.map { id ->
+            val entry = allEntries.getValue(id)
+            val sceneOut = resolvedOut.resolve(id).normalize()
+            require(sceneOut.startsWith(resolvedOut)) { "Resolved scene output path escapes --output: $sceneOut" }
+            runSceneProbe(
+                entry = entry,
+                definitions = definitions,
+                outputDir = sceneOut,
+                stepsOverride = stepsOverride,
+                renderSheets = renderSheets,
+            )
+        }
+        val allPassed = reports.all { it["assertionsPassed"]?.jsonPrimitive?.booleanOrNull == true }
+        val summary = buildJsonObject {
+            put("schemaVersion", 2)
+            put("parameterHash", MovementParameterFingerprint.sha256Hex())
+            put("outputDir", resolvedOut.toString())
+            put("assertMode", assertMode)
+            put("allAssertionsPassed", allPassed)
+            put("scenes", JsonArray(reports))
+        }
+        val text = Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), summary)
+        Files.writeString(resolvedOut.resolve("probe-summary.json"), text + "\n")
+        println(text)
+        return if (assertMode && !allPassed) 2 else 0
     }
 
     private fun percentileLong(sorted: LongArray, p: Double): Long {
@@ -442,237 +527,9 @@ object MovementMicroProbe {
 
     private fun round3(v: Double): Double = kotlin.math.round(v * 1000.0) / 1000.0
     private fun round4(v: Double): Double = kotlin.math.round(v * 10000.0) / 10000.0
-
-    private fun buildRocksScenario(id: String, definitions: Map<String, UnitDefinition>, mixed: Boolean): Scenario {
-        val w = 74
-        val h = 40
-        val gates = listOf(Triple(24, 12, 23), Triple(34, 15, 20), Triple(44, 11, 25))
-        val blocked = BooleanArray(w * h) { idx ->
-            val x = idx % w
-            val y = idx / w
-            if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
-            else gates.any { (start, narrow, wide) ->
-                x in start until (start + 2) && y != narrow && y !in wide until (wide + 6)
-            }
-        }
-        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
-        val units = (0 until 100).map { index ->
-            val x = 420.0 - 36.0 * (index / 10)
-            val y = 180.0 + 36.0 * (index % 10)
-            val type = if (mixed && index % 4 == 3) "slow_heavy" else "c_tank"
-            UnitSpawn(String.format("tank-%02d", index), "p1", type, Position(x, y), 90.0)
-        }
-        return baseScenario(id, map, definitions, units)
-    }
-
-    private fun buildOpposedOpenScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
-        val w = 50
-        val h = 30
-        val blocked = BooleanArray(w * h) { idx ->
-            val x = idx % w
-            val y = idx / w
-            x == 0 || x == w - 1 || y == 0 || y == h - 1
-        }
-        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
-        val units = buildList {
-            for (i in 0 until 25) {
-                add(UnitSpawn(String.format("east-%02d", i), "p1", "c_tank",
-                    Position(240.0 - (i / 5) * 28.0, 244.0 + (i % 5) * 28.0), 90.0))
-            }
-            for (i in 0 until 25) {
-                add(UnitSpawn(String.format("west-%02d", i), "p2", "c_tank",
-                    Position(760.0 + (i / 5) * 28.0, 244.0 + (i % 5) * 28.0), 270.0))
-            }
-        }
-        return baseScenario(id, map, definitions, units)
-    }
-
-    private fun buildOpposedCorridorScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
-        val w = 45
-        val h = 20
-        val blocked = BooleanArray(w * h) { idx ->
-            val x = idx % w
-            val y = idx / w
-            if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
-            else (x in 14..30) && (y !in 9..11)
-        }
-        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
-        val units = buildList {
-            for (i in 0 until 8) {
-                add(UnitSpawn(String.format("ceast-%02d", i), "p1", "c_tank",
-                    Position(220.0 - (i / 2) * 26.0, 192.0 + (i % 2) * 16.0), 90.0))
-            }
-            for (i in 0 until 8) {
-                add(UnitSpawn(String.format("cwest-%02d", i), "p2", "c_tank",
-                    Position(680.0 + (i / 2) * 26.0, 192.0 + (i % 2) * 16.0), 270.0))
-            }
-        }
-        return baseScenario(id, map, definitions, units)
-    }
-
-    private fun buildMixedOvertakeScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
-        val w = 44
-        val h = 22
-        val blocked = BooleanArray(w * h) { idx ->
-            val x = idx % w
-            val y = idx / w
-            if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
-            else (y < 6 || y > 15)
-        }
-        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
-        val units = buildList {
-            add(UnitSpawn("heavy-0", "p1", "slow_heavy", Position(340.0, 220.0), 90.0))
-            add(UnitSpawn("heavy-1", "p1", "slow_heavy", Position(280.0, 190.0), 90.0))
-            add(UnitSpawn("heavy-2", "p1", "slow_heavy", Position(280.0, 250.0), 90.0))
-            for (i in 0 until 8) {
-                add(UnitSpawn("scout-$i", "p1", "fast_scout", Position(190.0 - (i / 4) * 24.0, 185.0 + (i % 4) * 24.0), 90.0))
-            }
-        }
-        return baseScenario(id, map, definitions, units)
-    }
-
-    private fun buildNarrowBridgeYieldScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
-        val w = 36
-        val h = 21
-        val blocked = BooleanArray(w * h) { idx ->
-            val x = idx % w
-            val y = idx / w
-            if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
-            else (x in 15..20) && (y != 10)
-        }
-        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
-        val units = listOf(
-            UnitSpawn("east-0", "p1", "c_tank", Position(330.0, 210.0), 90.0),
-            UnitSpawn("west-0", "p2", "c_tank", Position(440.0, 210.0), 270.0),
-        )
-        return baseScenario(id, map, definitions, units)
-    }
-
-    private fun buildAirFlockScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
-        val w = 36
-        val h = 24
-        val blocked = BooleanArray(w * h) { idx ->
-            val x = idx % w
-            val y = idx / w
-            x == 0 || x == w - 1 || y == 0 || y == h - 1
-        }
-        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
-        val units = (0 until 16).map { i ->
-            UnitSpawn("chopper-$i", "p1", "helicopter", Position(100.0 + (i / 4) * 34.0, 160.0 + (i % 4) * 34.0), 90.0)
-        }
-        return baseScenario(id, map, definitions, units)
-    }
-
-    private fun buildOpen50Scenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
-        val w = 40
-        val h = 30
-        val blocked = BooleanArray(w * h) { idx ->
-            val x = idx % w
-            val y = idx / w
-            x == 0 || x == w - 1 || y == 0 || y == h - 1
-        }
-        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
-        val units = (0 until 50).map { i ->
-            val col = i % 10
-            val row = i / 10
-            UnitSpawn(String.format("u-%02d", i), "p1", "c_tank", Position(420.0 + col * 24.0, 260.0 + row * 24.0), 270.0)
-        }
-        return baseScenario(id, map, definitions, units)
-    }
-
-    private fun buildCulDeSacScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
-        val w = 44
-        val h = 26
-        val blocked = BooleanArray(w * h) { idx ->
-            val x = idx % w
-            val y = idx / w
-            if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
-            else x >= 28 && (y < 11 || y > 14 || x > 37)
-        }
-        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
-        val units = (0 until 100).map { i ->
-            UnitSpawn(String.format("cds-%02d", i), "p1", "c_tank", Position(420.0 - (i / 10) * 24.0, 160.0 + (i % 10) * 22.0), 90.0)
-        }
-        return baseScenario(id, map, definitions, units)
-    }
-
-    private fun baseScenario(
-        id: String,
-        map: MapDefinition,
-        definitions: Map<String, UnitDefinition>,
-        units: List<UnitSpawn>,
-    ): Scenario = Scenario(
-        scenarioId = id,
-        map = map,
-        unitDefinitions = definitions,
-        players = listOf(Player("p1", PlayerControl.LOCAL, "allies"), Player("p2", PlayerControl.LOCAL, "allies")),
-        units = units,
-        coordinateModel = CoordinateModel("public.coordinate.v1", "2d", "x-right", "y-down", "top-left", "world-unit", "double", "ieee754-binary64"),
-        timeModel = TimeModel("public.time.v1", "sim-tick", "ieee754-binary64", "fixed-explicit-delta"),
-        movementContract = MovementContract(16.0, 4.0),
-        economyContract = EconomyContract(mapOf("p1" to 30000L, "p2" to 30000L)),
-        combatContract = CombatContract(
-            worldSeed = 12345,
-            initialFrameCounter = -1,
-            unitObjectIds = units.mapIndexed { idx, u -> u.unitId to (8L + idx) }.toMap(),
-            nextObjectId = 8L + units.size,
-        ),
-    )
 }
 
 fun main(args: Array<String>) {
-    var repoRoot: Path? = null
-    var outputDir: Path? = null
-    var sceneFilter = "rocks-small-100"
-    var stepsOverride: Int? = null
-    var renderSheets = true
-
-    var idx = 0
-    while (idx < args.size) {
-        when (val arg = args[idx++]) {
-            "--repo-root" -> repoRoot = Path.of(args.getOrElse(idx++) { error("Missing value for --repo-root") })
-            "--output" -> outputDir = Path.of(args.getOrElse(idx++) { error("Missing value for --output") })
-            "--scene" -> sceneFilter = args.getOrElse(idx++) { error("Missing value for --scene") }
-            "--steps" -> stepsOverride = args.getOrElse(idx++) { error("Missing value for --steps") }.toInt()
-            "--sheets" -> renderSheets = args.getOrElse(idx++) { error("Missing value for --sheets") }.toBooleanStrict()
-            "--list" -> {
-                println(Json { prettyPrint = true }.encodeToString(JsonArray.serializer(), JsonArray(MovementMicroProbe.ALL_SCENE_IDS.map(::JsonPrimitive))))
-                return
-            }
-            else -> error("Unknown argument: $arg")
-        }
-    }
-
-    val resolvedRepo = (repoRoot ?: generateSequence(Path.of("").toAbsolutePath().normalize()) { it.parent }
-        .firstOrNull { Files.isRegularFile(it.resolve("AGENTS.md")) || Files.isDirectory(it.resolve("SimulationTest")) }
-        ?: error("Cannot locate repository root; pass --repo-root")).toAbsolutePath().normalize()
-    val resolvedOut = (outputDir ?: Files.createTempDirectory("reforge-movement-probe-")).toAbsolutePath().normalize()
-    Files.createDirectories(resolvedOut)
-
-    val specs = MovementMicroProbe.sceneSpecs()
-    val selectedIds = if (sceneFilter == "all") MovementMicroProbe.ALL_SCENE_IDS
-    else sceneFilter.split(',').map(String::trim).filter(String::isNotEmpty)
-    for (id in selectedIds) {
-        require(id in specs) { "Unknown probe scene '$id'; available=${specs.keys}" }
-    }
-
-    val definitions = MovementMicroProbe.loadStandardDefinitions(resolvedRepo)
-    val reports = selectedIds.map { id ->
-        val spec = specs.getValue(id)
-        MovementMicroProbe.runSceneProbe(
-            spec = spec,
-            definitions = definitions,
-            outputDir = resolvedOut.resolve(id),
-            stepsOverride = stepsOverride,
-            renderSheets = renderSheets,
-        )
-    }
-    val summary = buildJsonObject {
-        put("schemaVersion", 1)
-        put("outputDir", resolvedOut.toString())
-        put("scenes", JsonArray(reports))
-    }
-    val text = Json { prettyPrint = true }.encodeToString(JsonObject.serializer(), summary)
-    Files.writeString(resolvedOut.resolve("probe-summary.json"), text + "\n")
-    println(text)
+    val code = MovementMicroProbe.executeCli(args)
+    if (code != 0) kotlin.system.exitProcess(code)
 }

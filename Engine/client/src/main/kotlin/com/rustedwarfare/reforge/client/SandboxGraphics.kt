@@ -194,6 +194,10 @@ class SandboxGraphics private constructor(
     }
 
     private fun loadParsedTiles(activeGids: Set<Int>) {
+        if (resources.tileSets.isEmpty()) {
+            synthesizeProceduralTerrainTiles()
+            return
+        }
         // ADR-013: Only load atlases actually referenced by at least one non-zero GID in visual layers.
         // If activeGids is empty (e.g. direct unit-test call with empty ground), load all declared atlases.
         val atlasesToLoad = if (activeGids.isEmpty()) resources.tileSets
@@ -270,6 +274,50 @@ class SandboxGraphics private constructor(
             }
         } finally {
             uploaded.values.forEach { it.pixmap.dispose() }
+        }
+    }
+
+    /**
+     * Synthesizes crisp battlefield ground (GID 1) and beveled rock-wall (GID 2) tiles for
+     * procedural `ScenarioCatalog` benchmark maps that do not embed external `.tmx` tilesets.
+     */
+    private fun synthesizeProceduralTerrainTiles() {
+        val tw = resources.tileWidth.coerceAtLeast(8)
+        val th = resources.tileHeight.coerceAtLeast(8)
+        val pm = Pixmap(tw * 2, th, Pixmap.Format.RGBA8888)
+        try {
+            pm.blending = Pixmap.Blending.None
+            // GID 1 (left half): muted olive battlefield turf with subtle grid border
+            for (y in 0 until th) {
+                for (x in 0 until tw) {
+                    val border = x == 0 || y == 0
+                    val rgba = if (border) 0x3D5836FF else 0x45633DFF
+                    pm.drawPixel(x, y, rgba)
+                }
+            }
+            // GID 2 (right half): crisp beveled rock/wall obstacle
+            for (y in 0 until th) {
+                for (x in 0 until tw) {
+                    val rgba = when {
+                        x == 0 || y == 0 -> 0x737971FF
+                        x == tw - 1 || y == th - 1 -> 0x3A3F3BFF
+                        (x + y) % 5 == 0 -> 0x555B54FF
+                        else -> 0x5E645DFF
+                    }
+                    pm.drawPixel(tw + x, y, rgba)
+                }
+            }
+            val tex = Texture(pm).also {
+                owned += it
+                it.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
+            }
+            loadedTerrainTextureCount++
+            tiles[1] = TextureRegion(tex, 0, 0, tw, th)
+            tiles[2] = TextureRegion(tex, tw, 0, tw, th)
+            tileAverageColors[1] = TerrainTileColorSampler.samplePixmapTile(pm, 0, 0, tw, th)
+            tileAverageColors[2] = TerrainTileColorSampler.samplePixmapTile(pm, tw, 0, tw, th)
+        } finally {
+            pm.dispose()
         }
     }
 

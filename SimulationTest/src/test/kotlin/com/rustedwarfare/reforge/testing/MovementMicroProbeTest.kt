@@ -19,9 +19,9 @@ class MovementMicroProbeTest {
         val tempOut = Files.createTempDirectory("movement-micro-probe-test-")
         try {
             val definitions = MovementMicroProbe.loadStandardDefinitions(repoRoot)
-            val spec = MovementMicroProbe.sceneSpecs().getValue("narrow-bridge-yield")
+            val entry = checkNotNull(com.rustedwarfare.reforge.core.sim.ScenarioCatalog.byId("narrow-bridge-yield"))
             val report = MovementMicroProbe.runSceneProbe(
-                spec = spec,
+                entry = entry,
                 definitions = definitions,
                 outputDir = tempOut.resolve("narrow-bridge-yield"),
                 stepsOverride = 260,

@@ -35,6 +35,83 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
         begin(choice.root, choice.content, prepareVisuals, choice)
     }
 
+    fun requestCatalogScenario(
+        entry: com.rustedwarfare.reforge.core.sim.ScenarioCatalogEntry,
+        root: Path,
+        contentPack: ContentPackChoice?,
+        prepareVisuals: (() -> PreparedVisualAssets)? = null,
+    ) {
+        cancel()
+        pending = executor.submit<Result<LoadedSandbox>> { runCatching {
+            val startedNanos = System.nanoTime()
+            val checked = contentPack?.revalidate()
+            val autoPack = if (checked == null && java.nio.file.Files.isRegularFile(root.resolve("pack.json"))) {
+                when (val loadedPack = com.rustedwarfare.reforge.core.content.ContentLoader.loadContentPack(root)) {
+                    is ContentResult.Success -> ContentPackChoice(loadedPack.value, loadedPack.value.units.keys.first())
+                    is ContentResult.Failure -> null
+                }
+            } else null
+            val effectivePack = checked ?: autoPack ?: fallbackCatalogPack(root)
+            val baseDefs = effectivePack?.content?.units
+                ?: ControlledScenario.prepare(root).scenario.unitDefinitions
+            val definitions = com.rustedwarfare.reforge.core.sim.ScenarioCatalog.deriveBenchmarkDefinitions(baseDefs)
+            val builtScene = entry.buildScenario(definitions)
+            val usedTypes = builtScene.units.mapTo(linkedSetOf()) { it.typeId }
+            val scene = builtScene.copy(
+                unitDefinitions = builtScene.unitDefinitions.filterKeys { it in usedTypes },
+            )
+            val scenarioPreparedNanos = System.nanoTime()
+            val visuals = prepareVisuals?.invoke()?.let { before -> effectivePack?.let { contentPackVisuals(before, it) } ?: before }
+            val visualsPreparedNanos = System.nanoTime()
+            val resources = SandboxRenderResources.from(scene)
+            val catalogVisualAliases = mapOf(
+                "c_tank" to listOf("c_tank", "tank"),
+                "fast_scout" to listOf("c_tank", "tank"),
+                "slow_heavy" to listOf("heavyTank", "megaTank", "mammothTank", "c_tank", "tank"),
+                "helicopter" to listOf("helicopter"),
+            )
+            val renderResources = visuals?.let {
+                resources.bindVisuals(it, useScenarioTerrain = false, unitVisualAliases = catalogVisualAliases)
+            } ?: resources
+            checked?.content?.verifyStable()?.let { stable ->
+                if (stable is ContentResult.Failure) error(stable.error.describe())
+            }
+            visuals?.verifyForPublication()
+            val notices = listOfNotNull(entry.knownLimitation)
+            LoadedSandbox(
+                scenario = scene,
+                visuals = visuals,
+                renderResources = renderResources,
+                contentSources = effectivePack?.content?.sources ?: emptyList(),
+                inputRoot = root.toAbsolutePath().normalize(),
+                contentPack = effectivePack,
+                preparationTiming = SandboxPreparationTiming(startedNanos, scenarioPreparedNanos, visualsPreparedNanos, System.nanoTime()),
+                startupNotices = notices,
+            )
+        } }
+    }
+
+    private fun fallbackCatalogPack(root: Path): ContentPackChoice? {
+        val candidates = listOf(
+            root.resolve("package"),
+            root.resolve("json/package"),
+            root.resolve("../phase-six-a-sandbox/json/package"),
+            root.resolve("../phase-seven-sandbox/json/package"),
+            Path.of("test-scenarios/inputs/phase-six-a-sandbox/json/package"),
+            Path.of("SimulationTest/public/inputs/phase-six-a-sandbox/json/package"),
+        )
+        for (candidate in candidates) {
+            val normalized = candidate.toAbsolutePath().normalize()
+            if (java.nio.file.Files.isRegularFile(normalized.resolve("pack.json"))) {
+                val loaded = com.rustedwarfare.reforge.core.content.ContentLoader.loadContentPack(normalized)
+                if (loaded is ContentResult.Success && loaded.value.units.isNotEmpty()) {
+                    return ContentPackChoice(loaded.value, loaded.value.units.keys.first())
+                }
+            }
+        }
+        return null
+    }
+
     fun requestSkirmishMap(
         mapPath: Path,
         root: Path,

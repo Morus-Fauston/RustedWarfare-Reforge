@@ -71,7 +71,8 @@ fun main(args: Array<String>) {
                 cameraStartSeed = sceneRoot.resolve("phase-seven-camera.json").takeIf { options.development },
                 touchControls = options.touchSimulation,
                 initialSkirmishMap = options.skirmishMap,
-                initialUiThemePacks = listOfNotNull(options.themePackDir))
+                initialUiThemePacks = listOfNotNull(options.themePackDir),
+                initialCatalogSceneId = options.catalogSceneId)
             val client = if (sink == null) screen else WindowPerfSampling(screen, sink)
             val application = if (options.backgroundInput)
                 BackgroundClientInput(client, output, runId, checkNotNull(sink), { screen.inputGeneration },

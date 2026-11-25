@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.5.75 (2026-11-26 05:48)
+
+### 新增
+
+- **统一场景与地图目录（`ScenarioCatalog`）**：在 `Engine/core` 新增 `ScenarioCatalog`、`ScenarioCategory` 与 `MovementParameterFingerprint` 单一权威来源，统一纳管七期补充二 A/B 开发组 10 个核心移动与对抗场景（含同型/混编百车石阵、25v25 空地对向、宽廊混编对向与窄桥让空、走廊实时超车与途中单拉、空军软分离与 50 车开阔回归，以及单列已知限制的死胡同百车外溢），输出稳定的族/组别、地图哈希与运动参数指纹；为程序化基准地图写入草地/石墙地形 GID 并扩展 `SandboxGraphics` 程序化图块合成，使战场与小地图同步清晰呈现。
+- **启动页融合选图面板与 PC `--scene` 直达**：在已合入主干的 `SkirmishMapPanel` 上融合 `All` / `Skirmish` / `P016` / `Sandbox` 分类可滚动列表，实时联动右侧地形缩略图、地图尺寸与单位/已知限制摘要，支持 `ADR-014` `UiTheme` 热切刷新及与 `TestScenarioPanel` 的双向清空同步；扩展 `WindowsLaunchOptions` 与 `WindowsLauncher` 支持 `--scene <id>` 参数直达，无需为新增场景修改 `BootstrapScreen` 构造签名；`SandboxLoader.requestCatalogScenario` 支持从非 `pack.json` 目录自动回退基础内容包并按槽位完备性解析单位视觉别名。
+- **统一场景测试 CLI 与外部 C–F 留出安全加载**：将 `SimulationTest` 的 `MovementMicroProbeMain` 与 `Main`（`isSceneCliInvocation`）统一对接 `ScenarioCatalog`，支持任意参数顺序调用 `--list`、`--scene <id|all|dev-ab|holdout>`、`--assert true|false`、`--sheets true|false` 与 `--holdout-file <json>`；默认开发集严格限定 A/B，外部 C–F 留出 JSON 严格校验安全 ID、禁止路径穿越与覆盖内置场景、限制组别为 `C..F` 并验证每条下令回执为 `ActionResult.Accepted`。
+
+### 已知问题
+
+- **百车极端死胡同外溢**：`culdesac-overflow-100` 保留在 `ScenarioCatalog` 选图与回放入口中，行为仍按已知限制单列记录并在加载通知中显式提示。
+
+### 技术
+
+- **跨模块测试、公开短测、实窗采图与独立双审**：新增 `ScenarioCatalogTest`、`SkirmishMapCatalogUiTest`、`PcCatalogSceneOptionTest` 与 `MovementMicroProbeCliTest`（覆盖占位视觉槽位完备回退、`--assert true` 失败退出码 2、`--list` Schema v2、安全拒绝与路由隔离），跨模块测试、`:pc:installDist`、`--list`、`--scene mixed-overtake-single-pull --assert true --sheets true`（11/11 全员 907 步到达、`maxStalled=0`）、`:run --scene narrow-bridge-yield`、`public_batch.py --kind short`（6/6 套）与双根目录 `workspace_layout.py` 全部通过；使用已核验原版 PC 资源完成 6 态 Windows 实窗采集；独立 Hydrogen 8 图目视审查 `APPROVED`（0 必修），独立 Neon 代码、目录模型与主题整审返修复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.74 (2026-11-26 04:32)
 
 ### 调整

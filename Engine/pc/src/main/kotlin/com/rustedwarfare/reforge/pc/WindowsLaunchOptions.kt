@@ -25,19 +25,20 @@ data class WindowsLaunchOptions(
     val diagnostics: Boolean = false,
     val skirmishMap: Path? = null,
     val themePackDir: Path? = null,
+    val catalogSceneId: String? = null,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
         fun parse(args: Array<String>, repoRoot: Path,
                   defaultScenarioSeed: Path = repoRoot.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")): WindowsLaunchOptions {
-            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--development true] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
+            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--scene ID] [--development true] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
             val visualKeys = setOf("--visuals", "--original-assets")
             val pairs = args.toList().chunked(2)
             require(pairs.filter { it[0] in visualKeys }.map { it[0] }.distinct().size == pairs.count { it[0] in visualKeys }) {
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--map", "--theme-pack", "--development", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--map", "--scene", "--theme-pack", "--development", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
@@ -89,13 +90,21 @@ data class WindowsLaunchOptions(
                 require(value.isNotBlank()) { "--original-assets requires a directory" }; resolve(value)
             }
             if (mode == "demo") {
-                require("--inputs" !in options && "--map" !in options && "--theme-pack" !in options) { "Demo uses packaged self-owned inputs" }
+                require("--inputs" !in options && "--map" !in options && "--scene" !in options && "--theme-pack" !in options) { "Demo uses packaged self-owned inputs" }
                 return WindowsLaunchOptions(mode, null,
                     resolve(options["--evidence"] ?: "Engine/pc/build/demo-runs/$runId"), runId,
                     "RustedWarfare-Reforge | Field Demo", visualSource, originalAssets)
             }
             val explicitInputs = options["--inputs"]
             val skirmishMap = options["--map"]?.let { value -> require(value.isNotBlank()) { "--map requires a .tmx path" }; resolve(value) }
+            val catalogSceneId = options["--scene"]?.let { value ->
+                require(value.isNotBlank()) { "--scene requires a catalog scenario id" }
+                require(com.rustedwarfare.reforge.core.sim.ScenarioCatalog.byId(value) != null) {
+                    "Unknown --scene '$value'; available=${com.rustedwarfare.reforge.core.sim.ScenarioCatalog.allIds()}"
+                }
+                value
+            }
+            require(skirmishMap == null || catalogSceneId == null) { "--map and --scene are mutually exclusive" }
             val themePackDir = options["--theme-pack"]?.let { value -> require(value.isNotBlank()) { "--theme-pack requires a directory" }; resolve(value) }
             val seed = defaultScenarioSeed.toAbsolutePath().normalize()
             val defaultInputs = if (skirmishMap != null)
@@ -110,8 +119,8 @@ data class WindowsLaunchOptions(
                     development -> "RustedWarfare-Reforge | Phase VI A sandbox"
                     else -> "RustedWarfare-Reforge"
                 }, visualSource, originalAssets,
-                if (development && explicitInputs == null && skirmishMap == null) seed else null, backgroundInput, backgroundCompact,
-                bgWidth, bgHeight, touchSimulation, development, development || "--evidence" in options, skirmishMap, themePackDir)
+                if (development && explicitInputs == null && skirmishMap == null && catalogSceneId == null) seed else null, backgroundInput, backgroundCompact,
+                bgWidth, bgHeight, touchSimulation, development, development || "--evidence" in options, skirmishMap, themePackDir, catalogSceneId)
         }
     }
 }
