@@ -224,11 +224,9 @@ class ModularSpiderChassisTest {
                            fog: Boolean = false, cargo: Boolean = false,
                            incomplete: Boolean = false, start: Position = Position(80.0, 170.0), run: (Battle) -> Unit) =
         WaterTestScene.withMap { map ->
-            val fixtures = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
-            fun units(path: String): Map<String, UnitDefinition> {
-                val result = ContentLoader.loadContentPack(fixtures.resolve(path))
-                return assertIs<ContentResult.Success<LoadedContentPack>>(result, result.toString()).value.units
-            }
+            val fixtures = ReadOnlyTestContentPacks.publicFixturesRoot()
+            fun units(path: String): Map<String, UnitDefinition> =
+                ReadOnlyTestContentPacks.loadStaticPack(fixtures.resolve(path)).units
             val spider = units("modular-spider-start/ini/opening-package")
             val origin = start
             val base = WaterTestScene.unit(MovementType.LAND)

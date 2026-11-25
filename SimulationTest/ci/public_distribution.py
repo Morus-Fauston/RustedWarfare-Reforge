@@ -77,7 +77,7 @@ def seal(distribution, receipt, source, toolchain=None, *, kind='long', preparat
     distribution, receipt = Path(distribution), Path(receipt)
     if distribution.resolve().parent != receipt.resolve().parent:
         raise ValueError('Fixed package must live beside its batch receipt')
-    if kind not in ('pr', 'long') or (kind == 'pr') != (preparation is not None):
+    if kind not in ('short', 'pr', 'long') or (kind == 'pr') != (preparation is not None):
         raise ValueError('Fixed distribution kind requires matching preparation')
     record = dict(schemaVersion=2, kind=kind, preparation=preparation,
                   distribution=str(distribution.resolve()), source=source,
@@ -107,7 +107,7 @@ def read_receipt(receipt, expected_sha256, source, toolchain=None, *, kind='long
     record = json.loads(captured)
     if record['schemaVersion'] != 2 or record['source'] != source:
         raise ValueError('Fixed distribution source or build inputs changed')
-    if kind not in ('pr', 'long') or record['kind'] != kind:
+    if kind not in ('short', 'pr', 'long') or record['kind'] != kind:
         raise ValueError('Fixed distribution kind does not cover this execution')
     current = toolchain if toolchain is not None else toolchain_identity()
     if record['toolchain'] != current:
@@ -120,8 +120,8 @@ def read_receipt(receipt, expected_sha256, source, toolchain=None, *, kind='long
         if (not preparation['tasks'] or not preparation['executions'] or not preparation['artifacts'] or
                 any(r.get('failure') for r in preparation['executions'])):
             raise ValueError('Incomplete fixed distribution preparation')
-    elif preparation is not None or (plan and (plan['kind'] != 'long' or plan['tests'] or plan.get('pythonTests'))):
-        raise ValueError('A long package cannot replace selected mechanism tests')
+    elif preparation is not None or (plan and (plan['kind'] != kind or plan['tests'] or plan.get('pythonTests'))):
+        raise ValueError(f'A {kind} package cannot replace selected mechanism tests')
     return record
 
 

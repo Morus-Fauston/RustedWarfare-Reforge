@@ -25,14 +25,11 @@ class ModularSpiderWeaponModuleTest {
     @field:TempDir
     lateinit var workspace: Path
 
-    private val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
-        ?: Path.of("../../SimulationTest/public/inputs")
+    private val fixtures = com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks.publicFixturesRoot()
 
-    private fun pack(format: String): LoadedContentPack {
-        val loaded = ContentLoader.loadContentPack(fixtures.resolve("modular-spider-start/$format/opening-package"))
-        return assertIs<ContentResult.Success<LoadedContentPack>>(loaded,
-            (loaded as? ContentResult.Failure)?.error?.describe()).value
-    }
+    private fun pack(format: String): LoadedContentPack =
+        com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks
+            .loadStaticPack(fixtures.resolve("modular-spider-start/$format/opening-package"))
 
     @Test fun normal_three_format_pack_loads_the_qualified_weapon_forms_and_mounts() {
         for (format in listOf("ini", "json", "hjson")) {
@@ -698,11 +695,11 @@ class ModularSpiderWeaponModuleTest {
             units.remove(flakIndex)
             Files.writeString(manifest, metadata.toString())
 
-            val dependency = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
-                fixtures.resolve("flame-mech-production/$format/production-package"))).value
+            val dependency = com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks.loadStaticPack(
+                fixtures.resolve("flame-mech-production/$format/production-package"))
             val local = ContentLoader.loadContentPack(copy)
-            val standalone = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
-                fixtures.resolve("modular-spider-start/$format/opening-package"))).value
+            val standalone = com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks.loadStaticPack(
+                fixtures.resolve("modular-spider-start/$format/opening-package"))
             val overlaps = standalone.unitFiles.filterKeys { it in dependency.units }.values
                 .map { standalone.root.relativize(it).joinToString("/") }.toSet()
             for (index in (0 until units.size()).reversed()) {

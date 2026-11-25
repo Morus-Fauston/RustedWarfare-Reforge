@@ -170,6 +170,23 @@ class PublicBatchTest(unittest.TestCase):
             self.assertEqual(9, pr_batch['sharedBuild']['exitCode'])
             self.assertEqual([], pr_batch['suites'], 'Preparation failure must precede every suite')
             self.assertFalse((pr_output/'content-movement-knowledge').exists())
+            for name in ['content-movement-knowledge', 'production-combat', 'build-economy',
+                         'maintenance-defense', 'platform-basics', 'content-three-formats']:
+                (public/'suites'/(name+'.json')).write_text(json.dumps(dict(schemaVersion=1,
+                    suiteId=name, inputScope='public', short=[dict(id=name+'-s', scenario='s.json', contract='c.json')])), encoding='utf8')
+            (public/'s.json').write_text('{}', encoding='utf8')
+            (public/'c.json').write_text('{}', encoding='utf8')
+            for path in source_files(repo):
+                if not path.exists():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.touch()
+            short_output = repo/'short-batch'
+            short_failure = subprocess.run([sys.executable, '-B', str(ci/'public_batch.py'),
+                '--kind', 'short', '--output', str(short_output)], capture_output=True, text=True, timeout=30)
+            self.assertEqual(1, short_failure.returncode, short_failure.stderr)
+            short_batch = json.loads((short_output/'result.json').read_text(encoding='utf8'))
+            self.assertEqual(9, short_batch['sharedBuild']['exitCode'])
+            self.assertEqual([], short_batch['suites'], 'Short shared build failure must precede all 6 suites')
 
 
 if __name__ == '__main__':

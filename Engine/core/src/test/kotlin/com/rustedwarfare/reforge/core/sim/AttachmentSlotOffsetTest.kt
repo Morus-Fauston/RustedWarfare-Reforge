@@ -27,37 +27,35 @@ class AttachmentSlotOffsetTest {
     @field:TempDir
     lateinit var workspace: Path
 
-    private fun pack(): LoadedContentPack {
-        val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
-            ?: Path.of("../../SimulationTest/public/inputs")
-        val source = fixtures.resolve("modular-spider-start/json/opening-package")
-        val target = workspace.resolve("opening-package")
-        Files.walk(source).use { paths ->
-            paths.forEach { path ->
-                val destination = target.resolve(source.relativize(path))
-                if (Files.isDirectory(path)) Files.createDirectories(destination) else Files.copy(path, destination)
+    private fun pack(): LoadedContentPack =
+        com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks.loadDerivedImmutablePack(
+            "AttachmentSlotOffsetTest.opening-package.v1",
+        ) { target ->
+            val fixtures = com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks.publicFixturesRoot()
+            val source = fixtures.resolve("modular-spider-start/json/opening-package")
+            Files.walk(source).use { paths ->
+                paths.forEach { path ->
+                    val destination = target.resolve(source.relativize(path))
+                    if (Files.isDirectory(path)) Files.createDirectories(destination) else Files.copy(path, destination)
+                }
             }
+            val chassis = target.resolve("units/spider/spider.json")
+            val declaration = JsonValue.readJSON(Files.readString(chassis)).asObject()
+            val actions = declaration.get("actions").asArray()
+            actions.add(JsonObject().add("name", "shiftGun").add("attachmentSlot", 1)
+                .add("attachmentX", 22).add("attachmentY", 71))
+            actions.add(JsonObject().add("name", "outsideMap").add("attachmentSlot", 1)
+                .add("attachmentX", 22).add("attachmentY", 900))
+            actions.add(JsonObject().add("name", "extendEast").add("attachmentSlot", 1)
+                .add("attachmentX", 0).add("attachmentY", 580))
+            actions.add(JsonObject().add("name", "extendForTurn").add("attachmentSlot", 1)
+                .add("attachmentX", 0).add("attachmentY", 225))
+            actions.add(JsonObject().add("name", "extendForShot").add("attachmentSlot", 1)
+                .add("attachmentX", 0).add("attachmentY", 500))
+            actions.add(JsonObject().add("name", "extendAcrossPeer").add("attachmentSlot", 1)
+                .add("attachmentX", 0).add("attachmentY", 180))
+            Files.writeString(chassis, declaration.toString())
         }
-        val chassis = target.resolve("units/spider/spider.json")
-        val declaration = JsonValue.readJSON(Files.readString(chassis)).asObject()
-        val actions = declaration.get("actions").asArray()
-        actions.add(JsonObject().add("name", "shiftGun").add("attachmentSlot", 1)
-            .add("attachmentX", 22).add("attachmentY", 71))
-        actions.add(JsonObject().add("name", "outsideMap").add("attachmentSlot", 1)
-            .add("attachmentX", 22).add("attachmentY", 900))
-        actions.add(JsonObject().add("name", "extendEast").add("attachmentSlot", 1)
-            .add("attachmentX", 0).add("attachmentY", 580))
-        actions.add(JsonObject().add("name", "extendForTurn").add("attachmentSlot", 1)
-            .add("attachmentX", 0).add("attachmentY", 225))
-        actions.add(JsonObject().add("name", "extendForShot").add("attachmentSlot", 1)
-            .add("attachmentX", 0).add("attachmentY", 500))
-        actions.add(JsonObject().add("name", "extendAcrossPeer").add("attachmentSlot", 1)
-            .add("attachmentX", 0).add("attachmentY", 180))
-        Files.writeString(chassis, declaration.toString())
-        val result = ContentLoader.loadContentPack(target)
-        return assertIs<ContentResult.Success<LoadedContentPack>>(result,
-            (result as? ContentResult.Failure)?.error?.describe()).value
-    }
 
     @Test fun scheduled_unit_action_moves_only_its_own_mounted_slot_and_rejects_outside_offsets() =
         WaterTestScene.withMap { map ->

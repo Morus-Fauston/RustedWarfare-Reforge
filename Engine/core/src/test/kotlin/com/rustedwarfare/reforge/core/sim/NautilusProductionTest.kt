@@ -6,9 +6,8 @@ import kotlin.test.*
 
 internal object NautilusScene {
     fun definitions(format: String = "ini"): Map<String, UnitDefinition> {
-        val root = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
-        return assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
-            root.resolve("nautilus-production/$format/package"))).value.units
+        val root = ReadOnlyTestContentPacks.publicFixturesRoot()
+        return ReadOnlyTestContentPacks.loadStaticPack(root.resolve("nautilus-production/$format/package")).units
     }
     fun scenario(map: MapDefinition, format: String = "ini"): Scenario =
         WaterTestScene.scenario(map, MovementType.WATER, Position(500.0, 180.0)).copy(

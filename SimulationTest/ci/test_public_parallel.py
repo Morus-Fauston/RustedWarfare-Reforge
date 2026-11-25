@@ -198,6 +198,66 @@ OS: Linux
             self.assertEqual('execution-failed', failed['status'])
             self.assertIn('mechanisms', failed['receipts'])
 
+    def test_long_layer_balances_all_scenarios_across_three_shards_and_enforces_conservation(self):
+        from public_check import REPO
+        from public_batch import plan_layer
+        from public_parallel import LONG_SHARDS, new_plan
+
+        expected_layer = plan_layer(REPO, 'long')
+        expected_ids = [case['id'] for row in expected_layer['suites'] for case in row['plan']['scenarios']]
+        plan = new_plan(REPO, layer_kind='long')
+        self.assertIsNone(plan['mechanisms'])
+        self.assertEqual(set(LONG_SHARDS), set(plan['shards']))
+        sharded_ids = [case['id'] for shard in LONG_SHARDS for case in plan['shards'][shard]]
+        self.assertEqual(len(expected_ids), len(sharded_ids))
+        self.assertEqual(set(expected_ids), set(sharded_ids))
+        counts = [len(plan['shards'][shard]) for shard in LONG_SHARDS]
+        self.assertLessEqual(max(counts) - min(counts), 1)
+
+        identity = dict(run='200', attempt='1', head='a'*40, checkout='b'*40, tree='c'*40)
+        bundle = dict(plan, identity=identity, toolchain={'jdk': '25'}, gradle={'version': '9.3.1'}, archiveSha256='d'*64)
+        plan_sha = 'f'*64
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            pins = {}
+            for shard, cases in bundle['shards'].items():
+                scenarios = [dict(suite=c['suite'], id=c['id'], kind=c['kind'], status='passed',
+                                  elapsedSeconds=1.0,
+                                  commands=[c['id']] + ([c['id']+'-recompare'] if c.get('backend') == 'session' or c.get('recompare') else []),
+                                  archive=dict(id=c['id'], kind=c['kind']))
+                             for c in cases]
+                row = dict(identity=identity, planSha256=plan_sha, toolchain=bundle['toolchain'],
+                           archiveSha256=bundle['archiveSha256'], status='passed', gradle=None,
+                           shard=shard, coverage=dict(scenarios=scenarios))
+                path = folder/f'public-long-receipt-1-{shard}'/'receipt.json'
+                path.parent.mkdir()
+                write_json(path, row)
+                pins[shard] = digest(path)
+            artifacts = {shard: '2'*64 for shard in LONG_SHARDS}
+            ok = aggregate(bundle, plan_sha, folder, pins, dict(prepare='success', scenarios='success'),
+                           artifacts, lambda k, r: None, receipt_prefix='public-long-receipt', layer_kind='long')
+            self.assertEqual('passed', ok['status'], ok['errors'])
+            bad_job = aggregate(bundle, plan_sha, folder, pins, dict(prepare='success', scenarios='cancelled'),
+                                artifacts, lambda k, r: None, receipt_prefix='public-long-receipt', layer_kind='long')
+            self.assertEqual('execution-failed', bad_job['status'])
+            (folder/'public-long-receipt-1-long-3'/'receipt.json').unlink()
+            missing = aggregate(bundle, plan_sha, folder, pins, dict(prepare='success', scenarios='success'),
+                                artifacts, lambda k, r: None, receipt_prefix='public-long-receipt', layer_kind='long')
+            self.assertEqual('execution-failed', missing['status'])
+
+    def test_workflows_enable_repo_wide_parallel_pr_and_sharded_long_with_fallbacks(self):
+        from public_check import REPO
+        pr_yml = (REPO/'.github/workflows/public-pr.yml').read_text(encoding='utf8')
+        self.assertNotIn('codex/phase-six-asp-test', pr_yml)
+        self.assertIn("vars.PUBLIC_PR_PARALLEL == 'false'", pr_yml)
+        self.assertIn("inputs.execution == 'serial'", pr_yml)
+
+        long_yml = (REPO/'.github/workflows/public-long.yml').read_text(encoding='utf8')
+        for token in ('public-long-prepare:', 'public-long-scenarios:', 'public-long-coverage:',
+                      'public-final-candidate:', 'long-1', 'long-2', 'long-3',
+                      "vars.PUBLIC_LONG_PARALLEL == 'false'"):
+            self.assertIn(token, long_yml)
+
 
 if __name__ == '__main__':
     unittest.main()

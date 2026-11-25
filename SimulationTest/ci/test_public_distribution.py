@@ -35,6 +35,17 @@ class PublicDistributionTest(unittest.TestCase):
             (compiled/'Example.class').write_bytes(b'changed compiled fixture')
             with self.assertRaisesRegex(ValueError, 'prepared artifacts'):
                 verify(receipt, pinned, source, toolchain, kind='pr', plan=plan, repo=root)
+            short_receipt = root/'short-distribution.json'
+            short_plan = dict(suiteId='owned-short', kind='short', inputScope='public',
+                              fixture=None, tests={}, pythonTests=[], scenarios=[])
+            short_pin = seal(distribution, short_receipt, source, toolchain, kind='short')
+            self.assertEqual(distribution.resolve(), verify(short_receipt, short_pin, source, toolchain,
+                kind='short', plan=short_plan, repo=root))
+            with self.assertRaisesRegex(ValueError, 'kind'):
+                verify(short_receipt, short_pin, source, toolchain, kind='long')
+            with self.assertRaisesRegex(ValueError, 'short package cannot replace'):
+                verify(short_receipt, short_pin, source, toolchain, kind='short',
+                       plan=dict(short_plan, tests={'core': ['Example']}), repo=root)
 
     def owned_environment(self, root):
         jdk = root/'owned JDK identity fixture'

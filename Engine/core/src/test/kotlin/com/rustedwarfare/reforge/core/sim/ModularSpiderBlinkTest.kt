@@ -347,9 +347,9 @@ class ModularSpiderBlinkTest {
         deployWitness: Boolean = false,
         run: (Battle) -> Unit,
     ) = WaterTestScene.withMap { map ->
-        val root = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
-        val loaded = ContentLoader.loadContentPack(root.resolve("modular-spider-start/$format/opening-package"))
-        val definitions = assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value.units
+        val root = com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks.publicFixturesRoot()
+        val definitions = com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks
+            .loadStaticPack(root.resolve("modular-spider-start/$format/opening-package")).units
         val base = WaterTestScene.scenario(map, MovementType.OVER_CLIFF_WATER, Position(180.0, 160.0))
         val body = WaterTestScene.unit(if (deployWitness) MovementType.HOVER else MovementType.LAND)
         val witness = UnitDefinition("witness", "CustomUnitMetadata", 6.0, 6.0, 1, body.imagePath,

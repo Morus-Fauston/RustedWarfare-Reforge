@@ -1,3 +1,10 @@
+v0.5.71 (2026-11-25 16:59)
+  新增: SimulationTest 新增 :movementProbe 秒级移动微基准与 2 秒停滞标红拼图探针
+  调整: 新增 ReadOnlyTestContentPacks 只读测试包进程内缓存并开启 :core:test 可控并行执行 / public_batch.py --kind short 复用带摘要校验的单次共享分发包并支持多核场景并发 / 放开 public-pr.yml 全仓 PR 并行矩阵并新增 public-long.yml 三分片并行汇总与串行回退
+  技术: 同机全新重跑 :core:test、公开短测六套、CI Python 单测与移动探针自测通过且覆盖清单完全守恒，经独立非作者整审通过
+
+====
+
 v0.5.70 (2026-11-24 03:05)
   新增: 以统一 90° 俯视工业像素风全量补绘 phase-seven-sandbox 全 65 单位（136 张活体/残骸/阴影 PNG，含 18 蜘蛛模块与炮艇/重战舰/实验厂/核弹井等）及随包 visuals/placeholder/units 全部 28 张单位图，同步更新 manifest.json 哈希与真实来源（100% 保原尺寸/多帧动效与纯绿合规，残骸/阴影零纯绿误染，不动地形与 phase-six-a-sandbox）
   技术: 新增 PublicUnitSpriteIntegrityTest 全量校验 145+28 张 PNG 尺寸/帧间变化/纯绿阈值与 manifest 来源一致，受影响 :client:test/:pc:test/:pc:installDist 全绿，workspace_layout.py --root 返回 ok: true / 完成双色全阵容拼图与公开占位 1920x1080 5 态实窗采集 / Hydrogen 9 图视觉审查首轮 APPROVED，独立 Neon 代码与清单整审返修闭合后定向复核 APPROVED（0 必修）

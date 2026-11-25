@@ -362,27 +362,37 @@ class WaterMovementTest {
 internal object WaterTestScene {
     fun withCorridor(dryBarrier: Boolean, action: (MapDefinition) -> Unit) {
         val image = tilesetImagePath("p001-ground").toString().replace("&", "&amp;")
-        val csv = List(7) { if (dryBarrier && it == 3) "1" else "2" }.joinToString(",")
-        com.rustedwarfare.reforge.core.content.withMap("""<map orientation="orthogonal" renderorder="right-down" width="1" height="7" tilewidth="20" tileheight="20">
-            <tileset firstgid="1" name="water-corridor" tilewidth="20" tileheight="20">
-              <image source="$image" width="100" height="160"/>
-              <tile id="1"><properties><property name="water" value=""/></properties></tile>
-            </tileset>
-            <layer name="Ground" width="1" height="7"><data encoding="csv">$csv</data></layer>
-            </map>""") { path -> action(assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(path)).value) }
+        val map = ReadOnlyTestContentPacks.loadCachedMap("corridor:$dryBarrier:$image") {
+            val csv = List(7) { if (dryBarrier && it == 3) "1" else "2" }.joinToString(",")
+            var loaded: MapDefinition? = null
+            com.rustedwarfare.reforge.core.content.withMap("""<map orientation="orthogonal" renderorder="right-down" width="1" height="7" tilewidth="20" tileheight="20">
+                <tileset firstgid="1" name="water-corridor" tilewidth="20" tileheight="20">
+                  <image source="$image" width="100" height="160"/>
+                  <tile id="1"><properties><property name="water" value=""/></properties></tile>
+                </tileset>
+                <layer name="Ground" width="1" height="7"><data encoding="csv">$csv</data></layer>
+                </map>""") { path -> loaded = assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(path)).value }
+            checkNotNull(loaded)
+        }
+        action(map)
     }
 
     fun withMap(bridge: Boolean = false, liquidProperty: String = "water", action: (MapDefinition) -> Unit) {
         val image = tilesetImagePath("p001-ground").toString().replace("&", "&amp;")
-        val csv = List(800) { if (bridge && it == 430) "3" else if (it % 40 < 20) "1" else "2" }.joinToString(",")
-        com.rustedwarfare.reforge.core.content.withMap("""<map orientation="orthogonal" renderorder="right-down" width="40" height="20" tilewidth="20" tileheight="20">
-            <tileset firstgid="1" name="land-water" tilewidth="20" tileheight="20">
-              <image source="$image" width="100" height="160"/>
-              <tile id="1"><properties><property name="$liquidProperty" value=""/></properties></tile>
-              <tile id="2"><properties><property name="water-bridge" value=""/></properties></tile>
-            </tileset>
-            <layer name="Ground" width="40" height="20"><data encoding="csv">$csv</data></layer>
-            </map>""") { path -> action(assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(path)).value) }
+        val map = ReadOnlyTestContentPacks.loadCachedMap("map:$bridge:$liquidProperty:$image") {
+            val csv = List(800) { if (bridge && it == 430) "3" else if (it % 40 < 20) "1" else "2" }.joinToString(",")
+            var loaded: MapDefinition? = null
+            com.rustedwarfare.reforge.core.content.withMap("""<map orientation="orthogonal" renderorder="right-down" width="40" height="20" tilewidth="20" tileheight="20">
+                <tileset firstgid="1" name="land-water" tilewidth="20" tileheight="20">
+                  <image source="$image" width="100" height="160"/>
+                  <tile id="1"><properties><property name="$liquidProperty" value=""/></properties></tile>
+                  <tile id="2"><properties><property name="water-bridge" value=""/></properties></tile>
+                </tileset>
+                <layer name="Ground" width="40" height="20"><data encoding="csv">$csv</data></layer>
+                </map>""") { path -> loaded = assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(path)).value }
+            checkNotNull(loaded)
+        }
+        action(map)
     }
 
     fun unit(type: MovementType, sight: Int = 15, reverse: Double = 0.0): UnitDefinition = UnitDefinition("water-test", "CustomUnitMetadata", 6.0, 6.0, 1,

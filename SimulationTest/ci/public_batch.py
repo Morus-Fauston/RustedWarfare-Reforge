@@ -78,14 +78,14 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
                       {m: [] for row in plan['suites'] for m in row['plan']['tests']}, forks))
     try:
         shared = None
-        if plan['kind'] in ('pr', 'long'):
-            if plan['kind'] == 'long' and any(row['plan']['tests'] or row['plan'].get('pythonTests') for row in plan['suites']):
-                raise ValueError('Shared long distribution cannot skip selected mechanism tests')
+        if plan['kind'] in ('short', 'pr', 'long'):
+            if plan['kind'] in ('short', 'long') and any(row['plan']['tests'] or row['plan'].get('pythonTests') for row in plan['suites']):
+                raise ValueError(f"Shared {plan['kind']} distribution cannot skip selected mechanism tests")
             sys.path.insert(0, str(REPO/'SimulationTest/tools'))
             from workflow import resources
             with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
                 shared = build_shared_distribution(repo, output/'shared-distribution', source, command_timeout_seconds,
-                    preparation_plan=plan if plan['kind'] == 'pr' else None, forks=forks)
+                    preparation_plan=plan if plan['kind'] == 'pr' else None, forks=forks, kind=plan['kind'])
             result['sharedBuild'] = shared
             if shared['status'] != 'passed':
                 raise RuntimeError(shared.get('error', 'Shared distribution build failed'))
@@ -181,6 +181,14 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
     return 0 if result['status'] == 'passed' else 1
 
 
+def default_scenario_workers(kind, requested):
+    if requested is not None:
+        return requested
+    if kind == 'short' and (os.cpu_count() or 2) >= 4:
+        return 4
+    return 2
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kind', required=True, choices=tuple(LAYERS))
@@ -188,10 +196,11 @@ def main():
     parser.add_argument('--list', action='store_true', help='List fixed complete layer without execution')
     parser.add_argument('--isolated', action='store_true', help='Copy only authored public source closure')
     parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2 or 4; PC stays serial')
-    parser.add_argument('--scenario-workers', type=scenario_workers, default=2, help='Bound independent headless scenarios after tests: 1, 2 or 4')
+    parser.add_argument('--scenario-workers', type=scenario_workers, default=None, help='Bound independent headless scenarios after tests: 1, 2 or 4')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Per-command seconds forwarded to every suite and shared build; at most 3600')
     args = parser.parse_args()
+    workers = default_scenario_workers(args.kind, args.scenario_workers)
     try:
         plan = plan_layer(REPO, args.kind)
     except (ValueError, KeyError, TypeError, OSError) as error:
@@ -199,7 +208,7 @@ def main():
     if args.list:
         print(json.dumps(dict(plan, testConcurrency=test_concurrency(
             {m: [] for row in plan['suites'] for m in row['plan']['tests']}, args.test_forks),
-            scenarioConcurrency=scenario_concurrency(args.scenario_workers))))
+            scenarioConcurrency=scenario_concurrency(workers))))
         return 0
     if args.output is None:
         parser.error('--output is required for execution')
@@ -220,9 +229,9 @@ def main():
                      'raise SystemExit(run_layer(REPO, Path(output), plan_layer(REPO, kind), '
                      'True, float(timeout), int(forks), int(workers)))')
         return subprocess.run([sys.executable, '-B', '-c', bootstrap, args.kind, str(output),
-                               str(args.command_timeout), str(args.test_forks), str(args.scenario_workers)],
+                               str(args.command_timeout), str(args.test_forks), str(workers)],
                               cwd=repo/'SimulationTest/ci').returncode
-    return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks, args.scenario_workers)
+    return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks, workers)
 
 
 if __name__ == '__main__':
