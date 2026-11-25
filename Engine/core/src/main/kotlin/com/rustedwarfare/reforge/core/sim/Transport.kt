@@ -430,6 +430,7 @@ internal object Transport {
             it.passengerIds.sumOf { id -> units.getValue(id).definition.transportSlots.toLong() }.toInt(),
             capacity(carrier), it.unloading, it.unloadRemaining,
             mayUnload(carrier, it.liquid) &&
-                carrier.alive && carrier.constructionProgress >= 1f && !it.unloading && it.passengerIds.isNotEmpty())
+                carrier.alive && carrier.constructionProgress >= 1f && !it.unloading && it.passengerIds.isNotEmpty(),
+            immutable(it.passengerIds.map { id -> units.getValue(id).typeId }))
     }
 }

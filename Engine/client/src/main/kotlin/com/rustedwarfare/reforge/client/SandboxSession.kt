@@ -6,6 +6,7 @@ import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.GroundRules
 import com.rustedwarfare.reforge.core.content.SingleSelectionButton
+import com.rustedwarfare.reforge.core.content.siteConstruction
 import java.util.UUID
 import java.nio.file.Path
 
@@ -142,6 +143,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     internal val diagnosticScene: DiagnosticFrameScene
         get() = diagnosticTracker.updateAndProjectPlayer(observation)
 
+    internal val debugMap: com.rustedwarfare.reforge.core.content.MapDefinition
+        get() = scenario.map
+
+    internal fun unitDefinitionForView(typeId: String): com.rustedwarfare.reforge.core.content.UnitDefinition? =
+        scenario.unitDefinitions[typeId]
+
     internal fun movementCollisionForView(unit: UnitObservation): MovementCollisionShape? =
         DiagnosticSceneProjector.mobileShapeForView(unit, scenario.unitDefinitions)
 
@@ -172,6 +179,12 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (!isOpen) return
         selection.saveGroup(index)
         evidence.recordWhenEnabled("group-save") { mapOf("group" to index, "count" to groupCount(index)) }
+    }
+
+    fun appendGroup(index: Int) {
+        if (!isOpen) return
+        selection.appendGroup(index)
+        evidence.recordWhenEnabled("group-append") { mapOf("group" to index, "count" to groupCount(index)) }
     }
     fun groupCount(index: Int): Int {
         if (!isOpen) return 0
@@ -206,6 +219,16 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     var productionNotice: ProductionNotice? = null
         private set
     private var arrivalCommandStep = 0L
+    private val pendingUnloadTargets = LinkedHashMap<String, Position>()
+    /** True when the given unit (or primary selected unit) is currently moving to a target unload point. */
+    fun hasPendingUnload(unitId: String? = selectedId): Boolean = unitId != null && unitId in pendingUnloadTargets
+    /** True when the primary selected transport can pick a ground point to move and unload (even if currently over liquid). */
+    fun canTargetUnload(): Boolean {
+        val tr = actionMenu.transportAction ?: return false
+        val uid = selectedId ?: return false
+        val unit = observation.units.firstOrNull { it.unitId == uid && it.alive } ?: return false
+        return tr.unloading && tr.passengerCount > 0 && canMove(unit)
+    }
     private val immobileMoveMembers = mutableSetOf<String>()
     private val selectedArrivals: List<MoveArrival>
         get() {
@@ -216,6 +239,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
     val moveArrivalMarker: MoveArrival?
         get() = selectedArrivals.singleOrNull().takeIf { selectedIds.size == 1 }
+
+    internal val selectedMoveArrivals: List<MoveArrival>
+        get() = selectedArrivals
 
     /** Player copy is separate from the original diagnostic feedback and identifiers. */
     val playerFeedback: String
@@ -252,7 +278,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
         }
 
-    private fun unitTitle(type: String) = actionCatalogue.title(type)
+    internal fun unitTitle(type: String) = actionCatalogue.title(type)
+    internal fun isEmptyAttachmentModule(typeId: String): Boolean = scenario.unitDefinitions[typeId]?.attachmentModule?.empty == true
     val hasEconomicConstruction: Boolean get() = scenario.unitDefinitions.containsKey("extractorT1")
     val selectedUnitInfo: String? get() = actionMenu.selectedUnitInfo
     fun nominalIncome(typeId: String): Float? = actionCatalogue.nominalIncome(typeId)
@@ -398,16 +425,26 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         var blocked = candidate.isEmpty() || !ConstructionPlacement.contains(map.widthTiles, map.heightTiles,
             map.tileWidth, map.tileHeight, position, definition.radius)
         var unknown = false
+        if (building.requiresResourcePool) {
+            val centerCol = if (position.x == map.widthTiles.toDouble() * map.tileWidth) map.widthTiles - 1
+                else kotlin.math.floor(position.x / map.tileWidth).toInt()
+            val centerRow = if (position.y == map.heightTiles.toDouble() * map.tileHeight) map.heightTiles - 1
+                else kotlin.math.floor(position.y / map.tileHeight).toInt()
+            if (centerCol !in 0 until map.widthTiles || centerRow !in 0 until map.heightTiles) {
+                blocked = true
+            } else {
+                val centerCell = frame.terrain[centerRow * map.widthTiles + centerCol]
+                if (!centerCell.known) unknown = true
+                else if (!map.isResourcePool(centerCol, centerRow)) blocked = true
+            }
+        }
         for ((col, row) in candidate) {
             if (col !in 0 until map.widthTiles || row !in 0 until map.heightTiles) { blocked = true; continue }
-            val gid = frame.terrain[row * map.widthTiles + col].gid
-            if (gid == null) { unknown = true; continue }
-            val tileset = map.tileSets.lastOrNull { it.firstGid <= gid } ?: continue
-            val tile = gid - tileset.firstGid
-            if (building.requiresResourcePool) {
-                if (tile !in tileset.resourcePoolTileIds) blocked = true
-            } else if (tile in tileset.resourcePoolTileIds || definition.foundationMovementType != MovementType.AIR &&
-                GroundRules.blocked(map.tileSets, gid, definition.foundationMovementType)) blocked = true
+            val cell = frame.terrain[row * map.widthTiles + col]
+            if (!cell.known) { unknown = true; continue }
+            if (!building.requiresResourcePool && map.isFoundationBlocked(col, row, definition.foundationMovementType)) {
+                blocked = true
+            }
         }
         if (observation.units.any { unit -> unit.alive && scenario.unitDefinitions.getValue(unit.typeId).building?.let {
                 cells(unit.position, it).any { cell -> cell in candidate }
@@ -442,6 +479,87 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         apply(CancelUpgradeAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), it.actionKey, context.world))
     }
 
+    /** True if the current primary unit is an own under-construction building that can cancel construction. */
+    fun canCancelConstruction(): Boolean {
+        if (!isOpen) return false
+        val primary = observation.units.firstOrNull { it.unitId == selectedId } ?: return false
+        return controllable(primary) && primary.constructionProgress < 1f &&
+            scenario.unitDefinitions[primary.typeId]?.building != null
+    }
+
+    /** Cancels construction of the currently selected own under-construction building, refunding its construction price. */
+    fun cancelConstruction(): ActionResult? {
+        if (!canCancelConstruction()) return null
+        val unitId = checkNotNull(selectedId)
+        val result = apply(CancelConstructionAction("click-${++actionNumber}", "p1", unitId, context.world))
+
+        return result
+    }
+
+    /** Returns the stockpile capacity for a unit if it produces/stores ordnance, or null if not a stockpile unit. */
+    fun stockpileCapacity(typeId: String): Int? {
+        val def = scenario.unitDefinitions[typeId] ?: return null
+        def.nuclearSilo?.kind?.let { kind ->
+            return when (kind) {
+                com.rustedwarfare.reforge.core.content.NuclearSiloKind.LAUNCHER -> 4
+                com.rustedwarfare.reforge.core.content.NuclearSiloKind.INTERCEPTOR -> 12
+            }
+        }
+        def.customActions?.actions?.firstOrNull { it.ammoProduction != null }?.ammoProduction?.let {
+            return it.queueLimit
+        }
+        if (def.attachmentModule?.interception != null) {
+            return 12 // ModularSpiderUtilityForms.ANTI_NUKE_AMMO_LIMIT
+        }
+        return null
+    }
+
+    /** Returns the site construction price for a unit type if known, used for cancel-construction refund tooltips. */
+    fun siteConstructionPrice(typeId: String): Long? {
+        val def = scenario.unitDefinitions[typeId] ?: return null
+        return def.siteConstruction?.price
+            ?: def.construction?.price
+            ?: def.build?.price
+            ?: scenario.maintenanceContract?.basePrices?.get(typeId)
+    }
+
+    /** Returns true if the unit definition is an afterburn boosted form. */
+    fun isAfterburnBoosted(typeId: String): Boolean =
+        scenario.unitDefinitions[typeId]?.afterburn?.boostedForm == typeId
+
+    /** Returns true if the unit definition has a bunker deploy/undeploy pair (deployed or mobile). */
+    fun bunkerDeployedState(typeId: String): Boolean? {
+        val actions = scenario.unitDefinitions[typeId]?.customActions?.actions ?: return null
+        if (actions.any { it.name == "undeploy" && it.visible }) return true
+        if (actions.any { it.name == "deploy" && it.visible }) return false
+        return null
+    }
+
+    /** Returns true if the unit definition is a custom nautilus surface/submerged unit. */
+    fun nautilusSurfaceState(typeId: String): Boolean? {
+        val actions = scenario.unitDefinitions[typeId]?.customActions?.actions ?: return null
+        if (typeId.startsWith("nautilusSubmarine")) {
+            if (actions.any { it.name == "dive" && it.visible }) return true
+            if (actions.any { it.name == "surface" && it.visible }) return false
+        }
+        return null
+    }
+
+    /** Returns true if the unit definition is a building. */
+    fun isBuilding(typeId: String): Boolean = scenario.unitDefinitions[typeId]?.building != null
+
+    /** True if any currently selected own unit can perform reclaim maintenance. */
+    fun hasMaintainerInSelection(): Boolean = hasSelectedMaintainer()
+
+    /** Returns the active nuclear launcher member for the current selection (matches ActionPresentation & unitAction). */
+    fun selectedNuclearLauncher(): UnitObservation? =
+        if (selectedIds.size > 1) nuclearLaunchMember(observation, selectedIds)
+        else observation.units.firstOrNull { it.unitId == selectedId }
+
+    /** Returns true if the unit has an energy profile or point defense that can enter recharge lock. */
+    fun isEnergyLocked(unit: UnitObservation): Boolean =
+        unit.energy?.recharging == true || unit.pointDefense?.exhausted == true
+
     fun move(position: Position): ActionResult? {
         val selection = selectedIds
         val group = if (selection.size > 1) context.requestGroupMove("p1", selection, position) else null
@@ -465,6 +583,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     fun previewGroundAction(name: String, target: Position): GroundActionPreview? {
+        if (name == "transport-unload-target") {
+            if (!canTargetUnload()) return null
+            val selected = observation.units.singleOrNull { it.unitId == selectedId } ?: return null
+            val inBounds = target.x.isFinite() && target.y.isFinite() &&
+                target.x in 0.0..(scenario.map.widthTiles.toDouble() * scenario.map.tileWidth) &&
+                target.y in 0.0..(scenario.map.heightTiles.toDouble() * scenario.map.tileHeight)
+            return GroundActionPreview(selected.position, target, inBounds, 0.0, 0.0, 0.0)
+        }
         if (!isOpen || actionMenu.unitActions.none { it.name == name && it.available && it.groundTargeted }) return null
         val selected = if (name == "launchNuke") nuclearLaunchMember(observation, selectedIds)
             else observation.units.singleOrNull { it.unitId == selectedId }
@@ -519,10 +645,36 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             apply(AmphibiousFlightAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), flying, context.world))
         }
 
-    fun unload(unloading: Boolean): ActionResult? = actionMenu.transportAction
-        ?.takeIf { it.available && it.unloading == unloading }?.let {
-            apply(UnloadAction("click-${++actionNumber}", "p1", checkNotNull(selectedId), unloading, context.world))
+    fun unload(unloading: Boolean): ActionResult? {
+        val unitId = selectedId ?: return null
+        if (!unloading && pendingUnloadTargets.remove(unitId) != null) {
+            return apply(StopAction("click-${++actionNumber}", "p1", unitId, context.world))
         }
+        return actionMenu.transportAction
+            ?.takeIf { it.available && it.unloading == unloading }?.let {
+                pendingUnloadTargets.remove(unitId)
+                apply(UnloadAction("click-${++actionNumber}", "p1", unitId, unloading, context.world))
+            }
+    }
+
+    /** Moves the selected transport to [position] and triggers unload automatically upon arrival (or immediately if close and legal here). */
+    fun unloadAt(position: Position): ActionResult? {
+        if (!canTargetUnload()) return null
+        val unitId = selectedId ?: return null
+        val unit = observation.units.firstOrNull { it.unitId == unitId && it.alive } ?: return null
+        val tr = unit.transport ?: return null
+        val dist = kotlin.math.hypot(position.x - unit.position.x, position.y - unit.position.y)
+        if (dist <= 24.0 && tr.canUnload) {
+            pendingUnloadTargets.remove(unitId)
+            return apply(UnloadAction("click-${++actionNumber}", "p1", unitId, true, context.world))
+        }
+        pendingUnloadTargets.remove(unitId)
+        val moveRes = apply(MoveAction("click-${++actionNumber}", "p1", unitId, position, context.world))
+        if (moveRes is ActionResult.Accepted) {
+            pendingUnloadTargets[unitId] = position
+        }
+        return moveRes
+    }
 
     private fun dispatch(selectionAtPress: Set<String> = selectedIds, applicable: (UnitObservation) -> Boolean = ::controllable,
                          moveGroup: GroupMoveRequest? = null,
@@ -536,6 +688,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         lastCommandBatch = null
         for (id in members) {
             if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
+            pendingUnloadTargets.remove(id)
             results += SelectionCommandMember(id, apply(action(id), moveGroup))
         }
         val batch = SelectionCommandBatch(results, skipped)
@@ -607,6 +760,28 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                     "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
         }
         publishFrame()
+        if (pendingUnloadTargets.isNotEmpty()) {
+            val iter = pendingUnloadTargets.entries.iterator()
+            while (iter.hasNext()) {
+                val (uid, dest) = iter.next()
+                val unit = observation.units.firstOrNull { it.unitId == uid && it.alive }
+                val tr = unit?.transport
+                if (unit == null || tr == null || tr.passengerCount == 0 || tr.unloading) {
+                    iter.remove()
+                    continue
+                }
+                val dist = kotlin.math.hypot(dest.x - unit.position.x, dest.y - unit.position.y)
+                if (dist <= 32.0) {
+                    iter.remove()
+                    if (tr.canUnload) {
+                        apply(UnloadAction("click-${++actionNumber}", "p1", uid, true, context.world))
+                    }
+                } else if (unit.moveTarget == null) {
+                    // Carrier stopped prematurely / path blocked far from target: cancel pending unload instead of dumping cargo in wrong spot
+                    iter.remove()
+                }
+            }
+        }
         diagnosticTracker.ingestPlayer(observation)
         for (result in observation.actionResults.filterIsInstance<ActionResult.Rejected>()) {
             if (result.error.code == "immobile-unit") {
@@ -635,6 +810,22 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             "selectionRevision" to selectionRevision, "world" to position.fields()) }
     }
 
+    /** Switches the primary selected unit to another member already in [selectedIds] without changing selection membership. */
+    fun selectPrimary(unitId: String): Boolean {
+        if (!isOpen || unitId !in selectedIds) return false
+        val changed = selection.setPrimary(unitId)
+        if (changed) {
+            evidence.recordWhenEnabled("primary-selection") { mapOf("primaryId" to selectedId, "selectedIds" to selectedIds.sorted(), "selectionRevision" to selectionRevision) }
+        }
+        return changed
+    }
+
+    /** Switches the primary selected unit to the first selected member of [typeId] without changing [selectedIds]. */
+    fun selectPrimaryByType(typeId: String): Boolean {
+        if (!isOpen) return false
+        val candidate = observation.units.firstOrNull { it.alive && it.unitId in selectedIds && it.typeId == typeId } ?: return false
+        return selectPrimary(candidate.unitId)
+    }
     fun selectDeployedUnit(unitId: String): Boolean {
         if (!canDeploy || observation.units.none { it.unitId == unitId && controllable(it) }) return false
         selectAt(unitId, SelectionMode.REPLACE)
@@ -757,7 +948,9 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val previous = selectedIds
         selection.reconcile(observation.units.filter { it.alive }.map { it.unitId }.toSet(),
             observation.units.filter { !it.alive }.map { it.unitId }.toSet() +
-                observation.events.filter { it.kind == "building-reclaimed" }.mapNotNull { it.unitId })
+                observation.events.filter {
+                    it.kind == "building-reclaimed" || it.kind == "construction-cancelled"
+                }.mapNotNull { it.unitId })
         if (previous.isNotEmpty() && selectedIds.isEmpty()) {
             feedback = "No selection"
         }
@@ -769,6 +962,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         finally {
             commandHost.close()
             pendingSandboxRequests.clear()
+            pendingUnloadTargets.clear()
             isOpen = false
             selection.clear()
             latestFrame = null

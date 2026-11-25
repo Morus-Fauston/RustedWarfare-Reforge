@@ -146,7 +146,9 @@ object ContentLoader {
 
     fun loadUnitVariantWithSources(path: Path): ContentResult<LoadedUnitContent> =
         load(path, IniReader::readWithSources)
-    fun loadMap(tmxPath: Path): ContentResult<MapDefinition> = load(tmxPath, TmxReader::read)
+    fun loadMap(tmxPath: Path): ContentResult<MapDefinition> = load(tmxPath) { TmxReader.read(it) }
+    fun loadMap(tmxPath: Path, tilesetFallbackRoots: List<Path>): ContentResult<MapDefinition> =
+        load(tmxPath) { TmxReader.read(it, tilesetFallbackRoots) }
 
     private fun <T> load(path: Path, read: (Path) -> T): ContentResult<T> {
         val absolute = path.toAbsolutePath().normalize()

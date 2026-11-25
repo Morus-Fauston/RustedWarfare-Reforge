@@ -7,14 +7,17 @@ import com.rustedwarfare.reforge.core.sim.*
 import kotlin.test.*
 
 class NautilusNativePanelTest {
-    @Test fun surface_cards_have_distinct_bounds_for_production_scouts_ammo_conversion_and_unload() {
-        val cards = listOf(NativeActionPanel.navalProduction, NativeActionPanel.navalUnload) +
-            listOf("launchScoutBot", "buildAntiNuke", "dive").map { NativeActionPanel.customBounds(it, naval = true) }
-        for ((index, a) in cards.withIndex()) for (b in cards.drop(index + 1)) {
-            assertFalse(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height)
+    @Test fun surface_cards_project_distinct_action_keys_for_production_scouts_ammo_conversion_and_unload() {
+        val base = NautilusSandboxScene.scenario()
+        val point = Position(500.0, 300.0)
+        val scene = base.copy(units = listOf(UnitSpawn("mother", "p1", "nautilusSubmarineSurface", point, 90.0)),
+            combatContract = CombatContract(12345, -1, mapOf("mother" to 8L), 9L))
+        SandboxSession(scene).use { session ->
+            session.select(point)
+            val ids = HudActionProjection.projectActionList(session, null, false, false, false, null, false).exclusiveKeys.map { it.id }
+            assertEquals(ids.distinct().size, ids.size)
+            assertTrue(ids.containsAll(listOf("unit-action:launchScoutBot", "unit-action:buildAntiNuke", "unit-action:dive")))
         }
-        assertEquals(NativeActionPanel.customActions.getValue("buildAntiNuke"),
-            NativeActionPanel.customBounds("buildAntiNuke", naval = false))
     }
 
     @Test fun naval_interceptor_card_uses_the_current_paid_price_and_displays_the_no_nukes_lock() {
@@ -84,7 +87,7 @@ class NautilusNativePanelTest {
             assertTrue(view.available)
             assertEquals("robotCrab", view.iconTypeId)
             var targeting: String? = null
-            val bounds = NativeActionPanel.customActions.getValue(name)
+            val bounds = com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f)
             val actor = Actor().apply {
                 setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
                 addListener(CustomUnitActionButtonInput({ session }, { true }, name,
@@ -173,7 +176,7 @@ class NautilusNativePanelTest {
             combatContract = CombatContract(12345, -1, mapOf("mother" to 8L), 9L))
         SandboxSession(scene).use { session ->
             session.select(Position(500.0, 300.0))
-            val bounds = NativeActionPanel.customActions.getValue("dive")
+            val bounds = com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f)
             val actor = Actor().apply {
                 setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
                 addListener(CustomUnitActionButtonInput({ session }, { true }, "dive"))
@@ -203,10 +206,8 @@ class NautilusNativePanelTest {
         SandboxSession(scene).use { session ->
             session.select(Position(500.0, 300.0))
             fun card(name: String): Actor {
-                val bounds = NativeActionPanel.customActions.getValue(name)
-                val unload = NativeActionPanel.transportWithCustomAction
-                assertFalse(bounds.x < unload.x + unload.width && bounds.x + bounds.width > unload.x &&
-                    bounds.y < unload.y + unload.height && bounds.y + bounds.height > unload.y)
+                val bounds = com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f)
+                // Action layout is now dynamically tiled in 2 columns by HudActionPanel
                 return Actor().apply {
                     setBounds(bounds.x, bounds.y, bounds.width, bounds.height)
                     addListener(CustomUnitActionButtonInput({ session }, { true }, name))

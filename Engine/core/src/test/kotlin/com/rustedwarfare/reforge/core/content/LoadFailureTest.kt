@@ -23,10 +23,14 @@ class LoadFailureTest {
         error(ContentLoader.loadUnitVariant(negative("L03a.ini")), ContentErrorCode.WEAPON_SECTION_PRESENT, "attack", null)
     }
     @Test fun l03bBase64Encoding() {
-        error(ContentLoader.loadMap(negative("L03b.tmx")), ContentErrorCode.UNSUPPORTED_ENCODING, "data", "encoding")
+        // Historical L03b.tmx declares encoding="base64" with comma-separated CSV text; base64 is now supported so invalid base64 payload fails cleanly.
+        error(ContentLoader.loadMap(negative("L03b.tmx")), ContentErrorCode.MALFORMED_SYNTAX, "data", "encoding")
+        changedMap("encoding=\"csv\"", "encoding=\"xml\"") {
+            error(ContentLoader.loadMap(it), ContentErrorCode.UNSUPPORTED_ENCODING, "data", "encoding", "xml")
+        }
     }
-    @Test fun l03cWaterIsSupportedWhileUnknownTilePropertiesRemainRejected() {
-        // Keep the historical fixture bytes; water is now an explicitly supported input.
+    @Test fun l03cWaterIsSupportedAndUnknownDecorativeTilePropertiesRecordDiagnostics() {
+        // Keep the historical fixture bytes; water is an explicitly supported input and unknown decorative tile properties are recorded as diagnostics instead of failing map load.
         val historical = assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(negative("L03c.tmx"))).value
         assertEquals(setOf(16), historical.tileSets.first().waterTileIds)
         assertEquals(33, historical.blocking.blockedCount)
@@ -38,8 +42,8 @@ class LoadFailureTest {
             </tileset>
             <layer name="Ground" width="1" height="1"><data encoding="csv">1</data></layer>
             </map>""") { path ->
-            val result = error(ContentLoader.loadMap(path), ContentErrorCode.UNSUPPORTED_PROPERTY, "property", "name", "not-supported")
-            assertEquals(path.toAbsolutePath().normalize().toString(), result.file)
+            val loaded = assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(path)).value
+            assertTrue(loaded.ignoredDiagnostics.any { it.contains("not-supported") })
             assertEquals(33, assertIs<ContentResult.Success<MapDefinition>>(ContentLoader.loadMap(mapPath())).value.blocking.blockedCount)
         }
     }
@@ -106,17 +110,20 @@ class LoadFailureTest {
         }
     }
     @Test fun rejectsUnsupportedXmlLayersFeaturesAndAttributes() {
-        changedMap("name=\"Ground\"", "name=\"Units\"") {
+        changedMap("name=\"Ground\"", "name=\"UnknownLayer\"") {
             error(ContentLoader.loadMap(it), ContentErrorCode.UNSUPPORTED_LAYER, "layer", "name")
         }
-        for (element in listOf("objectgroup", "imagelayer", "group")) changedMap("</map>", "<$element/></map>") {
+        changedMap("name=\"Ground\"", "name=\"Units\"") {
+            error(ContentLoader.loadMap(it), ContentErrorCode.MISSING_REQUIRED_FIELD, "map", "Ground")
+        }
+        for (element in listOf("imagelayer", "group")) changedMap("</map>", "<$element/></map>") {
             error(ContentLoader.loadMap(it), ContentErrorCode.UNSUPPORTED_FEATURE, element, null)
         }
         changedMap("orientation=\"orthogonal\"", "orientation=\"hexagonal\"") {
             error(ContentLoader.loadMap(it), ContentErrorCode.UNSUPPORTED_FEATURE, "map", "orientation")
         }
         changedMap("renderorder=\"right-down\"", "renderorder=\"right-down\" infinite=\"1\"") {
-            error(ContentLoader.loadMap(it), ContentErrorCode.UNSUPPORTED_FIELD, "map", "infinite")
+            error(ContentLoader.loadMap(it), ContentErrorCode.UNSUPPORTED_FEATURE, "map", "infinite")
         }
     }
     @Test fun rejectsDoctypeMalformedXmlAndMissingFile() {

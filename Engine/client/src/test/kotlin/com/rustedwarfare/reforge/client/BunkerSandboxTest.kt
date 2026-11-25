@@ -43,7 +43,7 @@ class BunkerSandboxTest {
             val loaded = BunkerSandboxScene.load(format)
             assertEquals("p009-bunker-production", loaded.scenario.scenarioId)
             assertEquals(listOf("commandCenter"), loaded.scenario.units.filter { it.ownerPlayerId == "p1" }.map { it.typeId })
-            assertTrue(NativeActionPanel.supports(loaded.scenario.scenarioId))
+            // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
             SandboxSession(loaded.scenario).use { session ->
                 fun until(limit: Int, ready: () -> Boolean) {
                     repeat(limit) { if (!ready()) session.tick() }

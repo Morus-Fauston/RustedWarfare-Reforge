@@ -19,6 +19,7 @@ dependencies {
     implementation(project(":client"))
     implementation("com.badlogicgames.gdx:gdx-backend-lwjgl3:1.13.1")
     runtimeOnly("com.badlogicgames.gdx:gdx-platform:1.13.1:natives-desktop")
+    runtimeOnly("com.badlogicgames.gdx:gdx-freetype-platform:1.13.1:natives-desktop")
     testImplementation(kotlin("test"))
 }
 
@@ -68,6 +69,9 @@ distributions {
             }
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/phase-six-a-sandbox")) {
                 into("test-scenarios/inputs/phase-six-a-sandbox")
+            }
+            from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/inputs/phase-seven-sandbox")) {
+                into("test-scenarios/inputs/phase-seven-sandbox")
             }
             from(rootProject.projectDir.parentFile.resolve("SimulationTest/public/contracts")) {
                 include("phase-five-*.json")

@@ -33,9 +33,10 @@ class MapProjection(val worldWidth: Double, val worldHeight: Double,
     private fun baseScale(): Double = if (fillViewport) max(mapArea.width / worldWidth, mapArea.height / worldHeight)
         else min(mapArea.width / worldWidth, mapArea.height / worldHeight)
 
-    internal fun resizeBattlefield(width: Double) {
-        if (!fillViewport || !width.isFinite() || width <= 0 || width == mapArea.width) return
-        mapArea = mapArea.copy(width = width)
+    internal fun resizeBattlefield(width: Double, height: Double = mapArea.height) {
+        if (!fillViewport || !width.isFinite() || width <= 0 || !height.isFinite() || height <= 0) return
+        if (width == mapArea.width && height == mapArea.height) return
+        mapArea = mapArea.copy(width = width, height = height)
         fitScale = baseScale()
         centerOn(camera.center)
     }

@@ -1,5 +1,259 @@
 # Changelog
 
+## v0.5.70 (2026-11-24 03:05)
+
+### 新增
+
+- **自有公开占位单位素材全量补绘（`phase-seven-sandbox` 65 单位与随包 `reforge:base` 28 图）**：
+  - 以统一的 90° 俯视工业/构成主义像素风（1px 深色外描边、金属斜面高光与暗部层次、黄黑斜纹警示带、清晰兵种结构轮廓与规范纯绿可染色装甲区）全量重绘 `SimulationTest/public/inputs/phase-seven-sandbox/json/package/` 下的 136 张活体、残骸与阴影 PNG（覆盖指挥中心、陆/空/机甲/海/实验工厂、矿机与制造机 T1–T3、炮塔 T1/T2/火炮、激光防御、修理湾、核弹井与反核井、坦克/建造者/气垫船/悬浮坦克、运兵机/轰炸机/防空光束炮艇/两栖喷气机/直升机、炮艇/重型战列舰/攻击潜艇、轻重机甲/工程机甲/移动碉堡/喷火机甲、鹦鹉螺与机械蟹、模块蜘蛛本体及全部 18 个蜘蛛模块），彻底消除旧大方块占位图。
+  - 保留全部 9 张光束、护盾、槽位覆盖与 1×1 空图原样不动；全部 145 张 PNG 100% 保持既有宽高、多帧帧数与挂点对齐，9 组多帧动效表全部具备相邻帧动态变化；全部 28 张残骸与 8 张阴影保持焦黑锈蚀或深色半透明且零纯绿像素误染。
+  - 同步更新随包内置占位单位目录 `Engine/client/src/main/resources/visuals/placeholder/units/` 全部 28 张 PNG（含 `demo-tank.png`），同步回写 `Engine/client/src/main/resources/visuals/placeholder/manifest.json` 的 `provenance`、`source`、字节数与 SHA-256（保留 6 张地形条目与 13 张占位 tilesets 零改动，严守不触碰 `phase-six-a-sandbox`、`Engine/core/sim` 与 `Engine/core/path`）。
+
+### 技术
+
+- **自动化契约检验与双审收据（`UI-P003-003`）**：新增 `PublicUnitSpriteIntegrityTest`，覆盖 `phase-seven-sandbox` 全 145 张与随包 28 张单位图的精确尺寸、多帧相邻帧差异、基于 `MatchPlayerColors.PURE_GREEN_THRESHOLD` 的活体纯绿合规与残骸/阴影/非染色图零纯绿断言，以及 `manifest.json` 来源路径逐字节一致性校验；受影响 `:client:test`、`:pc:test` 与 `:pc:installDist`（`--rerun-tasks`）全绿，`workspace_layout.py --root` 返回 `ok: true`；完成全阵容 P1 绿 / P2 红 / 18 蜘蛛模块 / 28 残骸着色器验证拼图与 1920×1080 公开占位模式 `river_crossing.tmx` 5 态 Windows 实窗采集；Hydrogen 9 张目视审查首轮 0 必修 `APPROVED`，全新上下文 Neon 独立代码与清单整审经 2 项 P1 返修后定向复核 `APPROVED`（0 必修）。
+
+---
+
+## v0.5.69 (2026-11-23 23:01)
+
+### 调整
+
+- **HUD 复合单位图标温和提亮与暗井分离（`CompositeUnitIconBuilder.kt`、`SandboxGraphics.kt`、`ui/theme.json`）**：
+  - 在 `CompositeUnitIconBuilder.compose()` 离线输出阶段接入 `UiTheme.unitIconTuning`（内置默认主题启用 `gamma=0.82`、`brightnessLift=0.05`、`saturationScale=1.08`、`outlineLumaThreshold=0.14`），仅对 HUD 5 处复合单位图标温和抬高深钢灰暗部细节，同时通过阈值平滑权重保护纯黑外描边锐利不泛白、保持纯绿对局玩家色鲜明度，绝不触碰战场世界贴图与着色器。
+  - 将默认主题 `iconWell` 由 `#1A1E20FF` 略微抬亮至 `#282E33FF`，使带黑描边的复合单位图标在选中卡 40×40 图标框与队列格内与暗底利落分离。
+- **有队列能力单位空队列常驻防跳动与红底白字角标右上出界置顶（`HudSidebarModel.kt`、`InGameHudOverlay.kt`）**：
+  - `HudSidebarProjection.buildQueueSection()` 对已完工己方工厂（`production`/`factoryQueue`）、建造者（`construction`）与可升级建筑（`upgrades`）在队列为空时常驻保留 5 个虚线空格且不显示 `0%` 噪音，彻底消除首次下单时下方动作键坐标跳动；普通作战单位、在建建筑与敌方/中立单位保持不占行。
+  - `InGameHudOverlay.drawQueueSection()` 拆分为两趟绘制（先绘 5 格底板/进度/边框/图标，再统一置顶绘全部 `count >= 2` 角标），角标按主题度量（默认 `+3, +3` 外探与 `1px` 深色隔离描边）向队列格右上角轻度出界，中英文模式下无顶界裁切、无邻格边框压切。
+
+### 修复
+
+- **排查并打通 `--original-assets` 直开 PC 66 单位原版映射（`PcVisualAssetSettings.kt`、`SandboxRenderResources.kt`）**：
+  - 修复桌面端 `--original-assets` 指向 Steam PC 原版目录（含普通文件 `game-lib.jar`）时仍走 Android 25 单位 `original-profile.json` 导致 `repairbay`、`experimentalLandFactory`、`nukeLauncherC`、`antiNukeLauncherC`、`hoverTank` 等回退占位图的问题；现自动选用随包已校验的 `PcOriginalImageProfile.bundled().mappedImages` 66 单位映射（严守 `ADR-008` 完整 jar/PNG 校验与缓存隔离），同步覆盖直开 `rw.pc.*` 路径的两栖战机朝向回正，并在启动诊断登记 `activeProfileId` / `activeUnitVisualCount` / `resolvedUnitImageCount`；同步闭环 `001` 遗留的未托管主题受限回读建议。
+
+### 技术
+
+- **验证与双审收据（`UI-P003-002`）**：新增 `UiHudBrightQueueAndBadgeTest` 与 `PcOriginalDirectLaunchTest`，受影响 `:client:test`、`:pc:test` 与 `:pc:installDist` 全绿，`workspace_layout.py --root` 返回 `ok: true`；完成 Steam PC 原版目录直开 `[p2]Big Island (2p).tmx` 1920×1080 Windows 实窗 6 态采集（证实 `activeProfileId=rw.pc.steam.9902063.images.v8.mapped`、`resolvedUnitImageCount=188`、空队列→入队动作键 Y 差值 `0.0`、相邻出界红标 `3`/`2`/`4` 置顶无压切、`repairbay`/`experimentalLandFactory`/`nukeLauncherC`/`antiNukeLauncherC`/`hoverTank` 全部显示原版美术）；全新上下文 Neon 独立代码整审与 Hydrogen 6 张实窗目视审查均首轮 0 必修 `APPROVED`。
+
+---
+
+## v0.5.68 (2026-11-23 00:25)
+
+### 新增
+
+- **轻量化界面样式主题（`UiTheme`）与表现资源包声明式分层覆写（`UiTheme.kt`、`ui/theme.json`、`ADR-014`）**：
+  - 将局内 HUD 全部颜色令牌、装饰性圆角/描边/阴影/角标偏移度量、单位图标提亮调参及可选图标/字体/九宫格贴图路径收拢至随包内置默认主题 `Engine/client/src/main/resources/ui/theme.json`（保留现行构成主义默认视觉零回归，支持 `#RRGGBB` / `#RRGGBBAA` / `#RRGGBB@alpha` 精确浮点透明通道），严格恪守“只改样式、不改 HUD 组织方式、交互状态机与触控安全底线”约束。
+  - 新增纯 Kotlin 分层合并器 `UiThemeComposer` 与只读 `UiThemeProvider` / `UiThemeAssetResolver`，按表现资源包优先级（高优先级用户包 → 低优先级用户包 → 内置默认）逐键局部覆写 `ui/theme.json`，缺失键自动逐层回退，严格校验 JSON 512 KiB 上限、有限浮点/合理区间及逐段拒绝符号链接与路径穿越（`UI_THEME_INVALID`）。
+  - 随仓提供最小主题覆写样例 `Engine/client/src/test/resources/ui-theme-samples/cobalt-steel/ui/theme.json`，并新增桌面调试直开参数 `--theme-pack <dir>`（`WindowsLaunchOptions.kt`、`WindowsLauncher.kt`）。
+
+### 调整
+
+- **全 HUD 渲染链路接入 `UiThemeProvider` 与 `ADR-008` 资源托管闭环**：
+  - `InGameHudOverlay`、`HudActionPanel`、`HudControlGroupBar`、`HudDebugOverlay`、`HudSandboxConsole`、`HudCommandIconAtlas`、`UiFontSet` 与 `BootstrapScreen` 全部改为从活动 `UiTheme` 读取颜色、装饰度量与可覆写资产，切换主题时完整比较主题值相等性以重建样式与资源，并安全释放旧图集/字体、在自定义图集失败时自动兜底默认图集。
+  - `PcAcceptedResourceStore` 与 `PcVisualAssetSettings` 将用户表现资源包内的 `ui/theme.json` 及声明的包内资产纳入 `ADR-008` 客户端托管收据校验与未托管外部包冻结快照/发布复核，并拦截与 `pack.json`/`receipt.*`/`media-*` 冲突的保留文件名。
+
+### 技术
+
+- **验证与独立审阅收据（`UI-P003-001`）**：新增 `UiThemeAndOverlayTest`（覆盖内置默认与历史 `UiTokens` 零回归、三层局部覆写、恶意/越界/超限/NaN 拦截、匿名同 ID 主题值比较）与 `PcUiThemeResourcePackTest`（覆盖受托包删源复原、非 `ui/` 托管资产篡改检测、保留文件名拒绝、未托管主题篡改与事后新增拦截）；受影响 `:client:test`、`:pc:test` 与 `:pc:installDist` 全绿，`workspace_layout.py --root` 返回 `ok: true`；全新上下文 Neon 独立非作者代码整审首轮提出 3 项 P1（非 `ui/` 托管与 `JsonValue` 链表复验、未托管外部包冻结读取复核、完整主题值比较）及 4 项 P2 均完成返修，经原审定向复核 `APPROVED`（0 必修）。
+
+---
+
+## v0.5.67 (2026-11-22 21:41)
+
+### 修复
+
+- **PR #16 `group-2` 工具链机制测试历史基线断言同步（`PathPerfBatch.kt`、`PathPerfBatchTest.kt`）**：
+  - `v0.5.50`（`93ee5bce`）引入 O(1) 惰性 `TerrainClearanceField` 废除全图净空扫描后，`PathPerfBatch` 校验器与 `PathPerfBatchTest` 仍硬编码要求 `candidatesChecked == 768`（全图 32×24 格），导致 `Public mechanism and short tests` 在 `group-0`/`group-1` 全绿后于 `group-2` 失败。
+  - 将非直达寻路的 `candidatesChecked` 校验改为与并行 `ENG-P016` 同位一致的 `in 1L..maxCandidates`（直达仍严格校验 `== 0L`），并同步 `PathPerfBatchTest` 对应 2 处断言。
+
+### 技术
+
+- **验证收据**：复跑 CI `group-2` 全部 29 个 `SimulationTest` 工具链测试类（`:test --rerun-tasks`，249/249 项）全绿通过；改动与并行 `ENG-P016` 完全同位一致、零语义冲突。
+
+---
+
+## v0.5.66 (2026-11-22 19:51)
+
+### 新增
+
+- **离线 CPU 复合多图层单位图标缓存（`CompositeUnitIconBuilder.kt`、`SandboxGraphics.kt`、`SandboxRenderResources.kt`）**：
+  - 在 `SandboxGraphics` 加载期按 `BACK -> BODY(frame 0) -> ARM1/ARM2 -> TURRET/可见 NAMED_TURRET（按挂点偏移）-> ROTOR` 离线 CPU 合成单张正方形复合图标，复用 `MatchPlayerColors.applyPureGreenTint` 着色并按非透明外接包围盒自动裁切留白；保留 `iconWeaponName` 模块单层特例，中间 `Pixmap` 全由 `try/finally` 释放、合成 `Texture` 纳入 `owned` 于退局完整回收。
+  - 右侧 HUD 动作键、选中卡、多选类型芯片、队列格与运输货舱五处统一读取复合图标，彻底修复工厂缺地板、采矿器缺底座与坦克/炮塔/重型战舰缺炮塔的问题。
+
+### 调整
+
+- **工厂/施工队列 Run-Length 连续段折叠、红底白字角标与点击取消闭环（`HudSidebarModel.kt`、`InGameHudOverlay.kt`、`BootstrapScreen.kt`、`UiStrings.kt`）**：
+  - `HudSidebarProjection.buildSlots()` 按相邻同 `typeId` 合并连续段（保留穿插顺序与队首进度填充，超过 5 段时第 5 格 `+N` 统计溢出真实排队总件数）。
+  - 在 `InGameHudOverlay.drawQueueSection()` 为 `count >= 2` 的槽位右上角绘制高对比度红底白字等宽计数角标（`count == 1` 隐藏），并绑定左/右键点击命中区与动作 ID `queue-slot:{idx}`；点击工厂队列格调 `cancelProduction(typeId)`、升级队列格调 `cancelUpgrade(actionKey)`、施工队列格即时弹出左上 amber 提示。
+
+### 技术
+
+- **测试与双审收据（`UI-P002-004`）**：新增 `CompositeIconAndQueueCollapseTest`（含多图层叠合与纯绿着色、`iconWeaponName` 特例、空/透明/超大裁切安全、RLE 穿插保序与溢出真实件数统计及中英文 5 格命中边界校验），同步更新 `UiHudSkeletonAndEventsTest`，联合 `UiHudBuildingStockpileStatesTest`、`UiHudMultiSpiderTransportTest`、`UiHudActionListAndIconsTest`、`MatchPlayerColorsTest` 及 `:pc:installDist` 全绿；完成 Big Island 1920×1080 Windows 实窗采集；Hydrogen 5 张实窗目视审查与全新上下文 Neon 独立非作者代码整审均 0 必修 `APPROVE`（并顺手采纳 2 项 P2 加固项后复测全绿）。
+
+---
+
+## v0.5.65 (2026-11-22 19:27)
+
+### 新增
+
+- **纯绿通道对局玩家着色 Shader 与 8 色对局玩家色板（`MatchPlayerColors.kt`、`SandboxGraphics.kt`、`SandboxRenderResources.kt`）**：
+  - 按原版 `pureGreenTeamColor.frag` 原理编写兼容桌面 OpenGL 与 Android GLES 2.0/3.0 的片元着色器（无 `#version` 桌面限定语句，含 `#ifdef GL_ES` 精度限定），仅对单位彩色活体部件（`BODY`/`BACK`/`TURRET`/`NAMED_TURRET`/`LEG`/`FOOT`/`ROTOR`/`WING`/`ARM`）启用，跳过 `SHADOW`、`DEAD` 残骸、`SHIELD`、`SLOT_OVERLAY`、`BEAM`、`AFTERBURN_TRAIL` 与地块贴图；着色器按位直传 uniform 零帧内临时对象分配、`try/finally` 恢复 `batch.shader` 并在 `SandboxGraphics.close()` 释放。
+  - 定义固定 8 色对局玩家色板（P1 绿 `#2ECC40`、P2 红 `#E0463E`、P3 蓝 `#3B82F6`、P4 黄 `#EAB308`、P5 青 `#06B6D4`、P6 紫 `#A855F7`、P7 橙 `#F97316`、P8 粉 `#EC4899`，中立灰 `#9AA3A8`），统一同步至战场着色、小地图单位点及敌方/中立选中卡左侧 4px 色条（`HudSidebarModel.kt`、`InGameHudOverlay.kt`）。
+
+### 调整
+
+- **删常驻外圈、单层选中圈与按需状态条（`SandboxGraphics.kt`）**：
+  - 彻底移除战场未选中单位的常驻外圈；选中态仅绘单层细圈（己方/盟友取对局玩家色、敌方取 `#E0564A`、中立灰），多选主选单位外侧额外轻度叠加 1.5px 柔白细环。
+  - 血条、护盾条、建造进度条、点防御与能量条统一按需显示：仅在单位受伤/非满值/未完工或处于选中态时绘制，满血未选中隐藏。
+- **公开占位单位贴图补绿**：为随包公开占位 21 张活体单位贴图刷入标准纯绿通道涂装区并刷新 `Engine/client/src/main/resources/visuals/placeholder/manifest.json` 字节数与 SHA-256，同步为 `phase-seven-sandbox` 97 张活体单位贴图补齐纯绿可染色区（零触碰残骸/阴影/护盾/槽位覆层）。
+
+### 技术
+
+- **测试、构建与双审收据（`UI-P002-003`）**：新增 `MatchPlayerColorsTest`，联合 `UiHudSkeletonAndEventsTest`、`KnowledgeSandboxSessionTest`、`PhaseSevenPackAndDebugDenoiseTest`、`ResourcePackPreparationTest`、`VisualAssetPlaceholderTest`、`VisualAssetPreparationTest`、`:pc:installDist` 与 `:android:assembleDebug` 全绿；完成原版素材（3 玩家）与公开占位素材（2 玩家）1920×1080 Windows 双线实窗采集；Hydrogen 7 张实窗目视审查 0 必修 `APPROVE`，全新上下文 Neon 独立非作者代码整审发现并复原 2 张误刷非活体贴图（`gunboat-wreck.png` 与 `spider/slot-ui.png`）且采纳零分配 uniform 上传优化后定向复核 0 必修 `APPROVE`。
+
+---
+
+## v0.5.64 (2026-11-22 18:44)
+
+### 新增
+
+- **现行七期综合试玩内容包（`phase-seven-sandbox`）**：在不触碰 `SimulationTest/public/inputs/phase-six-a-sandbox` 及任何历史 SHA-256 锁定场景的前提下，新建 `SimulationTest/public/inputs/phase-seven-sandbox/json/package`（`id: phase-seven.json`），完整继承六期 A 陆/海/空/机甲/蜘蛛/核弹/经济单位体系，将 `heavyBattleship` 升级为 `102×20` 旋转矩形碰撞箱、纳入 `24×13` 旋转矩形 `gunboat` 并接入 `seaFactory` / `seaFactoryT2` 生产名单、`ActionPresentation` 显示名及 `TmxTilesetSupport` 原版地图别名映射；同步打包进 `:pc:installDist` 并设为 `--map` 对战地图直开的默认推荐内容包入口（不破坏显式 `--inputs` 传参）。
+
+### 调整
+
+- **F3 碰撞箱视图参考图减噪与 `F3+D` 细化开关（`CollisionBoxView.kt`、`HudDebugOverlay.kt`、`BootstrapScreen.kt`）**：
+  - `F3+B`（默认开）：全图可见单位统一采用黑边暖黄（`#F2C96B`）粗实线硬轮廓 + 碰撞箱前端外部短箭头（沿朝向置于硬轮廓外侧，不从中心穿线遮挡贴图）；停滞 `>= 2s` 切换亮红（`#FF2929`），`ShapeRenderer` 与 `GL_BLEND` 状态切换由 `try/finally` 守卫。
+  - 次级细节收敛与 `F3+D`（默认关）：浅青包围圆（`coarse r`）、接触缓冲带、速度与指引矢量默认仅对选中单位绘制；新增 `F3+D`（PC 组合键与触控图层行 `[D]` 命中区 `debug-sublayer-details`）按需全图展开；`F3+R` 未选中路线以 `0.35` alpha 半透明降噪。
+  - 同步更新 F3 左栏图层行（`layers [B] boxes ... · [R] routes ... · [D] details ... · [G] grid ...`）与三色图例行（暖黄 `hard shape / heading`、亮红 `stalled ≥2s`、浅青 `selected / [D] details & routes`）。
+
+### 技术
+
+- **测试与双审收据（`UI-P002-002`）**：新增 `PhaseSevenPackAndDebugDenoiseTest`（含 `phase-seven-sandbox` 加载、矩形舰船参数、海厂生产、`F3+D` 状态机及多角度/圆形外置箭头与降噪计划校验），同步更新 `UiHudDebugLayerAndConsoleTest` 与 `WindowsLaunchOptionsTest`，连同 `CollisionBoxViewTest`、`TmxDynamicAtlasAndSkirmishTest`、`PhaseSixASandboxTest` 及 `:pc:installDist` 全部通过；完成 Big Island（原版素材 + 默认 `--map` 启用 `phase-seven-sandbox`）1920×1080 Windows 实窗采集；全新上下文 Neon 独立非作者整审 0 必修 `APPROVE`（顺手采纳 `try/finally` 与多角度测试 P2 加固），Hydrogen 实窗视觉审查经 `F3+D` 截帧时序定向复核后 0 必修 `APPROVE`。
+
+---
+
+## v0.5.63 (2026-11-22 17:46)
+
+### 修复
+
+- **多图层建造放置预览与严格迷雾隔离（`SandboxSession.kt`）**：`previewConstruction()` 此前仅读取 `Ground` 单层 GID，导致原版遭遇战地图上位于 `Items` 层的 `res_pool` 被误判为平地无法预览放置采矿器，且遗漏了水桥、岩石树木与 `PathingOverride` 覆写。现改为在逐格先校验玩家已知视野（`frame.terrain[index].known`，未探索格一律 `UNEXPLORED` 且绝不读取真实地图属性）前提下，复用 `MapDefinition.isResourcePool(centerCol, centerRow)` 与 `MapDefinition.isFoundationBlocked(col, row, definition.foundationMovementType)`，使客户端预览与核心 `BuildingWork` / `BuildingTerrain` 裁决严格一致。
+
+### 调整
+
+- **公开占位 3×3（60×60）多格矿池重绘与内置示范图同步**：扩展 `Engine/client/src/main/resources/visuals/placeholder/tilesets/base_terrain.png`（`200×60`）与 `base_terrain.tsx`（`tilecount=30`），在第三行新增九宫格风格统一矿池（中心格 `id=24` / GID `25` 标注 `res_pool`，外圈 8 格带透明渐变岩边无缝衔接草地/泥地/沙地）；同步更新 `river_crossing.tmx` 与 `volcanic_archipelago.tmx` 各 8 处矿池为 3×3 组、`units_markers.tsx` `firstgid` 偏移 `21 -> 31`，并将 `volcanic_archipelago` 中央岛两处矿池边缘紧邻浅水格补为沙地以确保自然过渡。
+
+### 技术
+
+- **测试与双线实窗复核（`UI-P002-001`）**：新增 `MultilayerConstructionPreviewTest` 覆盖 `Items` 矿池采矿器 `CLEAR` 与实建、普通建筑落矿池/岩石 `BLOCKED`、`Items` 水桥 `CLEAR`、`PathingOverride` 覆写、`seaFactory` 浅水/深水 `CLEAR` 与陆地 `BLOCKED`、`MEMORY` 迷雾零泄露及两张内置示范图 3×3 矿池结构，联合 `TmxDynamicAtlasAndSkirmishTest`、`NavalPlacementTest`、`EconomyConstructionTest`、`FactoryConstructionTest` 等受影响客户端单测全绿；完成 Windows 1920×1080 实窗双线采集（`Big Island` 原版素材包矿池采矿器绿框预览建造、水域陆厂红框拦截、海工厂绿框预览建造与潜艇下水；`river_crossing` 与 `volcanic_archipelago` 公开占位素材 3×3 矿池及采矿器居中建造）；Hydrogen 9 张实窗目视审查与全新上下文 Neon 独立非作者代码与契约整审均 0 必修 `APPROVE`。
+
+---
+
+## v0.5.62 (2026-11-22 17:12)
+
+### 修复
+
+- **原始前沿最近落点合法性校验补齐（`Pathfinding.kt`）**：`considerNearestPrimitive` 在 48 次二分逼近后补齐 `if (!legal(point)) return`（对齐 `considerNearest` 既有逻辑），避免起点本身不满足 `legal` 约束时将非法点误选为最近落点，修复 PR #15 公开短测中 `FactoryExitTest` 2 项失败（`escape_planning_and_collision_release_all_known_buildings_without_giving_the_outer_car_that_mode` 与 `being_inside_a_hidden_truth_building_does_not_select_the_owners_escape_planning_mode`）。
+- **公开长测场景适配到点即时停驱语义**：对齐 `v0.5.31`（`20a1b097`）确立的“正常到达当步速度清零”规则，在保持全部独立验收契约（`contracts/`）零改动的前提下，同步修正 3 组长测场景输入坐标：
+  - `bomber-{ini,json,hjson}-production-chain.json` 与 `bomber_scenarios.py`：`select-air` 点选坐标由 `(269, 270)` 更新为 `(269, 234)`（对齐轰炸机停驱降落点 `(269.08, 233.62)`）；
+  - `build-economy-chain.json` 与 `generate_economy_scenarios.py`：`move-worker` 目标由 `(110, 90)` 调至 `(110, 95)`，确保建造者在步 `1701` 就位即建工厂；
+  - `maintenance-defense-chain.json`：调整 `screen-z01`（`(218, 75)`）与 `face-defense`/`turret`（`(350, 190)`），恢复攻防射程关系使炮塔完整竣工并清剿全部 12 辆敌方坦克。
+
+### 技术
+
+- **前置 CI 修复全量验证（`UI-P002-000a`）**：`FactoryExitTest`（6/6）、`TerrainClearanceAndPrimitiveKernelTest`、`NormalMoveCompletionTest`、`BomberFlightTest` 及 11 项 Python 平台工具单测全绿；6 套公开短场景批跑（`public_batch.py --kind short`：`content-movement-knowledge`、`production-combat`、`build-economy`、`maintenance-defense`、`platform-basics`、`content-three-formats`）全绿；长测 `bomber-{ini,json,hjson}-production-chain`、`build-economy-chain`、`maintenance-defense-chain` 全部退出码 0 通过；全新上下文 Neon 非作者代码与契约整审 0 必修 `APPROVE`，且 `Pathfinding.kt` 单行修复与并行 `ENG-P016` 分支保持同位一致零语义冲突。
+
+---
+
+## v0.5.61 (2026-11-22 14:30)
+
+### 调整
+
+- **大屏非线性自适应 HUD 缩放（`UiScale`）**：针对 2K/4K 等大分辨率窗口下纯线性缩放导致侧栏过大的问题，按确认的《局内HUD规格》§2.1–2.2 修订 `UiScale.computeBaseScale`：短边 `≤ 640` 保持纯线性 `max(0.5, r)`；短边 `> 640` 改用连续幂曲线并带最小占比地板 `max(r^0.55, 0.50 × r)`（逻辑短边上限 1280，16:9 侧栏宽度占比不低于 10.2%，960×640 `1.00×`/24.2%、1920×1080 `1.33×`/16.1%、2560×1080 `1.33×`/12.1%、3840×2160 `1.95×`/11.8%）；桌面纯像素短边不读 EDID/PPI，触控共用基础曲线并保留 `max(s_base, s_touch)` 8mm 物理下限。
+
+### 修复
+
+- **开发模式 `/` 唤出沙盒指令台与多行帮助排版（`BootstrapScreen`、`HudSandboxConsole`）**：
+  - 现象 → 桌面以 `--development true` 启动时，因默认未启用沙盒部署开关且未处理暂停态/小键盘 `/` 与中文输入法 `、` 字符，按 `/` 无法唤出沙盒指令台；且 `/help` 多行反馈直接按单行绘制导致文字穿透输入框与底部脚注。
+  - 修复 → 桌面开发模式默认开启 `SandboxOptions(deploymentEnabled = development && !touchControls)`；统一经 `HudSandboxConsole.isConsoleOpenKey`/`isConsoleOpenChar`/`canOpenConsole` 支持 `/`、`NUMPAD_DIVIDE` 与中文输入法 `'/'`/`'、'` 在常规及暂停态唤起，并吞掉 `keyDown` 触发后紧随的重复 `keyTyped` 字符避免误写入输入框；`HudSandboxConsole` 改为多行反馈高度自适应排版（上限 8 行）使 `/help` 完整居中显示零重叠。
+
+### 技术
+
+- **高分后台抓图选项、单测与四分辨率实窗复核**：`WindowsLaunchOptions` 补充 `2560x1440` 与 `3840x2160` 后台窗口尺寸选项；更新 `UiFoundationScaleTokensAndStringsTest` 覆盖小窗地板、基准 640、1080p/2560×1080/4K 非线性曲线、8K 最小占比地板与触控高/低 DPI；扩充 `UiHudDebugLayerAndConsoleTest` 覆盖 `/`、小键盘、中文输入法与多行反馈高度计算；受影响客户端/PC 单测、`:pc:installDist`、`:android:assembleDebug` 与 `:android:verifySandboxHostChecks`（4 项 414 检查）全绿；完成 `960×640`、`1920×1080`、`2560×1080`、`3840×2160`（实际 3840×2130）四分辨率实窗、`/` 默认唤出指令台（含修复后多行 `/help` 目视复核）及 4K F3 调试层核验。
+
+---
+
+## v0.5.60 (2026-11-22 08:36)
+
+### 修复
+
+- **公开测试工具详尽分支补齐（`SimulationTest`）**：`MotionDiagnosticCapture` 与 `MotionV2CoreTraceJson` 的动作序列化 `when` 表达式补齐 `CancelConstructionAction` 分支与前置断言，使公开短场景批跑（`public_batch.py --kind short`）与 `:installDist` 编译在加入取消施工核心接缝后恢复全绿。
+
+### 技术
+
+- **UI-P001 整期固定候选收口与三分辨率实窗验收**：
+  - **公开测试与短场景**：6 套公开短场景（`content-movement-knowledge`、`production-combat`、`build-economy`、`maintenance-defense`、`platform-basics`、`content-three-formats`）串行批跑全通过（总计 889.0s）；受影响核心（6 类 31 项）、客户端（33 类 156 项，含全部新增 `UiHud*`/`TmxDynamicAtlasAndSkirmishTest` 及全部 15 个移除 `NativeActionPanel` 断言的旧测试）、PC（6 类 33 项）与 Android 宿主检查（`verifySandboxHostChecks` 4 项 414 检查）全部 0 失败。
+  - **三分辨率实窗与帧耗时**：同一固定候选完成 `960×640`、`1920×1080`、`2560×1080` 实窗采集与操作闭环（含原版遭遇战地图 `[p2]Big Island (2p).tmx` 33→8 活跃图集及退局再开闭环、`[p2]Fire Bridge (2p) [by uber].tmx` 42→19 活跃图集、自有示范多层图 `river_crossing.tmx` 2→1 活跃图集及全 HUD/暂停/菜单/目标卡/amber 提示/F3 调试层）；稳态帧工作耗时 P50 为 0.25–0.40ms（P95 2.61–5.08ms、间隔 P50 16.67ms），F3 开启前后均值 0.985ms→1.373ms 无明显卡顿。
+  - **Android 四 ABI 与双终审门禁**：`:android:assembleDebug` 构建通过，APK 解包核验 `arm64-v8a`/`armeabi-v7a`/`x86`/`x86_64` 四 ABI 均包含 `libgdx.so` 与 `libgdx-freetype.so`，随包 Noto Sans SC / JetBrains Mono 字体、OFL-1.1 许可证、`THIRD-PARTY-NOTICES.txt`、65 指令图标图集与 2 张示范地图齐备；Hydrogen 视觉并排终审（13 张实窗 vs 7 张 Demo 参考稿）与全新上下文 Neon 独立代码与契约整审均 0 必修 PASS。
+- **未验证边界与合并接缝**：Android 真机触控手感、最终人工试玩接收与合入 `main` 留待维护者确认；与并行 `ENG-P016` 分支（`fbd2d5f0`）同文件改动包括 `CHANGELOG.md`、`CHANGELOG.txt`、`Model.kt`（行段不重叠）、`SimulationContext.kt`（行段不重叠），并持续关注 `CONTEXT.md`、`BootstrapScreen.kt`、`SandboxSession.kt`。
+
+---
+
+## v0.5.59 (2026-11-22 06:58)
+
+### 新增
+
+- **F3 调试层总开关、子图层过滤与双栏等宽信息（`HudDebugOverlay`、`CollisionBoxView`）**：严格仅在开发模式提供（普通模式零入口、默认关闭、每局重置），`F3` 开关整层，`F3+B`（碰撞箱/缓冲/矢量/停滞）、`F3+R`（路线与落点）、`F3+G`（启用 `GL_BLEND` 混合的半透明地块网格）独立过滤复用核心同源 `DiagnosticSceneProjector` 几何；新增 `HudDebugOverlay` 左上 9 行全局读数（版本模式、FPS/帧耗时、sim step/rate/actual/backlog、地图尺寸与迷雾、镜头、指针世界/地块坐标与地形 GID、可见单位与弹体计数、图层状态与橙/青图例）及右侧 6 行主选单位诊断（归一化朝向角、运动状态与命令、碰撞形状与质量、接触/缓冲计数、路径与剩余距离）；战场宽度 `<780` 参考单位自动堆叠为单列，左上事件提示同步下移至 `leftColumnBottomY` 下方零重叠；严格读取玩家获准 `PlayerObservation`，绝不泄露迷雾隐藏敌军。
+- **触控开发模式系统条“调试”按钮**：彻底移除旧 `CollisionBoxDevelopmentPanel`，在 `InGameHudOverlay` 系统条末尾新增开发模式触控“调试”按钮（高亮表示开启，上报 `debug-layer-toggle` 与 `collision-box-view`），并在调试文字栏的 `layers` 行支持直接点击切换 `[B]/[R]/[G]` 子图层；模态菜单/暂停态下严格门控防冲突。
+- **底部居中 `/` 沙盒指令台与到达偏差提示归位（`HudSandboxConsole`、`BootstrapScreen`）**：移除旧左下常驻沙盒文字与大面板，改为开发模式按 `/` 唤起宽 460、战场底部居中停靠的 `HudSandboxConsole`（`Touchable.childrenOnly` 不拦截外部战场点击；上方点选按钮行、深色等宽输入栏、命令回显与 `Esc 关闭 · 回车提交` 脚注，完整保留 `sandbox-command-input` 及 4 个 `sandbox-pick-*` ID）；将单选与多选最近可达停点偏差（含 `stepIndex` 去重）接入左上 4 秒普通事件提示流并保留地图标记。
+
+### 技术
+
+- **测试、实窗对照与双门禁复核**：补齐 `UiStrings` 翻译键（`pick.repeat`、`arrivalDeviatedMulti`）及开发背景抓图 `1280x800` / `f3` 组合键支持；新增 `UiHudDebugLayerAndConsoleTest`（覆盖子图层默认/重置、`<780` 堆叠阈值、`SandboxMode.MEMORY` 视野外隐藏敌军不泄露实证、调试开关前后权威模拟位级一致、`HudSandboxConsole` 460 居中布局与动作 ID 及单/多选到达偏差 4 秒淡出），与 `UiHud*` / `KnowledgeSandboxSessionTest` / `BackgroundLaunchTest` 回归全绿；采集 1920×1080（常态与半透明 F3+G 网格）、960×640 窄窗单列、1280×800 底部居中指令台及触控 2400×1080 系统条“调试”按钮共 5 张实窗图，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审经 3 P1 + 4 P2 返修复核 0 必修 PASS。
+
+---
+
+## v0.5.58 (2026-11-22 06:05)
+
+### 新增
+
+- **PC/触控双端编组栏（`HudControlGroupBar`）**：按《局内 HUD 规格》第 10 节与维护者采纳的 `DEC-P011-001` 落地双端编组栏：PC 左下角仅显示非空编组（支持全部 `0–9` 编组并按 `1..9, 0` 排布跳过空号，44×40 格、大号组号 + 右上小号单位数），保留点击选组、700ms 连按居中镜头、`Ctrl+数字` 保存与 `Shift+数字` 并选；触控端位于半透明镜头摇杆右侧（`x=160`，50×50 格）固定显示前 3 格（空组虚线压暗，第 4 格起仅非空显示），上方常显实时阶段提示条（“按住保存编组”→“松手调用/存入”→“松手追加编组”→“松手替换整组”），按 `0.83s / 1.67s` 三段按住计时与底进度条执行短按调用/空组存入、追加并选（`SelectionState.appendGroup` / `SandboxSession.appendGroup`）与替换整组，并在增删槽位时复用 `GroupSlotActor` 保持长按焦点、在目标模式/菜单/暂停期间严格门控 `allowTouchHold()`。
+- **原版触控首点预览与次点执行交互（`TouchActionPreviewState`）**：按《局内 HUD 规格》第 9.3 节在 `HudActionPanel` 落地触控动作交互：普通生产/队列/即时动作键首点缓存 `(代表单位 ID, 动作 ID)`、以 `rust` 描边高亮并在侧栏左侧弹出带 `rust` 色“再次点击执行”脚注的说明卡而不执行；次点同一代表单位同一动作才执行入队；切换主选单位、动作消失、进入目标模式或点按卡外/非键空白自动清除预览，且点击预览卡内部直接消费事件防止穿透到战场；建造与选点类动作键（`isTargetAction == true`）首点直接进入目标模式并关闭预览；`KeyActor` 与 `SlotActor` 均补齐 12px 滚动拖拽防抖。
+- **触控镜头摇杆视觉对齐**：`BootstrapScreen.drawCameraJoystick` 对齐 Demo 半透明暗灰外环（`rail 0.45` + `line 0.90`）与半透明摇杆球样式并正确恢复 `GL_BLEND`。
+
+### 技术
+
+- **测试、开发支撑、实窗对照与双门禁复核**：为 `SandboxInput` 补齐 `keyDown/keyUp` 修饰键追踪与 `cancel()` 清理；为开发/测试专用的 `WindowsLaunchOptions` / `BackgroundClientInput` 增补 `--touch true`、多分辨率 `--background-size`（`960x640 / 1920x1080 / 2400x1080 / 2560x1080`）与 `ctrl`/`shift` 按键组合支持；新增 `UiHudGroupsAndTouchTest`（覆盖 10 组非空跳号、触控前 3 固定格、`0.83s / 1.67s` 全边界、真实 `SandboxInput` `Ctrl/Shift` 编组与 `cancel()` 清理、真实 `SandboxSession` 工厂首点预览不入队与次点入队及建造首点直进）及 `BackgroundLaunchTest` 启动项校验并通过全部回归；完成 PC 1920×1080 与触控 2400×1080（常态、首点预览、次点入队）实窗采集，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审定向复核 0 必修 PASS。
+
+---
+
+## v0.5.57 (2026-11-22 05:21)
+
+### 新增
+
+- **在建建筑自取消施工闭环（极窄授权核心接缝）**：在 `Commands.kt`、`BuildingWork.kt` 与 `SimulationContext.kt` 新增 `CancelConstructionAction` 与 `BuildingWork.cancelSite`（先算后改并捕获整数余额溢出、纳入 `sandboxRefunds` 退款预留、释放对应工人施工任务、发出 `construction-cancelled` 事件清理 `SelectionState` 编组并即时刷新 `buildingKnowledge`）；选中未建成己方建筑时，选中卡展示 rust 色 `施工` 进度条，动作区在建成前隐藏生产/升级键并仅显示 `取消施工`（`cancel-construction`）与 `回收`（`choose-reclaim`，仅当选中含可用工人时启用，否则明确禁用标 `需选工人`）。
+- **弹药储备行与核弹目标模式半径圈**：在 `HudSidebarModel` / `InGameHudOverlay` 为核弹井（4）、反核井（12）、舰船导弹与蜘蛛反核模块（12）渲染 `储备` 行（实心/虚线方格数严格等于 `已有/容量`）；`buildNuke`/`buildAntiNuke` 满仓禁用并标 `储备已满`，`launchNuke` 键右上标 `可用 N`（多选核弹井时与 `nuclearLaunchMember` 口径一致），目标模式提示卡显示 `剩余 N 发`（修复非 ASCII 字体回退以完整渲染中文）并在战场光标绘制 translucent rust 填充与虚线爆炸半径圈。
+- **状态切换、能量充能锁定、双分支升级与镜头跟随标签**：实现潜艇、两栖机、移动炮塔、鹦鹉螺、加力与反核模块（修正 `isEnabled`/`isDisabled` 图标与下一步动词极性）单键显示下一步动作 + 选中卡当前状态 + 切换过渡进度条防连点；能量回充锁定（`energy.recharging` / `pointDefense.exhausted`）选中卡与能量条呈 amber `▲ 充能中` 并禁用耗能动作（禁用态优先展示短原因）；双分支升级选定一分支后另一分支置灰标 `分支已定`、队列行标 `升级`、取消后恢复可用；引擎镜头跟随时左上常驻 `rw-camera-follow` + `跟随中 · 拖动地图退出` 标签，拖拽/小地图/触控摇杆通过统一 `takeOverCamera` 即时清除。
+
+### 技术
+
+- **双语预热、测试与双门禁复核**：全部新增固定 UI 文案纳入 `UiStrings.kt`（ZH/EN 键对称并预热 FreeType 字形）；新增 `CancelConstructionActionTest`（3 项含整数余额溢出预留验证）与 `UiHudBuildingStockpileStatesTest`（10 项覆盖在建取消、核弹储备与多选、炮塔分支锁定与取消恢复、潜艇/移动炮塔过渡防连点、点防御与武器能量锁定、反核图标极性及镜头跟随），并与既有核心/客户端回归全绿；完成 1920×1080 实窗六态（工地、炮塔分支、潜艇、核弹井目标模式、点防御充能锁定、镜头跟随标签）对照采集，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审经 10+1 项定向返修复核 0 必修 PASS。
+
+---
+
+## v0.5.56 (2026-11-22 04:15)
+
+### 新增
+
+- **多选类型小标签与显式主选切换**：在 `SelectionState` 与 `SandboxSession` 支持不改变 `selectedIds` 集合地显式切换主选单位（`setPrimary` / `selectPrimaryByType`）；`InGameHudOverlay` 在混选多种类型时于选中卡上方渲染最多 6 枚类型小标签（图标+数量，超出显示 `+k`，主选 `value` 高亮并始终保留，上报 `primary-chip:{typeId}`），点击即同步切换选中卡、`{名称} 的动作` 归属小字及 `ActionPresentation` 中全部归属 `ownPrimary` 的专属动作（建造、回收/修理、运输卸载、集结点、潜艇/两栖切换与生产/升级）。
+- **模块蜘蛛 3×2 统一槽位小键**：在 `HudActionModels` / `HudActionPanel` 落地 3×2 等尺寸槽位小键（PC 高 40 / 触控高 46，空槽显示 `rw-slot-empty` 虚线六边形、满槽显示 24×24 模块单位图与建造进度条、选中槽位 `value` 高亮、上报 `select-slot:{n}` 及 `unit-action:selectSlot{n}` 兼容别名），点击槽位切换对应模块安装/升级/启停/瞬移/回收键与价格/资金不足状态（重复点击返回 Build 页），并按规格在槽位页隐藏底盘回收/修理键。
+- **运输载具货舱行与目标/就地/取消卸载**：在只读 `TransportObservation` 增补 `passengerTypeIds: List<String>`（保持 `PlayerObservationProjector` 对非己方完整隐私裁剪）；`InGameHudOverlay` 在选中卡下方渲染“货舱”行（按乘员类型合并图标+数量芯片，右侧 `已占/容量`）；实现“卸载”目标选点（`transport-unload-target`，解耦当前水面限制，支持移动到达自动卸载与途中 `transport-cancel-unload` 取消、新指令自动清除待卸载目标、受阻停下不原地误卸）与“就地卸载”（`transport-unload`）。
+
+### 技术
+
+- **测试、实窗对照与双门禁复核**：新增 `UiHudMultiSpiderTransportTest`（8 项测试覆盖主选切换、6 标签溢出、模块蜘蛛槽位联动、货舱合并、`unloadAt` 到达卸载与新移动覆盖取消、敌方隐私裁剪及副标题翻译键）并通过既有 `ActionMenuTest` / `ConstructionMixedDispatchTest` / `ConstructionHotkeyInputTest` / `SelectionSandboxSessionTest` / `ModularSpiderSandboxTest` / `RoleCompositionHudTest` 共 46/46 全绿；为 `BackgroundClientInput` 增补带严格边界校验的 `drag` / `key` 驱动指令，在 1920×1080 实窗采集多选混合、模块蜘蛛槽位与运输机货舱 3 组画面，Hydrogen 视觉对照 0 必修 PASS，独立非作者 Neon 代码整审及 6 项必修返修复核 0 必修 PASS。
+
+---
+
 ## v0.5.55 (2026-11-22 23:13)
 
 ### 架构改进
@@ -17,6 +271,21 @@
 - **验证与审查**：净减代码 2,049 行（31 files changed, +265 / -2,314）；全量 `:core:test`（421 suites / 1,551 tests 全绿）、`SimulationTest` 专项（`TestScenarioSeedParityTest`、`PathPerfBatchTest`、`PathKnownConnectorRepairTest` 全绿）、`PathPerfBatchMain` CLI 实跑（`EXIT=0`）、公开短场景批跑（`public_batch.py --kind short` 全通过）与 `workspace_layout.py`（`ok: true`）全绿；经全新上下文独立 Neon 非作者代码与反特判整审发现 2 项 P1，全部修复后定向复核 `APPROVE`（0 必修）。
 
 ---
+
+## v0.5.55 (2026-11-22 03:03)
+
+### 新增
+
+- **65 枚自有指令图标图集**：从自有 SVG 源光栅化生成 72×72 白底透明 RGBA 图集（`icons/hud-command-icons.png`、`icons/hud-command-icons.json`，608×684 网格覆盖全部 65 枚 `rw-*` 图标），并通过 `HudCommandIconAtlas` 以 `MipMapLinearLinear` + `Linear` 过滤加载，完整纳入 `BootstrapScreen.releasePresentation()` 生命周期清理并在缩放重建字体时持久复用。
+- **能力驱动动作列表、骨白键帽与无极像素滚动**：实现 `HudActionProjection` 与 `HudActionPanel`，彻底移除旧版 `NativeActionPanel`；己方可移动单位固定置顶半高共用命令行（`停止 S` / `巡逻 P` / `守卫 G`，触控隐藏快捷键，点击或按 `G` 触发左上 `amber ▲ 暂未支持：守卫`）；下方两列专属动作区按集结点/回收/修理优先、生产/建造/升级/状态顺序排布，提供骨白键帽 3px 底部立体阴影、按下隐藏阴影下移 1、激活态 2px `rust` 描边、资金不足暗键 `amber ▲ $价格`（禁用点击并闪烁反馈）、右下角 `rust` 排队徽标与底部 4px 进度条；使用 libGDX `ScrollPane` 实现逐像素平滑滚动（滚轮单格 40、触控惯性回弹关闭、12px 拖拽阈值防误触）及滚动实时跟踪视口裁剪的 PC 左侧悬停提示框。
+- **战场顶部居中目标模式提示卡**：新增战场区域顶部居中 300 宽目标模式提示卡，覆盖建造放置三态（可放置 / 阻挡 `▲` / 未探索 `▲`）、回收、修理、巡逻（含已选点数）、集结点与核弹发射（含余弹）及沙盒点选，右键或 `Esc` 即刻退出。
+
+### 技术
+
+- **单测迁移、实窗验证与双门禁复核**：将 15 项既有客户端测试迁出旧 `NativeActionPanel` 并新增 `UiHudActionListAndIconsTest` 覆盖 65 图标清单、共用命令能力判定、资金不足禁用态、目标模式三态及旧文件移除校验；在 `1920×1080` 与 `960×640` 实窗采集工厂生产、建造者/资金不足/守卫提示/目标模式卡及滚动悬停提示 4 组画面，Hydrogen 视觉并排对照 0 必修 PASS，独立非作者 Neon 代码整审及定向复核 0 必修 PASS。
+
+---
+
 ## v0.5.54 (2026-11-22 12:46)
 
 ### 架构改进
@@ -30,6 +299,21 @@
 - **验证与审查**：新增 `ChunkedFlowFieldTest` 10 项单测（宽道让大车、局域脏块重算、中途建场落墙无倒灌、高频连点主干复用、待快启单位地形检测、同目标混编/纯小车场严格隔离、滞回拥堵分流衰减、迷雾与回滚隔离、60 车死胡同饱和外溢及 14 混编石门全员通过）及 `DiagnosticBaselineCaptureMain` 的 `rocks-mixed-100`、`culdesac-overflow-100` 诊断场景；59 项核心专项单测、历史 14 混编原令 `30910`/`31060`（均 `EXIT=0`、`14/14` 到达且 `stableAfterAll=600`、`maxWork=512`）与公开短场景批跑（6 套）全通过；8 套 2 秒停滞标红拼图及峰值放大图经 Hydrogen 强制目视复核 `APPROVE`（0 必修）；经全新上下文 Neon 非作者代码整审修复 4 项 P1 后定向复核 `APPROVE`（0 必修）。
 
 ---
+
+## v0.5.54 (2026-11-22 02:24)
+
+### 新增
+
+- **自适应右侧栏骨架与小地图槽**：实现 `InGameHudOverlay` 与 `HudSidebarProjection`，落地右侧 `232` 参考宽自适应高度侧栏（距底最小留 `8`，无选中时仅显示小地图与资金行，侧栏左侧与下方战场点击/框选/下令完全透传）；小地图按地图比例钳制在侧栏宽的 `0.5–1.0` 倍并于纯黑底槽内居中适配（`Minimap.fitCentered`）。
+- **选中卡与生产/施工/升级队列行**：选中卡支持 40×40 图标槽、原文单位名、`×N`/`已选 N`、收入与状态副标题、`25%` 四分段血量/施工/护盾/能量条（定宽 `74` 右对齐当前值与 `/最大`，能量锁定呈 amber `▲ 充能中`）；敌方/中立单位左侧加 `4px` `foe` 色条并隐藏队列与动作区；队列行支持最多 5 格（首格自下而上 rust 进度填充、超出显示 `+N`）覆盖工厂生产、建造者施工与升级队列，并适配中英文标签列宽。
+- **左上系统条、菜单下拉面板、暂停画面与统一事件提示流**：系统条提供 `≡ 菜单`、`暂停`/`继续` 与 `1×/2×/4×`（移除旧局内标题与帧率/积压读数），按规格 §13.1 上报 `open-menu`/`menu-resume`/`menu-restart`/`menu-exit`/`menu-settings`/`pause-resume` 并保留菜单项兼容别名；`≡` 下拉面板与暂停中央卡片均施加 `0.45` 压暗遮罩且拦截全部鼠标按键/滚轮；点击“设置”弹出 `amber ▲ 暂未支持：设置`；`Esc` 优先退出目标模式，再关闭菜单/恢复暂停或唤起菜单；新增 `HudEventStream` 支持 4 秒普通事件（生产完成、受击、到达偏差）与 3 秒 amber `▲` 警告（核心拒绝码、进图跳过单位、暂未支持功能），最多 3 条叠加淡出及持久化跟随标签。
+
+### 技术
+
+- **测试、实窗对照与双门禁审阅**：新增 `UiHudSkeletonAndEventsTest` 覆盖事件流 TTL/上限/去重/拒绝码、小地图钳制与居中适配、队列 5 格与 `+N` 溢出、建造者施工队列、侧栏自适应透传及真实 `SandboxSession` 己方/敌方投影；通过 1920×1080 五态实窗采集（无选+amber、己方+队列、菜单展开、暂停压暗、敌方单选）与 §13.1 动作 ID 链路验证，Hydrogen 并排对照基准图 0 必修 PASS，独立非作者 Neon 代码整审定向复核 0 必修 PASS。
+
+---
+
 ## v0.5.53 (2026-11-22 06:12)
 
 ### 架构改进
@@ -43,6 +327,21 @@
 - **验证与审查**：新增 `MixedOvertakeAndAirSeparationTest` 5 项单测及 `DiagnosticBaselineCaptureMain` 3 个混编/窄桥/空军诊断场景；55 项专项单测（含 `NarrowPassageTest`、`LocomotionModuleTest`、`UnitContactTest`、`HeavyMech*`、`AirMovementTest`、`HelicopterCombatTest`）与公开短场景批跑（6 套）全通过；6 套 2 秒停滞标红拼图（`rocks-small-100` 100/100、`opposed-open-25v25` 50/50 零红标、`opposed-corridor-8v8` 16/16 零红标、`mixed-overtake-wide` 11/11 零红标、`narrow-bridge-yield` 2/2 零硬接触、`air-flock-rally` 16/16 零红标零重叠）经 Hydrogen 独立目视复核 `APPROVE`（0 必修）；经全新上下文 Carbon 非作者审阅并修复 2 项问题（显式 FNV-1a 跨端确定性哈希与门外静候阻塞带边界）后定向复核 `APPROVE`（0 必修）。
 
 ---
+
+## v0.5.53 (2026-11-22 01:37)
+
+### 新增
+
+- **连续等比缩放与全屏战场底座**：废除 `BootstrapScreen` 的桌面端 `StretchViewport(960, 640)` 与 Android 端 `FitViewport(960, 640)`，统一升级为基于短边 640 参考单位的连续等比 `ScreenViewport`（`UiScale` / `UiMetrics`），支持 `960×640 → 1.0`、`1920×1080 → 1.6875`、`2560×1080 → 1.6875`（额外宽度全归战场，零非等比拉伸）及触控端基于 `ppcY / 10` 的 8mm 物理键高下限 `s_touch`；Android 端开启 `fullBattlefield = true` 并移除旧 736 透明挡板，`resize()` 自动触发居中与视口重排。
+- **FreeType 开源中文字体与防抖重建**：在 `client` / `pc` / `android`（四 ABI `armeabi-v7a`、`arm64-v8a`、`x86`、`x86_64`）接入 `gdx-freetype:1.13.1`，随包附带 OFL 1.1 许可的 `NotoSansSC-Regular.otf`、`NotoSansSC-Bold.otf`、`JetBrainsMono-Regular.ttf` 与完整许可证及第三方声明；实现 `UiFontSet` 按实际像素 `字号 × s` 增量生成清晰字形、开局字形预热与 `FontRebuildDebouncer` 拖拽防抖重建（严格先换绑控件缓存、再更新 `Skin` 样式、最后按先字体后生成器顺序释放旧资源，隔离无泄漏）。
+- **设计令牌与中英双语固定文案表**：落地 `UiTokens`（15 项颜色、尺寸与 11–19 号字号令牌）与 `UiStrings`（完整中英双语键表、默认跟随 `Locale.getDefault()`、透传内容包原文不翻译，并支持核心 kebab-case 拒绝码归一化与暂未支持提示映射）。
+
+### 技术
+
+- **测试、多端构建与独立整审**：新增 `UiFoundationScaleTokensAndStringsTest` 覆盖三分辨率/竖屏/触控 8mm 下限、`ScreenViewport` 坐标往返、15 色完整 RGBA、防抖、双语键齐与 OFL 资源校验；通过 PC `1920×1080` 与 `960×640` 实窗 FreeType 冒烟、`:pc:installDist` 及 `:android:assembleDebug`（确认四 ABI `libgdx-freetype.so` 与字体/OFL 许可全部打入 APK），独立非作者代码整审与两轮定向复核归零（0 必修）。
+
+---
+
 ## v0.5.52 (2026-11-22 03:27)
 
 ### 架构改进
@@ -56,6 +355,38 @@
 - **验证与审查**：新增 `LocomotionModuleTest` 10 项单测（覆盖无量纲比例尺、静态墙 3D LP 最小侵入与切线正向滑行、迷雾敌军零泄漏、25v25 跨玩家与 12v12 同玩家对向靠右双车道、8v8 宽廊道对穿、20 车空地自然摊开、单行窄道与地图边界衰减、慢转矩形船体防扫尾防抖头及候选步回滚位级确定性）；536 项核心回归与公开短场景批跑（6 套全通过）全绿；`rocks-small-100`（100/100）、`opposed-open-25v25`（50/50，2 秒停滞峰值 0）与 `opposed-corridor-8v8`（16/16，2 秒停滞峰值 0）经 Hydrogen 独立目视检查 `APPROVE`（0 必修），经全新上下文 Carbon 非作者代码整审与定向复核 `APPROVE`（0 必修）。
 
 ---
+
+## v0.5.52 (2026-11-22 00:41)
+
+### 新增
+
+- **ADR-013 四级地块图集按需加载与自有占位资产**：废除 6 图集硬编码白名单，实现“资源包覆盖 → 地图相对路径 → 本地原版 `tilesets/` 回退 → 随包公开基础地块占位图集”四级解析；单局仅上传视觉层非零 GID 实际引用的图集（未使用图集如 `units.tsx` 零 GPU 分配）并按规范化路径与透明色共享单张纹理，退局完整释放；补齐 11 类公开占位地形图集与 `river_crossing.tmx`、`volcanic_archipelago.tmx` 两张多层示范地图。
+- **多图层视口裁剪渲染与真实地块平均色小地图**：`SandboxGraphics` 按视口可见格范围（含 1 格缓冲）裁剪绘制 `Ground → GroundDetails → GroundDetails2 → Items`，支持全 8 种 Tiled 翻转/旋转标志与迷雾明暗，并对原版 `misc.tsx` 编辑器红色问号随机树占位格自动映射为干净树图块；小地图改为每格 1 像素非透明平均色增量纹理（未探索黑、已探索 `×0.45`、可见原色与矿池高光、换资源包变色），按物理像素等比适配并区分外框与相机视口框。
+- **独立 `.tmx` 选图开玩与直开参数**：启动页新增与 `TestScenarioPanel` 隔离的 `Maps (.tmx)` 选图与等比缩略预览面板，支持 `WindowsLaunchOptions` `--map PATH` 直开；开局按 `team` 生成基地与建造者并自动对焦 `p1`，未支持单位与忽略触发器安全跳过并记录局内提示事件。
+
+### 技术
+
+- **验证与双门禁审阅**：补齐按需激活、同源纹理去重、四级图集解析与换包变色、路径穿越防护、全 8 种翻转解码、小地图等比与非法路径容错单测；通过 `1920×1080` 自有双示范图（含 `Memory` 迷雾）与原版 `Big Island` / `Fire Bridge` 实窗采集验证，经独立非作者代码整审与 Hydrogen 视觉对照门禁定向复核均达到 0 必修。
+
+---
+
+## v0.5.51 (2026-11-21 23:35)
+
+### 新增
+
+- **通用多层 TMX/TSX 解析与编码支持**：升级核心地图读取器以支持 `csv` 与 `base64`（无压缩、`gzip`、`zlib`）图层编码、32 位无符号小端 GID 解码、防解压炸弹尺寸上限及高 3 位翻转/旋转标志保留；兼容非 20 像素整除图集（按可用像素向下取整）、省略 `<image width/height>` 的 PNG IHDR 自动探测及原版无属性水面图集默认水体兜底。
+- **多图层通行矿池合并与开局信息提取**：按固定顺序保留 `Ground` / `GroundDetails` / `GroundDetails2` / `Items` 视觉图层，叠加合并 `Items`（含 `Objects` 别名）与 `PathingOverride` 的陆/水/悬浮/越崖/越崖渡水通行、`res_pool` 矿池、`block-buildings` 仅禁建造、液体与悬崖真值，自动忽略编辑器辅助层 `set` / `set-disabled`；将 `unit="tree"` 保留为视觉树木并施加树林阻挡，提取 `Units` / `Items` / `Ground` 开局单位及 `Triggers/map_info` 元数据，未知装饰属性与未实现触发器安全记入诊断不阻断加载。
+
+### 文档
+
+- **局内 HUD 与地图领域术语**：在 `CONTEXT.md` 补充主选单位、动作列表、动作键、共用命令、专属动作、地图视觉图层与地块图集 7 条现行领域术语。
+
+### 技术
+
+- **测试与审阅**：新增多层编码、翻转位、非整除图集、水桥/矿池/树木/禁建/覆盖层合并、解压炸弹与路径穿越防护单测；`content-movement-knowledge` 公共机制套件、10 个核心内容测试类（49 项）及本地 48 张原版遭遇战 `.tmx` 读取均通过，独立非作者代码整审与返修复核剩余必修归零。
+
+---
+
 ## v0.5.51 (2026-11-21 22:59)
 
 ### 架构改进
@@ -68,6 +399,7 @@
 - **验证与审阅**：新增 `PriorityPlanningSchedulerTest`（8 项测试覆盖 2 车抢占、P0→P1→P2 优先级与 `3/4` 硬顶、微移接驳、高频右键不断速、静态阻塞 `repairInvalidConnections` 预算内 `ROUTE_REPAIR`、`12 → 24 → 48` 退避、候选步 `fork` 确定性与行进迎墙制动）；33 类 136 项核心回归、知识前缀回归与公开短场景批跑（6 套）全绿，3 轮独立非作者代码整审与返修复核 `APPROVE`（剩余必修 0）。
 
 ---
+
 ## v0.5.50 (2026-11-21 18:15)
 
 ### 架构改进
@@ -80,6 +412,7 @@
 - **验证与性能**：补充净空距离场精确对照、迷雾增量更新、大半径/细分边缘可达性、封闭孤岛 0 展开秒判及候选步回滚池复用单测；32 类 199 项核心测试全通过，120×120 石阵 ABBA 基准单次寻路均值下降 62.9%（2.69× 加速）、封闭孤岛拒判由 7.07 ms 降至 0.0054 ms（1308× 加速），非作者代码整审与返修复核剩余必修归零。
 
 ---
+
 ## v0.5.49 (2026-11-21 03:18)
 
 ### 架构改进
@@ -92,6 +425,7 @@
 - **验证与回归**：补充导航状态不可变性、统一群移预留、原子到点/暂停转换与候选步 $O(1)$ 共享回滚隔离单测；32 个核心移动/接触/群移测试类共 235 项测试与公开短场景批跑全通过，100 车密集接触基线终态位级一致，非作者代码整审 0 项必修。
 
 ---
+
 ## v0.5.48 (2026-11-21 01:54)
 
 ### 架构改进
@@ -104,6 +438,7 @@
 - **验证与性能**：补充空间索引分桶、250 车密集 Top-K、迷雾可见性、跨格缓冲查询、候选步回滚与最大半径收缩测试；定向核心单测与非作者代码整审（返修定向复核）均通过，100 车对向密集接触 ABBA 同机对照保持终态位级一致，步耗与 P95 均较基线下降。
 
 ---
+
 ## v0.5.47 (2026-11-20 22:13)
 
 ### 新增
@@ -116,6 +451,7 @@
 - **开发碰撞箱视图适配**：客户端 `F3` 碰撞箱视图改为消费核心同源诊断图元，按模拟步增量维护历史并在开启视图时按需投影，叠加显示速度矢量、指引方向与 2 秒停滞标红圈。
 
 ---
+
 ## v0.5.46 (2026-11-20 13:45)
 
 ### 技术

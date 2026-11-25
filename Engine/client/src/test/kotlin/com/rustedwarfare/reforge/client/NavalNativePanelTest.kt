@@ -14,7 +14,7 @@ class NavalNativePanelTest {
             val action = session.actionMenu.construction.single()
             assertEquals("seaFactory", action.typeId)
             var chosen: String? = null
-            val card = actor(NativeActionPanel.production.first(),
+            val card = actor(com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f),
                 ConstructionButtonInput({ session }, { true }, action.typeId, { chosen = it }))
             press(card, true)
             assertNull(chosen)
@@ -30,7 +30,7 @@ class NavalNativePanelTest {
 
     @Test fun naval_cards_have_their_real_names_and_actor_release_buys_or_cancels_the_correct_work() {
         val base = NavalSandboxScene.load().scenario
-        assertTrue(NativeActionPanel.supports(base.scenarioId))
+        // Capability-driven HUD action list (UI-P001-005)
         SandboxSession(base).use { session ->
             session.select(Position(390.0, 150.0))
             assertEquals("Sea factory", session.constructionActions.single().title)
@@ -46,9 +46,9 @@ class NavalNativePanelTest {
                     val upgrade = session.actionMenu.upgrades.single()
                     assertEquals("Sea factory T2", upgrade.title)
                     assertEquals(2000L, upgrade.profile.price)
-                    val bounds = NativeActionPanel.upgrades.getValue("upgrade_t2")
+                    val upgradeRect = com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f)
                     assertEquals(UpgradePresentationKind.FACTORY, upgrade.kind)
-                    val buy = actor(bounds.first, FactoryUpgradeInput({ session }, { true }, "upgrade_t2"))
+                    val buy = actor(upgradeRect, FactoryUpgradeInput({ session }, { true }, "upgrade_t2"))
                     press(buy, true); assertEquals(12000L, session.observation.balance)
                     press(buy, false); assertEquals(10000L, session.observation.balance)
                     press(buy, true, Input.Buttons.RIGHT); assertEquals(10000L, session.observation.balance)
@@ -60,7 +60,7 @@ class NavalNativePanelTest {
                     assertEquals("heavyBattleship", product.typeId)
                     assertEquals("Heavy battleship", product.title)
                     assertEquals(6000L, product.price)
-                    val buy = actor(NativeActionPanel.production.first(), ProductionButtonInput({ session }, { true },
+                    val buy = actor(com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f), ProductionButtonInput({ session }, { true },
                         typeId = { session.productionActions.first().typeId }))
                     press(buy, true); assertEquals(12000L, session.observation.balance)
                     press(buy, false); assertEquals(6000L, session.observation.balance)
@@ -72,7 +72,7 @@ class NavalNativePanelTest {
             }
         }
     }
-    private fun actor(bounds: NativeCardBounds, input: InputListener) = Actor().apply {
+    private fun actor(bounds: com.badlogic.gdx.math.Rectangle, input: InputListener) = Actor().apply {
         setBounds(bounds.x, bounds.y, bounds.width, bounds.height); addListener(input)
     }
     private fun press(actor: Actor, down: Boolean, button: Int = Input.Buttons.LEFT) = actor.fire(InputEvent().apply {

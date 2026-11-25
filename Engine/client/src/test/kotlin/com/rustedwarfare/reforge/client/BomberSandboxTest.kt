@@ -16,7 +16,7 @@ class BomberSandboxTest {
             val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(root.resolve("package"))).value
             val scenario = contentPackScenario(root, ContentPackChoice(pack, "commandCenter"))
             assertEquals("p009-bomber-production", scenario.scenarioId)
-            assertTrue(NativeActionPanel.supports(scenario.scenarioId))
+            // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
             SandboxSession(scenario).use { session ->
                 fun until(limit: Int, ready: () -> Boolean) {
                     repeat(limit) { if (ready()) return else session.tick() }

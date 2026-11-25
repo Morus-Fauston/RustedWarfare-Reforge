@@ -16,10 +16,12 @@ data class VisualUnitImages(val body: Path, val back: Path? = null, val turret: 
 class PreparedVisualAssets private constructor(val selection: VisualAssetSelection, val profileId: String, val identity: String,
     units: Map<String, VisualUnitImages>, terrain: Map<String, Path>, private val validate: () -> Unit,
     val resolvedImages: ResolvedResourceImages?, val resolvedSounds: ResolvedResourceSounds?,
-    private val boundContent: ContentPackChoice? = null) {
+    private val boundContent: ContentPackChoice? = null,
+    val uiTheme: UiTheme = UiTheme.DEFAULT,
+    val uiThemeAssetResolver: UiThemeAssetResolver = UiThemeAssetResolver()) {
     constructor(selection: VisualAssetSelection, profileId: String, identity: String,
         units: Map<String, VisualUnitImages>, terrain: Map<String, Path>, validate: () -> Unit = {}) :
-        this(selection, profileId, identity, units, terrain, validate, null, null)
+        this(selection, profileId, identity, units, terrain, validate, null, null, null, UiTheme.DEFAULT, UiThemeAssetResolver())
 
     val resourcePack: PreparedResourcePack = PreparedResourcePack.fromBindings(BuiltInResourcePacks.forSource(selection.source), units, terrain)
     val units: Map<String, VisualUnitImages> = Collections.unmodifiableMap(resourcePack.unitBindings.mapValues { (_, binding) ->
@@ -33,16 +35,20 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
     fun verifyForPublication() { verify(); resolvedImages?.layers?.forEach { it.verifyInputs() } }
 
     fun withConfiguration(selection: VisualAssetSelection, profileId: String = this.profileId, identity: String = this.identity) =
-        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolvedSounds, boundContent)
+        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolvedSounds, boundContent, uiTheme, uiThemeAssetResolver)
 
     fun withResourceSounds(resolved: ResolvedResourceSounds) =
-        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolved, boundContent)
+        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolved, boundContent, uiTheme, uiThemeAssetResolver)
 
     internal fun isBoundTo(choice: ContentPackChoice): Boolean = boundContent?.unitId == choice.unitId &&
         boundContent.content.sources == choice.content.sources
 
     internal fun withContentBinding(choice: ContentPackChoice) = PreparedVisualAssets(selection, profileId, identity,
-        units, terrain, validate, resolvedImages, resolvedSounds, choice)
+        units, terrain, validate, resolvedImages, resolvedSounds, choice, uiTheme, uiThemeAssetResolver)
+
+    fun withUiTheme(theme: UiTheme, assetResolver: UiThemeAssetResolver = this.uiThemeAssetResolver) =
+        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolvedSounds,
+            boundContent, theme, assetResolver)
 
     /** Pure binding of an already checked combination; fixed-generation checks remain explicit. */
     fun withResourceImages(resolved: ResolvedResourceImages, verifyAdditional: () -> Unit = {}): PreparedVisualAssets {
@@ -57,23 +63,70 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
         }
         val tiles = resourcePack.terrainBindings.mapValues { (_, id) -> image(id).path }
         return PreparedVisualAssets(selection, profileId, identity, mapped, tiles,
-            { this.verify(); verifyAdditional() }, resolved, resolvedSounds?.let { ResourceSoundComposer.compose(resolved) }, boundContent)
+            { this.verify(); verifyAdditional() }, resolved, resolvedSounds?.let { ResourceSoundComposer.compose(resolved) },
+            boundContent, uiTheme, uiThemeAssetResolver)
     }
 }
 
 /** Render-only atlas metadata; replacing it cannot create a core TileSetDefinition. */
-data class VisualTileAtlas(val firstGid: Int, val name: String, val tileWidth: Int, val tileHeight: Int,
-    val imagePath: Path, val blockedTileIds: Set<Int>, val tileCount: Int, val columns: Int,
-    val spacing: Int, val margin: Int, val transparentColor: String?, val resourcePoolTileIds: Set<Int>,
-    val pixelTileWidth: Int = tileWidth, val pixelTileHeight: Int = tileHeight) {
+data class VisualTileAtlas(
+    val firstGid: Int,
+    val name: String,
+    val tileWidth: Int,
+    val tileHeight: Int,
+    val imagePath: Path,
+    val blockedTileIds: Set<Int>,
+    val tileCount: Int,
+    val columns: Int,
+    val spacing: Int,
+    val margin: Int,
+    val transparentColor: String?,
+    val resourcePoolTileIds: Set<Int>,
+    val pixelTileWidth: Int = tileWidth,
+    val pixelTileHeight: Int = tileHeight,
+    val imageSource: String = imagePath.fileName?.toString() ?: "",
+    val tsxSource: String? = null,
+    val isPlaceholderFallback: Boolean = false,
+) {
     companion object {
-        fun from(value: TileSetDefinition) = VisualTileAtlas(value.firstGid, value.name, value.tileWidth, value.tileHeight,
-            value.imagePath, value.blockedTileIds, value.tileCount, value.columns, value.spacing, value.margin,
-            value.transparentColor, value.resourcePoolTileIds)
+        fun from(value: TileSetDefinition) = VisualTileAtlas(
+            firstGid = value.firstGid,
+            name = value.name,
+            tileWidth = value.tileWidth,
+            tileHeight = value.tileHeight,
+            imagePath = value.imagePath,
+            blockedTileIds = value.blockedTileIds,
+            tileCount = value.tileCount,
+            columns = value.columns,
+            spacing = value.spacing,
+            margin = value.margin,
+            transparentColor = value.transparentColor,
+            resourcePoolTileIds = value.resourcePoolTileIds,
+            imageSource = value.imageSource,
+            tsxSource = value.tsxSource,
+        )
+
+        fun normalizeAtlasKey(raw: String): String {
+            val cleaned = raw.lowercase()
+                .replace('\\', '/')
+                .substringAfterLast('/')
+                .substringBeforeLast('.')
+                .replace(Regex("[^a-z0-9_.-]+"), "-")
+                .trim('-', '.')
+                .ifEmpty { "tileset" }
+            return cleaned
+        }
     }
 
-    fun supportedLayout(): String {
-        require(tileWidth == 20 && tileHeight == 20 && spacing == 0 && margin == 0) { "VISUAL_MAPPING_UNSUPPORTED: atlas $name" }
+    /** Stable resource-pack override identifier per ADR-013 (e.g. reforge:tileset/longgrass). */
+    fun normalizedResourceKey(): String {
+        val raw = imageSource.ifBlank { name }
+        return "reforge:tileset/${normalizeAtlasKey(raw)}"
+    }
+
+    /** Legacy 6 built-in test layout key when matched, or null for arbitrary standard TMX tilesets. */
+    fun legacyLayoutOrNull(): String? {
+        if (tileWidth != 20 || tileHeight != 20 || spacing != 0 || margin != 0) return null
         return when {
             name == "naval-ground" && columns == 5 && tileCount == 40 && resourcePoolTileIds.isEmpty() &&
                 (blockedTileIds.isEmpty() || blockedTileIds == setOf(2)) -> "naval-ground-40"
@@ -82,7 +135,11 @@ data class VisualTileAtlas(val firstGid: Int, val name: String, val tileWidth: I
             columns == 5 && tileCount == 5 && blockedTileIds == setOf(1, 2) && resourcePoolTileIds == setOf(4) -> "construction-strip-5"
             columns == 2 && tileCount == 2 && blockedTileIds == setOf(1) && resourcePoolTileIds.isEmpty() -> "controlled-strip-2"
             columns == 4 && tileCount == 4 && blockedTileIds == setOf(2, 3) && resourcePoolTileIds.isEmpty() -> "demo-strip-4"
-            else -> throw IllegalArgumentException("VISUAL_MAPPING_UNSUPPORTED: atlas $name ($columns/$tileCount)")
+            else -> null
         }
     }
+
+    /** Retained for existing built-in test suite compatibility; dynamic TMX binding uses [legacyLayoutOrNull] & [normalizedResourceKey]. */
+    fun supportedLayout(): String = legacyLayoutOrNull()
+        ?: throw IllegalArgumentException("VISUAL_MAPPING_UNSUPPORTED: atlas $name ($columns/$tileCount)")
 }

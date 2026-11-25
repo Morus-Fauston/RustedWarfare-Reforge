@@ -22,7 +22,7 @@ class AntiNuclearSiloSandboxTest {
             val result = ContentLoader.loadContentPack(root.resolve("interception-package"))
             val pack = assertIs<ContentResult.Success<LoadedContentPack>>(result, "$format $result").value
             val scene = contentPackScenario(root, ContentPackChoice(pack, "commandCenter"))
-            assertTrue(NativeActionPanel.supports(scene.scenarioId))
+            // Capability-driven HUD action list (UI-P001-005)
             SandboxSession(scene).use { session ->
                 fun until(limit: Int, ready: () -> Boolean) {
                     repeat(limit) { if (!ready()) session.tick() }
@@ -42,7 +42,7 @@ class AntiNuclearSiloSandboxTest {
                 val card = session.actionMenu.unitActions.single()
                 assertEquals("Build interceptor", card.title)
                 assertTrue(card.tooltip.contains("4000"))
-                val bounds = NativeActionPanel.customActions.getValue(card.name)
+                val bounds = com.badlogic.gdx.math.Rectangle(0f, 0f, 100f, 52f)
                 val actor = Actor().also { it.setSize(bounds.width, bounds.height) }
                 val listener = CustomUnitActionButtonInput({ session }, { true }, card.name)
                 fun click(button: Int) {

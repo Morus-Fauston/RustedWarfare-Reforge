@@ -31,7 +31,7 @@ def generate():
         intents += [intent('produce-air', 'produce', 600, typeId='bomber')]
         intents += [intent(f'wait-air-{index}', 'select', 600, (270, 150)) for index in range(1, 8)]
         intents += [
-            intent('select-air', 'select', point=(269, 270)),
+            intent('select-air', 'select', point=(269, 234)),
             intent('attack-ground', 'attack', 540, (350, 530), targetUnitId='b', targetGroundPosition=dict(x=350, y=530)),
             intent('stop-air', 'stop', 40),
             intent('return-home', 'move', 530, (300, 250)),

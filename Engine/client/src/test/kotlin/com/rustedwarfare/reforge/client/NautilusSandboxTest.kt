@@ -70,7 +70,7 @@ class NautilusSandboxTest {
     @Test fun all_formats_offer_a_normal_command_center_start_for_the_paid_sea_factory_technology_chain() {
         for (format in listOf("ini", "json", "hjson")) {
             val scene = NautilusSandboxScene.scenario(format)
-            assertTrue(NativeActionPanel.supports(scene.scenarioId), "Normal production needs the native action cards")
+            // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
             assertEquals("p009-nautilus-production", scene.scenarioId)
             assertEquals(listOf("commandCenter"), scene.units.filter { it.ownerPlayerId == "p1" }.map { it.typeId })
             SandboxSession(scene).use { s ->

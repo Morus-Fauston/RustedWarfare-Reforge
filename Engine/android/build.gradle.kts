@@ -160,6 +160,7 @@ dependencies {
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
     nativeAbis.forEach { abi ->
         add(gdxAndroidNatives.name, "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$abi")
+        add(gdxAndroidNatives.name, "com.badlogicgames.gdx:gdx-freetype-platform:$gdxVersion:natives-$abi")
     }
 }
 

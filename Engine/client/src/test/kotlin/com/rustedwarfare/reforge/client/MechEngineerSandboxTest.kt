@@ -146,7 +146,7 @@ class MechEngineerSandboxTest {
                     assertNotNull(result)
                 }
                 assertEquals("p009-engineer-production", loaded.scenario.scenarioId)
-                assertTrue(NativeActionPanel.supports(loaded.scenario.scenarioId))
+                // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
                 SandboxSession(loaded.scenario).use { session ->
                     assertEquals(16000L, session.observation.balance)
                     assertNull(session.selectedId)

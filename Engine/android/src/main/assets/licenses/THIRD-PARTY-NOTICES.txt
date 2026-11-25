@@ -11,3 +11,17 @@ https://developer.android.com/jetpack/androidx
 These components are licensed under the Apache License, Version 2.0.
 The license text is included in Apache-2.0.txt.
 Upstream source code is not modified by this project.
+
+libGDX FreeType extension 1.13.1 (gdx-freetype, desktop & Android native libraries)
+https://github.com/libgdx/libgdx/tree/1.13.1
+Licensed under the Apache License, Version 2.0 (see Apache-2.0.txt).
+
+Noto Sans SC (SubsetOTF Regular & Bold, noto-cjk)
+Copyright 2014-2026 Adobe / Google Noto CJK Contributors
+https://github.com/notofonts/noto-cjk
+Licensed under the SIL Open Font License, Version 1.1 (see OFL-1.1-NotoSansSC.txt).
+
+JetBrains Mono (Variable TTF)
+Copyright 2020 JetBrains s.r.o.
+https://github.com/JetBrains/JetBrainsMono
+Licensed under the SIL Open Font License, Version 1.1 (see OFL-1.1-JetBrainsMono.txt).

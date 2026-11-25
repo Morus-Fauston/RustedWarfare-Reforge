@@ -23,7 +23,7 @@ def generate():
         dict(actionId='stop-exit', atStep=501, actor='p1', kind='stop', unitId=worker),
         dict(actionId='build-extractor', atStep=501, actor='p1', kind='build', unitId=worker,
              buildingTypeId='extractorT1', target=dict(x=110, y=110), buildingNonce='a' * 32, append=False),
-        dict(actionId='move-worker', atStep=1600, actor='p1', kind='move', unitId=worker, target=dict(x=110, y=90)),
+        dict(actionId='move-worker', atStep=1600, actor='p1', kind='move', unitId=worker, target=dict(x=110, y=95)),
         dict(actionId='stop-worker', atStep=1700, actor='p1', kind='stop', unitId=worker),
         dict(actionId='build-factory', atStep=1701, actor='p1', kind='build', unitId=worker,
              buildingTypeId='landFactory', target=dict(x=110, y=170), buildingNonce='b' * 32, append=False),

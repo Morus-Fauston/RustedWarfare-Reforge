@@ -14,7 +14,7 @@ class DropshipUnloadMenuTest {
             session.select(Position(350.0, 150.0))
             assertIs<ActionResult.Accepted>(session.command(Position(370.0, 150.0)))
             session.select(Position(370.0, 150.0))
-            assertTrue(NativeActionPanel.supports(base.scenarioId))
+            // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
             assertEquals("Transport", session.actionMenu.selectedTitle)
             val info = assertNotNull(session.selectedUnitInfo)
             assertTrue(info.contains("Passengers 1"))

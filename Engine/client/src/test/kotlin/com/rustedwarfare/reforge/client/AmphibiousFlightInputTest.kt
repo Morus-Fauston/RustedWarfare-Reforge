@@ -42,7 +42,7 @@ class AmphibiousFlightInputTest {
             session.select(Position(500.0, 300.0))
             event(true); input.cancel(); event(false)
             assertEquals(true, intent())
-            assertTrue(NativeActionPanel.supports(base.scenarioId))
+            // Capability-driven HUD action list (UI-P001-005); scenario whitelist removed
         }
     }
 }

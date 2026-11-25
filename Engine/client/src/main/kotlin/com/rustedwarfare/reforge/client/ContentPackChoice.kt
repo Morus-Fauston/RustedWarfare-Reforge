@@ -57,7 +57,8 @@ fun contentPackVisuals(visuals: PreparedVisualAssets, choice: ContentPackChoice)
     val reboundImages = PreparedVisualAssets(visuals.selection, visuals.profileId, identity, visuals.units + images, visuals.terrain) {
         visuals.verify(); verifyContent()
     }
-    val rebound = visuals.resolvedSounds?.let(reboundImages::withResourceSounds) ?: reboundImages
+    val rebound = (visuals.resolvedSounds?.let(reboundImages::withResourceSounds) ?: reboundImages)
+        .withUiTheme(visuals.uiTheme, visuals.uiThemeAssetResolver)
     val prior = visuals.resolvedImages ?: return rebound.withContentBinding(choice)
     val base = prior.layers.last()
     val contentOnly = PreparedVisualAssets(VisualAssetSelection(), "content-image-base", sourceIdentity, images, emptyMap(), ::verifyContent)

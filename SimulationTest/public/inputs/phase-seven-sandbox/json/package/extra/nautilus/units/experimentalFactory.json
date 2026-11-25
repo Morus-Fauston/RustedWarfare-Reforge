@@ -1,0 +1,17 @@
+{
+  "format": "rw-reforge.native-experimental-factory.v1",
+  "name": "experimentalLandFactory",
+  "techLevel": 2,
+  "maxHp": 3200,
+  "radius": 55,
+  "footprint": "-2,-2,2,2",
+  "placementFootprint": "-2,-2,2,4",
+  "movementType": "NONE",
+  "productionUnits": "nautilusSubmarineLand",
+  "price": 11000,
+  "buildSpeed": 0.00035,
+  "fogOfWarSightRange": 15,
+  "image": "experimental_front.png",
+  "image_back": "experimental_back.png",
+  "image_dead": "experimental_dead.png"
+}

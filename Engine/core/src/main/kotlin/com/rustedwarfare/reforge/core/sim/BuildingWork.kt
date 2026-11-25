@@ -19,6 +19,8 @@ internal data class BuildingWorkFrame(val input: Scenario, val units: Map<String
 internal data class BuildingWorkChange(val work: BuildingWork, val ledger: ProductionLedger,
     val upgrades: OrdinaryUpgrades?, val created: MutableUnit? = null, val events: List<Event> = emptyList(),
     val reclaimedUnitId: String? = null)
+internal data class SiteCancellationChange(val ledger: ProductionLedger?, val upgrades: OrdinaryUpgrades?,
+    val events: List<Event> = emptyList(), val cancelledUnitId: String)
 internal data class BuildingPreparation(val ready: Boolean, val events: List<Event> = emptyList())
 
 /** Immutable building-work state; complete worker activity lives on the candidate unit. */
@@ -489,6 +491,92 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         return BuildingWorkChange(this, paid, discarded?.upgrades ?: upgrades,
             events = discarded?.events.orEmpty() + listOf(Event("building-reclaimed", target.unitId),
                 Event("maintenance-completed", worker.unitId)), reclaimedUnitId = target.unitId)
+    }
+
+    /** Returns the site construction price refundable if [target] is cancelled while under construction. */
+    fun siteCancellationRefund(target: MutableUnit, input: Scenario): Long {
+        if (!target.alive || target.reclaimed || target.carriedBy != null || target.attachment != null) return 0L
+        if (target.definition.building == null || isReady(target)) return 0L
+        return target.definition.siteConstruction?.price
+            ?: target.definition.construction?.price
+            ?: target.definition.build?.price
+            ?: input.maintenanceContract?.basePrices?.get(target.typeId)
+            ?: 0L
+    }
+
+    /** Cancels an own under-construction building immediately, refunding its site construction price and releasing any active worker targeting it. */
+    fun cancelSite(target: MutableUnit, units: Map<String, MutableUnit>, input: Scenario,
+                   ledger: ProductionLedger?, upgrades: OrdinaryUpgrades?): SiteCancellationChange? {
+        if (!target.alive || target.reclaimed || target.carriedBy != null || target.attachment != null) return null
+        if (target.definition.building == null || isReady(target)) return null
+        val refundPrice = siteCancellationRefund(target, input)
+        // Compute and validate ledger/upgrade updates BEFORE mutating any unit state so failures leave state untouched.
+        var paid = ledger
+        if (paid != null) {
+            if (refundPrice > 0L) {
+                paid = try {
+                    paid.refund(target.ownerPlayerId, refundPrice)
+                } catch (_: ArithmeticException) {
+                    return null
+                }
+            }
+            if (target.definition.production != null) {
+                paid = try {
+                    paid.destroyFactory(target.unitId)
+                } catch (_: ArithmeticException) {
+                    return null
+                }
+            }
+        }
+        val discarded = if (paid != null) {
+            try {
+                upgrades?.discard(target, paid)
+            } catch (_: ArithmeticException) {
+                return null
+            }
+        } else null
+        paid = discarded?.ledger ?: paid
+        if (paid != null && target.definition.nuclearSilo != null) {
+            paid = try {
+                NuclearOrdnance.discard(target, paid)
+            } catch (_: ArithmeticException) {
+                return null
+            }
+        }
+        target.health = 0.0
+        target.reclaimed = true
+        target.attackCommand = null
+        target.taskQueue = UnitTaskQueue()
+        target.cancelRoute()
+        target.movementRequested = false
+        target.constructionWorking = false
+        target.clearWeaponTargets()
+        for (other in units.values) {
+            if (!other.alive || other === target) continue
+            val head = other.tasks.firstOrNull()
+            val hadTarget = other.tasks.any {
+                (it.kind == UnitTaskKind.CONSTRUCT || it.kind == UnitTaskKind.RECLAIM) && it.targetUnitId == target.unitId
+            }
+            if (!hadTarget) continue
+            val remaining = other.tasks.filterNot {
+                (it.kind == UnitTaskKind.CONSTRUCT || it.kind == UnitTaskKind.RECLAIM) && it.targetUnitId == target.unitId
+            }
+            var rebuilt = UnitTaskQueue()
+            for (t in remaining) rebuilt = rebuilt.append(t)
+            other.taskQueue = rebuilt
+            if (head != null && (head.kind == UnitTaskKind.CONSTRUCT || head.kind == UnitTaskKind.RECLAIM) &&
+                head.targetUnitId == target.unitId) {
+                other.constructionElapsed = 0f
+                other.constructionWorking = false
+                other.cancelRoute()
+            }
+        }
+        return SiteCancellationChange(
+            ledger = paid,
+            upgrades = discarded?.upgrades ?: upgrades,
+            events = discarded?.events.orEmpty() + listOf(Event("construction-cancelled", target.unitId)),
+            cancelledUnitId = target.unitId,
+        )
     }
 
     private fun unavailable(worker: MutableUnit, ledger: ProductionLedger, upgrades: OrdinaryUpgrades?): BuildingWorkChange {

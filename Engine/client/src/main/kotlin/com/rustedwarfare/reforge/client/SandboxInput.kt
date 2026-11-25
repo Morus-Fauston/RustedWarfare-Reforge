@@ -21,6 +21,7 @@ class SandboxInput(
     private val battlefieldAt: (Int, Int) -> Boolean = { _, _ -> true },
     private val cameraTakeover: (String) -> Unit = {},
     private val cameraFollowsUnit: () -> Boolean = { false },
+    private val onGuardUnsupported: () -> Unit = {},
 ) : InputAdapter() {
     private var gesture: MapGesture? = null
     private var ownerButton: Int? = null
@@ -47,9 +48,10 @@ class SandboxInput(
     private var groundActionPress: GroundActionOwner? = null
     private fun ownsGroundAction(current: SandboxSession?): Boolean = groundActionOwner?.let { owner ->
         active() && current === owner.session && current.isOpen && current.selectionRevision == owner.revision &&
-            current.selectedIds == owner.members && current.actionMenu.unitActions.any {
-                it.name == owner.name && it.available && it.attachmentContext == owner.attachment
-            }
+            current.selectedIds == owner.members && (
+                if (owner.name == "transport-unload-target") current.canTargetUnload()
+                else current.actionMenu.unitActions.any { it.name == owner.name && it.available && it.attachmentContext == owner.attachment }
+            )
     } == true
     val groundActionName: String? get() {
         if (groundActionOwner != null && !ownsGroundAction(session())) endGroundAction()
@@ -76,7 +78,7 @@ class SandboxInput(
             val owner = reclaimOwner ?: return false
             val current = session()
             if (!active() || current !== owner.session || !current.isOpen ||
-                (if (owner.repair) !current.canRepair else !current.canMaintain) ||
+                (if (owner.repair) !current.canRepair else (!current.canMaintain && !current.hasMaintainerInSelection())) ||
                 current.selectedId != owner.worker || current.selectionRevision != owner.revision) endReclaim()
             return reclaimOwner != null
         }
@@ -162,8 +164,11 @@ class SandboxInput(
     private fun sandboxTarget(owner: SandboxPickOwner, point: Position): String? =
         if (owner.mode is SandboxPick.Spawn) null
         else owner.session.sandboxPickTargetAt(point, requiresHealth = owner.mode is SandboxPick.Health)
-    private fun control() = pressed(Input.Keys.CONTROL_LEFT) || pressed(Input.Keys.CONTROL_RIGHT)
-    private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT)
+    private val heldModifiers = mutableSetOf<Int>()
+    private fun control() = pressed(Input.Keys.CONTROL_LEFT) || pressed(Input.Keys.CONTROL_RIGHT) ||
+        Input.Keys.CONTROL_LEFT in heldModifiers || Input.Keys.CONTROL_RIGHT in heldModifiers
+    private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT) ||
+        Input.Keys.SHIFT_LEFT in heldModifiers || Input.Keys.SHIFT_RIGHT in heldModifiers
     private fun mode() = when { control() -> SelectionMode.TOGGLE; shift() -> SelectionMode.ADD; else -> SelectionMode.REPLACE }
     private fun canTargetAt(x: Int, y: Int) = insideViewport(x, y) && battlefieldAt(x, y)
 
@@ -301,7 +306,8 @@ class SandboxInput(
                 pointerPosition = ui
                 val preview = current.previewGroundAction(press.name, point)
                 if (preview?.valid == true) {
-                    val result = current.unitAction(press.name, target = point)
+                    val result = if (press.name == "transport-unload-target") current.unloadAt(point)
+                        else current.unitAction(press.name, target = point)
                     if (result is com.rustedwarfare.reforge.core.sim.ActionResult.Accepted) endGroundAction()
                 } else preview?.rejection?.let { reason ->
                     current.groundTargetRejected(reason)
@@ -394,6 +400,12 @@ class SandboxInput(
         recordCamera("zoom"); return true
     }
     override fun keyDown(keycode: Int): Boolean {
+        if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT ||
+            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT
+        ) {
+            heldModifiers.add(keycode)
+            return false
+        }
         if (!active() || editing() || touchControls) return false
         val current = session() ?: return false
         if (keycode == Input.Keys.ESCAPE && cancelSandboxPick()) return true
@@ -436,9 +448,16 @@ class SandboxInput(
         }
         if (group != null) { group(group); return true }
         if (keycode == Input.Keys.S) { cancel(); current.stop(); changed(); return true }
+        if (keycode == Input.Keys.G && current.canPatrol) { onGuardUnsupported(); return true }
         return false
     }
     override fun keyUp(keycode: Int): Boolean {
+        if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT ||
+            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT
+        ) {
+            heldModifiers.remove(keycode)
+            return false
+        }
         if (keycode == Input.Keys.X || keycode == Input.Keys.J) return constructionHeld.remove(keycode)
         if (keycode == Input.Keys.U) {
             val held = upgradeHeld; upgradeHeld = false; return held
@@ -459,7 +478,7 @@ class SandboxInput(
     }
     fun beginConstruction(typeId: String): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || current.constructionActions.none { it.typeId == typeId }) return false
+        if (!active() || editing() || current.constructionActions.none { it.typeId == typeId }) return false
         endSandboxPick()
         endReclaim()
         endGroundAction()
@@ -476,8 +495,8 @@ class SandboxInput(
     fun beginRepair(): Boolean = beginMaintenance(true)
     private fun beginMaintenance(repair: Boolean): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || !current.isOpen ||
-            (if (repair) !current.canRepair else !current.canMaintain)) return false
+        if (!active() || editing() || !current.isOpen ||
+            (if (repair) !current.canRepair else (!current.canMaintain && !current.hasMaintainerInSelection()))) return false
         endSandboxPick()
         endReclaim(); endConstruction(); endPatrol(); endGroundAction(); cancelGesture()
         reclaimOwner = ReclaimOwner(current, checkNotNull(current.selectedId), current.selectionRevision, repair)
@@ -493,13 +512,19 @@ class SandboxInput(
     }
     fun beginGroundAction(name: String): Boolean {
         val current = session() ?: return false
-        if (!active() || editing() || touchControls || !current.isOpen) return false
-        val action = current.actionMenu.unitActions.singleOrNull {
-            it.name == name && it.available && it.groundTargeted
-        } ?: return false
+        if (!active() || editing() || !current.isOpen) return false
+        val attachmentContext: Pair<String, String>? = if (name == "transport-unload-target") {
+            if (!current.canTargetUnload()) return false
+            null
+        } else {
+            val action = current.actionMenu.unitActions.singleOrNull {
+                it.name == name && it.available && it.groundTargeted
+            } ?: return false
+            action.attachmentContext
+        }
         cancel()
         groundActionOwner = GroundActionOwner(current, current.selectionRevision, current.selectedIds.toSet(), name,
-            action.attachmentContext)
+            attachmentContext)
         modeRevision++
         evidence.record("ground-action-mode", mapOf("active" to true, "actionName" to name))
         changed(); return true
@@ -545,5 +570,5 @@ class SandboxInput(
     private fun cancelGesture() {
         gesture?.cancel(); gesture = null; patrolPress = null; commandPress = null; constructionPress = null; reclaimPress = null; groundActionPress = null; sandboxPress = null; ownerButton = null; pointerPosition = null
     }
-    fun cancel() { endConstruction(); endPatrol(); endReclaim(); endGroundAction(); endSandboxPick(); pHeld = false; upgradeHeld = false; constructionHeld.clear() }
+    fun cancel() { endConstruction(); endPatrol(); endReclaim(); endGroundAction(); endSandboxPick(); pHeld = false; upgradeHeld = false; constructionHeld.clear(); heldModifiers.clear() }
 }
