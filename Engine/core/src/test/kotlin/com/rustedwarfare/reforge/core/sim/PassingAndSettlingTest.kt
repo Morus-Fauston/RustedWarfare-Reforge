@@ -316,7 +316,8 @@ class PassingAndSettlingTest {
                     if (quiet == 600) break
                 }
             }
-            assertEquals(spawns.map { it.unitId }.toSet(), arrived, "all members must finish their commands")
+            assertEquals(spawns.map { it.unitId }.toSet(), arrived, "all members must finish their commands; active=" +
+                context.observe().units.filter { it.moveTarget != null }.map { "${it.unitId}@${it.position} spd=${it.speed} path=${it.pathPoints.size}" })
             assertEquals(600, quiet)
         } finally { context.close() }
     }

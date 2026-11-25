@@ -148,13 +148,13 @@ class ChunkedFlowFieldTest {
             combat = tankBase.combat, durability = tankBase.durability, build = tankBase.build,
             movementCollision = MovementCollisionShape.Circle(6.0), mass = 3000.0,
         )
-        // Map 40x24: narrow cul-de-sac pocket on the east side (x in 26..34, y in 10..13 -> 9x4 = 36 tiles, holds ~15-20 units)
+        // Map 40x24: narrow cul-de-sac pocket on the east side (x in 26..31, y in 10..13 -> 6x4 = 24 tiles, holds ~35-45 tight units)
         // surrounded by solid walls on top, bottom, and right, open only at x=25, y=10..13.
         val w = 40; val h = 24
         val blocked = BooleanArray(w * h) { idx ->
             val x = idx % w; val y = idx / w
             if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
-            else if (x >= 26 && (y < 10 || y > 13 || x > 34)) true
+            else if (x >= 26 && (y < 10 || y > 13 || x > 31)) true
             else false
         }
         val units = (0 until 60).map { i ->
@@ -167,7 +167,7 @@ class ChunkedFlowFieldTest {
         try {
             val ids = units.map { it.unitId }
             // Click deep inside the small cul-de-sac pocket
-            val deepClick = Position(650.0, 240.0)
+            val deepClick = Position(610.0, 240.0)
             val group = assertNotNull(ctx.requestGroupMove("p1", ids, deepClick))
             for (id in ids) {
                 assertIs<ActionResult.Accepted>(ctx.submitGroupMove(MoveAction("cds-$id", "p1", id, deepClick, ctx.world), group))

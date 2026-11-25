@@ -128,13 +128,12 @@ internal class MixedLandingBays(private val click: Position, private val horizon
 
     /** Allocate at most the last two unclaimed bays. A peer can protect a scarce bay before
      * reaching it. Only a vehicle which has reached the parking area can acquire its own claim. */
-    fun choose(members: List<MutableUnit>, candidates: List<Position>, occupied: (Position) -> Boolean,
+    fun choose(members: List<MutableUnit>, candidates: List<Position>, occupied: (MutableUnit, Position, Double) -> Boolean,
                near: (Position) -> Boolean, terrain: (MutableUnit) -> PlanningTerrain, paths: PathPolicy,
                budget: PathWorkBudget, advance: (ExactPathSearch, PathWorkBudget) -> Unit,
                obstacles: (MutableUnit) -> List<MutableUnit>): Decision {
         val pending = members.filter { it.landingMember?.let { state -> !state.parked && state.claimed == null } == true }
         if (pending.size !in 1..2) return Decision.Ordinary
-        val available = candidates.filterNot(occupied)
         val ready = pending.filter { near(it.position) && it.moveTarget != null && it.pathPoints.isNotEmpty() }
             .sortedBy { ScreenPlane.distanceSquared(it.position, click) }
         val car = ready.firstOrNull { it.unitId != lastServed } ?: ready.firstOrNull() ?: return Decision.Pending
@@ -143,15 +142,23 @@ internal class MixedLandingBays(private val click: Position, private val horizon
         val traffic = pending.associate { it.unitId to obstacles(it) }
         fun routeFor(body: MutableUnit, site: Position): Witness =
             route(body, site, terrain(body), traffic.getValue(body.unitId), paths, budget, advance)
-        for (site in available.sortedBy { ScreenPlane.distanceSquared(car.position, it) }) {
+        fun arrivalHeading(body: MutableUnit, path: List<Position>): Double {
+            val end = path.last()
+            val prev = if (path.size >= 2) path[path.size - 2] else body.position
+            return if (prev != end) ScreenPlane.desired(prev, end) else body.heading
+        }
+        for (site in candidates.sortedBy { ScreenPlane.distanceSquared(car.position, it) }) {
+            if (occupied(car, site, car.heading)) continue
             val own = routeFor(car, site)
             if (own.stage != Stage.DONE) return Decision.Pending
             val path = own.path ?: continue
-            if (peer != null && available.none { other ->
-                    if (site == other) false else {
+            if (occupied(car, site, arrivalHeading(car, path))) continue
+            if (peer != null && candidates.none { other ->
+                    if (site == other || occupied(peer, other, peer.heading)) false else {
                         val alternative = routeFor(peer, other)
                         if (alternative.stage != Stage.DONE) return Decision.Pending
-                        alternative.path != null
+                        val altPath = alternative.path ?: return@none false
+                        !occupied(peer, other, arrivalHeading(peer, altPath))
                     }
                 }) continue
             return Decision.Claim(car, path)

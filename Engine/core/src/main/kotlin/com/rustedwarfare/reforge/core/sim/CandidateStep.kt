@@ -67,7 +67,6 @@ internal data class StepState(
     var landingOccupancy: LandingOccupancy = LandingOccupancy(),
     var landingsShortOfBudget: Boolean = false,
     var separationInterventions: Long = 0,
-    var landingAdmissions: MutableMap<GroupMoveRequest, Set<String>> = mutableMapOf(),
     var landingSites: MutableMap<GroupMoveRequest, SharedLandingSites> = mutableMapOf(),
     var actionResultOwners: IdentityHashMap<ActionResult, String> = IdentityHashMap(),
     var playerActionRevisions: MutableMap<String, Long> = mutableMapOf(),
@@ -105,7 +104,6 @@ internal data class StepState(
         driverPassages = driverPassages.fork(planningRollback),
         passageTracker = HashMap(passageTracker),
         landingOccupancy = landingOccupancy.fork(planningRollback),
-        landingAdmissions = HashMap(landingAdmissions),
         landingSites = landingSites.mapValuesTo(mutableMapOf()) { it.value.fork(planningRollback) },
         actionResultOwners = IdentityHashMap(actionResultOwners),
         playerActionRevisions = HashMap(playerActionRevisions),
@@ -291,7 +289,7 @@ internal class CandidateSteps {
         current = candidate.state
         try {
             update(candidate)
-            val observation = candidate.publish(input, actions, observe, previous.state.units)
+            val observation = candidate.publish(input, actions, observe)
             candidate.releasePreviousKnowledge(previous.state)
             planningRollback.commit()
             return observation
@@ -320,26 +318,10 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
     fun stageKnowledge(next: AutomaticKnowledgeCommit?) { knowledge = next }
     fun stageBuildings(next: BuildingCommit?) { buildings = next }
 
-    /** The service cursor reads stable world order. Revisit only changed traffic that can intersect a checked leg. */
-    private fun invalidateChangedLandingTraffic(before: Map<String, MutableUnit>) {
-        val watching = state.landingSites.values.filter { it.checkingTraffic }
-        if (watching.isEmpty()) return
-        for ((index, body) in state.units.values.withIndex()) {
-            val old = before[body.unitId]
-            if (old != null && body.position == old.position && body.heading == old.heading &&
-                body.alive == old.alive && body.definition === old.definition && UnitContact.layer(body) == UnitContact.layer(old) &&
-                body.landingMember?.group === old.landingMember?.group && body.landingMember?.parked == old.landingMember?.parked &&
-                body.adoptedRouteRevision == old.adoptedRouteRevision && body.pathPoints.size == old.pathPoints.size && body.moveTarget == old.moveTarget) continue
-            for (pool in watching) pool.trafficChanged(body, old, index, state.units::get)
-        }
-    }
-
-    fun publish(input: Scenario, actions: List<Action>, observe: (Long, Double, Long) -> Observation,
-                previousUnits: Map<String, MutableUnit>): Observation {
+    fun publish(input: Scenario, actions: List<Action>, observe: (Long, Double, Long) -> Observation): Observation {
         val nextTime = state.simulationTime + step.delta
         require(nextTime.isFinite()) { "Simulation time must remain finite" }
         translations.finish(state.units.values, motionSamples, state.landingOccupancy)
-        invalidateChangedLandingTraffic(previousUnits)
         state.validate(input)
         val observation = observe(step.stepIndex, nextTime, state.revision + 1L)
         val owners = IdentityHashMap<ActionResult, String>(observation.actionResults.size)

@@ -56,6 +56,10 @@ internal object UnitContact {
             Body(first, heading).overlaps(Body(second, otherHeading), offset)
     }
 
+    fun poseClearance(first: MovementCollisionShape, at: Position, heading: Double,
+                      second: MovementCollisionShape, other: Position, otherHeading: Double): Double =
+        Body(first, heading).clearance(Body(second, otherHeading), subtract(at, other))
+
     fun separatesExistingOverlap(first: MovementCollisionShape, at: Position, heading: Double, next: Position,
                                  second: MovementCollisionShape, other: Position, otherHeading: Double): Boolean {
         val body = Body(first, heading)
@@ -184,11 +188,6 @@ internal object UnitContact {
                             turnLimited: Boolean) {
             val translated = distance(before, after) > positionRoundoff(before, after)
             if (translated || turned) ownProgress += unit.unitId
-            val landing = unit.landingMember
-            if (translated && landing?.noRouteTicks != null && landing.claimed != null) {
-                val waypoint = unit.pathPoints.firstOrNull() ?: landing.claimed
-                if (distance(after, waypoint) < distance(before, waypoint)) unit.landingMember = landing.copy(noRouteTicks = null)
-            }
             if (turnLimited) hardLimited += unit.unitId
         }
 
@@ -202,13 +201,6 @@ internal object UnitContact {
         fun finish(units: Collection<MutableUnit>, samples: MutableList<MotionStepSample>?, occupancy: LandingOccupancy? = null) {
             occupancy?.update(units)
             for (unit in units) {
-                unit.landingMember?.let { landing ->
-                    val pushed = unit.unitId in pushedDisplacements
-                    val pose = if (pushed) unit.position else landing.pushedPose?.takeIf { it == unit.position }
-                    if (landing.pushed != pushed || landing.pushedPose != pose || landing.noRouteTicks != null) {
-                        unit.landingMember = landing.copy(pushed = pushed, pushedPose = pose, noRouteTicks = landing.noRouteTicks?.plus(1))
-                    }
-                }
                 val active = unit.moveTarget != null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
                 unit.hardContactLimitedTicks = when {
                     !active -> 0
@@ -224,7 +216,7 @@ internal object UnitContact {
                     val sample = samples[index]
                     val body = byId.getValue(sample.unitId)
                     samples[index] = sample.copy(hardContactLimitedTicks = body.hardContactLimitedTicks,
-                        landingClaim = body.landingMember?.claimed, landingIngress = body.landingMember?.ingress,
+                        landingClaim = body.landingMember?.claimed, landingIngress = null,
                         landingParked = body.landingMember?.parked == true,
                         pushedDisplacement = pushedDisplacements[sample.unitId] ?: Position(0.0, 0.0))
                 }

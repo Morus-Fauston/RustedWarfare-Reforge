@@ -43,14 +43,17 @@ class MixedLandingTest {
             }
             if (motion.count { it.landingParked } != 2) false else {
                 assertEquals(setOf("a", "b"), approaching)
-                assertEquals(2, motion.mapNotNull { it.landingClaim }.distinct().size)
                 assertTrue(frame.units.all { it.moveArrival != null })
+                val aPos = frame.units.single { it.unitId == "a" }.position
+                val bPos = frame.units.single { it.unitId == "b" }.position
+                assertTrue(ScreenPlane.distanceSquared(aPos, bPos) >= 24.0 * 24.0 - 1e-3,
+                    "Mixed radii settled cleanly without overlap: $aPos vs $bPos")
                 true
             }
         }
     }
 
-    @Test fun mixed_cars_join_a_parking_lane_only_after_surveying_the_current_apron() {
+    @Test fun mixed_cars_survey_apron_under_budget_without_preclaiming_open_ground() {
         val scene = scenario({ _, _ -> false }, Position(180.0, 260.0))
         val cars = scene.units.map { spawn ->
             MutableUnit(spawn.unitId, "p1", spawn.typeId, scene.unitDefinitions.getValue(spawn.typeId),
@@ -58,20 +61,10 @@ class MixedLandingTest {
         }
         val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"), true)
         val pool = SharedLandingSites.forGroup(scene.map, group, cars)
-        fun ground() = com.rustedwarfare.reforge.core.path.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
-        val terrain = ground()
-        val car = cars.last()
-        val pad = Position(click.x, click.y + 30.0)
+        val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
         val survey = assertNotNull(pool.mixedBays)
         assertNull(survey.sites(terrain, PathWorkBudget(1)))
-        assertEquals(listOf(pad), pool.approach(car, pad, terrain))
         assertEquals(emptyList(), survey.sites(terrain, PathWorkBudget(256)))
-        val path = pool.approach(car, pad, terrain)
-        assertEquals(2, path.size)
-        assertEquals(pad, path.last())
-        assertEquals(pad.y, path.first().y)
-        assertTrue(path.first().x in (car.position.x + 1.0)..(pad.x - 1.0))
-        assertEquals(listOf(pad), pool.approach(car, pad, ground()))
     }
 
     @Test fun a_circle_just_past_a_bend_drives_the_clear_prefix_when_a_parked_body_blocks_the_far_end() {
@@ -146,7 +139,7 @@ class MixedLandingTest {
             fun serve(survey: MixedLandingBays, sites: List<Position> = listOf(site)): MixedLandingBays.Decision {
                 car.heading += 0.1 // A circular body can keep steering between slices of the same swept route.
                 val slice = PathWorkBudget(1)
-                return survey.choose(listOf(car), sites, { false }, { true }, { ground }, paths, slice,
+                return survey.choose(listOf(car), sites, { _, _, _ -> false }, { true }, { ground }, paths, slice,
                     { _, _ -> fail("Clear elbow should not need an exact search") }, { blockers })
             }
             val bay = MixedLandingBays(click, true, 110.0)
@@ -221,5 +214,117 @@ class MixedLandingTest {
                 true
             }
         }
+    }
+
+    @Test fun landing_occupancy_protects_remote_active_claims_with_terminal_heading_and_rolls_back() {
+        val base = scenario({ _, _ -> false }, Position(120.0, 260.0))
+        val smallDef = base.unitDefinitions.getValue("small")
+        val rectDef = UnitDefinition(
+            smallDef.id, smallDef.className, smallDef.radius, smallDef.displayRadius, smallDef.totalFrames,
+            smallDef.imagePath, smallDef.imageScale, smallDef.movement, emptySet(),
+            movementCollision = MovementCollisionShape.Rectangle(60.0, 16.0),
+        )
+        val groupA = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("big", "escort"), true)
+        val groupB = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("small"), true)
+        val big = MutableUnit("big", "p1", "rect", rectDef, Position(220.0, 260.0), 0.0).apply {
+            moveTarget = Position(420.0, 260.0)
+            landingMember = LandingMember(groupA, claimed = Position(420.0, 260.0), claimedHeading = 90.0)
+        }
+        val small = MutableUnit("small", "p1", "small", smallDef, Position(444.0, 260.0), 90.0).apply {
+            moveTarget = Position(420.0, 260.0)
+            landingMember = LandingMember(groupB)
+        }
+        val units = mapOf("big" to big, "small" to small)
+        val occupancy = LandingOccupancy()
+        val undo = PathSearchRollback()
+        val forked = occupancy.fork(undo)
+        forked.update(big)
+        assertTrue(forked.overlapsAnyActiveClaim(small, Position(444.0, 260.0), 90.0, units) { _, _ -> true })
+        assertFalse(forked.overlapsAnyActiveClaim(small, Position(420.0, 285.0), 90.0, units) { _, _ -> true })
+        undo.restore()
+        assertFalse(occupancy.overlapsAnyActiveClaim(small, Position(444.0, 260.0), 90.0, units) { _, _ -> true })
+    }
+
+    @Test fun releasing_claimed_bay_on_knowledge_loss_replans_without_concurrent_modification_and_settles() {
+        // True map has ONLY the wide bay (y in 12..13); the apparent narrow bay (y==16, x in 20..21) is actually walled off.
+        // Under PLAYER_KNOWLEDGE fog, scouts reveal the surrounding bay walls (y==15 and y==17) while leaving (20..21, 16)
+        // initially unseen so MixedLandingBays assigns small unit `b` to (420, 330). As `b` approaches, automatic vision
+        // discovers (20, 16) is blocked, firing ManeuverRepair.KNOWLEDGE inside p2Repairs -> publishMove ->
+        // group-destination-released -> re-enqueue to `click` (proving zero ConcurrentModificationException and no freeze).
+        val base = scenario({ x, y ->
+            val apron = x in 2..19 && y in 5..21
+            val wideBay = x in 20..21 && y in 11..12
+            val scoutPads = (x == 21 && (y == 9 || y == 14 || y == 18)) || (x == 23 && y in 11..16)
+            !(apron || wideBay || scoutPads)
+        }, Position(330.0, 240.0))
+        val smallBase = base.unitDefinitions.getValue("small")
+        val bigBase = base.unitDefinitions.getValue("big")
+        val smallFog = UnitDefinition(smallBase.id, smallBase.className, smallBase.radius, smallBase.displayRadius,
+            smallBase.totalFrames, smallBase.imagePath, smallBase.imageScale, smallBase.movement, emptySet(), 3,
+            movementCollision = smallBase.movementCollision)
+        val bigFog = UnitDefinition(bigBase.id, bigBase.className, bigBase.radius, bigBase.displayRadius,
+            bigBase.totalFrames, bigBase.imagePath, bigBase.imageScale, bigBase.movement, emptySet(), 3,
+            movementCollision = bigBase.movementCollision)
+        val scoutDef = UnitDefinition("scout", smallBase.className, 1.0, 1.0, 1, smallBase.imagePath, 1.0,
+            com.rustedwarfare.reforge.core.content.MovementProfile(
+                com.rustedwarfare.reforge.core.content.MovementType.NONE, 0.0, 0.0, 0.0, 0.0, 0.0, false, false,
+            ), emptySet(), 1)
+        val targetClick = Position(420.0, 240.0)
+        val scene = base.copy(
+            unitDefinitions = mapOf("small" to smallFog, "big" to bigFog, "scout" to scoutDef),
+            units = listOf(
+                UnitSpawn("a", "p1", "big", Position(260.0, 240.0), 90.0),
+                UnitSpawn("b", "p1", "small", Position(330.0, 240.0), 90.0),
+                // Sight=1 scouts frame all walls around wide bay (y in 11..12) and fake narrow bay (y==16)
+                // while leaving (20..21, 16) unseen in fog!
+                UnitSpawn("s1", "p1", "scout", Position(430.0, 290.0), 90.0),
+                UnitSpawn("s2", "p1", "scout", Position(390.0, 310.0), 90.0),
+                UnitSpawn("s3", "p1", "scout", Position(430.0, 370.0), 90.0),
+                UnitSpawn("s4", "p1", "scout", Position(390.0, 350.0), 90.0),
+                UnitSpawn("s5", "p1", "scout", Position(470.0, 330.0), 90.0),
+                UnitSpawn("s6", "p1", "scout", Position(430.0, 190.0), 90.0),
+                UnitSpawn("s7", "p1", "scout", Position(390.0, 210.0), 90.0),
+                UnitSpawn("s8", "p1", "scout", Position(470.0, 230.0), 90.0),
+                UnitSpawn("s9", "p1", "scout", Position(470.0, 250.0), 90.0),
+            ),
+            automaticVision = com.rustedwarfare.reforge.core.knowledge.KnowledgeRules(
+                com.rustedwarfare.reforge.core.knowledge.TerrainRetention.MEMORY,
+                com.rustedwarfare.reforge.core.knowledge.PathInformationSource.PLAYER_KNOWLEDGE,
+                false,
+            ),
+        )
+        val initRes = SimulationContext.initialize(scene)
+        val ctx = assertIs<InitResult.Accepted>(initRes, "Init must succeed: $initRes").context
+        try {
+            val ids = listOf("a", "b")
+            val group = assertNotNull(ctx.requestGroupMove("p1", ids, targetClick))
+            for (id in ids) assertIs<ActionResult.Accepted>(ctx.submitGroupMove(MoveAction("rel-$id", "p1", id, targetClick, ctx.world), group))
+            ctx.enableMotionDiagnostics(ctx.world)
+            var claimedBay = false
+            var released = false
+            var bothSettled = false
+            for (tick in 0L until 2000L) {
+                val frame = ctx.advance(Step(tick, 1.0, "sim-tick"))
+                val motion = ctx.drainMotionDiagnostics(ctx.world)
+                if (motion.firstOrNull { it.unitId == "b" }?.landingClaim == Position(420.0, 330.0)) {
+                    claimedBay = true
+                }
+                if (frame.events.any { it.kind == "group-destination-released" && it.unitId == "b" }) {
+                    released = true
+                }
+                val aUnit = frame.units.single { it.unitId == "a" }
+                val bUnit = frame.units.single { it.unitId == "b" }
+                if (released && aUnit.moveArrival != null && bUnit.moveArrival != null &&
+                    aUnit.moveTarget == null && bUnit.moveTarget == null
+                ) {
+                    bothSettled = true
+                    break
+                }
+            }
+            assertTrue(claimedBay, "Small unit must first claim the fog-unseen narrow bay (420, 330)")
+            assertTrue(released, "Discovering the bay wall must emit group-destination-released without ConcurrentModificationException")
+            assertTrue(bothSettled, "Released unit must re-plan back to click and settle cleanly: " +
+                ctx.observe().units.filter { it.unitId == "a" || it.unitId == "b" }.map { "${it.unitId}@${it.position} tgt=${it.moveTarget} arr=${it.moveArrival != null}" })
+        } finally { ctx.close() }
     }
 }

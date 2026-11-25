@@ -1,3 +1,10 @@
+v0.5.73 (2026-11-26 03:27)
+  调整: 废除圆形群移方形点阵预造坑、16 倍细分网格绕路、五阶段让位与中途引路，重铸为连续向心切向滑行与防单格喉道栓塞的单一终点落位层 / 升级 LandingOccupancy 为与距离无关的跨命令稀缺宽位认领保护并按车体全宽校验地形视距 / recoverStalledMoves 静置单位早退并惰性求值邻车查询
+  修复: 修复释放失效车位重入排队引发的并发修改与索引覆盖 / 修正喉道侧滑贴撞前车与窄桥末段减速退化
+  技术: 全量 :Engine:core:test（424 套 1568 用例）与公开短测 6 套全绿，双 14 混编原令与 50 车开阔地全员稳停，密集静置测试耗时下降；经独立 12 图目视与全新上下文独立代码整审通过，工作区布局校验通过 [已知问题: culdesac-overflow-100 极端死胡同当前 78/100，维持已知限制单列]
+
+====
+
 v0.5.72 (2026-11-26 01:25)
   调整: 统一单选与群移静态地形通行轮廓（UnitLocomotion.terrainHull 与 explicitMovementCollision，隐式 INI 陆地单位地形内切封顶 0.45*minTile、互碰与地图外边界保完整 radius） / 重写 WorldSpatialIndex 原始数组零分配快照、BuildingTerrain.isBuildingCell O(1) 建筑重叠预检与 Pathfinding.findPathToRange 去全图分配，收窄 NarrowPassage 为真单行窄口局部空间反查与对向门外让空 / 清除 LocomotionModule 全部上层命令特判与大面积 passthrough 旁路，收束对向视距并修复 wall-only 零分配 3D LP 退化
   修复: 修复 NarrowPassage 单行窄桥重入提前刹停与对向推让判定，对齐自有 author-shore 测试夹具合法格位与关联地形轮廓单测
