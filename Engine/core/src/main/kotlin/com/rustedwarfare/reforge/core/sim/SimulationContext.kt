@@ -421,6 +421,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         scheduledActions.clear()
         steps.current.movePlanning = MovePlanning()
         steps.current.flowFields = ChunkedFlowFieldAdapter()
+        steps.current.pendingFlowStart.clear()
         actionIds.clear()
         actionResultOwners.clear()
         playerActionRevisions.clear()
@@ -575,7 +576,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (!addSegmentPeer && !blocksTarget) continue
                 val copiedOther = other.copy()
                 if (addSegmentPeer) {
-                    val otherPendingMove = other.moveTarget == null && steps.current.movePlanning.pending(other.unitId)
+                    val otherPendingMove = other.moveTarget == null &&
+                        (steps.current.movePlanning.pending(other.unitId) || other.unitId in steps.current.pendingFlowStart)
                     segmentPeers += MovePlanningOccupant(copiedOther, movePlanningPose(other), null,
                         idle = other.moveTarget == null && !otherPendingMove, obstructsRoute = true)
                 }
@@ -833,6 +835,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 val prev = if (decision.path.size >= 2) decision.path[decision.path.size - 2] else car.position
                 val claimHeading = if (prev != site) policies.coordinates.desired(prev, site) else car.heading
                 steps.current.movePlanning.cancel(car.unitId)
+                steps.current.pendingFlowStart.remove(car.unitId)
                 car.landingMember = LandingMember(group, claimed = site, claimedHeading = claimHeading)
                 car.moveTarget = site
                 car.taskQueue = car.taskQueue.replaceHead(car.tasks.first().copy(target = site))
@@ -1174,6 +1177,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (UnitLocomotion.movement(unit).type == MovementType.AIR) continue
             if (unit.birthRemaining > 0f) continue
             val target = unit.moveTarget ?: continue
+            val lmFlow = unit.landingMember
+            if (trafficSeparationEnabled && lmFlow != null && lmFlow.claimed == null &&
+                lmFlow.group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                steps.current.flowFields.activeFieldCount() > 0 &&
+                steps.current.flowFields.hasValidGuidanceFor(unit, planningTerrainFor(unit, map))
+            ) continue
             val snapshot = knowledgeStores?.get(unit.ownerPlayerId)?.snapshot(world)
             val ground = pendingKnowledgeDiscoveries[unit.ownerPlayerId].orEmpty()
             val buildings = pendingBuildingDiscoveries[unit.ownerPlayerId].orEmpty()
@@ -1244,6 +1253,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             if (unit.birthRemaining > 0f) continue
             if (FactoryExit.isNativeSeaDeparture(unit)) continue
             val target = unit.moveTarget ?: continue
+            val lmFlow = unit.landingMember
+            if (trafficSeparationEnabled && lmFlow != null && lmFlow.claimed == null &&
+                lmFlow.group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                steps.current.flowFields.activeFieldCount() > 0 &&
+                steps.current.flowFields.hasValidGuidanceFor(unit, planningTerrainFor(unit, map))
+            ) continue
             val first = unit.pathPoints.firstOrNull() ?: continue
             val terrain = planningTerrainFor(unit, map)
             val start = Transport.queryPosition(unit, map)
@@ -1337,6 +1352,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             // A safe, authorized ordinary order clears first, even when its later capability check rejects it.
             // Scheduled orders arrive here only at execution; reservation never clears the current activity.
             steps.current.movePlanning.cancel(unit.unitId)
+            steps.current.pendingFlowStart.remove(unit.unitId)
             unit.taskQueue = UnitTaskQueue()
             unit.attackCommand = null
             unit.bomberApproach = null
@@ -1399,6 +1415,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 val change = Transport.request(action, unit, target, units)
                 change.error?.let { return reject(action, it.code, it.message) }
                 steps.current.movePlanning.cancel(unit.unitId)
+                steps.current.pendingFlowStart.remove(unit.unitId)
                 change.boardedUnitId?.let { id ->
                     cancelBoardedMove(id)
                     units[id]?.let(spatialIndex::relocate)
@@ -1472,6 +1489,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 val task = UnitTask(UnitTaskKind.PATROL, action.actionId, action.target, atStep = action.atStep)
                 if (!action.append || unit.tasks.isEmpty()) {
                     steps.current.movePlanning.cancel(unit.unitId)
+                    steps.current.pendingFlowStart.remove(unit.unitId)
                     unit.attackCommand = null
                     unit.bomberApproach = null
                     unit.cancelRoute()
@@ -1498,6 +1516,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             is AttackAction -> {
                 validateAttack(action, unit)?.let { return reject(action, it.code, it.message) }
                 steps.current.movePlanning.cancel(unit.unitId)
+                steps.current.pendingFlowStart.remove(unit.unitId)
                 unit.cancelRoute()
                 unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.ATTACK, action.actionId,
                     targetUnitId = action.targetUnitId, atStep = action.atStep))
@@ -1512,6 +1531,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
             is StopAction -> {
                 steps.current.movePlanning.cancel(unit.unitId)
+                steps.current.pendingFlowStart.remove(unit.unitId)
                 unit.attackCommand = null
                 unit.bomberApproach = null
                 unit.taskQueue = UnitTaskQueue()
@@ -1569,33 +1589,53 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         }
                     }
                 }
-                if (group?.sharedLanding == true) {
+                steps.current.pendingFlowStart.remove(unit.unitId)
+                val flowDirectEligible = trafficSeparationEnabled &&
+                    group != null &&
+                    group.sharedLanding &&
+                    group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                    unit.birthRemaining <= 0f &&
+                    unit.definition.movementCollision !is MovementCollisionShape.Rectangle &&
+                    optMovement.type != MovementType.AIR &&
+                    optMovement.type != MovementType.NONE
+                if (flowDirectEligible) {
+                    val mType = optMovement.type
+                    val terrainR = maxOf(1.0, UnitLocomotion.terrainPassabilityRadius(unit, currentScenario.map.tileWidth, currentScenario.map.tileHeight))
+                    val maxGroupR = maxOf(
+                        terrainR,
+                        group.maxRadiusByMovement[mType] ?: terrainR,
+                    )
+                    val terrain = planningTerrainFor(unit, currentScenario.map, mType)
+                    val uCol = MapBounds.cell(unit.position.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles)
+                    val uRow = MapBounds.cell(unit.position.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles)
+                    val gCol = MapBounds.cell(group.click.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles)
+                    val gRow = MapBounds.cell(group.click.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles)
+                    val srcComp = steps.current.flowFields.resolveSourceComponent(terrain, terrainR, gCol, gRow, uCol, uRow)
+                    steps.current.flowFields.ensureFieldForGroup(
+                        ownerId = unit.ownerPlayerId,
+                        movementType = mType,
+                        unitRadius = terrainR,
+                        maxGroupRadius = maxGroupR,
+                        terrain = terrain,
+                        goalWorld = group.click,
+                        stepIndex = stepIndex,
+                        sourceComponentId = srcComp,
+                    )
+                    unit.landingMember = LandingMember(group)
+                    // True O(1) shared flow-field direct drive (ENG-P016-009D): bypass 100 individual A* companion jobs!
+                    // Only if the unit is in an unpassable cell (srcComp == 0 while click is blocked) fall back to MovePlanning.
+                    val goalBlocked = terrain.isBlocked(gCol, gRow)
+                    if (goalBlocked && srcComp == 0) {
+                        steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
+                    } else {
+                        steps.current.movePlanning.cancel(unit.unitId)
+                        steps.current.pendingFlowStart.add(unit.unitId)
+                    }
+                } else if (group?.sharedLanding == true) {
                     unit.landingMember = LandingMember(group)
                     steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
                 } else {
                     steps.current.movePlanning.enqueue(action, group, selectionSize = group?.members?.size ?: 1)
-                }
-                if (group != null && group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
-                    unit.definition.movementCollision !is MovementCollisionShape.Rectangle
-                ) {
-                    val mType = UnitLocomotion.movement(unit).type
-                    if (mType != MovementType.AIR && mType != MovementType.NONE) {
-                        val terrainR = maxOf(1.0, UnitLocomotion.terrainPassabilityRadius(unit, currentScenario.map.tileWidth, currentScenario.map.tileHeight))
-                        val maxGroupR = maxOf(
-                            terrainR,
-                            group.maxRadiusByMovement[mType] ?: terrainR,
-                        )
-                        val terrain = planningTerrainFor(unit, currentScenario.map, mType)
-                        steps.current.flowFields.ensureFieldForGroup(
-                            ownerId = unit.ownerPlayerId,
-                            movementType = mType,
-                            unitRadius = terrainR,
-                            maxGroupRadius = maxGroupR,
-                            terrain = terrain,
-                            goalWorld = group.click,
-                            stepIndex = stepIndex,
-                        )
-                    }
                 }
                 ActionResult.Accepted(action.actionId)
             }
@@ -2098,7 +2138,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
             spatialIndex.beginStep(canDisplace = ::canDisplaceInContact)
             if (trafficSeparationEnabled && candidate.state.flowFields.activeFieldCount() > 0) {
-                val p1Budget = maxOf(1024, stepBudgetLimit)
+                val p1Budget = maxOf(2048, stepBudgetLimit)
                 candidate.state.flowFields.advanceP1Budget(
                     units = orderedUnits(),
                     spatialIndex = spatialIndex,
@@ -2106,39 +2146,68 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     stepIndex = step.stepIndex,
                     maxExpansions = p1Budget,
                 )
-                // Shared flow-field O(1) fast-start (ENG-P016-008):
-                // Once the chunked flow field covers a pending sharedLanding unit's live cell (and the group
-                // click is on legal terrain rather than an off-shore nearest-click), immediately publish
-                // flow-guided motion and cancel its redundant per-unit A* job so 100-unit groups start
-                // smoothly within ~5-15 ticks instead of queuing for 200+ ticks of individual A* searches.
+            }
+            // True O(1) shared flow-field direct drive (ENG-P016-009D):
+            // Drain pendingFlowStart units even if activeFieldCount() dropped to 0 (e.g. rapid re-click
+            // cancellation or LRU eviction), falling back to MovePlanning immediately if no field remains.
+            if (trafficSeparationEnabled && candidate.state.pendingFlowStart.isNotEmpty()) {
                 var fastStartedAny = false
-                for (u in orderedUnits()) {
-                    if (!u.alive || u.carriedBy != null || u.attachment != null || u.moveTarget != null) continue
-                    val lm = u.landingMember ?: continue
-                    if (lm.parked || lm.claimed != null || lm.group.members.size < ChunkedFlowFieldAdapter.MIN_GROUP_SIZE) continue
-                    val headTask = u.tasks.firstOrNull() ?: continue
-                    if (headTask.kind != UnitTaskKind.MOVE || headTask.target != lm.group.click) continue
-                    if (!candidate.state.movePlanning.pending(u.unitId)) continue
+                val pendingIds = candidate.state.pendingFlowStart.toList()
+                for (uid in pendingIds) {
+                    val u = units[uid]
+                    if (u == null || !u.alive || u.carriedBy != null || u.attachment != null || u.moveTarget != null) {
+                        candidate.state.pendingFlowStart.remove(uid)
+                        continue
+                    }
+                    val lm = u.landingMember
+                    val headTask = u.tasks.firstOrNull()
+                    if (lm == null || lm.parked || lm.claimed != null ||
+                        headTask == null || headTask.kind != UnitTaskKind.MOVE || headTask.target != lm.group.click
+                    ) {
+                        candidate.state.pendingFlowStart.remove(uid)
+                        continue
+                    }
                     val uTerrain = planningTerrainFor(u, currentScenario.map)
-                    val gCol = MapBounds.cell(lm.group.click.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles)
-                    val gRow = MapBounds.cell(lm.group.click.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles)
-                    if (uTerrain.isBlocked(gCol, gRow)) continue
-                    if (!candidate.state.flowFields.hasValidGuidanceFor(u, uTerrain)) continue
-                    candidate.state.movePlanning.cancel(u.unitId)
-                    u.moveTarget = lm.group.click
-                    u.nearTargetTime = 0.0
-                    u.originMoveId = headTask.actionId
-                    u.originAtStep = headTask.atStep
-                    u.adoptRoute(
-                        listOf(lm.group.click),
-                        logicalRouteTarget(u, lm.group.click),
-                        plannedKnowledgeRevision(u),
-                        plannedBuildingRevision(u),
-                    )
-                    u.followsManeuverRoute = false
-                    candidate.state.landingOccupancy.update(u)
-                    pendingEvents += Event("movement-started", u.unitId)
-                    fastStartedAny = true
+                    val field = candidate.state.flowFields.fieldForUnit(u, uTerrain)
+                    if (field == null) {
+                        candidate.state.pendingFlowStart.remove(uid)
+                        candidate.state.movePlanning.enqueue(
+                            MoveAction(headTask.actionId, u.ownerPlayerId, u.unitId, lm.group.click, world, headTask.atStep),
+                            null,
+                            selectionSize = lm.group.members.size,
+                        )
+                    } else if (candidate.state.flowFields.hasValidGuidanceFor(u, uTerrain)) {
+                        candidate.state.pendingFlowStart.remove(uid)
+                        val effectiveTarget = if (field.goalWasNearestFallback) field.effectiveGoalWorld else lm.group.click
+                        if (field.goalWasNearestFallback) {
+                            u.nearestMoveTarget = lm.group.click
+                            u.nearestMoveIsGroup = true
+                            if (headTask.target != effectiveTarget) {
+                                u.taskQueue = u.taskQueue.replaceHead(headTask.copy(target = effectiveTarget))
+                            }
+                        }
+                        u.moveTarget = effectiveTarget
+                        u.nearTargetTime = 0.0
+                        u.originMoveId = headTask.actionId
+                        u.originAtStep = headTask.atStep
+                        u.adoptRoute(
+                            listOf(effectiveTarget),
+                            logicalRouteTarget(u, effectiveTarget),
+                            plannedKnowledgeRevision(u),
+                            plannedBuildingRevision(u),
+                        )
+                        u.followsManeuverRoute = false
+                        candidate.state.landingOccupancy.update(u)
+                        pendingEvents += Event("movement-started", u.unitId)
+                        fastStartedAny = true
+                    } else if (candidate.state.flowFields.isUnreachableInCompletedField(u, uTerrain)) {
+                        candidate.state.pendingFlowStart.remove(uid)
+                        candidate.state.movePlanning.enqueue(
+                            MoveAction(headTask.actionId, u.ownerPlayerId, u.unitId, lm.group.click, world, headTask.atStep),
+                            null,
+                            selectionSize = lm.group.members.size,
+                        )
+                    }
                 }
                 if (fastStartedAny) {
                     spatialIndex.beginStep(canDisplace = ::canDisplaceInContact)
@@ -2265,7 +2334,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (queuedMove != null && (queuedMove.startsAfterFactoryExit && unit.birthRemaining == 0f ||
                         unit.definition.groundHeight != null || com.rustedwarfare.reforge.core.content.NautilusRules.supports(unit.definition)) &&
                     unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null &&
-                    !candidate.state.movePlanning.pending(unit.unitId)) {
+                    !candidate.state.movePlanning.pending(unit.unitId) &&
+                    unit.unitId !in candidate.state.pendingFlowStart) {
                     unit.moveTarget = queuedMove.target
                     unit.originMoveId = queuedMove.actionId
                     unit.originAtStep = queuedMove.atStep
@@ -2478,6 +2548,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         scheduledActions.clear()
         steps.current.movePlanning = MovePlanning()
         steps.current.flowFields = ChunkedFlowFieldAdapter()
+        steps.current.pendingFlowStart.clear()
         actionIds.clear()
         nextScenario.automaticVision?.let { rules ->
             try {
@@ -3811,6 +3882,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
 
     private fun processDeath(target: MutableUnit) {
             steps.current.movePlanning.cancel(target.unitId)
+            steps.current.pendingFlowStart.remove(target.unitId)
             target.spiderBlink = null
             val blinkLedger = CustomUnitActions.dropBlinkOnDeath(target, productionLedger)
             if (blinkLedger !== productionLedger) pendingEvents += Event("unit-action-refunded", target.unitId)
@@ -3898,6 +3970,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             // Wall pressure can turn the hull or nudge the body without freeing its route.
             val checkWall = unit.wallRepairDue(step)
             if (!retry && !checkWall) continue
+            val lmFlow = unit.landingMember
+            if (trafficSeparationEnabled && lmFlow != null && lmFlow.claimed == null &&
+                lmFlow.group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                steps.current.flowFields.activeFieldCount() > 0 &&
+                steps.current.flowFields.hasValidGuidanceFor(unit, planningTerrainFor(unit, map))
+            ) continue
             if ((checkWall || (stalled >= ROUTE_RETRY_TICKS || fastStallEligible) && unit.terrainCorrectionTime > 0) &&
                 unit.landingMember != null && unit.definition.movementCollision is MovementCollisionShape.Circle &&
                 unit.pathPoints.isNotEmpty() && repairBudget.take(1 + unit.routeOccupantIds.size)) {
@@ -3998,7 +4076,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
 
     private fun cancelBoardedMove(unitId: String) {
         val planning = steps.current.movePlanning
-        if (!planning.pending(unitId)) return
+        val removedFlow = steps.current.pendingFlowStart.remove(unitId)
+        if (!planning.pending(unitId) && !removedFlow) return
         planning.cancel(unitId)
         val passenger = units.getValue(unitId)
         if (passenger.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE) passenger.taskQueue = passenger.taskQueue.pop()

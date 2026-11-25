@@ -90,7 +90,9 @@ class PassageSurveyBudgetTest {
             ctx.enablePlanningWorkDiagnostics(ctx.world)
             ctx.advance(Step(0, 1.0, "sim-tick"))
             val work = ctx.drainPlanningWorkDiagnostics(ctx.world).single()
-            kotlin.test.assertTrue(work.used in 1..512, "Step 0 planning work must stay within 512 budget: ${work.used}")
+            // ENG-P016-009D: 24-unit circular group uses O(1) shared flow-field direct drive (0 per-unit A* work),
+            // staying strictly within the 512 step planning budget.
+            kotlin.test.assertTrue(work.used in 0..512, "Step 0 planning work must stay within 512 budget: ${work.used}")
             val state = (SimulationContext::class.java.getDeclaredField("steps").apply { isAccessible = true }
                 .get(ctx) as CandidateSteps).current
             val drivers = cars.map { state.units.getValue(it.unitId) }

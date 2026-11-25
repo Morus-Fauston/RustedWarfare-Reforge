@@ -38,6 +38,35 @@ data class DiagnosticUnitPrimitive(
     val windowDisplacement: Double?,
 )
 
+data class DiagnosticGateLine(
+    val id: String,
+    val axisX: Boolean,
+    val entryThreshold: Double,
+    val exitThreshold: Double,
+    val minOrtho: Double,
+    val maxOrtho: Double,
+    val positiveDirection: Boolean = true,
+)
+
+data class DiagnosticGateFrameStats(
+    val gateId: String,
+    val enteredCount: Int,
+    val sternExitedCount: Int,
+    val targetSideSettledCount: Int,
+)
+
+data class DiagnosticGateSummary(
+    val gateId: String,
+    val enteredCount: Int,
+    val sternExitedCount: Int,
+    val targetSideSettledCount: Int,
+    val firstEntryStep: Long?,
+    val firstExitStep: Long?,
+    val lastExitStep: Long?,
+    val maxExitGapSteps: Long,
+    val throughputUnitsPerSec: Double,
+)
+
 data class DiagnosticFrameScene(
     val sampleId: String,
     val stepIndex: Long,
@@ -48,6 +77,7 @@ data class DiagnosticFrameScene(
     val arrivedCount: Int,
     val stalledCount: Int,
     val hardContactCount: Int,
+    val gateStats: List<DiagnosticGateFrameStats> = emptyList(),
 )
 
 enum class DiagnosticKeyframeKind(val label: String) {
@@ -83,6 +113,7 @@ data class DiagnosticSequenceProjection(
     val firstHardContactStep: Long?,
     val peakCongestionStep: Long?,
     val lastArrivalStep: Long?,
+    val gateSummaries: List<DiagnosticGateSummary> = emptyList(),
 )
 
 object DiagnosticSceneProjector {
@@ -426,15 +457,25 @@ object DiagnosticSceneProjector {
         definitions: Map<String, UnitDefinition>,
         intervalSteps: Int = DEFAULT_STALL_WINDOW_STEPS,
         stallWindowSteps: Int = DEFAULT_STALL_WINDOW_STEPS,
+        gates: List<DiagnosticGateLine> = emptyList(),
     ): DiagnosticSequenceProjection {
         require(intervalSteps > 0 && stallWindowSteps > 0) { "Interval and stall window steps must be positive" }
         if (observations.isEmpty()) {
-            return DiagnosticSequenceProjection(emptyList(), emptyList(), null, null, null, null, null)
+            return DiagnosticSequenceProjection(emptyList(), emptyList(), null, null, null, null, null, emptyList())
         }
 
         val tracker = LiveTracker(definitions, stallWindowSteps)
         val initialPos = HashMap<String, Position>()
         observations.first().units.forEach { initialPos[it.unitId] = it.position }
+
+        // Per-gate cumulative entry / stern-exit / target-side-settled tracking (ENG-P016-009D)
+        val seenBeforeEntry = Array(gates.size) { HashSet<String>() }
+        val enteredByGate = Array(gates.size) { HashSet<String>() }
+        val exitedByGate = Array(gates.size) { HashSet<String>() }
+        val firstEntryStep = arrayOfNulls<Long>(gates.size)
+        val firstExitStep = arrayOfNulls<Long>(gates.size)
+        val lastExitStep = arrayOfNulls<Long>(gates.size)
+        val maxExitGap = LongArray(gates.size)
 
         var firstMoveStep: Long? = null
         var firstPublishedStep: Long? = null
@@ -442,7 +483,57 @@ object DiagnosticSceneProjector {
         var lastArrivalStep: Long? = null
 
         val frames = observations.map { obs ->
-            val frame = tracker.updateAndProject(obs)
+            val rawFrame = tracker.updateAndProject(obs)
+            val frameGateStats = if (gates.isEmpty()) {
+                emptyList()
+            } else {
+                val step = obs.stepIndex
+                val isInit = isInitialSample(obs.sampleId)
+                gates.mapIndexed { gi, gate ->
+                    val beforeSet = seenBeforeEntry[gi]
+                    val enteredSet = enteredByGate[gi]
+                    val exitedSet = exitedByGate[gi]
+                    var settledTargetSide = 0
+                    for (u in rawFrame.units) {
+                        val mainCoord = if (gate.axisX) u.center.x else u.center.y
+                        val orthoCoord = if (gate.axisX) u.center.y else u.center.x
+                        val r = u.boundingRadius
+                        val inOrtho = orthoCoord in gate.minOrtho..gate.maxOrtho
+                        val nose = if (gate.positiveDirection) mainCoord + r else mainCoord - r
+                        val stern = if (gate.positiveDirection) mainCoord - r else mainCoord + r
+                        val wasBefore = u.unitId in beforeSet
+                        val onUpstreamSide = if (gate.positiveDirection) nose < gate.entryThreshold else nose > gate.entryThreshold
+                        if (onUpstreamSide) beforeSet.add(u.unitId)
+                        if (!isInit && inOrtho && wasBefore) {
+                            val enteredNow = if (gate.positiveDirection) nose >= gate.entryThreshold && stern <= gate.exitThreshold + r * 2.0
+                            else nose <= gate.entryThreshold && stern >= gate.exitThreshold - r * 2.0
+                            if (enteredNow && enteredSet.add(u.unitId) && firstEntryStep[gi] == null) {
+                                firstEntryStep[gi] = step
+                            }
+                            val exitedNow = if (gate.positiveDirection) stern >= gate.exitThreshold else stern <= gate.exitThreshold
+                            if (exitedNow && u.unitId in enteredSet && exitedSet.add(u.unitId)) {
+                                if (firstExitStep[gi] == null) firstExitStep[gi] = step
+                                lastExitStep[gi]?.let { prev ->
+                                    val gap = step - prev
+                                    if (gap > maxExitGap[gi]) maxExitGap[gi] = gap
+                                }
+                                lastExitStep[gi] = step
+                            }
+                        }
+                        val onTargetSide = if (gate.positiveDirection) stern >= gate.exitThreshold else stern <= gate.exitThreshold
+                        if (u.unitId in exitedSet && onTargetSide && u.arrived && hypot(u.velocityVector.x, u.velocityVector.y) <= 1e-3) {
+                            settledTargetSide++
+                        }
+                    }
+                    DiagnosticGateFrameStats(
+                        gateId = gate.id,
+                        enteredCount = enteredSet.size,
+                        sternExitedCount = exitedSet.size,
+                        targetSideSettledCount = settledTargetSide,
+                    )
+                }
+            }
+            val frame = if (frameGateStats.isEmpty()) rawFrame else rawFrame.copy(gateStats = frameGateStats)
             if (!isInitialSample(obs.sampleId)) {
                 if (firstPublishedStep == null && obs.events.any { it.kind == "movement-started" }) {
                     firstPublishedStep = obs.stepIndex
@@ -463,6 +554,26 @@ object DiagnosticSceneProjector {
                 }
             }
             frame
+        }
+
+        val finalGateStats = frames.lastOrNull()?.gateStats.orEmpty()
+        val gateSummaries = gates.mapIndexed { gi, gate ->
+            val fExit = firstExitStep[gi]
+            val lExit = lastExitStep[gi]
+            val exited = exitedByGate[gi].size
+            val windowSec = if (fExit != null && lExit != null && lExit >= fExit) max(1L, lExit - fExit + 1L) / STEPS_PER_SECOND else 0.0
+            val rate = if (windowSec > 0.0) exited / windowSec else 0.0
+            DiagnosticGateSummary(
+                gateId = gate.id,
+                enteredCount = enteredByGate[gi].size,
+                sternExitedCount = exited,
+                targetSideSettledCount = finalGateStats.getOrNull(gi)?.targetSideSettledCount ?: 0,
+                firstEntryStep = firstEntryStep[gi],
+                firstExitStep = fExit,
+                lastExitStep = lExit,
+                maxExitGapSteps = maxExitGap[gi],
+                throughputUnitsPerSec = rate,
+            )
         }
 
         val effectiveFirstMoveStep = firstMoveStep ?: firstPublishedStep
@@ -510,6 +621,7 @@ object DiagnosticSceneProjector {
             firstHardContactStep = firstContactStep,
             peakCongestionStep = peakStep,
             lastArrivalStep = lastArrivalStep,
+            gateSummaries = gateSummaries,
         )
     }
 

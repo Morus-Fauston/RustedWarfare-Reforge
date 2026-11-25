@@ -54,18 +54,22 @@ internal interface ExactPathSearch {
 internal class PathSearchRollback {
     private var changes: MutableList<() -> Unit>? = null
     private var commitHooks: MutableList<() -> Unit>? = null
+    private var committed: Boolean = false
 
     fun record(undo: () -> Unit) {
+        if (committed) return
         val recorded = changes ?: mutableListOf<() -> Unit>().also { changes = it }
         recorded += undo
     }
 
     fun onCommit(action: () -> Unit) {
+        if (committed) return
         val hooks = commitHooks ?: mutableListOf<() -> Unit>().also { commitHooks = it }
         hooks += action
     }
 
     fun commit() {
+        committed = true
         changes = null
         val hooks = commitHooks
         commitHooks = null

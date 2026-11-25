@@ -61,6 +61,7 @@ internal data class StepState(
     var scheduledActions: MutableList<Action> = mutableListOf(),
     var movePlanning: MovePlanning = MovePlanning(),
     var flowFields: ChunkedFlowFieldAdapter = ChunkedFlowFieldAdapter(),
+    var pendingFlowStart: MutableSet<String> = linkedSetOf(),
     var gateWorkDeferred: Boolean = false,
     var driverPassages: DriverPassageSurvey = DriverPassageSurvey(),
     var passageTracker: MutableMap<String, PassageEntry> = HashMap(),
@@ -100,7 +101,8 @@ internal data class StepState(
         pendingActionResults = pendingActionResults.toMutableList(),
         scheduledActions = scheduledActions.toMutableList(),
         movePlanning = movePlanning.fork(planningRollback),
-        flowFields = flowFields.fork(),
+        flowFields = flowFields.fork(planningRollback),
+        pendingFlowStart = LinkedHashSet(pendingFlowStart),
         driverPassages = driverPassages.fork(planningRollback),
         passageTracker = HashMap(passageTracker),
         landingOccupancy = landingOccupancy.fork(planningRollback),
@@ -305,7 +307,7 @@ internal class CandidateSteps {
 /** Owns projected resources and the publication window, as well as the working state. */
 internal class CandidateStep(val state: StepState, private val step: Step) {
     val translations = UnitContact.Translations(step.delta, state.spatialIndex) { id ->
-        state.movePlanning.pending(id) && !state.movePlanning.repairing(id)
+        (state.movePlanning.pending(id) && !state.movePlanning.repairing(id)) || id in state.pendingFlowStart
     }
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }
     val motionSamples = state.motionDiagnostics?.let { mutableListOf<MotionStepSample>() }

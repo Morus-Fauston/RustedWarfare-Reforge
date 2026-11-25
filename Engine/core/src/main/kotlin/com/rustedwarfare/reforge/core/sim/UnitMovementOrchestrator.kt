@@ -243,7 +243,9 @@ internal object UnitMovementOrchestrator {
         var speedTarget = 0.0
         // Optimistic same-step turn while initial P0 planning runs (ENG-P016-005):
         // preserves speed and starts rotating toward the fresh right-click immediately on the command step.
-        val optimisticTarget = if (target == null && step.state.movePlanning.pending(unit.unitId)) {
+        val optimisticTarget = if (target == null &&
+            (step.state.movePlanning.pending(unit.unitId) || unit.unitId in step.state.pendingFlowStart)
+        ) {
             unit.optimisticSteerTarget
         } else null
         var maneuverLeg: ManeuverLeg? = null
@@ -747,10 +749,17 @@ internal object UnitMovementOrchestrator {
                     engagementArcRadius = combatArcRadius,
                 )
             } else null
+            val useFlowAimFallback = guidanceSample != null && guidanceSample.fromFlowField && unit.landingMember?.claimed == null
             val effectiveAim = if (locSolve != null && locSolve.applied) {
                 val probeOffset = policies.coordinates.displacement(locSolve.targetHeadingDeg, maxOf(32.0, sqrt(d2)))
                 Position(unit.position.x + probeOffset.x, unit.position.y + probeOffset.y)
-            } else terminalDecision?.flankAim ?: steeringTarget
+            } else if (terminalDecision?.flankAim != null) {
+                terminalDecision.flankAim
+            } else if (useFlowAimFallback) {
+                avoidanceTarget
+            } else {
+                steeringTarget
+            }
             val diff = when {
                 unit.mechState != null -> MechMotion.turn(unit, effectiveAim, delta, policies.steering, policies.coordinates)
                 movement.type == MovementType.WATER -> BodyMotion.turnOrdinary(unit, effectiveAim, delta, policies.steering, policies.coordinates)
@@ -789,8 +798,14 @@ internal object UnitMovementOrchestrator {
                 step.state.separationInterventions++
             } else {
                 if (unit.nav.lastAvoidHeadingDeg != null) unit.nav = unit.nav.copy(lastAvoidHeadingDeg = null)
-                val fallbackDistSq = if (terminalDecision?.flankAim != null) maxOf(propulsionDistance, 64.0) else propulsionDistance
-                val fallbackFinal = if (terminalDecision?.flankAim != null) false else finalPoint
+                val fallbackDistSq = if (terminalDecision?.flankAim != null || useFlowAimFallback) {
+                    maxOf(propulsionDistance, 64.0)
+                } else propulsionDistance
+                val fallbackFinal = when {
+                    terminalDecision?.flankAim != null -> false
+                    useFlowAimFallback -> applyFinalStopCurve
+                    else -> finalPoint
+                }
                 fraction = policies.propulsion.targetFraction(
                     movement, unit.speed, fallbackDistSq,
                     if (movement.ignoringBody) 0.0 else diff, fallbackFinal, contract.targetRadius,

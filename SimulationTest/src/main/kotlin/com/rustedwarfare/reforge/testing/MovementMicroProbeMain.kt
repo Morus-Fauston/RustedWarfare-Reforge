@@ -338,7 +338,35 @@ object MovementMicroProbe {
             }
         }
 
-        val sequence = DiagnosticSceneProjector.projectSequence(observations, scenario.unitDefinitions)
+        val diagnosticGates = spec.gates.map { gate ->
+            val halfDepth = 20.0
+            val entry = if (gate.positiveDirection) gate.worldThreshold - halfDepth * 2.0 else gate.worldThreshold + halfDepth * 2.0
+            DiagnosticGateLine(
+                id = gate.id,
+                axisX = gate.axisX,
+                entryThreshold = entry,
+                exitThreshold = gate.worldThreshold,
+                minOrtho = gate.minOrtho,
+                maxOrtho = gate.maxOrtho,
+                positiveDirection = gate.positiveDirection,
+            )
+        }
+        val sequence = DiagnosticSceneProjector.projectSequence(observations, scenario.unitDefinitions, gates = diagnosticGates)
+        val gateSummaryById = sequence.gateSummaries.associateBy { it.gateId }
+        val enrichedGateStats = gateStats.map { obj ->
+            val gid = obj["gateId"]!!.jsonPrimitive.content
+            val gs = gateSummaryById[gid]
+            buildJsonObject {
+                for ((k, v) in obj) put(k, v)
+                if (gs != null) {
+                    put("enteredUnits", gs.enteredCount)
+                    put("sternExitedUnits", gs.sternExitedCount)
+                    put("targetSideSettledUnits", gs.targetSideSettledCount)
+                    put("firstEntryStep", gs.firstEntryStep?.let(::JsonPrimitive) ?: JsonNull)
+                    put("maxExitGapSteps", gs.maxExitGapSteps)
+                }
+            }
+        }
         var contactSheetPathStr: String? = null
         var peakZoomPathStr: String? = null
         if (renderSheets) {
@@ -395,7 +423,7 @@ object MovementMicroProbe {
                 put("gcCountDelta", gcCountDelta)
                 put("gcTimeMsDelta", gcTimeMsDelta)
             })
-            put("gateThroughput", JsonArray(gateStats))
+            put("gateThroughput", JsonArray(enrichedGateStats))
             put("contactSheet", contactSheetPathStr?.let(::JsonPrimitive) ?: JsonNull)
             put("peakZoom", peakZoomPathStr?.let(::JsonPrimitive) ?: JsonNull)
         }

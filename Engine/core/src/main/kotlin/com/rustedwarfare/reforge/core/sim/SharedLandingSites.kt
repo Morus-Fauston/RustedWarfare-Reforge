@@ -271,17 +271,48 @@ internal object TerminalLanding {
         val boundR = max(terrainR, Transport.boundaryRadius(unit))
         val mapW = map.widthTiles.toDouble() * map.tileWidth
         val mapH = map.heightTiles.toDouble() * map.tileHeight
-        val landingZoneR = min(240.0, max(58.0, sqrt(member.group.members.size.toDouble()) * max(hardR * 2.2, 16.0) + 28.0))
+        val maxGroupR = max(hardR, member.group.maxRadiusByMovement[UnitLocomotion.movement(unit).type] ?: hardR)
+        val landingZoneR = min(340.0, max(58.0, sqrt(member.group.members.size.toDouble()) * max(max(hardR * 2.4, maxGroupR * 2.2), 20.0) + 40.0))
         val hullGrid = HullTerrainGrid.authorized(terrain)
 
-        // Strictly zero landing interference while en route outside the terminal cluster zone,
-        // or while separated from `goal` (including a reachable `nearestMoveTarget` shore point) by impassable terrain!
+        // Strictly zero landing interference while separated from `goal` by impassable terrain!
         val hasTerrainLosToGoal = hasPassableTerrainLos(terrain, hullGrid, terrainShape, unit.position, goal, unit.heading, terrainR)
-        if (distToGoal > landingZoneR || !hasTerrainLosToGoal) {
+        if (!hasTerrainLosToGoal) {
             val clean = if (member.flankSign != 0 || member.lowProgressTicks != 0L || member.bestDistToGoal.isFinite()) {
                 member.copy(flankSign = 0, lowProgressTicks = 0L, bestDistToGoal = Double.POSITIVE_INFINITY)
             } else member
             return Decision(flankAim = null, settleNow = false, inClusterZone = false, updatedMember = clean)
+        }
+        if (distToGoal > landingZoneR) {
+            // Outside nominal cluster radius: stay strictly en route UNLESS physically touching an already-settled
+            // peer of the same group on this open target side (contagious outer perimeter of large 100+ clusters).
+            val edgeQueryR = hardR + max(36.0, hardR * 1.25)
+            val edgePeers = host.spatialIndex.queryBounds(
+                spatialLayer,
+                unit.position.x - edgeQueryR, unit.position.x + edgeQueryR,
+                unit.position.y - edgeQueryR, unit.position.y + edgeQueryR,
+                useBufferRadius = false,
+            )
+            var touchesSettledPeer = false
+            for (i in 0 until edgePeers.size) {
+                val other = edgePeers[i]
+                if (other === unit || !other.alive) continue
+                if (other.landingMember?.group !== member.group || other.landingMember?.parked != true) continue
+                val otherR = max(1.0, other.definition.movementCollision.boundingRadius)
+                val reach = hardR + otherR + max(15.0, hardR * 1.20)
+                if (ScreenPlane.distanceSquared(unit.position, other.position) <= reach * reach &&
+                    (terrainShape == null || hasPassableTerrainLos(terrain, hullGrid, terrainShape, unit.position, other.position, unit.heading, terrainR))
+                ) {
+                    touchesSettledPeer = true
+                    break
+                }
+            }
+            if (!touchesSettledPeer) {
+                val clean = if (member.flankSign != 0 || member.lowProgressTicks != 0L || member.bestDistToGoal.isFinite()) {
+                    member.copy(flankSign = 0, lowProgressTicks = 0L, bestDistToGoal = Double.POSITIVE_INFINITY)
+                } else member
+                return Decision(flankAim = null, settleNow = false, inClusterZone = false, updatedMember = clean)
+            }
         }
 
         val poseLegalNow = canSettleAtPose(host, unit, mapW, mapH, boundR, terrainShape, hullGrid, spatialLayer)
@@ -290,8 +321,10 @@ internal object TerminalLanding {
         val gdy = if (distToGoal > 1e-5) (goal.y - unit.position.y) / distToGoal else desiredDirY
 
         // 1. Core seed direct arrival: lead unit(s) reaching the core center settle accurately on goal.
-        // Preserve exact 1e-6 arrival precision for nearest-reachable shore/barrier endpoints.
-        val coreCaptureR = if (unit.nearestMoveTarget != null) 0.000001 else max(1.5, host.movementContract.targetRadius)
+        // Preserve exact 1e-6 arrival precision for maneuver-routed nearest-reachable shore/barrier endpoints,
+        // while allowing flow-field boundary targets (`!followsManeuverRoute`) normal targetRadius capture.
+        val exactNearestSnap = unit.nearestMoveTarget != null && unit.followsManeuverRoute
+        val coreCaptureR = if (exactNearestSnap) 0.000001 else max(1.5, host.movementContract.targetRadius)
         if (distToGoal <= coreCaptureR && poseLegalNow) {
             if (!inThroat) {
                 return Decision(flankAim = null, settleNow = true, inClusterZone = true, updatedMember = member)
@@ -324,7 +357,7 @@ internal object TerminalLanding {
         )
 
         // Only treat very tight core proximity as self-seeded (never prematurely settling an unobstructed large lead vehicle).
-        var connectedToSettledCore = unit.nearestMoveTarget == null && distToGoal <= max(6.0, hardR * 0.6)
+        var connectedToSettledCore = !exactNearestSnap && distToGoal <= max(6.0, hardR * 0.6)
         var frontBlockedByStationary = false
         var anySettledNearby = false
         var touchingCoreSeed = false
@@ -412,7 +445,15 @@ internal object TerminalLanding {
                     host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
                     spatialLayer, goal, distToGoal, gdx, gdy, sign = -1, probeStep = probeStep,
                     distDeltaCap = flankDistAllowance, inwardWeight = 0.352,
-                )
+                ) ?: if (distToGoal > hardR * 3.5) {
+                    // Shoulder wrap-around probe: when a fat mixed cluster blocks the inward chord, allow
+                    // curving around the outer shoulder instead of stacking into a long conga line back into gates.
+                    probeFlank(
+                        host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                        spatialLayer, goal, distToGoal, gdx, gdy, sign = -1, probeStep = probeStep,
+                        distDeltaCap = hardR * 0.45, inwardWeight = 0.12,
+                    )
+                } else null
             }
             val rightFlank = if (inThroat) {
                 probeFlank(
@@ -429,7 +470,13 @@ internal object TerminalLanding {
                     host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
                     spatialLayer, goal, distToGoal, gdx, gdy, sign = +1, probeStep = probeStep,
                     distDeltaCap = flankDistAllowance, inwardWeight = 0.352,
-                )
+                ) ?: if (distToGoal > hardR * 3.5) {
+                    probeFlank(
+                        host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                        spatialLayer, goal, distToGoal, gdx, gdy, sign = +1, probeStep = probeStep,
+                        distDeltaCap = hardR * 0.45, inwardWeight = 0.12,
+                    )
+                } else null
             }
             when {
                 leftFlank != null && rightFlank != null -> {
