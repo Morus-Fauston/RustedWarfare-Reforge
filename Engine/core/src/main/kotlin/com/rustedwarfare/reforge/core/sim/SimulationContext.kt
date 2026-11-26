@@ -143,6 +143,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         set(value) { steps.current.motionDiagnostics = value }
     private val pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>>
         get() = steps.current.pendingKnowledgeDiscoveries
+    var hotspotCollector: SimHotspotCollector? = null
+    val liveUnitCountForProfiler: Int get() = units.values.count { it.alive }
+    val activeFlowFieldCountForProfiler: Int get() = steps.current.flowFields.activeSubscriberFieldCount()
+    val cachedFlowFieldCountForProfiler: Int get() = steps.current.flowFields.activeFieldCount()
 
     // Initial IDs precede the reserved production keys; births append in creation order.
     // Public observation sorting is separate from deterministic gameplay traversal.
@@ -2131,15 +2135,23 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             "advance cannot skip a scheduled action step"
         }
         val actions = scheduledActions.filter { it.atStep == step.stepIndex }
+        val prof = hotspotCollector
         return steps.advance(currentScenario, step, actions,
             { index, time, nextRevision -> makeObservation(index, time, true, nextRevision) },
             materializeObservation = materializeObservation,
-            worldId = "${currentScenario.scenarioId}:$worldGeneration") { candidate ->
+            worldId = "${currentScenario.scenarioId}:$worldGeneration",
+            profiler = prof) { candidate ->
+            var phaseMark = if (prof != null) System.nanoTime() else 0L
             combatFrame += 1
             steps.current.actionClock = (steps.current.actionClock.toFloat() + step.delta.toFloat() * 16.666666f).toInt()
             deploy()
             buildingWork = buildingWork.advanceClock(step.delta)
             actions.forEach { applyAction(it, step.stepIndex) }
+            if (prof != null) {
+                val now = System.nanoTime()
+                prof.addNanos(SimHotspotStage.SIM_COMBAT, now - phaseMark)
+                phaseMark = now
+            }
             // Allocate a slice to cold gate reads on the step after they ran out, or
             // to wall repairs when their periodic retry is due. Unused queue work is
             // available to both services on this same step.
@@ -2201,7 +2213,17 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     planningBudget.used + localWork, Collections.unmodifiableList(planningSlices))
             }
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
+            if (prof != null) {
+                val now = System.nanoTime()
+                prof.addNanos(SimHotspotStage.NAV_PLAN, now - phaseMark)
+                phaseMark = now
+            }
             spatialIndex.beginStep(canDisplace = ::canDisplaceInContact)
+            if (prof != null) {
+                val now = System.nanoTime()
+                prof.addNanos(SimHotspotStage.SIM_CONTACT, now - phaseMark)
+                phaseMark = now
+            }
             if (trafficSeparationEnabled && candidate.state.flowFields.activeFieldCount() > 0) {
                 val p1Budget = maxOf(2048, stepBudgetLimit)
                 candidate.state.flowFields.advanceP1Budget(
@@ -2291,9 +2313,26 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     }
                 }
                 if (fastStartedAny) {
+                    if (prof != null) {
+                        val now = System.nanoTime()
+                        prof.addNanos(SimHotspotStage.NAV_FLOW, now - phaseMark)
+                        phaseMark = now
+                    }
                     spatialIndex.beginStep(canDisplace = ::canDisplaceInContact)
+                    if (prof != null) {
+                        val now = System.nanoTime()
+                        prof.addNanos(SimHotspotStage.SIM_CONTACT, now - phaseMark)
+                        phaseMark = now
+                    }
                 }
             }
+            if (prof != null) {
+                val now = System.nanoTime()
+                prof.addNanos(SimHotspotStage.NAV_FLOW, now - phaseMark)
+                phaseMark = now
+            }
+            var unitPlanNanos = 0L
+            var unitAvoidNanos = 0L
             for (unit in orderedUnits().toList()) {
                 val attachment = unit.attachment
                 if (attachment != null) {
@@ -2373,8 +2412,10 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     unit.requestMovement(target)
                     val endpoint = unit.moveTarget
                     if (endpoint == null || ScreenPlane.distanceSquared(endpoint, target) >= 441.0 || unit.pathPoints.isEmpty()) {
+                        val planT0 = if (prof != null) System.nanoTime() else 0L
                         val path = policies.path.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit, currentScenario.map), target,
                             routeRadius(unit), targetRange = 21.0, hull = HullRoute.forUnit(unit, currentScenario.map))
+                        if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
                         if (path == null) unit.cancelRoute() else {
                             unit.moveTarget = path.last()
                             unit.originMoveId = unit.tasks.first().actionId
@@ -2386,8 +2427,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (unit.carriedBy != null) continue
                 unit.qBeforeDispatch = unit.singleNodePathCount
                 unit.consumedPathNodeCounts = emptyList()
-                if ((unit.definition.builder != null || unit.definition.maintenance != null) && BuildingWork.isReady(unit))
+                if ((unit.definition.builder != null || unit.definition.maintenance != null) && BuildingWork.isReady(unit)) {
+                    val planT0 = if (prof != null && constructionActivity) System.nanoTime() else 0L
                     updateConstruction(unit, currentScenario, step)
+                    if (planT0 != 0L) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
+                }
                 buildingWork.advanceAutomatic(unit, currentScenario, step.delta) {
                     checkNotNull(missileTargets).repairCandidates(unit.position.x.toFloat(), unit.position.y.toFloat(),
                         BuildingWork.automaticRange(unit), units)
@@ -2403,9 +2447,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 if (BuildingWork.isReady(unit)) advanceIncome(unit, step.delta.toFloat())
                 // A construction pop releases the next activity for the next update only.
                 if (!constructionActivity) {
-                    if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
+                    val isPatrol = unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL
+                    val measureRoute = prof != null && (isPatrol || unit.attackCommand != null)
+                    val planT0 = if (measureRoute) System.nanoTime() else 0L
+                    if (isPatrol)
                         updatePatrolRoute(unit, currentScenario.map, step.stepIndex, previousRequest)
                     else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
+                    if (planT0 != 0L) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
                 }
                 val fourLegged = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
                 val head = unit.tasks.firstOrNull()
@@ -2420,11 +2468,22 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     unit.moveTarget = queuedMove.target
                     unit.originMoveId = queuedMove.actionId
                     unit.originAtStep = queuedMove.atStep
+                    val planT0 = if (prof != null) System.nanoTime() else 0L
                     resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                    if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
                     if (unit.moveTarget == null && queuedMove.startsAfterFactoryExit) unit.taskQueue = unit.taskQueue.pop()
                 }
-                if (fourLegged) updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate,
-                    passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
+                val trackAvoid = prof != null && unit.definition.movement.type != MovementType.NONE &&
+                    (unit.moveTarget != null || unit.speed != 0.0 || unit.angularVelocity != 0.0 ||
+                        unit.definition.movement.type == MovementType.AIR || unit.definition.movement.hover != null ||
+                        unit.definition.groundHeight != null || unit.definition.amphibiousJet != null ||
+                        unit.transportState != null)
+                if (fourLegged) {
+                    val avoidT0 = if (trackAvoid) System.nanoTime() else 0L
+                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate,
+                        passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
+                    if (avoidT0 != 0L) unitAvoidNanos += (System.nanoTime() - avoidT0).coerceAtLeast(0L)
+                }
                 val blinkCooldown = unit.blinkCooldownUntil
                 val actionForm = unit.definition
                 if (BuildingWork.isReady(unit)) {
@@ -2456,6 +2515,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
                     CustomUnitActions.constrain(unit, step.delta, policies.steering, policies.coordinates, unitActionHead(unit))
                 }
+                val avoidPoseT0 = if (trackAvoid) System.nanoTime() else 0L
                 if (unit.definition.blink != null && unit.blinkCooldownUntil > blinkCooldown) {
                     // The destination write preserves the logical order. Rebase the physical route at the new position.
                     resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
@@ -2500,6 +2560,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                 MechGait.advance(unit, step.delta)
                 MechMotion.requireFinitePose(unit)
                 unit.finishMovementRequest()
+                if (avoidPoseT0 != 0L) unitAvoidNanos += (System.nanoTime() - avoidPoseT0).coerceAtLeast(0L)
                 if (BuildingWork.isReady(unit)) {
                     advanceWeaponCooldown(unit, step.delta)
                     if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
@@ -2523,8 +2584,19 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
             UnitAttachments.settleLifecycle(steps.current, currentScenario)
             missileTargets = missileTargets?.refresh(orderedUnits())
+            if (prof != null) {
+                val now = System.nanoTime()
+                val loopTotal = (now - phaseMark).coerceAtLeast(0L)
+                prof.addNanos(SimHotspotStage.NAV_PLAN, unitPlanNanos)
+                prof.addNanos(SimHotspotStage.NAV_AVOID, unitAvoidNanos)
+                prof.addNanos(SimHotspotStage.SIM_COMBAT, (loopTotal - unitPlanNanos - unitAvoidNanos).coerceAtLeast(0L))
+                phaseMark = now
+            }
             candidate.stageKnowledge(prepareAutomaticKnowledge())
             candidate.stageBuildings(prepareBuildings(candidate.vision))
+            if (prof != null) {
+                prof.addNanos(SimHotspotStage.SIM_VISION, System.nanoTime() - phaseMark)
+            }
             if (injectFailureAfterUpdate) throw IllegalStateException("Injected candidate step failure")
         }
     }

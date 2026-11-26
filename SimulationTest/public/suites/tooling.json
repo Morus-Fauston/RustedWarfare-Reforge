@@ -64,6 +64,7 @@
     "SimulationTest/tools/test_workflow_scenarios.py",
     "SimulationTest/tools/test_diagnostic_reader.py",
     "SimulationTest/tools/test_owned_window.py",
-    "SimulationTest/tools/test_action_layout.py"
+    "SimulationTest/tools/test_action_layout.py",
+    "SimulationTest/tools/test_live_hotspot_stress.py"
   ]
 }

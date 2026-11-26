@@ -50,7 +50,8 @@
       "com.rustedwarfare.reforge.client.NamedWeaponEvidenceTest",
       "com.rustedwarfare.reforge.client.NamedTurretAppearanceTest",
       "com.rustedwarfare.reforge.client.ShieldPresentationTest",
-      "com.rustedwarfare.reforge.client.ShieldResourceBindingTest"
+      "com.rustedwarfare.reforge.client.ShieldResourceBindingTest",
+      "com.rustedwarfare.reforge.client.LiveHotspotProfilerTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",

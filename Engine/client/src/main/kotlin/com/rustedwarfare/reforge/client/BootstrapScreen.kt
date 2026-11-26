@@ -47,6 +47,7 @@ class BootstrapScreen(
     private val initialSkirmishMap: Path? = null,
     private val initialUiThemePacks: List<Path> = emptyList(),
     private val initialCatalogSceneId: String? = null,
+    private val hotspotSummaryPath: Path? = null,
 ) : ApplicationAdapter() {
     private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT, MAPS }
     private data class ContentCandidate(val root: Path, val content: ContentPackChoice?)
@@ -81,6 +82,8 @@ class BootstrapScreen(
     private val battlefieldHeight: Float get() = battlefieldCamera.viewportHeight.takeIf { it > 0f } ?: viewport.worldHeight
     private val loader = SandboxLoader()
     private var session: SandboxSession? = null
+    internal val hotspotProfiler = LiveHotspotProfiler()
+    private var cachedPassableLandAnchors: List<Map<String, Double>> = emptyList()
     private var debugLayerState = HudDebugLayerState()
     private var f3Held = false
     private var f3ComboUsed = false
@@ -1093,6 +1096,7 @@ class BootstrapScreen(
                             Input.Keys.R -> { f3ComboUsed = true; toggleDebugSubLayer("routes"); return true }
                             Input.Keys.D -> { f3ComboUsed = true; toggleDebugSubLayer("details"); return true }
                             Input.Keys.G -> { f3ComboUsed = true; toggleDebugSubLayer("grid"); return true }
+                            Input.Keys.H -> { f3ComboUsed = true; toggleDebugSubLayer("hotspots"); return true }
                         }
                     }
                 }
@@ -1541,7 +1545,17 @@ class BootstrapScreen(
             mapOf("generation" to previousGeneration, "menuGeneration" to launch.generation))
     }
 
+    private fun flushHotspotSummaryIfReady() {
+        val out = hotspotSummaryPath ?: return
+        if (hotspotProfiler.totalMatchFrames <= 0L) return
+        runCatching { hotspotProfiler.writeSummaryJson(out) }.onFailure { err ->
+            Gdx.app?.error("hotspot-profiler", "Failed to write hotspot-summary.json to $out", err)
+        }
+    }
+
     private fun closeMatchResources() {
+        flushHotspotSummaryIfReady()
+        cachedPassableLandAnchors = emptyList()
         debugLayerState = debugLayerState.reset()
         f3Held = false
         f3ComboUsed = false
@@ -1701,6 +1715,15 @@ class BootstrapScreen(
                 activeMapId = skirmishMapState.activeDisplayName
                     ?: testScenes.choice?.id
                     ?: "sandbox"
+                hotspotProfiler.resetMatch(
+                    mapId = activeMapId,
+                    widthTiles = scenario.map.widthTiles,
+                    heightTiles = scenario.map.heightTiles,
+                    visualSource = loaded.visuals?.selection?.source?.value,
+                    visualProfile = loaded.visuals?.profileId,
+                    visualIdentity = loaded.visuals?.identity,
+                )
+                cachedPassableLandAnchors = computePassableLandAnchors(scenario.map, pendingSession.observation)
                 debugLayerState = debugLayerState.reset()
                 f3Held = false
                 f3ComboUsed = false
@@ -1717,6 +1740,13 @@ class BootstrapScreen(
             }
         }, onFailure = { failLoad(it) })
         val current = session
+        val profilingMatchFrame = current != null && !paused && !loading && !ignoreNextHostFrame
+        if (profilingMatchFrame) {
+            hotspotProfiler.beginMatchFrame()
+        } else if (current != null) {
+            current.simHotspotCollector.reset()
+            current.drainPublishFrameNanos()
+        }
         if (current != null && !paused) {
             // Every scheduled callback remains one complete unchanged simulation tick.
             val elapsed = if (ignoreNextHostFrame) 0.0 else Gdx.graphics.deltaTime.toDouble()
@@ -1729,7 +1759,15 @@ class BootstrapScreen(
                     if (publishRender) {
                         scriptedCamera?.let(current::updateCamera)
                     }
-                    sounds?.let { player -> player.consume(current.consumeSounds(checkNotNull(graphics).projection.soundListener())) }
+                    sounds?.let { player ->
+                        val sndStart = if (profilingMatchFrame) System.nanoTime() else 0L
+                        player.consume(current.consumeSounds(checkNotNull(graphics).projection.soundListener()))
+                        if (profilingMatchFrame) hotspotProfiler.addClientStageNanos(HotspotStage.CLIENT_OBSERVE, System.nanoTime() - sndStart)
+                    }
+                }
+                if (profilingMatchFrame) {
+                    hotspotProfiler.absorbSimCollector(current.simHotspotCollector)
+                    hotspotProfiler.addClientStageNanos(HotspotStage.CLIENT_OBSERVE, current.drainPublishFrameNanos())
                 }
                 if (cameraJoystickActive()) graphics?.projection?.let { map ->
                     if (cameraJoystick.apply(map, elapsed, ::takeCameraFromJoystick))
@@ -1742,12 +1780,16 @@ class BootstrapScreen(
             }
         }
         if (current != null && !paused) {
+            val evtStart = if (profilingMatchFrame) System.nanoTime() else 0L
             hudEvents.update(Gdx.graphics.deltaTime)
             if (::hudActionPanel.isInitialized) hudActionPanel.tickEffects(Gdx.graphics.deltaTime)
             syncHudEventsFromSession(current)
+            if (profilingMatchFrame) hotspotProfiler.addClientStageNanos(HotspotStage.CLIENT_OBSERVE, System.nanoTime() - evtStart)
         }
+        val hudPrepStart = if (profilingMatchFrame) System.nanoTime() else 0L
         updateHud()
         updatePacingHud()
+        if (profilingMatchFrame) hotspotProfiler.addClientStageNanos(HotspotStage.RENDER_HUD, System.nanoTime() - hudPrepStart)
         Gdx.gl.glClearColor(0.075f, 0.09f, 0.085f, 1f)
         nativeTooltip.isVisible = false
         val frameDt = Gdx.graphics.deltaTime.coerceAtLeast(0f)
@@ -1778,7 +1820,16 @@ class BootstrapScreen(
             batch.projectionMatrix = battlefieldCamera.combined
             shapes.projectionMatrix = battlefieldCamera.combined
             if (ScissorStack.pushScissors(clip)) try {
-                batch.begin(); graphics.draw(batch, current.frame, mapInput.constructionPreview, current.selectedIds); batch.end()
+                val terStart = if (profilingMatchFrame) System.nanoTime() else 0L
+                batch.begin()
+                graphics.drawTerrain(batch, current.frame)
+                if (profilingMatchFrame) {
+                    batch.flush()
+                    hotspotProfiler.addClientStageNanos(HotspotStage.RENDER_TERRAIN, System.nanoTime() - terStart)
+                }
+                val entStart = if (profilingMatchFrame) System.nanoTime() else 0L
+                graphics.drawEntities(batch, current.frame, mapInput.constructionPreview, current.selectedIds)
+                batch.end()
                 mapInput.groundActionPreview?.takeIf { it.areaRadius > 0.0 }?.let { preview ->
                     graphics.drawGroundActionAreaFill(shapes, preview)
                 }
@@ -1813,18 +1864,37 @@ class BootstrapScreen(
                 }
                 shapes.end()
                 graphics.drawFlameEffects(shapes, current.frame)
+                if (profilingMatchFrame) hotspotProfiler.addClientStageNanos(HotspotStage.RENDER_ENTITIES, System.nanoTime() - entStart)
             } finally { ScissorStack.popScissors() }
             batch.projectionMatrix = viewport.camera.combined
             shapes.projectionMatrix = viewport.camera.combined
+            val miniStart = if (profilingMatchFrame) System.nanoTime() else 0L
             graphics.drawMinimap(shapes, current.frame, batch)
+            if (profilingMatchFrame) hotspotProfiler.addClientStageNanos(HotspotStage.RENDER_MINIMAP, System.nanoTime() - miniStart)
             if (cameraJoystickActive()) drawCameraJoystick()
         }
+        val hudDrawStart = if (profilingMatchFrame) System.nanoTime() else 0L
         stage.act(Gdx.graphics.deltaTime); stage.draw()
         if (current != null && ::hudOverlay.isInitialized && (hudMenuOpen || stepClock.isPaused)) {
             batch.projectionMatrix = viewport.camera.combined
             batch.begin()
             hudOverlay.drawModalLayer(batch, 1f)
             batch.end()
+        }
+        if (profilingMatchFrame && current != null) {
+            val endNs = System.nanoTime()
+            hotspotProfiler.addClientStageNanos(HotspotStage.RENDER_HUD, endNs - hudDrawStart)
+            hotspotProfiler.endMatchFrame(
+                stepIndex = current.observation.stepIndex,
+                executedSubsteps = lastPacingFrame.executedSteps,
+                pendingSteps = lastPacingFrame.pendingSteps,
+                requestedRate = stepClock.rate.multiplier,
+                actualMultiplier = stepClock.actualMultiplier,
+                liveUnits = current.liveUnitCountForProfiler,
+                activeFlowFields = current.activeFlowFieldCountForProfiler,
+                cachedFlowFields = current.cachedFlowFieldCountForProfiler,
+                endNanos = endNs,
+            )
         }
         loadingDrawn = loading
         val drawnNanos = System.nanoTime()
@@ -2006,6 +2076,7 @@ class BootstrapScreen(
             "routes" -> debugLayerState.toggleRoutes()
             "details" -> debugLayerState.toggleDetails()
             "grid" -> debugLayerState.toggleGrid()
+            "hotspots" -> debugLayerState.toggleHotspots()
             else -> debugLayerState
         }
         lastHudState = null
@@ -2017,6 +2088,7 @@ class BootstrapScreen(
                 "routes" to debugLayerState.showRoutes,
                 "details" to debugLayerState.showDetails,
                 "grid" to debugLayerState.showGrid,
+                "hotspots" to debugLayerState.showHotspots,
                 "generation" to generation,
                 "stepIndex" to current.observation.stepIndex,
             )
@@ -2812,9 +2884,204 @@ class BootstrapScreen(
             backlogSteps = lastPacingFrame.pendingSteps.toLong(),
             mapId = activeMapId,
             cursorWorld = lastCursorWorld,
+            hotspotLines = if (debugLayerState.showHotspots) hotspotProfiler.formatOverlayLines() else emptyList(),
         )
         val snap = HudDebugProjection.project(current, graphics?.projection, debugLayerState, metrics, viewport.worldWidth)
         hudDebugOverlay.update(viewport.worldWidth, viewport.worldHeight, hudOverlay.layout.systemBarRect.y, snap)
+    }
+
+    fun setCameraForAutomation(centerX: Double, centerY: Double, zoom: Double? = null): Map<String, Any?> {
+        val proj = checkNotNull(graphics?.projection) { "No active map projection" }
+        takeOverCamera("automation")
+        if (zoom != null && zoom.isFinite() && zoom > 0.0) {
+            proj.restoreCamera(proj.camera.copy(center = Position(centerX, centerY), zoom = zoom.coerceIn(0.2, 4.0)))
+        } else {
+            proj.centerOn(Position(centerX, centerY))
+        }
+        return mapOf("centerX" to proj.camera.center.x, "centerY" to proj.camera.center.y, "zoom" to proj.camera.zoom)
+    }
+
+    fun automationStatus(): Map<String, Any?> {
+        val current = session?.takeIf { it.isOpen }
+        val g = graphics
+        val w = Gdx.graphics?.width ?: 1
+        val h = Gdx.graphics?.height ?: 1
+
+        val uiButtons = linkedMapOf<String, Map<String, Int>>()
+        if (presentationReady && ::stage.isInitialized) {
+            fun registerActor(id: String, actor: Actor, enabled: Boolean) {
+                if (!enabled || actor.stage == null || actor.width <= 0f || actor.height <= 0f) return
+                var parent: Actor? = actor
+                while (parent != null) {
+                    if (!parent.isVisible) return
+                    parent = parent.parent
+                }
+                val stageCenter = actor.localToStageCoordinates(Vector2(actor.width * 0.5f, actor.height * 0.5f))
+                val screenPt = stage.stageToScreenCoordinates(stageCenter)
+                val sx = kotlin.math.round(screenPt.x).toInt().coerceIn(0, (w - 1).coerceAtLeast(0))
+                val sy = kotlin.math.round(screenPt.y).toInt().coerceIn(0, (h - 1).coerceAtLeast(0))
+                uiButtons[id] = mapOf("x" to sx, "y" to sy)
+            }
+            if (current == null && ::startButton.isInitialized) {
+                registerActor("start-match", startButton, !startButton.isDisabled && canStartMatch())
+            }
+            if (current != null && ::hudOverlay.isInitialized) {
+                for (da in hudOverlay.drawnActions()) {
+                    if (da.button == "left") registerActor(da.actionId, da.actor, da.enabled)
+                }
+            }
+            if (current != null && ::hudActionPanel.isInitialized) {
+                for (da in hudActionPanel.drawnActions()) {
+                    if (da.button == "left") registerActor(da.actionId, da.actor, da.enabled)
+                }
+            }
+            if (current != null && nativePanel && !paused) {
+                val menu = current.actionMenu
+                for ((type, card) in productionCards) {
+                    if ("produce:$type" in uiButtons) continue
+                    val enabled = menu.production.any { it.typeId == type }
+                    registerActor("produce:$type", card.table, enabled)
+                }
+            }
+        }
+
+        val worldToScreenMap = if (current != null && g != null && presentationReady && ::stage.isInitialized) {
+            val stagePerWorldX = viewport.worldWidth / battlefieldWidth
+            val stagePerWorldY = viewport.worldHeight / battlefieldHeight
+            fun toScreen(wx: Double, wy: Double): Vector2 {
+                val stX = g.projection.x(wx) * stagePerWorldX
+                val stY = g.projection.y(wy) * stagePerWorldY
+                return stage.stageToScreenCoordinates(Vector2(stX, stY))
+            }
+            val p0 = toScreen(0.0, 0.0)
+            val p1 = toScreen(100.0, 100.0)
+            mapOf(
+                "offsetX" to p0.x.toDouble(),
+                "offsetY" to p0.y.toDouble(),
+                "scaleX" to ((p1.x - p0.x) / 100.0),
+                "scaleY" to ((p1.y - p0.y) / 100.0),
+            )
+        } else null
+
+        val p1Entities = if (current != null && worldToScreenMap != null) {
+            val ox = worldToScreenMap.getValue("offsetX")
+            val oy = worldToScreenMap.getValue("offsetY")
+            val scX = worldToScreenMap.getValue("scaleX")
+            val scY = worldToScreenMap.getValue("scaleY")
+            val aliveP1 = current.observation.units.filter { it.alive && it.ownerPlayerId == "p1" }
+            val buildingsAndBuilders = aliveP1.filter {
+                current.isBuilding(it.typeId) || it.typeId == "builder"
+            }
+            val mobiles = aliveP1.filter { !current.isBuilding(it.typeId) && it.typeId != "builder" }
+            (buildingsAndBuilders.take(12) + mobiles.take(16)).distinctBy { it.unitId }.map { u ->
+                val sx = kotlin.math.round(ox + u.position.x * scX).toInt().coerceIn(0, (w - 1).coerceAtLeast(0))
+                val sy = kotlin.math.round(oy + u.position.y * scY).toInt().coerceIn(0, (h - 1).coerceAtLeast(0))
+                mapOf(
+                    "unitId" to u.unitId,
+                    "typeId" to u.typeId,
+                    "mobile" to !current.isBuilding(u.typeId),
+                    "worldX" to u.position.x,
+                    "worldY" to u.position.y,
+                    "screenX" to sx,
+                    "screenY" to sy,
+                )
+            }
+        } else emptyList()
+
+        return mapOf(
+            "canStart" to (current == null && !loading && ::startButton.isInitialized && startButton.isVisible && !startButton.isDisabled && canStartMatch()),
+            "visualBusy" to (visualState?.busy == true),
+            "loading" to loading,
+            "hasSession" to (current != null),
+            "loadError" to loadError,
+            "startupNotice" to (if (::startupStatus.isInitialized) startupStatus.text.toString().takeIf { it.isNotEmpty() } else null),
+            "stepIndex" to current?.observation?.stepIndex,
+            "rate" to stepClock.rate.multiplier,
+            "actualMultiplier" to stepClock.actualMultiplier,
+            "pendingSteps" to lastPacingFrame.pendingSteps,
+            "selectedCount" to (current?.selectedIds?.size ?: 0),
+            "p1AliveCount" to (current?.observation?.units?.count { it.alive && it.ownerPlayerId == "p1" } ?: 0),
+            "keyF3" to Input.Keys.F3,
+            "keyH" to Input.Keys.H,
+            "debugLayer" to mapOf(
+                "enabled" to debugLayerState.enabled,
+                "showBoxes" to debugLayerState.showBoxes,
+                "showRoutes" to debugLayerState.showRoutes,
+                "showDetails" to debugLayerState.showDetails,
+                "showGrid" to debugLayerState.showGrid,
+                "showHotspots" to debugLayerState.showHotspots,
+            ),
+            "visualAssets" to activeVisuals?.let {
+                mapOf("source" to it.selection.source.value, "profile" to it.profileId, "identity" to it.identity)
+            },
+            "camera" to g?.projection?.let { map ->
+                mapOf("centerX" to map.camera.center.x, "centerY" to map.camera.center.y, "zoom" to map.camera.zoom,
+                    "worldWidth" to map.worldWidth, "worldHeight" to map.worldHeight)
+            },
+            "worldToScreen" to worldToScreenMap,
+            "uiButtons" to uiButtons,
+            "p1Entities" to p1Entities,
+            "passableLandAnchors" to cachedPassableLandAnchors,
+        )
+    }
+
+    private fun computePassableLandAnchors(
+        map: com.rustedwarfare.reforge.core.content.MapDefinition,
+        obs: com.rustedwarfare.reforge.core.sim.PlayerObservation,
+    ): List<Map<String, Double>> {
+        val w = map.widthTiles
+        val h = map.heightTiles
+        if (w < 12 || h < 12) return emptyList()
+        fun isClearPad(cx: Int, cy: Int, halfSpan: Int): Boolean {
+            if (cx - halfSpan < 1 || cx + halfSpan >= w - 1 || cy - halfSpan < 1 || cy + halfSpan >= h - 1) return false
+            for (r in (cy - halfSpan)..(cy + halfSpan)) {
+                for (c in (cx - halfSpan)..(cx + halfSpan)) {
+                    if (map.blocking.isBlocked(c, r) || map.isResourcePool(c, r)) return false
+                }
+            }
+            return true
+        }
+        val base = obs.units.firstOrNull { it.alive && it.ownerPlayerId == "p1" }?.position
+            ?: Position(w * map.tileWidth * 0.5, h * map.tileHeight * 0.5)
+        val baseCol = (base.x / map.tileWidth).toInt().coerceIn(0, w - 1)
+        val baseRow = (base.y / map.tileHeight).toInt().coerceIn(0, h - 1)
+        val nearPads = mutableListOf<Pair<Int, Int>>()
+        for (ring in 6..48 step 3) {
+            if (nearPads.size >= 4) break
+            val candidates = listOf(
+                (baseCol + ring) to baseRow,
+                (baseCol - ring) to baseRow,
+                baseCol to (baseRow + ring),
+                baseCol to (baseRow - ring),
+                (baseCol + ring) to (baseRow + ring),
+                (baseCol - ring) to (baseRow + ring),
+                (baseCol + ring) to (baseRow - ring),
+                (baseCol - ring) to (baseRow - ring),
+            )
+            for ((cc, rr) in candidates) {
+                if (nearPads.size >= 4) break
+                if (isClearPad(cc, rr, 3) && nearPads.all { kotlin.math.hypot((it.first - cc).toDouble(), (it.second - rr).toDouble()) >= 7.0 }) {
+                    nearPads += cc to rr
+                }
+            }
+        }
+        val farTargets = mutableListOf<Pair<Int, Int>>()
+        val stepCol = maxOf(6, w / 9)
+        val stepRow = maxOf(6, h / 9)
+        for (rr in stepRow until (h - stepRow) step stepRow) {
+            for (cc in stepCol until (w - stepCol) step stepCol) {
+                if (isClearPad(cc, rr, 2)) {
+                    val distFromBase = kotlin.math.hypot((cc - baseCol).toDouble(), (rr - baseRow).toDouble())
+                    if (distFromBase >= 22.0 && farTargets.all { kotlin.math.hypot((it.first - cc).toDouble(), (it.second - rr).toDouble()) >= 20.0 }) {
+                        farTargets += cc to rr
+                    }
+                }
+            }
+        }
+        val orderedFar = farTargets.sortedBy { kotlin.math.hypot((it.first - baseCol).toDouble(), (it.second - baseRow).toDouble()) }.take(6)
+        return (nearPads + orderedFar).map { (c, r) ->
+            mapOf("x" to (c + 0.5) * map.tileWidth, "y" to (r + 0.5) * map.tileHeight)
+        }
     }
 
     private fun battlefieldAt(screenX: Int, screenY: Int): Boolean {

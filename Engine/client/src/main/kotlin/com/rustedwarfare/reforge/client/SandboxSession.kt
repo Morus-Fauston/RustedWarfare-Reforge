@@ -139,6 +139,16 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         private set
     internal val materializedObservationCountForTest: Long
         get() = context.materializedObservationCount
+    internal val simHotspotCollector: com.rustedwarfare.reforge.core.sim.SimHotspotCollector =
+        com.rustedwarfare.reforge.core.sim.SimHotspotCollector().also { context.hotspotCollector = it }
+    internal var lastPublishFrameNanos: Long = 0L
+        private set
+    internal val liveUnitCountForProfiler: Int
+        get() = if (isOpen) context.liveUnitCountForProfiler else 0
+    internal val activeFlowFieldCountForProfiler: Int
+        get() = if (isOpen) context.activeFlowFieldCountForProfiler else 0
+    internal val cachedFlowFieldCountForProfiler: Int
+        get() = if (isOpen) context.cachedFlowFieldCountForProfiler else 0
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
 
@@ -781,6 +791,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         }
         if (!effectivePublish) return
         publishFrame()
+        val ingestStart = System.nanoTime()
         if (pendingUnloadTargets.isNotEmpty()) {
             val iter = pendingUnloadTargets.entries.iterator()
             while (iter.hasNext()) {
@@ -804,6 +815,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             }
         }
         diagnosticTracker.ingestPlayer(observation)
+        lastPublishFrameNanos += (System.nanoTime() - ingestStart).coerceAtLeast(0L)
         for (result in observation.actionResults.filterIsInstance<ActionResult.Rejected>()) {
             if (result.error.code == "immobile-unit") {
                 val member = lastCommandBatch?.members?.firstOrNull { it.result.actionId == result.actionId } ?: continue
@@ -969,6 +981,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     private fun publishFrame() {
+        val observeStart = System.nanoTime()
         val next = makeFrame()
         latestFrame = next
         publishedFrameCount++
@@ -981,6 +994,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (previous.isNotEmpty() && selectedIds.isEmpty()) {
             feedback = "No selection"
         }
+        lastPublishFrameNanos += (System.nanoTime() - observeStart).coerceAtLeast(0L)
+    }
+
+    internal fun drainPublishFrameNanos(): Long {
+        val ns = lastPublishFrameNanos
+        lastPublishFrameNanos = 0L
+        return ns
     }
 
     override fun close() {

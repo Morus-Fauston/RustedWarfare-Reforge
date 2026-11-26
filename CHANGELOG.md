@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.81 (2026-11-27 06:02)
+
+### 新增
+
+- **内建实窗分段热点追踪器与 `F3+H` 实时热点视图**：在核心模拟与客户端渲染层内建稳态零逐帧文件 IO 的固定环缓冲热点追踪器（`SimHotspotCollector` 与 `LiveHotspotProfiler`），精确拆分 7 个模拟阶段（`nav.flow`、`nav.plan`、`nav.avoid`、`sim.contact`、`sim.vision`、`sim.combat`、`sim.forkCommit`）与 5 个客户端阶段（`client.observe`、`render.terrain`、`render.entities`、`render.minimap`、`render.hud`），同步采集每帧子步数、`pendingSteps`、存活单位、活跃/缓存流场数及反射隔离的桌面 JVM 线程分配速率与 GC 暂停（Android 环境自动安全降级且完全位于权威模拟与回滚状态之外）；支持局内 `F3+H` 实时展示分段 `P50 / P95 / P99 / Max` 耗时，并在退局或关闭客户端时原子写出数 KB 级结构化 `hotspot-summary.json`（含 `> 33 ms` 慢帧 Top-10 现场快照）。
+- **后台真 OpenGL 自动化输入扩展与无人值守大地图 `4x` 压测管线**：解除 `--background-input` 对重型逐帧诊断落盘的隐式绑定（支持 `--diagnostics false` 与 `--hotspot-summary <PATH>`），为 `BackgroundClientInput` 与 `SandboxInput` 补齐 `ctrl / shift / alt / f3` 修饰键、中键拖拽平移及只读状态与镜头定位自动化接口；新增 `live_hotspot_stress.py` 无人值守压测工具，可在隐藏真 OpenGL 窗口不抢占系统前台焦点的前提下自动加载 `350×350` 大地图、切换 `4x` 倍速、执行多厂造兵与多轮框选群移（含 `Alt` 右键）、抓拍战场与 `F3+H` 实窗截图并校验热点摘要。
+
+### 技术
+
+- **热点确定性单测、大地图实窗基线与独立双审**：新增 `LiveHotspotProfilerTest`、`test_live_hotspot_stress.py` 并扩充 `BackgroundLaunchTest` 及公共源码闭包注册，验证环缓冲统计、慢帧 Top-10、稳态低开销与启用前后模拟逐比特确定性一致；在 `350×350` 原版多岛大地图挂载已核验原版表现资源包跑通无人值守 `4x` 真 OpenGL 基线压测且零裸 JSONL 堆积，`platform-basics`、`tooling`、公开短测 6 套与双根工作区布局检查全绿，经全新上下文独立视觉审阅与非作者代码整审通过（0 必修）。
+
+---
+
 ## v0.5.80 (2026-11-27 03:32)
 
 ### 修复

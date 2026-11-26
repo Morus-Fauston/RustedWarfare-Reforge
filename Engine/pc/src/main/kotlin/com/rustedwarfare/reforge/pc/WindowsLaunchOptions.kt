@@ -26,19 +26,20 @@ data class WindowsLaunchOptions(
     val skirmishMap: Path? = null,
     val themePackDir: Path? = null,
     val catalogSceneId: String? = null,
+    val hotspotSummary: Path? = null,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
         fun parse(args: Array<String>, repoRoot: Path,
                   defaultScenarioSeed: Path = repoRoot.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")): WindowsLaunchOptions {
-            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--scene ID] [--development true] [--diagnostics true|false] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
+            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--scene ID] [--development true] [--diagnostics true|false] [--hotspot-summary PATH] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
             val visualKeys = setOf("--visuals", "--original-assets")
             val pairs = args.toList().chunked(2)
             require(pairs.filter { it[0] in visualKeys }.map { it[0] }.distinct().size == pairs.count { it[0] in visualKeys }) {
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--map", "--scene", "--theme-pack", "--development", "--diagnostics", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--map", "--scene", "--theme-pack", "--development", "--diagnostics", "--hotspot-summary", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
@@ -59,7 +60,7 @@ data class WindowsLaunchOptions(
                 require(value == "true" && pairs.count { it[0] == "--background-input" } == 1) {
                     "Expected one --background-input true option"
                 }
-                require(mode == "sandbox" && "--evidence" in options && explicitDiagnostics != false) {
+                require(mode == "sandbox" && "--evidence" in options) {
                     "Background input requires sandbox evidence"
                 }
                 true
@@ -98,12 +99,18 @@ data class WindowsLaunchOptions(
                 require(value.isNotBlank()) { "--original-assets requires a directory" }; resolve(value)
             }
             if (mode == "demo") {
-                require("--inputs" !in options && "--map" !in options && "--scene" !in options && "--theme-pack" !in options) { "Demo uses packaged self-owned inputs" }
+                require("--inputs" !in options && "--map" !in options && "--scene" !in options && "--theme-pack" !in options && "--hotspot-summary" !in options) { "Demo uses packaged self-owned inputs" }
                 return WindowsLaunchOptions(mode, null,
                     resolve(options["--evidence"] ?: "Engine/pc/build/demo-runs/$runId"), runId,
                     "RustedWarfare-Reforge | Field Demo", visualSource, originalAssets)
             }
             val explicitInputs = options["--inputs"]
+            val explicitHotspotSummary = options["--hotspot-summary"]?.let { value ->
+                require(value.isNotBlank() && pairs.count { it[0] == "--hotspot-summary" } == 1) {
+                    "--hotspot-summary requires one file path"
+                }
+                resolve(value)
+            }
             val skirmishMap = options["--map"]?.let { value -> require(value.isNotBlank()) { "--map requires a .tmx path" }; resolve(value) }
             val catalogSceneId = options["--scene"]?.let { value ->
                 require(value.isNotBlank()) { "--scene requires a catalog scenario id" }
@@ -119,16 +126,20 @@ data class WindowsLaunchOptions(
                 seed.parent.resolve("../inputs/phase-seven-sandbox/json/package").normalize()
             else
                 seed.parent.resolve("../inputs/phase-six-a-sandbox/json").normalize()
+            val resolvedEvidence = resolve(options["--evidence"] ?: "Engine/pc/build/sandbox-runs/$runId")
+            val resolvedHotspotSummary = explicitHotspotSummary
+                ?: if ("--evidence" in options) resolvedEvidence.resolve("hotspot-summary.json") else null
             return WindowsLaunchOptions(mode,
                 explicitInputs?.let(::resolve) ?: defaultInputs,
-                resolve(options["--evidence"] ?: "Engine/pc/build/sandbox-runs/$runId"),
+                resolvedEvidence,
                 runId, when {
                     explicitInputs != null -> "RustedWarfare-Reforge | P002 Windows sandbox"
                     development -> "RustedWarfare-Reforge | Phase VI A sandbox"
                     else -> "RustedWarfare-Reforge"
                 }, visualSource, originalAssets,
                 if (development && explicitInputs == null && skirmishMap == null && catalogSceneId == null) seed else null, backgroundInput, backgroundCompact,
-                bgWidth, bgHeight, touchSimulation, development, explicitDiagnostics ?: ("--evidence" in options), skirmishMap, themePackDir, catalogSceneId)
+                bgWidth, bgHeight, touchSimulation, development, explicitDiagnostics ?: ("--evidence" in options), skirmishMap, themePackDir, catalogSceneId,
+                resolvedHotspotSummary)
         }
     }
 }

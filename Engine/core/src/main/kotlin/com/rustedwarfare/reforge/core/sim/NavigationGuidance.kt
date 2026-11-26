@@ -416,6 +416,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
     }
 
     fun activeFieldCount(): Int = fields.size
+    fun activeSubscriberFieldCount(): Int = fields.values.count { it.activeSubscribers > 0 }
     fun statsFor(key: FieldKey): ChunkedField? = fields[key]
     internal fun cachedFieldsForTest(): Collection<ChunkedField> = fields.values
 

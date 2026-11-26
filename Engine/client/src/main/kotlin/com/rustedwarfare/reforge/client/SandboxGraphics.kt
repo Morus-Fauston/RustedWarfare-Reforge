@@ -414,6 +414,11 @@ class SandboxGraphics private constructor(
 
     fun draw(batch: SpriteBatch, frame: SandboxFrame, construction: ConstructionPreview? = null,
         selectedIds: Set<String> = emptySet()) {
+        drawTerrain(batch, frame)
+        drawEntities(batch, frame, construction, selectedIds)
+    }
+
+    fun drawTerrain(batch: SpriteBatch, frame: SandboxFrame) {
         val bounds = TerrainTileColorSampler.visibleBounds(
             projection, resources.widthTiles, resources.heightTiles, resources.tileWidth, resources.tileHeight, padTiles = 1,
         )
@@ -475,6 +480,11 @@ class SandboxGraphics private constructor(
                 }
             }
         }
+        batch.color = Color.WHITE
+    }
+
+    fun drawEntities(batch: SpriteBatch, frame: SandboxFrame, construction: ConstructionPreview? = null,
+        selectedIds: Set<String> = emptySet()) {
         batch.color = Color.WHITE
         for (drawing in afterburnTrails.project(frame.observation, resources)) {
             val region = trailImages.getValue(requireNotNull(drawing.images.afterburnTrailImagePath))

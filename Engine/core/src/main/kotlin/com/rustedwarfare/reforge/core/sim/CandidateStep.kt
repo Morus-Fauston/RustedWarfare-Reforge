@@ -302,16 +302,25 @@ internal class CandidateSteps {
                 observe: (Long, Double, Long) -> Observation,
                 materializeObservation: Boolean,
                 worldId: String = current.committedObservation?.worldId ?: input.scenarioId,
+                profiler: SimHotspotCollector? = null,
                 update: (CandidateStep) -> Unit): Observation {
         val previous = StepCheckpoint(current)
         val planningRollback = PathSearchRollback()
-        val candidate = CandidateStep(previous.state.fork(planningRollback), step)
+        val forkStart = if (profiler != null) System.nanoTime() else 0L
+        val forkedState = previous.state.fork(planningRollback)
+        if (profiler != null) profiler.addNanos(SimHotspotStage.SIM_FORK_COMMIT, System.nanoTime() - forkStart)
+        val candidate = CandidateStep(forkedState, step)
         current = candidate.state
         try {
             update(candidate)
-            val observation = candidate.publish(input, actions, observe, materializeObservation, worldId)
+            val observation = candidate.publish(input, actions, observe, materializeObservation, worldId, profiler)
+            val commitStart = if (profiler != null) System.nanoTime() else 0L
             candidate.releasePreviousKnowledge(previous.state)
             planningRollback.commit()
+            if (profiler != null) {
+                profiler.addNanos(SimHotspotStage.SIM_FORK_COMMIT, System.nanoTime() - commitStart)
+                profiler.recordStepCompleted()
+            }
             return observation
         } catch (failure: Exception) {
             current = previous.state
@@ -340,10 +349,17 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
 
     fun publish(input: Scenario, actions: List<Action>, observe: (Long, Double, Long) -> Observation,
                 materializeObservation: Boolean = true,
-                worldId: String = state.committedObservation?.worldId ?: input.scenarioId): Observation {
+                worldId: String = state.committedObservation?.worldId ?: input.scenarioId,
+                profiler: SimHotspotCollector? = null): Observation {
         val nextTime = state.simulationTime + step.delta
         require(nextTime.isFinite()) { "Simulation time must remain finite" }
+        val contactStart = if (profiler != null) System.nanoTime() else 0L
         translations.finish(state.units.values, motionSamples, state.landingOccupancy)
+        val publishStart = if (profiler != null) {
+            val now = System.nanoTime()
+            profiler.addNanos(SimHotspotStage.SIM_CONTACT, now - contactStart)
+            now
+        } else 0L
         state.validate(input)
         val nextRevision = state.revision + 1L
         val committedMotion = motionSamples?.let { checkNotNull(state.motionDiagnostics) }
@@ -414,6 +430,7 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
         motionSamples?.let { checkNotNull(committedMotion).addAll(it) }
         routeContinuationSamples?.let { checkNotNull(state.routeContinuationDiagnostics).addAll(it) }
         planningWorkSample?.let { checkNotNull(state.planningWorkDiagnostics).add(it) }
+        if (profiler != null) profiler.addNanos(SimHotspotStage.SIM_FORK_COMMIT, System.nanoTime() - publishStart)
         return observation
     }
 

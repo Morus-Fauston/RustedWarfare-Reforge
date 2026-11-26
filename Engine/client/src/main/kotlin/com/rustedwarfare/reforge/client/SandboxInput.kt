@@ -169,6 +169,8 @@ class SandboxInput(
         Input.Keys.CONTROL_LEFT in heldModifiers || Input.Keys.CONTROL_RIGHT in heldModifiers
     private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT) ||
         Input.Keys.SHIFT_LEFT in heldModifiers || Input.Keys.SHIFT_RIGHT in heldModifiers
+    internal fun alt() = pressed(Input.Keys.ALT_LEFT) || pressed(Input.Keys.ALT_RIGHT) ||
+        Input.Keys.ALT_LEFT in heldModifiers || Input.Keys.ALT_RIGHT in heldModifiers
     private fun mode() = when { control() -> SelectionMode.TOGGLE; shift() -> SelectionMode.ADD; else -> SelectionMode.REPLACE }
     private fun canTargetAt(x: Int, y: Int) = insideViewport(x, y) && battlefieldAt(x, y)
 
@@ -401,7 +403,8 @@ class SandboxInput(
     }
     override fun keyDown(keycode: Int): Boolean {
         if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT ||
-            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT
+            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT ||
+            keycode == Input.Keys.ALT_LEFT || keycode == Input.Keys.ALT_RIGHT
         ) {
             heldModifiers.add(keycode)
             return false
@@ -417,14 +420,14 @@ class SandboxInput(
         }
         if (buildType != null) {
             if (!constructionHeld.add(keycode)) return true
-            if (control() || shift() || pressed(Input.Keys.ALT_LEFT) || pressed(Input.Keys.ALT_RIGHT)) return false
+            if (control() || shift() || alt()) return false
             val action = current.constructionActions.firstOrNull { it.typeId == buildType } ?: return false
             return beginConstruction(action.typeId)
         }
         if (keycode == Input.Keys.U) {
             if (upgradeHeld) return true
             upgradeHeld = true
-            if (control() || shift() || pressed(Input.Keys.ALT_LEFT) || pressed(Input.Keys.ALT_RIGHT)) return false
+            if (control() || shift() || alt()) return false
             val action = current.actionMenu.upgrades.singleOrNull()
                 ?.takeIf { it.kind == UpgradePresentationKind.ECONOMIC } ?: return false
             cancel()
@@ -453,7 +456,8 @@ class SandboxInput(
     }
     override fun keyUp(keycode: Int): Boolean {
         if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT ||
-            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT
+            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT ||
+            keycode == Input.Keys.ALT_LEFT || keycode == Input.Keys.ALT_RIGHT
         ) {
             heldModifiers.remove(keycode)
             return false
