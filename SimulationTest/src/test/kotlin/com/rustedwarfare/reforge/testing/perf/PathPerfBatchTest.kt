@@ -206,7 +206,7 @@ class PathPerfBatchTest {
         assertEquals(1L, sample.actualSearchCalls)
         assertTrue(sample.candidatesChecked in 1L..768L, "expected lazy O(1) candidates in 1..768, got ${sample.candidatesChecked}")
         assertTrue(sample.expanded > 0)
-        assertEquals(Position(309.0, goal(0).y), sample.searchTarget)
+        assertEquals(Position(311.0, goal(0).y), sample.searchTarget)
         assertEquals(listOf(sample.searchTarget), batch.units.single().pathPoints)
     }
 
@@ -282,11 +282,11 @@ class PathPerfBatchTest {
 
     @Test
     fun `memory gap real batches follow the fixed direct and fallback index table`() {
-        val direct = setOf(0,1,2,3,10,11,12,13,14,15,21,22,23,24,25,26,33,34,35,36,37,44,45,46,47,48,49)
+        val direct = setOf(0,1,2,3,11,12,13,14,22,23,24,25,34,35,36,45,46,47,48)
         val legacyDirect = setOf(0,1,2,11,12,13,14,22,23,24,25,34,35,36,45,46,47,48)
         for(index in 0 until 50) {
             assertEquals(index in legacyDirect,PathPerfBatch.independentGeometry(listOf(start(index),goal(index)),gapBlocks(),32,24,20,20,11.0))
-            assertEquals(index in direct,MotionCenterGeometry.centerPath(listOf(start(index),goal(index)),gapBlocks(),32,24,20,20,11.0))
+            assertEquals(index in direct,PathPerfBatch.independentGeometry(listOf(start(index),goal(index)),gapBlocks(),32,24,20,20,9.0))
         }
         for (n in listOf(1, 10, 50)) {
             val batch = PathPerfBatch.measureBatch("MEMORY_GAP", n, 0, testUnit())
@@ -298,11 +298,11 @@ class PathPerfBatchTest {
             val directSamples = batch.samples.filter { it.candidatesChecked == 0L }
             assertEquals(direct.filter { it < n }.map { "perf-u%03d".format(it) }.toSet(),
                 directSamples.map { it.unitId }.toSet())
-            assertEquals(when (n) { 1 -> 1; 10 -> 4; else -> 27 }, directSamples.size)
-            assertEquals(when (n) { 1 -> 0; 10 -> 6; else -> 23 }, batch.samples.count { it.candidatesChecked in 1L..768L })
+            assertEquals(when (n) { 1 -> 1; 10 -> 4; else -> 19 }, directSamples.size)
+            assertEquals(when (n) { 1 -> 0; 10 -> 6; else -> 31 }, batch.samples.count { it.candidatesChecked in 1L..768L })
             for ((index, outcome) in batch.units.withIndex()) {
                 assertEquals(index in direct,
-                    MotionCenterGeometry.centerPath(listOf(start(index), goal(index)), gapBlocks(), 32, 24, 20, 20, 11.0),
+                    PathPerfBatch.independentGeometry(listOf(start(index), goal(index)), gapBlocks(), 32, 24, 20, 20, 9.0),
                     "independent direct index $index")
                 assertTrue(crossesWallBand(listOf(start(index)) + outcome.pathPoints))
                 assertTrue(MotionCenterGeometry.centerPath(listOf(start(index)) + outcome.pathPoints,

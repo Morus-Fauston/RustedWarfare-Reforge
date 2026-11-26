@@ -142,6 +142,9 @@ internal class ChunkedFlowFieldAdapter private constructor(
         var totalExpansions: Long = 0L,
         var dirtyRebuildCount: Int = 0,
         var reusedTrunkChunks: Int = 0,
+        var initialDiagnosticEmitted: Boolean = false,
+        var terrainRebuildCount: Int = 0,
+        var reportedTerrainRebuilds: Int = 0,
     ) {
         val cellCount: Int = width * height
 
@@ -316,6 +319,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
                 requiredRings, wideCorridorRings, terrain, goalWorld, effectiveGoalWorld,
                 goalWasNearestFallback, lastAccessStep,
                 completed, totalExpansions, dirtyRebuildCount, reusedTrunkChunks,
+                initialDiagnosticEmitted, terrainRebuildCount, reportedTerrainRebuilds,
             )
             System.arraycopy(cost, 0, copy.cost, 0, cellCount)
             System.arraycopy(dirX, 0, copy.dirX, 0, cellCount)
@@ -426,6 +430,54 @@ internal class ChunkedFlowFieldAdapter private constructor(
             }
         }
         return 0
+    }
+
+    /**
+     * Returns true when [uCol]/[uRow] has no orthogonally adjacent tile meeting the unit's clearance
+     * band (e.g. trapped in a 1x1 walled enclosure), so the caller delegates to [MovePlanning] for
+     * canonical `immobile-unit` rejection instead of building a degenerate 1-cell fallback flow field.
+     */
+    fun isSingleCellImmobilePocket(
+        terrain: PlanningTerrain,
+        unitRadius: Double,
+        uCol: Int,
+        uRow: Int,
+    ): Boolean {
+        val band = clearanceBandFor(terrain, unitRadius)
+        val cf = terrain.clearanceField()
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
+        for (d in 0 until 4) {
+            val nc = uCol + ORTHO_DX[d]
+            val nr = uRow + ORTHO_DY[d]
+            if (nc in 0 until w && nr in 0 until h && cf.clearanceRings(nc, nr) >= band) {
+                return false
+            }
+        }
+        return true
+    }
+
+    fun consumeInitialDiagnostic(field: ChunkedField): Boolean {
+        if (field.initialDiagnosticEmitted) return false
+        recordFieldMutation(field.key)
+        field.initialDiagnosticEmitted = true
+        return true
+    }
+
+    fun drainTerrainRebuildDiagnostics(): List<Pair<String, Position>> {
+        var result: MutableList<Pair<String, Position>>? = null
+        for (field in fields.values) {
+            if (field.terrainRebuildCount > field.reportedTerrainRebuilds) {
+                recordFieldMutation(field.key)
+                val delta = field.terrainRebuildCount - field.reportedTerrainRebuilds
+                field.reportedTerrainRebuilds = field.terrainRebuildCount
+                val list = result ?: mutableListOf<Pair<String, Position>>().also { result = it }
+                repeat(delta) {
+                    list += field.key.ownerId to field.effectiveGoalWorld
+                }
+            }
+        }
+        return result ?: emptyList()
     }
 
     fun ensureFieldForGroup(
@@ -676,6 +728,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
         if (!anyDirty) return
 
         field.dirtyRebuildCount++
+        field.terrainRebuildCount++
         field.completed = false
 
         // Mark only chunks touched by direct dirty halo as dirty so clean upstream chunks stay built.

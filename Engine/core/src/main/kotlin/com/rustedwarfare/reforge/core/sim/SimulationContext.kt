@@ -1611,7 +1611,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     val gCol = MapBounds.cell(group.click.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles)
                     val gRow = MapBounds.cell(group.click.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles)
                     val srcComp = steps.current.flowFields.resolveSourceComponent(terrain, terrainR, gCol, gRow, uCol, uRow)
-                    steps.current.flowFields.ensureFieldForGroup(
+                    val flowField = steps.current.flowFields.ensureFieldForGroup(
                         ownerId = unit.ownerPlayerId,
                         movementType = mType,
                         unitRadius = terrainR,
@@ -1621,11 +1621,25 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         stepIndex = stepIndex,
                         sourceComponentId = srcComp,
                     )
+                    if (pathDiagnostics != null && steps.current.flowFields.consumeInitialDiagnostic(flowField)) {
+                        pathDiagnostics?.add(
+                            PathSearchSample(
+                                action.actionId, unit.unitId, action.atStep,
+                                knowledgeStores != null && knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE,
+                                PathSearchOutcome.FOUND, 0L, 0L, 1L, 0L, 0L, 0L, 0L, 0L, 0L, 1,
+                                reason = PathSearchReason.USER_MOVE, executionStep = stepIndex,
+                                searchTarget = flowField.effectiveGoalWorld, searchStart = unit.position,
+                            ),
+                        )
+                    }
                     unit.landingMember = LandingMember(group)
                     // True O(1) shared flow-field direct drive (ENG-P016-009D): bypass 100 individual A* companion jobs!
-                    // Only if the unit is in an unpassable cell (srcComp == 0 while click is blocked) fall back to MovePlanning.
+                    // Fall back to MovePlanning when the unit sits in an unpassable cell or a 1x1 immobile pocket
+                    // so canonical `immobile-unit` rejection fires immediately.
                     val goalBlocked = terrain.isBlocked(gCol, gRow)
-                    if (goalBlocked && srcComp == 0) {
+                    val immobilePocket = srcComp != 0 &&
+                        steps.current.flowFields.isSingleCellImmobilePocket(terrain, terrainR, uCol, uRow)
+                    if ((goalBlocked && srcComp == 0) || immobilePocket) {
                         steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
                     } else {
                         steps.current.movePlanning.cancel(unit.unitId)
@@ -2146,6 +2160,22 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     stepIndex = step.stepIndex,
                     maxExpansions = p1Budget,
                 )
+                val diagList = candidate.state.pathDiagnostics
+                if (diagList != null) {
+                    val rebuilt = candidate.state.flowFields.drainTerrainRebuildDiagnostics()
+                    for ((ownerId, goalPos) in rebuilt) {
+                        val rep = orderedUnits().firstOrNull { it.ownerPlayerId == ownerId && it.moveTarget != null }
+                        diagList += PathSearchSample(
+                            rep?.originMoveId ?: "flow-replan:${step.stepIndex}",
+                            rep?.unitId ?: ownerId,
+                            rep?.originAtStep,
+                            knowledgeStores != null && knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE,
+                            PathSearchOutcome.FOUND, 0L, 0L, 1L, 0L, 0L, 0L, 0L, 0L, 0L, 1,
+                            reason = PathSearchReason.KNOWLEDGE_REPLAN, executionStep = step.stepIndex,
+                            searchTarget = goalPos, searchStart = rep?.position ?: goalPos,
+                        )
+                    }
+                }
             }
             // True O(1) shared flow-field direct drive (ENG-P016-009D):
             // Drain pendingFlowStart units even if activeFieldCount() dropped to 0 (e.g. rapid re-click
@@ -4012,8 +4042,59 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
             if (!retry) continue
             val nativeDeparture = FactoryExit.isNativeSeaDeparture(unit)
-            val move = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
-            if (nativeDeparture && unit.birthRemaining > 0f || !nativeDeparture && move == null) continue
+            val headTask = unit.tasks.firstOrNull()
+            val move = headTask?.takeIf { it.kind == UnitTaskKind.MOVE }
+            val workTask = headTask?.takeIf {
+                it.kind == UnitTaskKind.BUILD || it.kind == UnitTaskKind.CONSTRUCT || it.kind == UnitTaskKind.RECLAIM
+            }
+            if (nativeDeparture && unit.birthRemaining > 0f || (!nativeDeparture && move == null && workTask == null)) continue
+            if (workTask != null && !nativeDeparture) {
+                val layer = UnitContact.layer(unit)
+                val blockers = if (layer != null) {
+                    val scanR = unit.definition.movementCollision.boundingRadius * 4.5 + 32.0
+                    spatialIndex.queryBounds(
+                        SpatialLayer.fromContact(layer),
+                        unit.position.x - scanR, unit.position.x + scanR,
+                        unit.position.y - scanR, unit.position.y + scanR,
+                    ).filter {
+                        it.unitId != unit.unitId && knowsRouteOccupant(unit, it) &&
+                            (it.moveTarget == null || UnitContact.inContact(unit, it))
+                    }
+                } else emptyList()
+                val occupancy = UnitContact.routeAround(unit, blockers)
+                val workRange = unit.definition.builder?.range?.toDouble()?.let { base ->
+                    val targetUnit = workTask.targetUnitId?.let { units[it] }
+                    val bonus = if (targetUnit?.definition?.production?.exitProfile ==
+                        com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA
+                    ) 110.0 else 0.0
+                    base + bonus
+                } ?: 0.0
+                val samples = pathDiagnostics
+                val path = if (samples == null) {
+                    policies.path.findPath(
+                        planningTerrainFor(unit, map),
+                        Transport.queryPosition(unit, map),
+                        target,
+                        routeRadius(unit),
+                        targetRange = workRange,
+                        hull = HullRoute.forUnit(unit, map),
+                        occupancy = occupancy,
+                    )
+                } else {
+                    findPathWithDiagnostics(
+                        workTask.actionId, workTask.atStep, target, unit, map, samples,
+                        PathSearchReason.ROUTE_REPAIR, step, targetRange = workRange, occupancy = occupancy,
+                    )
+                }
+                if (path != null && path != unit.pathPoints) {
+                    unit.adoptRoute(
+                        path, logicalRouteTarget(unit, target),
+                        plannedKnowledgeRevision(unit), plannedBuildingRevision(unit),
+                        blockers.map { it.unitId },
+                    )
+                }
+                continue
+            }
             if (unit.followsManeuverRoute || !nativeDeparture && move != null) {
                 if (unit.lastManeuverContactRepair != step) {
                     if (fastStallEligible || (periodicRetry && unit.terrainCorrectionTime > 0.0)) {

@@ -92,6 +92,8 @@ object PathPerfBatch {
     const val TILE_WIDTH = 20
     const val TILE_HEIGHT = 20
     const val UNIT_RADIUS = 11.0
+    /** Unified ENG-P016-009C implicit-INI static terrain passability radius: min(radius, 0.45 * minTile) = 9.0. */
+    const val TERRAIN_RADIUS = 9.0
     const val PATH_POINT_RADIUS = 16.0
     const val TARGET_RADIUS = 4.0
 
@@ -872,15 +874,15 @@ object PathPerfBatch {
         return cells
     }
 
-    /** Development expectation independently derived from the unchanged fixture coordinates. */
+    /** Development expectation independently derived from the unchanged fixture coordinates under unified 009C Circle(9.0) terrain clearance. */
     private fun fixedDirectCenter(scenarioKey: String, index: Int): Boolean = when (scenarioKey) {
         "MEMORY_UNREACHABLE" -> false
-        "MEMORY_GAP" -> 7 * (index % 10) - 9 * (index / 10) in -11..27
+        "MEMORY_GAP" -> 7 * (index % 10) - 9 * (index / 10) in -4..21
         else -> true
     }
 
     private fun fixedPlanningEndpoint(scenarioKey: String, index: Int): Position =
-        Position(if (scenarioKey == "MEMORY_UNREACHABLE") 16 * TILE_WIDTH - UNIT_RADIUS else goalX(index), goalY(index))
+        Position(if (scenarioKey == "MEMORY_UNREACHABLE") 16 * TILE_WIDTH - TERRAIN_RADIUS else goalX(index), goalY(index))
 
     /** Fixed fixture geometry, independently derived in the reviewed D-076 validator contract.
      * In MEMORY_GAP, -4 <= 7a-9b <= 20 gives 18 direct and 32 fallback requests for n=50.

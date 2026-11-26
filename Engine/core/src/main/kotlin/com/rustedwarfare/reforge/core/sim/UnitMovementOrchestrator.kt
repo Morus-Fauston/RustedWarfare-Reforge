@@ -622,7 +622,8 @@ internal object UnitMovementOrchestrator {
             val canHandOff = nearHandoff &&
                 host.continuationFits(
                     host.planningTerrainFor(unit, map), Transport.queryPosition(unit, map),
-                    unit.pathPoints[1], unit.heading, if (usesPreparedJoin) HullRoute.forUnit(unit, map) else null,
+                    unit.pathPoints[1], unit.heading,
+                    if (usesPreparedJoin || approachingWork) HullRoute.forUnit(unit, map) else null,
                     host.routeRadius(unit), host.routeOccupancy(unit),
                 )
             if (canHandOff && usesPreparedJoin) {
@@ -839,7 +840,8 @@ internal object UnitMovementOrchestrator {
                         val occupancy = host.routeOccupancy(unit)
                         host.continuationFits(
                             host.planningTerrainFor(unit, map), Transport.queryPosition(unit, map), next, unit.heading,
-                            if (occupancy == null) null else HullRoute.forUnit(unit, map), host.routeRadius(unit), occupancy,
+                            if (occupancy == null && !approachingWork) null else HullRoute.forUnit(unit, map),
+                            host.routeRadius(unit), occupancy,
                         )
                     },
                 )
@@ -1165,7 +1167,11 @@ internal object UnitMovementOrchestrator {
             circle != null -> circle.contains(checkNotNull(hullTerrain), position)
             else -> Transport.containsPosition(unit, map, position)
         }
-        val ordinaryMove = unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
+        val headTaskKind = unit.tasks.firstOrNull()?.kind
+        val ordinaryMove = headTaskKind == UnitTaskKind.MOVE
+        val workApproach = headTaskKind == UnitTaskKind.BUILD ||
+            headTaskKind == UnitTaskKind.CONSTRUCT ||
+            headTaskKind == UnitTaskKind.RECLAIM
         val contactMap = host.buildingTerrain?.collisionMap ?: map
         val canPush: ((MutableUnit, MutableUnit) -> Boolean)? = if (unit.birthRemaining == 0f && insideMap(boundedPosition)) {
             { pusher, blocker ->
@@ -1210,11 +1216,15 @@ internal object UnitMovementOrchestrator {
             for (cid in shift.unit.attachmentIds.values) host.units[cid]?.let(host.spatialIndex::relocate)
         }
         val terrainCorrected = heading.boundedHeading != heading.requestedHeading || boundedPosition != candidate
-        if (unit.moveTarget != null && (nativeDeparture || ordinaryMove)) {
+        if (unit.moveTarget != null && (nativeDeparture || ordinaryMove || workApproach)) {
             val clipped = resolved != candidate
             val attemptedPoseChange = candidate != positionBefore || heading.requestedHeading != headingBefore
             val heldAtPriorPose = resolved == positionBefore && heading.legalHeading == headingBefore
-            val avoidanceBrakedStall = steering.avoidanceApplied && heldAtPriorPose && unit.pathPoints.isNotEmpty()
+            val nearStaticAvoidance = workApproach && steering.avoidanceApplied && unit.pathPoints.isNotEmpty() &&
+                ScreenPlane.distanceSquared(resolved, positionBefore) < 0.0025 &&
+                unit.nav.progressAnchorStep >= 0L && (executionStep - unit.nav.progressAnchorStep) >= 45L
+            val avoidanceBrakedStall = (steering.avoidanceApplied && heldAtPriorPose && unit.pathPoints.isNotEmpty()) ||
+                nearStaticAvoidance
             val stalled = if ((attemptedPoseChange && heldAtPriorPose && (terrainCorrected || unitContactLimited)) || avoidanceBrakedStall)
                 unit.stalledRouteTicks + 1L else 0L
             unit.nav = unit.nav.copy(

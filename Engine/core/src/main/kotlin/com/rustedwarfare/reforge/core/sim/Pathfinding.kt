@@ -243,7 +243,7 @@ internal class ClearanceAStarPolicy(
         require(targetRange.isFinite() && targetRange >= 0.0)
         if (targetRange > 0.0) {
             if (counters != null) counters.actualSearchCalls++
-            return findPathToRange(map, start, target, radius, targetRange, hull, counters)
+            return findPathToRange(map, start, target, radius, targetRange, hull, occupancy, counters)
         }
         val search = beginExact(map, start, target, radius, hull, occupancy, counters)
         while (!search.finished) search.advance(PathWorkBudget(Int.MAX_VALUE))
@@ -741,6 +741,19 @@ internal class ClearanceAStarPolicy(
             }
             val circleBoundR = (hull as? HullRoute.Circle)?.boundaryRadius ?: radius
             val grid = checkNotNull(hullGrid)
+            if (shape is MovementCollisionShape.Circle && circleBoundR > shape.radius) {
+                val sc = cellOf(map, start)
+                if (sc != null) {
+                    val hasPassableOrtho = orthogonal.any { (dc, dr) ->
+                        val nc = sc.first + dc
+                        val nr = sc.second + dr
+                        nc in 0 until map.widthTiles && nr in 0 until map.heightTiles && !map.isBlocked(nc, nr)
+                    }
+                    if (!hasPassableOrtho && circleBoundR >= minOf(map.tileWidth, map.tileHeight) * 0.5) {
+                        return false
+                    }
+                }
+            }
             val before = hull?.heading ?: 0.0
             val headings = listOf(before, ScreenPlane.desired(start, target)) + (0..7).map { it * 45.0 }
             val travel = minOf(map.tileWidth, map.tileHeight) / 4.0
@@ -963,6 +976,7 @@ internal class ClearanceAStarPolicy(
         radius: Double,
         range: Double,
         hull: HullRoute? = null,
+        occupancy: RouteOccupancy? = null,
         counters: PathSearchCounters?,
     ): List<Position>? {
         val width = map.widthTiles.toDouble() * map.tileWidth
@@ -1004,6 +1018,10 @@ internal class ClearanceAStarPolicy(
         val rangeManhattanSlack = kotlin.math.ceil(range / tw).toInt() + kotlin.math.ceil(range / th).toInt() + 1
 
         fun segClear(from: Position, to: Position): Boolean {
+            if (occupancy != null) {
+                val heading = if (from == to) 0.0 else ScreenPlane.desired(from, to)
+                if (!occupancy.allows(from, to, heading, heading)) return false
+            }
             if (circle != null && hullGrid != null) {
                 return circle.contains(hullGrid, from) && circle.resolve(hullGrid, from, to) == to
             }
@@ -1013,8 +1031,9 @@ internal class ClearanceAStarPolicy(
         fun poseClear(pos: Position): Boolean {
             if (!MapBounds.contains(width, height, pos, boundR) || terrain.intersects(map, pos, boundR)) return false
             if (hullGrid != null && circleShape != null) {
-                return UnitContact.poseFits(circleShape, pos, 0.0, hullGrid)
+                if (!UnitContact.poseFits(circleShape, pos, 0.0, hullGrid)) return false
             }
+            if (occupancy != null && !occupancy.allows(pos, pos, 0.0, 0.0)) return false
             return true
         }
 

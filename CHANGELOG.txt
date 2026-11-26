@@ -1,3 +1,10 @@
+v0.5.76 (2026-11-26 08:38)
+  修复: 将 RouteOccupancy 贯穿 Pathfinding.findPathToRange 并为建造/续建/回收工程接近段补齐轮廓交接防切角与受阻绕障重规划 / 补齐共享流场 USER_MOVE 与 KNOWLEDGE_REPLAN 诊断样本上报及回滚一致性，修正四邻全封单格圆形单位的无法移动拒绝
+  调整: 按统一静态地形轮廓校准 phase-five 四格式公开场景（保里程碑步序不变）、MaintenanceBoundaryTest、PhaseSixATechnologyChainTest 及 PathPerfBatch（TERRAIN_RADIUS=9.0，直连 19 辆，最近合法边 311.0）
+  技术: 新增 MovementRegression011Test，全量公开 PR CI 7/7 套、统一 CLI dev-ab 10 场景（双百 100/100 真分流，open-50 稳停超 900 步）、同机冷热 R3 配对（对比 v0.5.31/v0.5.46 起步 0-2 步、规划 CPU 降 15.7x-27x）、Windows 试玩包 1x 原版素材实窗采样及双根 workspace_layout.py 全绿；独立 Hydrogen 目视 APPROVED，独立 Neon 代码与账本整审 APPROVE（0 必修） [已知问题: culdesac-overflow-100 极端死胡同当前 87/100，维持已知限制单列]
+
+====
+
 v0.5.75 (2026-11-26 05:48)
   新增: 在 Engine/core 建立 ScenarioCatalog 与 MovementParameterFingerprint 统一纳管 A/B 开发组 10 个核心移动与对抗场景及程序化地形呈现 / 融合 SkirmishMapPanel 分类可滚动列表、实时地形缩略图、ADR-014 主题热切与 PC --scene <id> 直达，并支持非 pack 目录内容包回退与槽位完备视觉别名绑定 / SimulationTest 主入口与 MovementMicroProbe 统一对接 ScenarioCatalog，支持 --list、--scene、--assert、--sheets 与带安全/组别/回执校验的 --holdout-file 外部 C-F 留出加载
   技术: 新增 ScenarioCatalogTest、SkirmishMapCatalogUiTest、PcCatalogSceneOptionTest 与 MovementMicroProbeCliTest，跨模块测试、:pc:installDist、统一 CLI、public_batch.py --kind short 6/6 与双根 workspace_layout.py 全绿；原版 PC 资源 6 态实窗与拼图经独立 Hydrogen 目视 APPROVED，独立 Neon 代码与主题整审返修复核 APPROVE（0 必修） [已知问题: culdesac-overflow-100 保留选图与回放入口并按已知限制单列提示]

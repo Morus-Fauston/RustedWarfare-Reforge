@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.76 (2026-11-26 08:38)
+
+### 修复
+
+- **建造与维修接近阶段的停滞绕障与防切角**：当工程车执行建造、续建或回收移动且被友方静置大车阻挡在窄缝时，原先因 `Pathfinding.findPathToRange` 忽略动态占用且 `recoverStalledMoves` 跳过工程任务而原地卡滞；现将 `RouteOccupancy` 贯穿 `findPathToRange` 线段与格位净空检查，并在 `UnitMovementOrchestrator` 与 `SimulationContext.recoverStalledMoves` 中为工程接近段补齐车体轮廓交接校验与低速避让停滞绕障重规划，避免贴墙切角与友军堵路卡死。
+- **共享流场路径诊断上报与单格封闭圆壳拒移**：补齐 `ChunkedFlowFieldAdapter` 首次群移 `USER_MOVE` 与地形重建 `KNOWLEDGE_REPLAN` 诊断样本上报及 `copyForRollback()` 回滚一致性；修正 `Pathfinding.canLeaveStart` 与流场单格封闭口袋判定，使四邻全封的圆形单位即使在静态地形内切半径下仍准确回退并触发无法移动拒绝。
+
+### 调整
+
+- **公开场景与路径基准夹具对齐统一地形轮廓**：按统一静态地形通过轮廓（隐式 INI 圆形陆军 `min(radius, 0.45 * minTile)`）校准 `phase-five-{ini,json,hjson,mixed}.json`（保持全部出厂/建造里程碑步序不变）、`MaintenanceBoundaryTest`、`PhaseSixATechnologyChainTest` 及 `PathPerfBatch` / `PathPerfBatchTest`（`TERRAIN_RADIUS = 9.0`、`MEMORY_GAP` 直连 19 辆、`MEMORY_UNREACHABLE` 最近合法边 `311.0`）。
+
+### 已知问题
+
+- **百车极端死胡同外溢**：`culdesac-overflow-100` 极端单口死胡同实测 87/100 到达停稳，维持已知限制单列记录，不阻断常规地图与核心场景。
+
+### 技术
+
+- **整期候选全量验证、R3 同机性能定标、Windows 试玩包与独立双审**：新增 `MovementRegression011Test`；全量公开 PR CI（`public_batch.py --kind pr`，含全部 7 套机制、Python 工具与场景测试）、统一 CLI 10 场景 `dev-ab`（双百石阵 `rocks-small-100` 100/100 / 1855 步与 `rocks-mixed-100` 100/100 / 3212 步双过审，`open-50-217-166` 50/50 到达后稳定超 900 步）、历史双 14 混编复放与双根 `workspace_layout.py` 全绿；完成同机冷热 R3 性能配对（对比 `v0.5.31` 与 `v0.5.46`，双百首末车起步由 14~559 步降至 0~2 步、规划步 CPU 下降 15.7x–27x，稳态 P99 12.1–13.2ms）；构建 Windows `:pc:installDist` 试玩包并完成原版素材 1× 实窗选图、60 车框选移动、单拉与 `F3` 采样；经独立 Hydrogen 全套拼图与实窗目视复核 `APPROVED` 及独立 Neon 代码与账本整审复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.75 (2026-11-26 05:48)
 
 ### 新增
