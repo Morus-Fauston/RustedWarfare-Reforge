@@ -123,7 +123,72 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val sourceComponentId: Int = 0,
     )
 
-    internal class ChunkedField(
+    internal class WavefrontHeap internal constructor(
+        private var keys: FloatArray,
+        private var cells: IntArray,
+        var size: Int,
+    ) {
+        constructor(initialCapacity: Int = 256) : this(
+            FloatArray(initialCapacity),
+            IntArray(initialCapacity),
+            0,
+        )
+
+        fun push(cell: Int, priority: Float) {
+            if (size >= keys.size) {
+                val nextCap = max(256, keys.size * 2)
+                keys = keys.copyOf(nextCap)
+                cells = cells.copyOf(nextCap)
+            }
+            var idx = size++
+            while (idx > 0) {
+                val parent = (idx - 1) ushr 1
+                if (keys[parent] <= priority) break
+                keys[idx] = keys[parent]
+                cells[idx] = cells[parent]
+                idx = parent
+            }
+            keys[idx] = priority
+            cells[idx] = cell
+        }
+
+        fun peekKey(): Float = keys[0]
+
+        fun clear() {
+            size = 0
+        }
+
+        fun popCell(): Int {
+            val top = cells[0]
+            size--
+            if (size > 0) {
+                val lastKey = keys[size]
+                val lastCell = cells[size]
+                var idx = 0
+                val half = size ushr 1
+                while (idx < half) {
+                    var child = (idx shl 1) + 1
+                    val right = child + 1
+                    if (right < size && keys[right] < keys[child]) child = right
+                    if (lastKey <= keys[child]) break
+                    keys[idx] = keys[child]
+                    cells[idx] = cells[child]
+                    idx = child
+                }
+                keys[idx] = lastKey
+                cells[idx] = lastCell
+            }
+            return top
+        }
+
+        fun copy(): WavefrontHeap = WavefrontHeap(
+            keys = if (size == 0) FloatArray(min(64, keys.size.coerceAtLeast(16))) else keys.copyOf(max(16, size)),
+            cells = if (size == 0) IntArray(min(64, cells.size.coerceAtLeast(16))) else cells.copyOf(max(16, size)),
+            size = size,
+        )
+    }
+
+    internal class ChunkedField internal constructor(
         val key: FieldKey,
         val width: Int,
         val height: Int,
@@ -138,66 +203,51 @@ internal class ChunkedFlowFieldAdapter private constructor(
         var effectiveGoalWorld: Position,
         var goalWasNearestFallback: Boolean,
         var lastAccessStep: Long,
-        var completed: Boolean = false,
-        var totalExpansions: Long = 0L,
-        var dirtyRebuildCount: Int = 0,
-        var reusedTrunkChunks: Int = 0,
-        var initialDiagnosticEmitted: Boolean = false,
-        var terrainRebuildCount: Int = 0,
-        var reportedTerrainRebuilds: Int = 0,
+        var completed: Boolean,
+        var totalExpansions: Long,
+        var dirtyRebuildCount: Int,
+        var reusedTrunkChunks: Int,
+        var initialDiagnosticEmitted: Boolean,
+        var terrainRebuildCount: Int,
+        var reportedTerrainRebuilds: Int,
+        var cost: FloatArray,
+        var dirX: FloatArray,
+        var dirY: FloatArray,
+        var liveValid: Boolean,
+        val chunkDirty: BooleanArray,
+        val chunkBuilt: BooleanArray,
+        var gateThroatMask: BooleanArray,
+        var wideYieldMask: BooleanArray,
+        val congestionPenalty: ShortArray,
+        var anyCongestionActive: Boolean,
+        var liveHeap: WavefrontHeap,
+        var reusedMask: BooleanArray,
+        var hasReusedMask: Boolean,
+        var shadowActive: Boolean,
+        var shadowMinCut: Float,
+        var shadowCost: FloatArray,
+        var shadowDirX: FloatArray,
+        var shadowDirY: FloatArray,
+        var shadowHeap: WavefrontHeap?,
+        var activeSubscribers: Int,
     ) {
         val cellCount: Int = width * height
-
-        // Live read-only guidance buffers (never torn during shadow rebuilds)
-        var cost: FloatArray = FloatArray(cellCount) { INF_COST_F }
-        var dirX: FloatArray = FloatArray(cellCount)
-        var dirY: FloatArray = FloatArray(cellCount)
-        var liveValid: Boolean = false
-
-        // Chunk metadata
-        val chunkDirty: BooleanArray = BooleanArray(chunksX * chunksY) { true }
-        val chunkBuilt: BooleanArray = BooleanArray(chunksX * chunksY) { false }
-
-        // Gate throat topology mask & hysteretic obstructed-queue surcharge
-        var gateThroatMask: BooleanArray = computeGateThroatMask(terrain, width, height)
-        var wideYieldMask: BooleanArray = computeWideYieldMask(terrain, width, height, wideCorridorRings, key.smallYieldsWideCorridor, gateThroatMask)
-        val congestionPenalty: ShortArray = ShortArray(cellCount)
-        var anyCongestionActive: Boolean = false
-
-        // Active wavefront heap (used during initial build before liveValid == true)
-        var heapKeys: FloatArray = FloatArray(256)
-        var heapCells: IntArray = IntArray(256)
-        var heapSize: Int = 0
-        val inFrontier: BooleanArray = BooleanArray(cellCount)
-
-        // Rapid re-click trunk-reuse boundary guard (P1-1: prevents 2-cycle backfeed from reused chunks)
-        var reusedMask: BooleanArray = BooleanArray(0)
-        var hasReusedMask: Boolean = false
-
-        // Shadow double-buffer for pure monotonic congestion & terrain/fog rebuilds
-        var shadowActive: Boolean = false
-        var shadowMinCut: Float = INF_COST_F
-        var shadowCost: FloatArray = FloatArray(0)
-        var shadowDirX: FloatArray = FloatArray(0)
-        var shadowDirY: FloatArray = FloatArray(0)
-        var shadowHeapKeys: FloatArray = FloatArray(0)
-        var shadowHeapCells: IntArray = IntArray(0)
-        var shadowHeapSize: Int = 0
-        var shadowInFrontier: BooleanArray = BooleanArray(0)
+        val heapSize: Int get() = liveHeap.size
+        val shadowHeapSize: Int get() = shadowHeap?.size ?: 0
 
         // Reusable per-field congestion refresh scratch arrays (zero allocation per 24-tick refresh)
-        var congestionLoadScratch: IntArray = IntArray(0)
-        var gateSliceLoadScratch: IntArray = IntArray(0)
-        var gateSliceWidthScratch: IntArray = IntArray(0)
+        var congestionLoadScratch: IntArray = EMPTY_INT_ARRAY
+        var gateSliceLoadScratch: IntArray = EMPTY_INT_ARRAY
+        var gateSliceWidthScratch: IntArray = EMPTY_INT_ARRAY
 
         fun ensureShadowBuffers() {
             if (shadowCost.size != cellCount) {
                 shadowCost = FloatArray(cellCount) { INF_COST_F }
                 shadowDirX = FloatArray(cellCount)
                 shadowDirY = FloatArray(cellCount)
-                shadowHeapKeys = FloatArray(256)
-                shadowHeapCells = IntArray(256)
-                shadowInFrontier = BooleanArray(cellCount)
+            }
+            if (shadowHeap == null) {
+                shadowHeap = WavefrontHeap()
             }
         }
 
@@ -213,144 +263,126 @@ internal class ChunkedFlowFieldAdapter private constructor(
             }
         }
 
-        fun pushHeap(cell: Int, priority: Float) {
-            if (heapSize >= heapKeys.size) {
-                val nextCap = heapKeys.size * 2
-                heapKeys = heapKeys.copyOf(nextCap)
-                heapCells = heapCells.copyOf(nextCap)
-            }
-            var idx = heapSize++
-            while (idx > 0) {
-                val parent = (idx - 1) ushr 1
-                if (heapKeys[parent] <= priority) break
-                heapKeys[idx] = heapKeys[parent]
-                heapCells[idx] = heapCells[parent]
-                idx = parent
-            }
-            heapKeys[idx] = priority
-            heapCells[idx] = cell
-            inFrontier[cell] = true
-        }
-
-        fun peekHeapKey(): Float = heapKeys[0]
-
-        fun clearHeap() {
-            heapSize = 0
-            inFrontier.fill(false)
-        }
-
-        fun popHeapCell(): Int {
-            val top = heapCells[0]
-            heapSize--
-            if (heapSize > 0) {
-                val lastKey = heapKeys[heapSize]
-                val lastCell = heapCells[heapSize]
-                var idx = 0
-                val half = heapSize ushr 1
-                while (idx < half) {
-                    var child = (idx shl 1) + 1
-                    val right = child + 1
-                    if (right < heapSize && heapKeys[right] < heapKeys[child]) child = right
-                    if (lastKey <= heapKeys[child]) break
-                    heapKeys[idx] = heapKeys[child]
-                    heapCells[idx] = heapCells[child]
-                    idx = child
-                }
-                heapKeys[idx] = lastKey
-                heapCells[idx] = lastCell
-            }
-            inFrontier[top] = false
-            return top
-        }
+        fun pushHeap(cell: Int, priority: Float) = liveHeap.push(cell, priority)
+        fun peekHeapKey(): Float = liveHeap.peekKey()
+        fun clearHeap() = liveHeap.clear()
+        fun popHeapCell(): Int = liveHeap.popCell()
 
         fun pushShadowHeap(cell: Int, priority: Float) {
-            if (shadowHeapSize >= shadowHeapKeys.size) {
-                val nextCap = max(256, shadowHeapKeys.size * 2)
-                shadowHeapKeys = shadowHeapKeys.copyOf(nextCap)
-                shadowHeapCells = shadowHeapCells.copyOf(nextCap)
-            }
-            var idx = shadowHeapSize++
-            while (idx > 0) {
-                val parent = (idx - 1) ushr 1
-                if (shadowHeapKeys[parent] <= priority) break
-                shadowHeapKeys[idx] = shadowHeapKeys[parent]
-                shadowHeapCells[idx] = shadowHeapCells[parent]
-                idx = parent
-            }
-            shadowHeapKeys[idx] = priority
-            shadowHeapCells[idx] = cell
-            shadowInFrontier[cell] = true
+            (shadowHeap ?: WavefrontHeap().also { shadowHeap = it }).push(cell, priority)
         }
+        fun peekShadowHeapKey(): Float = checkNotNull(shadowHeap).peekKey()
+        fun clearShadowHeap() { shadowHeap?.clear() }
+        fun popShadowHeapCell(): Int = checkNotNull(shadowHeap).popCell()
 
-        fun peekShadowHeapKey(): Float = shadowHeapKeys[0]
+        fun copyForRollback(): ChunkedField = ChunkedField(
+            key = key,
+            width = width,
+            height = height,
+            tileWidth = tileWidth,
+            tileHeight = tileHeight,
+            chunksX = chunksX,
+            chunksY = chunksY,
+            requiredRings = requiredRings,
+            wideCorridorRings = wideCorridorRings,
+            terrain = terrain,
+            goalWorld = goalWorld,
+            effectiveGoalWorld = effectiveGoalWorld,
+            goalWasNearestFallback = goalWasNearestFallback,
+            lastAccessStep = lastAccessStep,
+            completed = completed,
+            totalExpansions = totalExpansions,
+            dirtyRebuildCount = dirtyRebuildCount,
+            reusedTrunkChunks = reusedTrunkChunks,
+            initialDiagnosticEmitted = initialDiagnosticEmitted,
+            terrainRebuildCount = terrainRebuildCount,
+            reportedTerrainRebuilds = reportedTerrainRebuilds,
+            cost = cost.copyOf(),
+            dirX = dirX.copyOf(),
+            dirY = dirY.copyOf(),
+            liveValid = liveValid,
+            chunkDirty = chunkDirty.copyOf(),
+            chunkBuilt = chunkBuilt.copyOf(),
+            gateThroatMask = gateThroatMask,
+            wideYieldMask = wideYieldMask,
+            congestionPenalty = congestionPenalty.copyOf(),
+            anyCongestionActive = anyCongestionActive,
+            liveHeap = liveHeap.copy(),
+            reusedMask = if (hasReusedMask && reusedMask.isNotEmpty()) reusedMask.copyOf() else EMPTY_BOOLEAN_ARRAY,
+            hasReusedMask = hasReusedMask,
+            shadowActive = shadowActive,
+            shadowMinCut = shadowMinCut,
+            shadowCost = if (shadowActive && shadowCost.isNotEmpty()) shadowCost.copyOf() else EMPTY_FLOAT_ARRAY,
+            shadowDirX = if (shadowActive && shadowDirX.isNotEmpty()) shadowDirX.copyOf() else EMPTY_FLOAT_ARRAY,
+            shadowDirY = if (shadowActive && shadowDirY.isNotEmpty()) shadowDirY.copyOf() else EMPTY_FLOAT_ARRAY,
+            shadowHeap = if (shadowActive) shadowHeap?.copy() else null,
+            activeSubscribers = activeSubscribers,
+        )
 
-        fun clearShadowHeap() {
-            shadowHeapSize = 0
-            if (shadowInFrontier.isNotEmpty()) shadowInFrontier.fill(false)
-        }
-
-        fun popShadowHeapCell(): Int {
-            val top = shadowHeapCells[0]
-            shadowHeapSize--
-            if (shadowHeapSize > 0) {
-                val lastKey = shadowHeapKeys[shadowHeapSize]
-                val lastCell = shadowHeapCells[shadowHeapSize]
-                var idx = 0
-                val half = shadowHeapSize ushr 1
-                while (idx < half) {
-                    var child = (idx shl 1) + 1
-                    val right = child + 1
-                    if (right < shadowHeapSize && shadowHeapKeys[right] < shadowHeapKeys[child]) child = right
-                    if (lastKey <= shadowHeapKeys[child]) break
-                    shadowHeapKeys[idx] = shadowHeapKeys[child]
-                    shadowHeapCells[idx] = shadowHeapCells[child]
-                    idx = child
-                }
-                shadowHeapKeys[idx] = lastKey
-                shadowHeapCells[idx] = lastCell
+        companion object {
+            fun create(
+                key: FieldKey,
+                width: Int,
+                height: Int,
+                tileWidth: Int,
+                tileHeight: Int,
+                chunksX: Int,
+                chunksY: Int,
+                requiredRings: Int,
+                wideCorridorRings: Int,
+                terrain: PlanningTerrain,
+                goalWorld: Position,
+                effectiveGoalWorld: Position,
+                goalWasNearestFallback: Boolean,
+                lastAccessStep: Long,
+            ): ChunkedField {
+                val cellCount = width * height
+                val gateMask = sharedGateThroatMask(terrain)
+                val wideMask = sharedWideYieldMask(terrain, wideCorridorRings, key.smallYieldsWideCorridor, gateMask)
+                return ChunkedField(
+                    key = key,
+                    width = width,
+                    height = height,
+                    tileWidth = tileWidth,
+                    tileHeight = tileHeight,
+                    chunksX = chunksX,
+                    chunksY = chunksY,
+                    requiredRings = requiredRings,
+                    wideCorridorRings = wideCorridorRings,
+                    terrain = terrain,
+                    goalWorld = goalWorld,
+                    effectiveGoalWorld = effectiveGoalWorld,
+                    goalWasNearestFallback = goalWasNearestFallback,
+                    lastAccessStep = lastAccessStep,
+                    completed = false,
+                    totalExpansions = 0L,
+                    dirtyRebuildCount = 0,
+                    reusedTrunkChunks = 0,
+                    initialDiagnosticEmitted = false,
+                    terrainRebuildCount = 0,
+                    reportedTerrainRebuilds = 0,
+                    cost = FloatArray(cellCount) { INF_COST_F },
+                    dirX = FloatArray(cellCount),
+                    dirY = FloatArray(cellCount),
+                    liveValid = false,
+                    chunkDirty = BooleanArray(chunksX * chunksY) { true },
+                    chunkBuilt = BooleanArray(chunksX * chunksY) { false },
+                    gateThroatMask = gateMask,
+                    wideYieldMask = wideMask,
+                    congestionPenalty = ShortArray(cellCount),
+                    anyCongestionActive = false,
+                    liveHeap = WavefrontHeap(),
+                    reusedMask = EMPTY_BOOLEAN_ARRAY,
+                    hasReusedMask = false,
+                    shadowActive = false,
+                    shadowMinCut = INF_COST_F,
+                    shadowCost = EMPTY_FLOAT_ARRAY,
+                    shadowDirX = EMPTY_FLOAT_ARRAY,
+                    shadowDirY = EMPTY_FLOAT_ARRAY,
+                    shadowHeap = null,
+                    activeSubscribers = 0,
+                )
             }
-            shadowInFrontier[top] = false
-            return top
-        }
-
-        fun copyForRollback(): ChunkedField {
-            val copy = ChunkedField(
-                key, width, height, tileWidth, tileHeight, chunksX, chunksY,
-                requiredRings, wideCorridorRings, terrain, goalWorld, effectiveGoalWorld,
-                goalWasNearestFallback, lastAccessStep,
-                completed, totalExpansions, dirtyRebuildCount, reusedTrunkChunks,
-                initialDiagnosticEmitted, terrainRebuildCount, reportedTerrainRebuilds,
-            )
-            System.arraycopy(cost, 0, copy.cost, 0, cellCount)
-            System.arraycopy(dirX, 0, copy.dirX, 0, cellCount)
-            System.arraycopy(dirY, 0, copy.dirY, 0, cellCount)
-            copy.liveValid = liveValid
-            System.arraycopy(chunkDirty, 0, copy.chunkDirty, 0, chunkDirty.size)
-            System.arraycopy(chunkBuilt, 0, copy.chunkBuilt, 0, chunkBuilt.size)
-            copy.gateThroatMask = gateThroatMask
-            copy.wideYieldMask = wideYieldMask
-            System.arraycopy(congestionPenalty, 0, copy.congestionPenalty, 0, cellCount)
-            copy.anyCongestionActive = anyCongestionActive
-            copy.heapKeys = heapKeys.copyOf()
-            copy.heapCells = heapCells.copyOf()
-            copy.heapSize = heapSize
-            System.arraycopy(inFrontier, 0, copy.inFrontier, 0, cellCount)
-            copy.hasReusedMask = hasReusedMask
-            if (reusedMask.isNotEmpty()) {
-                copy.reusedMask = reusedMask.copyOf()
-            }
-            copy.shadowActive = shadowActive
-            copy.shadowMinCut = shadowMinCut
-            if (shadowCost.isNotEmpty()) {
-                copy.shadowCost = shadowCost.copyOf()
-                copy.shadowDirX = shadowDirX.copyOf()
-                copy.shadowDirY = shadowDirY.copyOf()
-                copy.shadowHeapKeys = shadowHeapKeys.copyOf()
-                copy.shadowHeapCells = shadowHeapCells.copyOf()
-                copy.shadowHeapSize = shadowHeapSize
-                copy.shadowInFrontier = shadowInFrontier.copyOf()
-            }
-            return copy
         }
     }
 
@@ -385,6 +417,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
 
     fun activeFieldCount(): Int = fields.size
     fun statsFor(key: FieldKey): ChunkedField? = fields[key]
+    internal fun cachedFieldsForTest(): Collection<ChunkedField> = fields.values
 
     fun resolveSourceComponent(
         terrain: PlanningTerrain,
@@ -502,8 +535,9 @@ internal class ChunkedFlowFieldAdapter private constructor(
                 markChangedTerrainDirty(existing, terrain)
             }
             if (existing.lastAccessStep != stepIndex) {
+                val fKey = existing.key
                 val prevAccess = existing.lastAccessStep
-                undo?.record { existing.lastAccessStep = prevAccess }
+                undo?.record { fields[fKey]?.lastAccessStep = prevAccess }
                 existing.lastAccessStep = stepIndex
             }
             return existing
@@ -538,7 +572,9 @@ internal class ChunkedFlowFieldAdapter private constructor(
         }
 
         while (fields.size >= MAX_CACHED_FIELDS) {
-            val lru = fields.entries.filter { it.value.completed }.minByOrNull { it.value.lastAccessStep }?.key
+            val lru = fields.entries.filter { it.value.activeSubscribers == 0 && it.value.completed }.minByOrNull { it.value.lastAccessStep }?.key
+                ?: fields.entries.filter { it.value.activeSubscribers == 0 }.minByOrNull { it.value.lastAccessStep }?.key
+                ?: fields.entries.filter { it.value.completed }.minByOrNull { it.value.lastAccessStep }?.key
                 ?: fields.entries.minByOrNull { it.value.lastAccessStep }?.key
                 ?: break
             recordFieldMutation(lru)
@@ -548,7 +584,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val chunksX = (terrain.widthTiles + CHUNK_SIZE - 1) / CHUNK_SIZE
         val chunksY = (terrain.heightTiles + CHUNK_SIZE - 1) / CHUNK_SIZE
         val bigBand = clearanceBandFor(terrain, maxGroupRadius)
-        val field = ChunkedField(
+        val field = ChunkedField.create(
             key = key,
             width = terrain.widthTiles,
             height = terrain.heightTiles,
@@ -604,6 +640,26 @@ internal class ChunkedFlowFieldAdapter private constructor(
         return field
     }
 
+    private fun matchStandaloneUnitField(
+        unit: MutableUnit,
+        movementType: MovementType,
+        terrain: PlanningTerrain,
+    ): ChunkedField? {
+        val target = unit.moveTarget ?: unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }?.target ?: return null
+        val tCol = floor(target.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
+        val tRow = floor(target.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
+        val unitRadius = max(1.0, flowPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
+        val band = clearanceBandFor(terrain, unitRadius)
+        for (field in fields.values) {
+            if (field.key.ownerId != unit.ownerPlayerId || field.key.movementType != movementType || field.key.clearanceBand != band) continue
+            if (field.key.goalCol == tCol && field.key.goalRow == tRow) return field
+            val effCol = floor(field.effectiveGoalWorld.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
+            val effRow = floor(field.effectiveGoalWorld.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
+            if (effCol == tCol && effRow == tRow) return field
+        }
+        return null
+    }
+
     fun advanceP1Budget(
         units: Collection<MutableUnit>,
         spatialIndex: WorldSpatialIndex,
@@ -613,7 +669,8 @@ internal class ChunkedFlowFieldAdapter private constructor(
     ): Int {
         if (fields.isEmpty() || maxExpansions <= 0) return 0
 
-        val checkedOwners = HashSet<Pair<String, MovementType>>()
+        val latestTerrains = HashMap<Pair<String, MovementType>, PlanningTerrain>(4)
+        val subscriberCounts = HashMap<FieldKey, Int>(fields.size)
         for (unit in units) {
             if (!unit.alive || unit.carriedBy != null || unit.attachment != null) continue
             val hasPendingMove = unit.moveTarget != null ||
@@ -623,10 +680,24 @@ internal class ChunkedFlowFieldAdapter private constructor(
             val mType = UnitLocomotion.movement(unit).type
             if (mType == MovementType.AIR || mType == MovementType.NONE) continue
             val pair = unit.ownerPlayerId to mType
-            if (!checkedOwners.add(pair)) continue
-            val latestTerrain = terrainLookup(unit, mType)
-            for (field in fields.values) {
-                if (field.key.ownerId == unit.ownerPlayerId && field.key.movementType == mType && field.terrain !== latestTerrain) {
+            val latestTerrain = latestTerrains.getOrPut(pair) { terrainLookup(unit, mType) }
+            val subscribedField = fieldForUnit(unit, latestTerrain) ?: matchStandaloneUnitField(unit, mType, latestTerrain)
+            if (subscribedField != null) {
+                subscriberCounts[subscribedField.key] = (subscriberCounts[subscribedField.key] ?: 0) + 1
+            }
+        }
+
+        for (field in fields.values) {
+            val nextSubs = subscriberCounts[field.key] ?: 0
+            if (field.activeSubscribers != nextSubs) {
+                val fKey = field.key
+                val prevSubs = field.activeSubscribers
+                undo?.record { fields[fKey]?.activeSubscribers = prevSubs }
+                field.activeSubscribers = nextSubs
+            }
+            if (nextSubs > 0) {
+                val latestTerrain = latestTerrains[field.key.ownerId to field.key.movementType]
+                if (latestTerrain != null && field.terrain !== latestTerrain) {
                     markChangedTerrainDirty(field, latestTerrain)
                 }
             }
@@ -635,11 +706,17 @@ internal class ChunkedFlowFieldAdapter private constructor(
         if (stepIndex - lastCongestionStep >= CONGESTION_REFRESH_INTERVAL) {
             recordCongestionStepMutation()
             lastCongestionStep = stepIndex
-            updateObstructedQueueCongestion(spatialIndex)
+            if (subscriberCounts.isNotEmpty()) {
+                updateObstructedQueueCongestion(spatialIndex)
+            }
         }
 
         var used = 0
-        val activeFields = fields.values.filter { (!it.completed && it.heapSize > 0) || (it.shadowActive && it.shadowHeapSize > 0) }
+        val hasUnitContext = units.isNotEmpty()
+        val activeFields = fields.values.filter {
+            (!hasUnitContext || it.activeSubscribers > 0) &&
+                ((!it.completed && it.heapSize > 0) || (it.shadowActive && it.shadowHeapSize > 0))
+        }
         if (activeFields.isEmpty()) return 0
         val perFieldSlice = max(128, maxExpansions / activeFields.size)
         for (field in activeFields) {
@@ -671,8 +748,8 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val oldCf = oldTerrain.clearanceField()
         val newCf = newTerrain.clearanceField()
         val oldWideYield = field.wideYieldMask
-        val newGateThroat = computeGateThroatMask(newTerrain, w, h)
-        val newWideYield = computeWideYieldMask(newTerrain, w, h, field.wideCorridorRings, field.key.smallYieldsWideCorridor, newGateThroat)
+        val newGateThroat = sharedGateThroatMask(newTerrain)
+        val newWideYield = sharedWideYieldMask(newTerrain, field.wideCorridorRings, field.key.smallYieldsWideCorridor, newGateThroat)
         val dirtyChunks = BooleanArray(field.chunksX * field.chunksY)
         var anyDirty = false
         var anyCongActive = false
@@ -748,7 +825,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
             field.dirX.fill(0f)
             field.dirY.fill(0f)
             field.hasReusedMask = false
-            field.reusedMask = BooleanArray(0)
+            field.reusedMask = EMPTY_BOOLEAN_ARRAY
             field.clearHeap()
             field.chunkDirty.fill(true)
             field.chunkBuilt.fill(false)
@@ -788,12 +865,36 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val lCost = field.cost
         sCost.fill(INF_COST_F)
 
-        val goalInvalidated = effectiveCut <= 1e-3f || field.goalWasNearestFallback ||
-            (terrainChanged && cf.clearanceRings(field.key.goalCol, field.key.goalRow) < req)
+        val effCol = floor(field.effectiveGoalWorld.x / field.tileWidth).toInt().coerceIn(0, w - 1)
+        val effRow = floor(field.effectiveGoalWorld.y / field.tileHeight).toInt().coerceIn(0, h - 1)
 
-        if (goalInvalidated) {
-            seedGoalCells(field, intoShadow = true)
-            return
+        if (!terrainChanged) {
+            // Congestion-only refresh: terrain passability and fallback seed `(effCol, effRow)` are unchanged!
+            // Symmetric with normal goals: only re-seed `(effCol, effRow)` directly when `effectiveCut <= 1e-3f`;
+            // otherwise preserve all strictly-upstream `liveCost < effectiveCut` cells (including the 0-cost fallback seed).
+            if (effectiveCut <= 1e-3f) {
+                val seedIdx = effRow * w + effCol
+                if (cf.clearanceRingsAt(seedIdx) >= req) {
+                    sCost[seedIdx] = 0f
+                    field.pushShadowHeap(seedIdx, 0f)
+                } else {
+                    seedGoalCells(field, intoShadow = true)
+                }
+                return
+            }
+        } else {
+            val goalInvalidated = if (!field.goalWasNearestFallback) {
+                effectiveCut <= 1e-3f ||
+                    cf.clearanceRings(field.key.goalCol, field.key.goalRow) < req ||
+                    (field.key.sourceComponentId != 0 && cf.componentId(field.key.goalCol, field.key.goalRow, req) != field.key.sourceComponentId)
+            } else {
+                val resolved = resolveSeedCell(field)
+                effectiveCut <= 1e-3f || resolved == null || resolved.first != effCol || resolved.second != effRow
+            }
+            if (goalInvalidated) {
+                seedGoalCells(field, intoShadow = true)
+                return
+            }
         }
 
         // Step 1: Copy ALL strictly-upstream invariant cells (liveCost < effectiveCut and still passable).
@@ -1432,7 +1533,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
         return true
     }
 
-    private fun seedGoalCells(field: ChunkedField, intoShadow: Boolean) {
+    private fun resolveSeedCell(field: ChunkedField): Pair<Int, Int>? {
         val w = field.width
         val h = field.height
         val cf = field.terrain.clearanceField()
@@ -1440,26 +1541,10 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val goalRow = field.key.goalRow
         val req = field.requiredRings
         val srcComp = field.key.sourceComponentId
-        val costArr = if (intoShadow) field.shadowCost else field.cost
-
-        fun seed(idx: Int, c: Float) {
-            if (c < costArr[idx]) {
-                costArr[idx] = c
-                if (intoShadow) field.pushShadowHeap(idx, c) else field.pushHeap(idx, c)
-            }
-        }
-
         val goalPassable = cf.clearanceRings(goalCol, goalRow) >= req
-        val goalMatchesComp = goalPassable && (srcComp == 0 || cf.componentId(goalCol, goalRow, req) == srcComp)
-        if (goalMatchesComp) {
-            field.effectiveGoalWorld = field.goalWorld
-            field.goalWasNearestFallback = false
-            seed(goalRow * w + goalCol, 0f)
-            return
+        if (goalPassable && (srcComp == 0 || cf.componentId(goalCol, goalRow, req) == srcComp)) {
+            return goalCol to goalRow
         }
-
-        // Single nearest-reachable connected boundary seed search on TerrainClearanceField:
-        // replaces 100 individual beginNearest A* searches when clicking a sealed island or fog-blocked wall.
         var bestDistSq = Double.POSITIVE_INFINITY
         var bestCol = -1
         var bestRow = -1
@@ -1483,14 +1568,35 @@ internal class ChunkedFlowFieldAdapter private constructor(
                 }
             }
         }
-        if (bestCol < 0) return
+        return if (bestCol >= 0) bestCol to bestRow else null
+    }
+
+    private fun seedGoalCells(field: ChunkedField, intoShadow: Boolean) {
+        val w = field.width
+        val costArr = if (intoShadow) field.shadowCost else field.cost
+
+        fun seed(idx: Int, c: Float) {
+            if (c < costArr[idx]) {
+                costArr[idx] = c
+                if (intoShadow) field.pushShadowHeap(idx, c) else field.pushHeap(idx, c)
+            }
+        }
+
+        val resolved = resolveSeedCell(field) ?: return
+        val (seedCol, seedRow) = resolved
+        if (seedCol == field.key.goalCol && seedRow == field.key.goalRow) {
+            field.effectiveGoalWorld = field.goalWorld
+            field.goalWasNearestFallback = false
+            seed(seedRow * w + seedCol, 0f)
+            return
+        }
 
         // Seed ONLY the single unique nearest-reachable cell matching effectiveGoalWorld so all
         // units converge cleanly around one consistent boundary target instead of splitting across
         // equidistant rock corners.
-        field.effectiveGoalWorld = Position((bestCol + 0.5) * field.tileWidth, (bestRow + 0.5) * field.tileHeight)
+        field.effectiveGoalWorld = Position((seedCol + 0.5) * field.tileWidth, (seedRow + 0.5) * field.tileHeight)
         field.goalWasNearestFallback = true
-        seed(bestRow * w + bestCol, 0f)
+        seed(seedRow * w + seedCol, 0f)
     }
 
     private fun cellSlowness(field: ChunkedField, idx: Int): Float {
@@ -1585,7 +1691,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
                     }
                 }
                 field.hasReusedMask = false
-                field.reusedMask = BooleanArray(0)
+                field.reusedMask = EMPTY_BOOLEAN_ARRAY
             }
             field.liveValid = true
             field.completed = true
@@ -1721,7 +1827,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
     private fun updateObstructedQueueCongestion(spatialIndex: WorldSpatialIndex) {
         val frozenUnits = spatialIndex.frozenLayerUnits(SpatialLayer.SURFACE)
         for (field in fields.values) {
-            if (!field.liveValid || field.shadowActive) continue
+            if (field.activeSubscribers <= 0 || !field.liveValid || field.shadowActive) continue
             val w = field.width
             val h = field.height
             val tw = field.tileWidth.toDouble()
@@ -1733,6 +1839,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
             for (i in 0 until frozenUnits.size) {
                 val u = frozenUnits[i]
                 if (u.ownerPlayerId != field.key.ownerId) continue
+                if (!u.hasMoveOrder) continue
                 val col = floor(u.position.x / tw).toInt()
                 val row = floor(u.position.y / th).toInt()
                 if (col !in 0 until w || row !in 0 until h) continue
@@ -1874,7 +1981,10 @@ internal class ChunkedFlowFieldAdapter private constructor(
                     }
                 }
             }
-            field.anyCongestionActive = anyActive
+            if (field.anyCongestionActive != anyActive) {
+                if (!changedAny) recordFieldMutation(field.key)
+                field.anyCongestionActive = anyActive
+            }
             if (changedAny) {
                 startShadowMonotonicRebuild(field, minChangedCost, terrainChanged = false)
             }
@@ -1902,6 +2012,10 @@ internal class ChunkedFlowFieldAdapter private constructor(
         }
     }
 
+    private class TerrainStaticMasks(val gateThroatMask: BooleanArray) {
+        val wideYieldByRings: HashMap<Int, BooleanArray> = HashMap(2)
+    }
+
     companion object {
         internal const val CHUNK_SIZE: Int = 16
         internal const val MIN_GROUP_SIZE: Int = 4
@@ -1919,6 +2033,37 @@ internal class ChunkedFlowFieldAdapter private constructor(
         internal const val TRUNK_REUSE_RADIUS_TILES: Double = 14.0
         internal const val TRUNK_REUSE_LOCAL_HALO_TILES: Int = 8
         private const val MAX_GATE_SPAN_TILES: Int = 8
+
+        private val EMPTY_BOOLEAN_ARRAY = BooleanArray(0)
+        private val EMPTY_FLOAT_ARRAY = FloatArray(0)
+        private val EMPTY_INT_ARRAY = IntArray(0)
+        private val terrainMaskCache = java.util.WeakHashMap<PlanningTerrain, TerrainStaticMasks>()
+        internal var gateMaskComputeCount: Long = 0L
+
+        internal fun sharedGateThroatMask(terrain: PlanningTerrain): BooleanArray = synchronized(terrainMaskCache) {
+            terrainMaskCache.getOrPut(terrain) {
+                gateMaskComputeCount++
+                TerrainStaticMasks(computeGateThroatMask(terrain, terrain.widthTiles, terrain.heightTiles))
+            }.gateThroatMask
+        }
+
+        internal fun sharedWideYieldMask(
+            terrain: PlanningTerrain,
+            wideCorridorRings: Int,
+            enabled: Boolean,
+            gateThroatMask: BooleanArray,
+        ): BooleanArray {
+            if (!enabled) return EMPTY_BOOLEAN_ARRAY
+            return synchronized(terrainMaskCache) {
+                val entry = terrainMaskCache.getOrPut(terrain) {
+                    gateMaskComputeCount++
+                    TerrainStaticMasks(gateThroatMask)
+                }
+                entry.wideYieldByRings.getOrPut(wideCorridorRings) {
+                    computeWideYieldMask(terrain, terrain.widthTiles, terrain.heightTiles, wideCorridorRings, true, entry.gateThroatMask)
+                }
+            }
+        }
 
         private val ORTHO_DX = intArrayOf(1, -1, 0, 0)
         private val ORTHO_DY = intArrayOf(0, 0, 1, -1)

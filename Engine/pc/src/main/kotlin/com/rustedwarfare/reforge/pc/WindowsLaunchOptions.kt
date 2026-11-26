@@ -31,14 +31,14 @@ data class WindowsLaunchOptions(
     companion object {
         fun parse(args: Array<String>, repoRoot: Path,
                   defaultScenarioSeed: Path = repoRoot.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")): WindowsLaunchOptions {
-            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--scene ID] [--development true] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
+            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--scene ID] [--development true] [--diagnostics true|false] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
             val visualKeys = setOf("--visuals", "--original-assets")
             val pairs = args.toList().chunked(2)
             require(pairs.filter { it[0] in visualKeys }.map { it[0] }.distinct().size == pairs.count { it[0] in visualKeys }) {
                 "Duplicate visual asset option"
             }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--map", "--scene", "--theme-pack", "--development", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--map", "--scene", "--theme-pack", "--development", "--diagnostics", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
@@ -49,11 +49,19 @@ data class WindowsLaunchOptions(
                 }
                 true
             } ?: false
+            val explicitDiagnostics = options["--diagnostics"]?.let { value ->
+                require(value in setOf("true", "false") && mode == "sandbox" && pairs.count { it[0] == "--diagnostics" } == 1) {
+                    "Expected one --diagnostics true|false option in sandbox mode"
+                }
+                value == "true"
+            }
             val backgroundInput = options["--background-input"]?.let { value ->
                 require(value == "true" && pairs.count { it[0] == "--background-input" } == 1) {
                     "Expected one --background-input true option"
                 }
-                require(mode == "sandbox" && "--evidence" in options) { "Background input requires sandbox evidence" }
+                require(mode == "sandbox" && "--evidence" in options && explicitDiagnostics != false) {
+                    "Background input requires sandbox evidence"
+                }
                 true
             } ?: false
             val (backgroundCompact, bgWidth, bgHeight) = options["--background-size"]?.let { value ->
@@ -120,7 +128,7 @@ data class WindowsLaunchOptions(
                     else -> "RustedWarfare-Reforge"
                 }, visualSource, originalAssets,
                 if (development && explicitInputs == null && skirmishMap == null && catalogSceneId == null) seed else null, backgroundInput, backgroundCompact,
-                bgWidth, bgHeight, touchSimulation, development, development || "--evidence" in options, skirmishMap, themePackDir, catalogSceneId)
+                bgWidth, bgHeight, touchSimulation, development, explicitDiagnostics ?: ("--evidence" in options), skirmishMap, themePackDir, catalogSceneId)
         }
     }
 }

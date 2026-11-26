@@ -1723,9 +1723,12 @@ class BootstrapScreen(
             ignoreNextHostFrame = false
             sounds?.beginFrame()
             try {
-                lastPacingFrame = stepClock.advance(elapsed) {
-                    current.tick()
-                    scriptedCamera?.let(current::updateCamera)
+                lastPacingFrame = stepClock.advanceWithLastFlag(elapsed) { isLastSubstep ->
+                    val publishRender = isLastSubstep || current.requiresPerStepObservation(scriptedCamera != null)
+                    current.tick(publishRenderFrame = publishRender)
+                    if (publishRender) {
+                        scriptedCamera?.let(current::updateCamera)
+                    }
                     sounds?.let { player -> player.consume(current.consumeSounds(checkNotNull(graphics).projection.soundListener())) }
                 }
                 if (cameraJoystickActive()) graphics?.projection?.let { map ->

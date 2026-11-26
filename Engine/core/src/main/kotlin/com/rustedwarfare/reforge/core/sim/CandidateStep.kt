@@ -56,6 +56,9 @@ internal data class StepState(
     var pendingProjectileEvents: MutableList<ProjectileEventObservation> = mutableListOf(),
     var pendingSoundTriggers: MutableList<SoundTriggerObservation> = mutableListOf(),
     var pendingActionResults: MutableList<ActionResult> = mutableListOf(),
+    var deferredWindowEvents: MutableList<Event> = mutableListOf(),
+    var deferredWindowProjectileEvents: MutableList<ProjectileEventObservation> = mutableListOf(),
+    var deferredWindowActionResults: MutableList<ActionResult> = mutableListOf(),
     var latestObservation: Observation? = null,
     var committedObservation: Observation? = null,
     var scheduledActions: MutableList<Action> = mutableListOf(),
@@ -99,6 +102,9 @@ internal data class StepState(
         pendingProjectileEvents = pendingProjectileEvents.toMutableList(),
         pendingSoundTriggers = pendingSoundTriggers.toMutableList(),
         pendingActionResults = pendingActionResults.toMutableList(),
+        deferredWindowEvents = if (deferredWindowEvents.isEmpty()) mutableListOf() else deferredWindowEvents.toMutableList(),
+        deferredWindowProjectileEvents = if (deferredWindowProjectileEvents.isEmpty()) mutableListOf() else deferredWindowProjectileEvents.toMutableList(),
+        deferredWindowActionResults = if (deferredWindowActionResults.isEmpty()) mutableListOf() else deferredWindowActionResults.toMutableList(),
         scheduledActions = scheduledActions.toMutableList(),
         movePlanning = movePlanning.fork(planningRollback),
         flowFields = flowFields.fork(planningRollback),
@@ -185,7 +191,7 @@ internal data class StepState(
                         it.targetTypeId == producer.typeId } == true ||
                         com.rustedwarfare.reforge.core.content.NautilusRules.supports(birthDefinition) &&
                         com.rustedwarfare.reforge.core.content.NautilusRules.supports(producer.definition)) &&
-                    Regex("[0-9a-f]{32}").matches(nonce) &&
+                    PRODUCED_NONCE_REGEX.matches(nonce) &&
                     unit.updateKey.startsWith("~produced/") &&
                     unit.updateKey.removePrefix("~produced/").toLong() in 1L..lastBirthSerial) {
                     "Invalid produced unit identity"
@@ -271,6 +277,10 @@ internal data class StepState(
             "Sound trigger candidate must remain finite and bounded"
         }
     }
+
+    companion object {
+        private val PRODUCED_NONCE_REGEX = Regex("[0-9a-f]{32}")
+    }
 }
 
 /** The former per-field rollback list is now a complete state identity. */
@@ -284,14 +294,22 @@ internal class CandidateSteps {
         private set
 
     fun advance(input: Scenario, step: Step, actions: List<Action>,
-                observe: (Long, Double, Long) -> Observation, update: (CandidateStep) -> Unit): Observation {
+                observe: (Long, Double, Long) -> Observation,
+                update: (CandidateStep) -> Unit): Observation =
+        advance(input, step, actions, observe, materializeObservation = true, update = update)
+
+    fun advance(input: Scenario, step: Step, actions: List<Action>,
+                observe: (Long, Double, Long) -> Observation,
+                materializeObservation: Boolean,
+                worldId: String = current.committedObservation?.worldId ?: input.scenarioId,
+                update: (CandidateStep) -> Unit): Observation {
         val previous = StepCheckpoint(current)
         val planningRollback = PathSearchRollback()
         val candidate = CandidateStep(previous.state.fork(planningRollback), step)
         current = candidate.state
         try {
             update(candidate)
-            val observation = candidate.publish(input, actions, observe)
+            val observation = candidate.publish(input, actions, observe, materializeObservation, worldId)
             candidate.releasePreviousKnowledge(previous.state)
             planningRollback.commit()
             return observation
@@ -320,15 +338,53 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
     fun stageKnowledge(next: AutomaticKnowledgeCommit?) { knowledge = next }
     fun stageBuildings(next: BuildingCommit?) { buildings = next }
 
-    fun publish(input: Scenario, actions: List<Action>, observe: (Long, Double, Long) -> Observation): Observation {
+    fun publish(input: Scenario, actions: List<Action>, observe: (Long, Double, Long) -> Observation,
+                materializeObservation: Boolean = true,
+                worldId: String = state.committedObservation?.worldId ?: input.scenarioId): Observation {
         val nextTime = state.simulationTime + step.delta
         require(nextTime.isFinite()) { "Simulation time must remain finite" }
         translations.finish(state.units.values, motionSamples, state.landingOccupancy)
         state.validate(input)
-        val observation = observe(step.stepIndex, nextTime, state.revision + 1L)
-        val owners = IdentityHashMap<ActionResult, String>(observation.actionResults.size)
-        for (result in observation.actionResults) state.actionResultOwners[result]?.let { owners[result] = it }
+        val nextRevision = state.revision + 1L
         val committedMotion = motionSamples?.let { checkNotNull(state.motionDiagnostics) }
+        val observation: Observation
+        val owners: IdentityHashMap<ActionResult, String>
+        if (materializeObservation) {
+            if (state.deferredWindowEvents.isNotEmpty()) {
+                state.pendingEvents.addAll(0, state.deferredWindowEvents)
+                state.deferredWindowEvents.clear()
+            }
+            if (state.deferredWindowProjectileEvents.isNotEmpty()) {
+                state.pendingProjectileEvents.addAll(0, state.deferredWindowProjectileEvents)
+                state.deferredWindowProjectileEvents.clear()
+            }
+            if (state.deferredWindowActionResults.isNotEmpty()) {
+                state.pendingActionResults.addAll(0, state.deferredWindowActionResults)
+                state.deferredWindowActionResults.clear()
+            }
+            observation = observe(step.stepIndex, nextTime, nextRevision)
+            owners = IdentityHashMap(observation.actionResults.size)
+            for (result in observation.actionResults) state.actionResultOwners[result]?.let { owners[result] = it }
+        } else {
+            if (state.pendingEvents.isNotEmpty()) state.deferredWindowEvents.addAll(state.pendingEvents)
+            if (state.pendingProjectileEvents.isNotEmpty()) state.deferredWindowProjectileEvents.addAll(state.pendingProjectileEvents)
+            if (state.pendingActionResults.isNotEmpty()) state.deferredWindowActionResults.addAll(state.pendingActionResults)
+            owners = IdentityHashMap(state.deferredWindowActionResults.size)
+            for (result in state.deferredWindowActionResults) state.actionResultOwners[result]?.let { owners[result] = it }
+            observation = Observation(
+                sampleId = "${input.scenarioId}:deferred:step${step.stepIndex}:$nextRevision",
+                worldId = worldId,
+                scenarioId = input.scenarioId,
+                stepIndex = step.stepIndex,
+                simulationTime = nextTime,
+                units = emptyList(),
+                events = emptyList(),
+                actionResults = emptyList(),
+                projectiles = emptyList(),
+                projectileEvents = emptyList(),
+                soundTriggers = immutable(state.pendingSoundTriggers.toList()),
+            )
+        }
 
         state.pendingKnowledgeDiscoveries.clear()
         knowledge?.let {
@@ -346,8 +402,8 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
         state.stepIndex = step.stepIndex
         state.hasAdvanced = true
         state.simulationTime = nextTime
-        state.revision += 1L
-        state.latestObservation = observation
+        state.revision = nextRevision
+        state.latestObservation = if (materializeObservation) observation else null
         state.committedObservation = observation
         // Retain only the committed result window and subsequent immediate results.
         state.actionResultOwners = owners

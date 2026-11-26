@@ -39,6 +39,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
     private val steps = CandidateSteps()
     internal var trafficSeparationEnabled = true
     internal val trafficSeparationInterventions: Long get() = steps.current.separationInterventions
+    var materializedObservationCount: Long = 0L
+        private set
     private val soundAuthority = SoundAuthority()
     private var activeWorld: WorldHandle? = null
     val world: WorldHandle get() = checkNotNull(activeWorld) { "Simulation is closed" }
@@ -416,6 +418,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         pendingProjectileEvents.clear()
         steps.current.pendingSoundTriggers.clear()
         pendingActionResults.clear()
+        steps.current.deferredWindowEvents.clear()
+        steps.current.deferredWindowProjectileEvents.clear()
+        steps.current.deferredWindowActionResults.clear()
         latestObservation = null
         committedObservation = null
         scheduledActions.clear()
@@ -1902,10 +1907,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         return null
     }
 
-    internal fun advanceSandbox(step: Step, commands: List<Pair<SandboxCommandRequest, SandboxCommand>>):
+    internal fun advanceSandbox(step: Step, commands: List<Pair<SandboxCommandRequest, SandboxCommand>>,
+                                materializeObservation: Boolean = true):
             Pair<Observation, List<SandboxCommandReceipt>> {
         val results = mutableListOf<SandboxCommandReceipt>()
-        val observation = advanceInternal(step) {
+        val observation = advanceInternal(step, materializeObservation = materializeObservation) {
             for ((request, command) in commands) {
                 when (command) {
                     SandboxCommand.Help -> error("Help cannot be queued")
@@ -2109,7 +2115,12 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
 
     fun advance(step: Step): Observation = advanceInternal(step) {}
 
-    private fun advanceInternal(step: Step, deploy: () -> Unit): Observation {
+    internal fun advanceWithInjectedFailureForTest(step: Step): Observation =
+        advanceInternal(step, materializeObservation = true, injectFailureAfterUpdate = true) {}
+
+    private fun advanceInternal(step: Step, materializeObservation: Boolean = true,
+                                injectFailureAfterUpdate: Boolean = false,
+                                deploy: () -> Unit): Observation {
         check(!closed) { "Simulation is closed" }
         val currentScenario = checkNotNull(scenario)
         require(step.stepIndex >= 0 && (!hasAdvanced || step.stepIndex > stepIndex)) {
@@ -2121,7 +2132,9 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         }
         val actions = scheduledActions.filter { it.atStep == step.stepIndex }
         return steps.advance(currentScenario, step, actions,
-            { index, time, nextRevision -> makeObservation(index, time, true, nextRevision) }) { candidate ->
+            { index, time, nextRevision -> makeObservation(index, time, true, nextRevision) },
+            materializeObservation = materializeObservation,
+            worldId = "${currentScenario.scenarioId}:$worldGeneration") { candidate ->
             combatFrame += 1
             steps.current.actionClock = (steps.current.actionClock.toFloat() + step.delta.toFloat() * 16.666666f).toInt()
             deploy()
@@ -2512,6 +2525,7 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             missileTargets = missileTargets?.refresh(orderedUnits())
             candidate.stageKnowledge(prepareAutomaticKnowledge())
             candidate.stageBuildings(prepareBuildings(candidate.vision))
+            if (injectFailureAfterUpdate) throw IllegalStateException("Injected candidate step failure")
         }
     }
 
@@ -2612,7 +2626,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         pendingEvents = mutableListOf()
         pendingProjectileEvents = mutableListOf()
         pendingActionResults = mutableListOf()
+        steps.current.deferredWindowEvents = mutableListOf()
+        steps.current.deferredWindowProjectileEvents = mutableListOf()
+        steps.current.deferredWindowActionResults = mutableListOf()
         latestObservation = null
+        committedObservation = null
         scheduledActions.clear()
         steps.current.movePlanning = MovePlanning()
         steps.current.flowFields = ChunkedFlowFieldAdapter()
@@ -4403,7 +4421,14 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         projectile.appearance, projectile.lightningSegment, projectile.beamSegment?.copy(textureOffset = projectile.age * 2f), projectile.alwaysVisibleInFog)
 
     private fun makeObservation(observedStep: Long, observedTime: Double, advanced: Boolean, observedRevision: Long): Observation {
+        materializedObservationCount++
         val currentScenario = checkNotNull(scenario)
+        val mergedEvents = if (steps.current.deferredWindowEvents.isEmpty()) pendingEvents
+            else steps.current.deferredWindowEvents + pendingEvents
+        val mergedActionResults = if (steps.current.deferredWindowActionResults.isEmpty()) pendingActionResults
+            else steps.current.deferredWindowActionResults + pendingActionResults
+        val mergedProjectileEvents = if (steps.current.deferredWindowProjectileEvents.isEmpty()) pendingProjectileEvents
+            else steps.current.deferredWindowProjectileEvents + pendingProjectileEvents
         val observation = Observation(
             sampleId = "${currentScenario.scenarioId}:$worldGeneration:${if (advanced) "step$observedStep" else "initial"}:$observedRevision",
             worldId = "${currentScenario.scenarioId}:$worldGeneration",
@@ -4465,13 +4490,13 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     }?.targetUnitId,
                 )
             },
-            events = pendingEvents,
+            events = mergedEvents,
             reclaimedUnitIds = if (currentScenario.maintenanceContract != null ||
                 currentScenario.unitDefinitions.values.any { it.maintenance != null })
                 orderedUnits().filter { unit -> unit.reclaimed }.map { unit -> unit.unitId }.sorted() else null,
-            actionResults = pendingActionResults,
+            actionResults = mergedActionResults,
             projectiles = projectiles.map(::projectileObservation),
-            projectileEvents = pendingProjectileEvents,
+            projectileEvents = mergedProjectileEvents,
             soundTriggers = steps.current.pendingSoundTriggers,
             economy = productionLedger?.observe(),
             incomeStates = orderedUnits().filter { it.definition.income != null }.map {

@@ -44,7 +44,10 @@ class OfflineStepClock {
         measuredMultiplier = null
     }
 
-    fun advance(realSeconds: Double, tick: () -> Unit): OfflinePacingFrame {
+    fun advance(realSeconds: Double, tick: () -> Unit): OfflinePacingFrame =
+        advanceWithLastFlag(realSeconds) { tick() }
+
+    fun advanceWithLastFlag(realSeconds: Double, tick: (isLastSubstep: Boolean) -> Unit): OfflinePacingFrame {
         require(realSeconds.isFinite() && realSeconds >= 0.0) { "Finite nonnegative host frame time required" }
         if (isPaused) return OfflinePacingFrame(0, pending)
         val scheduled = pending + realSeconds * 60.0 * rate.multiplier
@@ -52,7 +55,8 @@ class OfflineStepClock {
         pending = scheduled
         var completed = 0
         while (pending >= 1.0 && completed < 8) {
-            tick()
+            val isLastSubstep = pending < 2.0 || completed >= 7
+            tick(isLastSubstep)
             pending -= 1.0
             completed++
         }

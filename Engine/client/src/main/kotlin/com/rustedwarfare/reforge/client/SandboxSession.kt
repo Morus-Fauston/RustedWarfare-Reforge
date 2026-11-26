@@ -135,6 +135,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     private var terrainKnowledge: List<com.rustedwarfare.reforge.core.knowledge.CellKnowledge>? = null
     private var latestFrame: SandboxFrame? = null
+    internal var publishedFrameCount: Long = 0L
+        private set
+    internal val materializedObservationCountForTest: Long
+        get() = context.materializedObservationCount
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
 
@@ -194,9 +198,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun recallGroup(index: Int, additive: Boolean = false): Position? {
         if (!isOpen) return null
         val alive = observation.units.filter { it.alive }.map { it.unitId }.toSet()
-        val eligible = selection.groupMembers(index).filter { it in alive }.filter { id ->
-            apply(SelectAction("click-${++actionNumber}", "p1", id, context.world)) is ActionResult.Accepted
+        val candidates = selection.groupMembers(index).filter { it in alive }
+        val batchRecall = candidates.size > 1 && !evidence.capturesObservations
+        val eligible = candidates.filter { id ->
+            apply(SelectAction("click-${++actionNumber}", "p1", id, context.world), deferPublish = batchRecall) is ActionResult.Accepted
         }.toSet()
+        if (batchRecall && candidates.isNotEmpty()) {
+            publishFrame()
+        }
         val centerId = selection.recallGroup(index, eligible, additive)
         val center = observation.units.firstOrNull { it.unitId == centerId }?.position
         rejectedFeedback = false
@@ -686,7 +695,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         arrivalCommandStep = nextStep
         immobileMoveMembers.clear()
         lastCommandBatch = null
-        val batchMulti = members.size > 1 && evidence === ClientEvidence.NONE
+        val batchMulti = members.size > 1 && !evidence.capturesObservations
         for (id in members) {
             if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
             pendingUnloadTargets.remove(id)
@@ -746,8 +755,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     /** Host-authorized sound parameters only; player truth is never read by a playback backend. */
     fun consumeSounds(listener: SoundListener): AuthorizedSoundBatch = context.consumeSounds(context.world, "p1", listener)
 
-    fun tick() {
-        commandHost.advance(Step(nextStep, 1.0, "sim-tick"))
+    internal fun requiresPerStepObservation(hasScriptedCamera: Boolean): Boolean =
+        evidence.capturesObservations || hasScriptedCamera || pendingUnloadTargets.isNotEmpty() ||
+            (canDeploy && deployedProjectileIds.isNotEmpty() && evidence !== ClientEvidence.NONE)
+
+    fun tick() = tick(publishRenderFrame = true)
+
+    fun tick(publishRenderFrame: Boolean) {
+        val effectivePublish = publishRenderFrame || requiresPerStepObservation(false)
+        commandHost.advance(Step(nextStep, 1.0, "sim-tick"), materializeObservation = effectivePublish)
         nextStep++
         for ((sequence, request) in pendingSandboxRequests.toMap()) {
             val result = checkNotNull(commandHost.receipt(sequence))
@@ -763,6 +779,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 "projectiles" to samples.map { mapOf("objectId" to it.objectId, "kind" to it.kind,
                     "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
         }
+        if (!effectivePublish) return
         publishFrame()
         if (pendingUnloadTargets.isNotEmpty()) {
             val iter = pendingUnloadTargets.entries.iterator()
@@ -861,7 +878,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val mobile = candidates.filter { scenario.unitDefinitions.getValue(it.typeId).movement.type !=
             com.rustedwarfare.reforge.core.content.MovementType.NONE }
         val selectedCandidates = (mobile.ifEmpty { candidates }).sortedBy { it.unitId }
-        val batchSelect = selectedCandidates.size > 1 && evidence === ClientEvidence.NONE
+        val batchSelect = selectedCandidates.size > 1 && !evidence.capturesObservations
         val accepted = selectedCandidates.mapNotNull { unit ->
             unit.unitId.takeIf { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world), deferPublish = batchSelect) is ActionResult.Accepted }
         }
@@ -929,7 +946,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     private fun capture(phase: String) {
-        if (evidence !== ClientEvidence.NONE) evidence.recordObservation(phase, observation)
+        if (evidence.capturesObservations) evidence.recordObservation(phase, observation)
     }
 
     private fun makeFrame(): SandboxFrame {
@@ -954,6 +971,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     private fun publishFrame() {
         val next = makeFrame()
         latestFrame = next
+        publishedFrameCount++
         val previous = selectedIds
         selection.reconcile(observation.units.filter { it.alive }.map { it.unitId }.toSet(),
             observation.units.filter { !it.alive }.map { it.unitId }.toSet() +

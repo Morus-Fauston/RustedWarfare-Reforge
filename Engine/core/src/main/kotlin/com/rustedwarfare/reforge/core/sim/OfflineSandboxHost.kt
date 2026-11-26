@@ -169,9 +169,9 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
     fun projectileEvidence(ids: Set<Long>): List<SandboxProjectileEvidence> =
         if (closed || !deploymentEnabled || ids.isEmpty()) emptyList() else context.sandboxProjectileEvidence(ids)
 
-    fun advance(step: Step): Observation {
+    fun advance(step: Step, materializeObservation: Boolean = true): Observation {
         check(!closed && context.isCurrentSandboxWorld(world)) { "Local sandbox host is closed" }
-        val (observation, applied) = context.advanceSandbox(step, pending.values.toList())
+        val (observation, applied) = context.advanceSandbox(step, pending.values.toList(), materializeObservation)
         // Publish deduplication results only after the entire real simulation step committed.
         for (result in applied) {
             requests[result.sequence] = requests.getValue(result.sequence).copy(receipt = result)
