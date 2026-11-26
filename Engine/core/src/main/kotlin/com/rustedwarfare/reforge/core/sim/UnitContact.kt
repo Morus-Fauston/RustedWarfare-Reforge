@@ -377,11 +377,29 @@ internal object UnitContact {
             val sideRelease = if (freeBlockedTurn && chain.size == 1 && pressureShare > 0.0)
                 slide(unit, target, clipped, origin, drift, pressureShare, chain.single(),
                     unitsById, map, ground, chargeMass = true).takeIf { it.displaced.isNotEmpty() } else null
-            val translation = sideRelease ?: if (axialAdjustments.isNotEmpty()) Translation(moverEnd(actualShare), axialAdjustments)
-                else if (softContact != null || (requestedShare == 0.0 && pinned == null)) Translation(clipped)
-                else slide(unit, target, clipped, origin, drift, pressureShare,
-                    (pinned?.let { link -> chain.firstOrNull { it.link == link } } ?: chain.last()), unitsById, map, ground,
-                    allowIdleSelfTravel = pinnedByImmovable)
+            val axialTranslation = if (axialAdjustments.isNotEmpty()) Translation(moverEnd(actualShare), axialAdjustments) else null
+            val slideMember = pinned?.let { link -> chain.firstOrNull { it.link == link } } ?: chain.last()
+            val chokedWallIdle = axialTranslation != null &&
+                slideMember.link.unit.moveTarget == null && !movePending(slideMember.link.unit.unitId) &&
+                distance(unit.position, axialTranslation.position) <= 1e-6
+            val chokedSlide = if (sideRelease == null && softContact == null &&
+                (axialTranslation == null || chokedWallIdle) &&
+                (requestedShare > 0.0 || pinned != null)
+            ) {
+                slide(
+                    unit, target, clipped, origin, drift, pressureShare, slideMember,
+                    unitsById, map, ground, allowIdleSelfTravel = pinnedByImmovable,
+                )
+            } else null
+            val translation = sideRelease ?: when {
+                chokedSlide != null && chokedSlide.displaced.isNotEmpty() &&
+                    (axialTranslation == null ||
+                        distance(unit.position, chokedSlide.position) > distance(unit.position, axialTranslation.position) + 1e-6) ->
+                    chokedSlide
+                axialTranslation != null -> axialTranslation
+                chokedSlide != null -> chokedSlide
+                else -> Translation(clipped)
+            }
             if (translation.displaced.isEmpty()) return translation
             settled += unit.unitId
             for (adjustment in translation.displaced) {
@@ -449,12 +467,36 @@ internal object UnitContact {
                           chargeMass: Boolean = false, allowIdleSelfTravel: Boolean = false): Translation {
             val pushed = member.link.unit
             val length = hypot(drift.x, drift.y)
+            if (length == 0.0) return Translation(clipped)
             val side = Position(-drift.y / length, drift.x / length)
             val shape = pushed.definition.movementCollision
             val effectiveMaxTravel = if (allowIdleSelfTravel) maximumTravel(pushed) else member.maxTravel
-            for (direction in listOf(-1.0, 1.0)) {
-                val initialLimit = maxOf(effectiveMaxTravel, distance(origin, target))
-                val wanted = offsetAlong(pushed.position, side, minOf(share * length, initialLimit) * direction)
+            val initialLimit = maxOf(effectiveMaxTravel, distance(origin, target))
+            val stepMag = minOf(share * length, initialLimit)
+            data class SlideCandidate(val wanted: Position, val charge: Boolean, val lockstepAlongWall: Boolean)
+            val candidates = ArrayList<SlideCandidate>(3)
+            if (shape is MovementCollisionShape.Circle && shape.radius > 0.0 &&
+                pushed.moveTarget == null && !movePending(pushed.unitId) &&
+                pushed.productionOrigin == null && stepMag > 0.0
+            ) {
+                val rawForward = offsetAlong(pushed.position, drift, stepMag / length)
+                val wallSlid = CircularTerrain(shape.radius).resolveWithSlide(member.grid, pushed.position, rawForward)
+                val wallVec = subtract(wallSlid, pushed.position)
+                if (wallSlid != rawForward && dot(wallVec, drift) > 0.0 &&
+                    hypot(wallVec.x, wallVec.y) > positionRoundoff(pushed.position, wallSlid)
+                ) {
+                    candidates += SlideCandidate(wallSlid, charge = true, lockstepAlongWall = true)
+                }
+            }
+            candidates += SlideCandidate(offsetAlong(pushed.position, side, -stepMag), charge = chargeMass, lockstepAlongWall = false)
+            candidates += SlideCandidate(offsetAlong(pushed.position, side, stepMag), charge = chargeMass, lockstepAlongWall = false)
+            val mover = Body(unit.definition.movementCollision, unit.heading)
+            val unitMotion = UnitLocomotion.movement(unit).type
+            val unitTerrain = if (unitMotion != MovementType.AIR) unitMotion
+                else if (unit.flightLandedInWater) MovementType.WATER else MovementType.LAND
+            val unitGrid by lazy(LazyThreadSafetyMode.NONE) { HullTerrainGrid.authoritative(map, unitTerrain) }
+            val moverTravelCap = pushLimits[unit.unitId]?.let { maxOf(maximumTravel(unit), it) } ?: maximumTravel(unit)
+            for ((wanted, charge, lockstepAlongWall) in candidates) {
                 val actual = lastLegalPoint(pushed.position, wanted) { candidate ->
                     distance(member.start, candidate) <= initialLimit + positionRoundoff(member.start, candidate) &&
                         UnitAttachments.containsAdjustedSlots(unitsById, pushed, map, candidate) &&
@@ -462,9 +504,23 @@ internal object UnitContact {
                         translationContact(pushed, candidate, spatialIndex) == null
                 }
                 if (distance(pushed.position, actual) <= positionRoundoff(pushed.position, actual)) continue
-                val mover = Body(unit.definition.movementCollision, unit.heading)
                 fun settle(destination: Position): Position? {
-                    val cost = if (chargeMass) member.link.massRatio * distance(pushed.position, destination) / length else 0.0
+                    if (lockstepAlongWall) {
+                        val delta = subtract(destination, pushed.position)
+                        val coEnd = Position(unit.position.x + delta.x, unit.position.y + delta.y)
+                        val requireClearRect = unit.nearestMoveTarget != null &&
+                            unit.definition.movementCollision is MovementCollisionShape.Rectangle
+                        if (distance(origin, coEnd) <= moverTravelCap + positionRoundoff(origin, coEnd) &&
+                            UnitAttachments.containsAdjustedSlots(unitsById, unit, map, coEnd) &&
+                            clearsTerrain(unit, unit.definition.movementCollision, mover, coEnd, map, unitTerrain, unitGrid, ground, unitsById) &&
+                            translationContact(unit, coEnd, spatialIndex, shifted = Adjustment(pushed, destination)) == null &&
+                            clearRelative(mover, unit.position, coEnd, member.body, pushed.position, destination,
+                                requireClearEnd = requireClearRect)
+                        ) {
+                            return coEnd
+                        }
+                    }
+                    val cost = if (charge) member.link.massRatio * distance(pushed.position, destination) / length else 0.0
                     val available = offsetAlong(target, drift, -cost)
                     val ahead = translationContact(unit, available, spatialIndex, shifted = Adjustment(pushed, destination))
                     val limit = pointAt(unit.position, available, ahead?.fraction ?: 1.0)
@@ -612,9 +668,19 @@ internal object UnitContact {
         val drift = subtract(endOffset, offset)
         val roundoff = positionRoundoff(end, otherEnd)
         val entry = first.entry(second, offset, drift, 1.0)
-        val minimum = if (allowExistingOverlap) minOf(0.0, first.clearance(second, offset)) else 0.0
-        return (if (requireClearEnd) !first.overlaps(second, endOffset) else first.clearance(second, endOffset) >= minimum - roundoff) &&
-            (1.0 - entry) * hypot(drift.x, drift.y) <= roundoff
+        val startClearance = first.clearance(second, offset)
+        val endClearance = first.clearance(second, endOffset)
+        val minimum = if (allowExistingOverlap) minOf(0.0, startClearance) else 0.0
+        // Monotonically non-worsening sub-ULP contact across IEEE-754 2^k exponent steps (e.g. y = 256.0 -> < 256.0):
+        // never permits squeezing closer into a pinned blocker (`endClearance < startClearance` still fails), while
+        // preventing co-moving pairs from freezing when `positionRoundoff(end, otherEnd)` halves across 2^k.
+        val endClear = if (requireClearEnd) {
+            !first.overlaps(second, endOffset)
+        } else {
+            endClearance >= minimum - roundoff ||
+                (startClearance < -roundoff && startClearance >= -1e-11 && endClearance >= startClearance)
+        }
+        return endClear && (1.0 - entry) * hypot(drift.x, drift.y) <= roundoff
     }
 
     private fun offsetAlong(point: Position, drift: Position, fraction: Double): Position =

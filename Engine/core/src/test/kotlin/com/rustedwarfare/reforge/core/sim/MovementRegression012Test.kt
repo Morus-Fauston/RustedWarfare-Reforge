@@ -18,6 +18,9 @@ import kotlin.test.assertTrue
  *    displacing fast idle units never cause idle per-step displacement to exceed the pusher's actual travel.
  * 4. Dense airborne separation never exceeds `maximumSpeed * delta` per tick.
  * 5. Mixed multi-domain large groups use shared flowfield while small pure-water rectangular squads retain HullRoute.
+ * 6. Bow-on mass push formed in `[256, 512)` crossing downward across the IEEE-754 `y = 256.0` exponent step never freezes
+ *    in `UnitContact.clearRelative`, and an angled push against a wall-flush idle circle inside a 1-tile corridor slides it
+ *    cleanly along the corridor wall instead of wedging.
  */
 class MovementRegression012Test {
 
@@ -382,6 +385,96 @@ class MovementRegression012Test {
             assertTrue(!smallNaval.sharedLanding, "Small (<8) pure-water rectangular naval squad must preserve exact HullRoute planning")
             val mixedArmy = assertNotNull(ctx.requestGroupMove("p1", spawns.map { it.unitId }, Position(380.0, 200.0)))
             assertTrue(mixedArmy.sharedLanding, "Large mixed Land+Sea+Air selection must enable shared flowfield dispatch")
+        } finally {
+            ctx.close()
+        }
+    }
+
+    @Test
+    fun bow_on_contact_across_power_of_two_coordinate_boundary_never_freezes() {
+        val base = TestContentFactory.openScenario()
+        val tankBase = base.unitDefinitions.getValue("tank")
+        val tank = simpleTank(tankBase, id = "tank", radius = 6.0, speed = 1.1, mass = 3000.0)
+        // Exact IEEE-754 contact geometry at y = 256.0 (`2^8` -> `[128, 256)` ULP halving boundary):
+        // startClearance == -1.2434e-13 (legal under 4*ulp(256)=2.27e-13, previously rejected under 4*ulp(255.5)=1.13e-13).
+        val moverStart = Position(242.37620882688898, 256.0)
+        val idleStart = Position(239.65162941023587, 244.31339797022474)
+        val w = 24; val h = 24
+        val blocked = BooleanArray(w * h) { idx ->
+            val c = idx % w; val r = idx / w
+            c == 0 || c == w - 1 || r == 0 || r == h - 1
+        }
+        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
+        val scene = base.copy(
+            map = map,
+            unitDefinitions = mapOf("tank" to tank),
+            units = listOf(
+                UnitSpawn("mover", "p1", "tank", moverStart, 338.9997037889656),
+                UnitSpawn("idle", "p1", "tank", idleStart, 180.0),
+            ),
+        )
+        val ctx = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            val goal = Position(200.0, 150.0)
+            assertIs<ActionResult.Accepted>(ctx.submit(MoveAction("m-pow2", "p1", "mover", goal, ctx.world)))
+            var arrivedStep = -1L
+            var minMoverY = moverStart.y
+            for (s in 0L until 350L) {
+                val obs = ctx.advance(Step(s, 1.0, "sim-tick"))
+                minMoverY = minOf(minMoverY, obs.units.first { it.unitId == "mover" }.position.y)
+                if (obs.events.any { it.kind == "movement-arrived" && it.unitId == "mover" }) {
+                    arrivedStep = s
+                    break
+                }
+            }
+            assertTrue(minMoverY < 160.0, "Mover must advance smoothly past y=256.0 and y=128.0 boundaries without freezing; minMoverY=$minMoverY")
+            assertTrue(arrivedStep in 0L..320L, "Mover must arrive cleanly at goal without freezing at y=256.0; arrivedStep=$arrivedStep")
+        } finally {
+            ctx.close()
+        }
+    }
+
+    @Test
+    fun angled_mover_pushes_wall_flush_idle_circle_cleanly_along_single_tile_corridor() {
+        val base = TestContentFactory.openScenario()
+        val tankBase = base.unitDefinitions.getValue("tank")
+        val tank = simpleTank(tankBase, id = "tank", radius = 6.0, speed = 1.1, mass = 3000.0)
+        val w = 20; val h = 26
+        val blocked = BooleanArray(w * h) { idx ->
+            val c = idx % w; val r = idx / w
+            if (c == 0 || c == w - 1 || r == 0 || r == h - 1) return@BooleanArray true
+            r in 10..14 && c != 10
+        }
+        val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
+        // 1-tile corridor is c=10 -> x in [200.0, 220.0], west wall at x=200.0 -> min circle x = 206.0.
+        // Idle tank sits flush against west wall at (206.0, 284.8662) inside mouth while nearly-aligned mover
+        // approaches at (206.0635, 296.8660), heading 359.32 deg (-0.68 deg into west wall, where axial binary search
+        // yields a ~2.4e-12 sub-pixel nudge > positionRoundoff unless choked axial push falls through to wall-slide).
+        val scene = base.copy(
+            map = map,
+            unitDefinitions = mapOf("tank" to tank),
+            units = listOf(
+                UnitSpawn("mover", "p1", "tank", Position(206.06347319980694, 296.8660433636467), 359.3226840756522),
+                UnitSpawn("wallIdle", "p1", "tank", Position(206.0, 284.8662112334498), 110.0),
+            ),
+        )
+        val ctx = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            val goal = Position(210.0, 120.0)
+            assertIs<ActionResult.Accepted>(ctx.submit(MoveAction("m-wall-push", "p1", "mover", goal, ctx.world)))
+            var arrived = false
+            for (s in 0L until 600L) {
+                val obs = ctx.advance(Step(s, 1.0, "sim-tick"))
+                if (obs.events.any { it.kind == "movement-arrived" && it.unitId == "mover" }) {
+                    arrived = true
+                    break
+                }
+            }
+            val endUnits = ctx.observe().units.associateBy { it.unitId }
+            assertTrue(
+                arrived,
+                "Angled mover must slide wall-flush idle unit along 1-tile corridor wall and reach goal; mover=${endUnits["mover"]?.position}, idle=${endUnits["wallIdle"]?.position}",
+            )
         } finally {
             ctx.close()
         }
