@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.79 (2026-11-27 00:59)
+
+### 修复
+
+- **公共 CI 跨节点 JDK 补丁漂移与长链会话超时拦截**：针对 GitHub Actions 矩阵节点混布 `Temurin-25.0.5+8` 与 `25.0.5.1+2` 触发 `Shard toolchain differs` 以及 `phase-five-ini-session-chain` 长会话沿用 60 秒默认子进程上限超时的问题，将全部公共工作流精确锁定为 `Temurin 25.0.5+8`（保留跨分片工具链哈希防线），为公开会话场景按短长测分层透传自适应超时预算并减少无头会话逐观测帧冗余系统刷盘，使全套 33 条连续长测稳定通过。
+
+### 调整
+
+- **公共机制矩阵四分片并行与守恒聚合**：将 `public-pr.yml` 原单节点 `public-mechanisms` 拆分为 `mechanisms-1..4` 四路并行矩阵分片（分别承载 `core` 与 Python 治理测试、`client`+`pc`、以及偶奇均分的 `tools` 沙盒测试），在不删减任何测试类与脚本的前提下消除单作业冷编译叠加重测试逼近 `900s` 的超时风险，并在汇总与最终候选阶段强制校验跨分片方法、测试类与归属套件双向守恒。
+
+### 技术
+
+- **CI 治理单测、33 条连续长测与独立整审**：扩充 `test_public_parallel`、`test_public_final_candidate` 与 `test_public_check` 正反例断言，73 项 CI 治理单测、56 项平台会话与场景工具单测、全套 33 条 `public-long` 连续长测及双根目录 `workspace_layout.py` 全部通过，经全新上下文独立非作者代码整审 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.78 (2026-11-26 21:36)
 
 ### 修复

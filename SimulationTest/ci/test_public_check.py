@@ -289,10 +289,16 @@ class PublicSelectionTest(unittest.TestCase):
 
     def test_scenario_receipt_measures_identity_checks_and_archive_work(self):
         from public_check import run
+        from public_scenarios import session_timeout_seconds
+        self.assertEqual(300, session_timeout_seconds({'kind': 'long'}, 900))
+        self.assertEqual(300, session_timeout_seconds({'kind': 'long'}, 600))
+        self.assertEqual(180, session_timeout_seconds({'kind': 'short'}, 600))
+        self.assertEqual(10, session_timeout_seconds({'kind': 'long'}, 10))
         with owned_scenario_processes([{'backend': 'session'}]) as (repo, plan, prepared):
             output = repo/'timed'
             self.assertEqual(0, run(repo, output, plan, prepared, 10, 1, 1))
             result = json.loads((output/'result.json').read_text(encoding='utf8'))
+            self.assertIn('--timeout', result['commands'][0]['argv'])
             self.assertGreater(result['identityChecks']['scenario']['count'], 0)
             self.assertGreaterEqual(result['identityChecks']['scenario']['elapsedSeconds'], 0)
             queue = result['scenarioExecution']
