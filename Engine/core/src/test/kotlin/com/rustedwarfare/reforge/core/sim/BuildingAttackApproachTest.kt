@@ -20,18 +20,18 @@ class BuildingAttackApproachTest {
     }
 
     @Test fun ordinary_move_really_reaches_the_wide_legal_region_and_legal_continuous_stances_really_fire() {
-        val moving = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene(420.0))).context
+        val moving = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene(412.0))).context
         try {
-            assertIs<ActionResult.Accepted>(moving.submit(MoveAction("move-control", "p1", "a", Position(299.0, 200.0), moving.world)))
+            assertIs<ActionResult.Accepted>(moving.submit(MoveAction("move-control", "p1", "a", Position(291.0, 200.0), moving.world)))
             repeat(400) { moving.advance(Step(it.toLong(), 1.0, "sim-tick")) }
             val actor = moving.observe().units.single { it.unitId == "a" }
-            assertTrue(actor.position.x in 290.0..<300.0, actor.toString())
+            assertTrue(actor.position.x in 282.0..291.0, actor.toString())
             assertNull(actor.moveTarget)
-            assertTrue((actor.position.x - 420.0) * (actor.position.x - 420.0) +
+            assertTrue((actor.position.x - 412.0) * (actor.position.x - 412.0) +
                 (actor.position.y - 200.0) * (actor.position.y - 200.0) < 16900.0)
         } finally { moving.close() }
-        for (x in listOf(420.0, 428.5)) {
-            val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene(x, Position(299.0, 200.0)))).context
+        for (x in listOf(420.0, 420.8)) {
+            val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene(x, Position(291.0, 200.0)))).context
             try {
                 assertIs<ActionResult.Accepted>(c.submit(AttackAction("stance-control", "p1", "a", "t", c.world)))
                 var fired = false

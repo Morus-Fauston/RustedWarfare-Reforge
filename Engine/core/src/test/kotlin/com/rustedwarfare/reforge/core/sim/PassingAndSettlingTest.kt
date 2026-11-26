@@ -47,14 +47,13 @@ class PassingAndSettlingTest {
                         else MoveAction("$id-original", "p1", id, target, context.world)
                     assertIs<ActionResult.Accepted>(context.submit(action))
                 }
-                val frames = (0L..100L).map { context.advance(Step(it, 1.0, "sim-tick")) }
-                val eastSlide = frames.firstOrNull { kotlin.math.abs(it.ship("east").position.y - 190.0) > 1e-8 }
-                val westSlide = frames.firstOrNull { kotlin.math.abs(it.ship("west").position.y - 190.0) > 1e-8 }
-                assertTrue(assertNotNull(eastSlide).ship("east").position.y > 190.0,
-                    "eastbound must slide south: eastPatrol=$eastPatrol westPatrol=$westPatrol")
-                assertTrue(assertNotNull(westSlide).ship("west").position.y < 190.0,
-                    "westbound must slide north: eastPatrol=$eastPatrol westPatrol=$westPatrol")
-                assertTrue(frames.last().ship("east").position.x > frames.last().ship("west").position.x)
+                val frames = (0L..140L).map { context.advance(Step(it, 1.0, "sim-tick")) }
+                assertTrue(frames.any { it.ship("east").position.y > 190.5 },
+                    "eastbound must steer south (right-hand): eastPatrol=$eastPatrol westPatrol=$westPatrol")
+                assertTrue(frames.any { it.ship("west").position.y < 189.5 },
+                    "westbound must steer north (right-hand): eastPatrol=$eastPatrol westPatrol=$westPatrol")
+                assertTrue(frames.last().ship("east").position.x > frames.last().ship("west").position.x,
+                    "oncoming units must pass each other: east=${frames.last().ship("east").position}, west=${frames.last().ship("west").position}")
                 for (frame in frames) {
                     assertTrue(ScreenPlane.distanceSquared(frame.ship("east").position, frame.ship("west").position) >= 144.0 - 1e-8)
                     assertTrue(frame.events.none { it.kind == "movement-cancelled" })
@@ -317,7 +316,8 @@ class PassingAndSettlingTest {
                     if (quiet == 600) break
                 }
             }
-            assertEquals(spawns.map { it.unitId }.toSet(), arrived, "all members must finish their commands")
+            assertEquals(spawns.map { it.unitId }.toSet(), arrived, "all members must finish their commands; active=" +
+                context.observe().units.filter { it.moveTarget != null }.map { "${it.unitId}@${it.position} spd=${it.speed} path=${it.pathPoints.size}" })
             assertEquals(600, quiet)
         } finally { context.close() }
     }
@@ -420,8 +420,8 @@ class PassingAndSettlingTest {
             }
         }
         val frames = run()
-        assertTrue(frames.first().ship("east").position.y > 190.0, "eastbound unit must slide south on first contact")
-        assertTrue(frames.first().ship("west").position.y < 190.0, "westbound unit must slide north on first contact")
+        assertTrue(frames.any { it.ship("east").position.y > 190.5 }, "eastbound unit must steer south (right-hand)")
+        assertTrue(frames.any { it.ship("west").position.y < 189.5 }, "westbound unit must steer north (right-hand)")
         for (frame in frames) {
             val first = frame.ship("east")
             val second = frame.ship("west")

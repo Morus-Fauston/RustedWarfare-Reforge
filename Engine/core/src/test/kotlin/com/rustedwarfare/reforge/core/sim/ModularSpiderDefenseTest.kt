@@ -103,7 +103,7 @@ class ModularSpiderDefenseTest {
             assertTrue(battle.slot(1).progress < 1f)
             battle.until(1100) { battle.slot(1).progress == 1f }
             assertEquals(1f, battle.unit(slotId).pointDefense?.energy)
-            battle.move("p1", "spider", Position(358.0, 160.0))
+            battle.move("p1", "spider", Position(300.0, 160.0))
             var first: Observation? = null
             battle.until(600) {
                 val observation = battle.context.observe()
@@ -308,11 +308,9 @@ class ModularSpiderDefenseTest {
                 MapDefinition(width, height, inputMap.tileWidth, inputMap.tileHeight, inputMap.tileSets,
                     IntArray(width * height) { ground }, BlockingGrid(width, height, BooleanArray(width * height)))
             } else inputMap
-            val fixture = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
-            val spider = definitions ?: kotlin.run {
-                val loaded = ContentLoader.loadContentPack(fixture.resolve("modular-spider-start/$format/opening-package"))
-                assertIs<ContentResult.Success<LoadedContentPack>>(loaded, loaded.toString()).value.units
-            }
+            val fixture = com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks.publicFixturesRoot()
+            val spider = definitions ?: com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks
+                .loadStaticPack(fixture.resolve("modular-spider-start/$format/opening-package")).units
             val base = NuclearScene.scenario(map)
             val gunner = UnitDefinition("gunnerType", "CustomUnitMetadata", 6.0, 6.0, 1,
                 spider.getValue("mechGun").imagePath, 1.0, WaterTestScene.unit(MovementType.LAND).movement.let {

@@ -58,7 +58,8 @@ object ReplanPerf {
         // Isolate knowledge and route publication from contact while the second order drains.
         val probe = UnitDefinition(unit.id, unit.className, unit.radius, unit.displayRadius, unit.totalFrames,
             unit.imagePath, unit.imageScale, unit.movement.copy(moveSpeed = 0.01), unit.retainedUnconsumed,
-            unit.fogOfWarSightRange, movementCollision = unit.movementCollision, mass = unit.mass)
+            unit.fogOfWarSightRange, movementCollision = unit.movementCollision, mass = unit.mass,
+            explicitMovementCollision = unit.explicitMovementCollision)
         val blocked = BooleanArray(32 * 24) { it % 32 == 15 || it == 33 }
         val input = Scenario("rp-stepwise-v3", MapDefinition(32, 24, 20, 20, emptyList(), IntArray(768), BlockingGrid(32, 24, blocked)),
             mapOf(probe.id to probe), listOf(Player("p1", PlayerControl.LOCAL), Player("p2", PlayerControl.NONE)),

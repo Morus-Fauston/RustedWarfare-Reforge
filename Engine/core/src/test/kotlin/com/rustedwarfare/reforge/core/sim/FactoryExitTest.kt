@@ -21,19 +21,21 @@ class FactoryExitTest {
                     map.blocking.isBlocked(column, row) || (column to row) in cells
                 }), map.waterObstacles + cells)
         val terrain = HullTerrainGrid.authoritative(known, body.movement.type)
-        assertTrue(!UnitContact.poseFits(body.movementCollision, destination, unit.heading, terrain),
+        val terrainShape = checkNotNull(UnitLocomotion.terrainHull(body, body.movement.type, map.tileWidth, map.tileHeight))
+        val boundRadius = body.movementCollision.boundingRadius
+        assertTrue(!UnitContact.poseFits(terrainShape, destination, unit.heading, terrain),
             "The requested destination really is obstructed by the known building")
         val endpoint = unit.moveTarget ?: assertNotNull(unit.moveArrival).stoppedAt
         assertTrue(endpoint != destination, "Ordinary planning must not reuse the building escape mode")
-        assertTrue(UnitContact.poseFits(body.movementCollision, endpoint, unit.heading, terrain),
-            "Nearest fallback must keep the whole body outside the known destination building: $endpoint")
+        assertTrue(UnitContact.poseFits(terrainShape, endpoint, unit.heading, terrain),
+            "Nearest fallback must keep the unified terrain hull outside the known destination building: $endpoint")
         assertTrue(frame.events.none { it.unitId == unitId &&
             (it.kind == "path-unreachable" || it.kind == "movement-cancelled") })
         assertTrue(frame.events.any { it.unitId == unitId &&
             (it.kind == "movement-started" || it.kind == "movement-arrived") })
         var from = unit.position
         for (point in unit.pathPoints) {
-            assertEquals(point, CircularTerrain(body.movementCollision.boundingRadius).resolve(terrain, from, point),
+            assertEquals(point, CircularTerrain(terrainShape.boundingRadius, boundRadius).resolve(terrain, from, point),
                 "The fallback route must respect this known building as well as its endpoint")
             from = point
         }
@@ -237,7 +239,8 @@ class FactoryExitTest {
                 original.displayRadius, original.totalFrames, original.imagePath, original.imageScale,
                 original.movement.copy(moveSpeed = 80.0, moveAccelerationSpeed = 1.0), original.retainedUnconsumed,
                 original.fogOfWarSightRange, original.combat, original.durability, original.building,
-                original.production, original.build, original.directHitTargetKind)
+                original.production, original.build, original.directHitTargetKind,
+                movementCollision = MovementCollisionShape.Circle(0.0))
             val m = base.map
             val map = MapDefinition(m.widthTiles, m.heightTiles, m.tileWidth, m.tileHeight, m.tileSets, m.groundGids,
                 BlockingGrid(m.widthTiles, m.heightTiles, BooleanArray(m.widthTiles * m.heightTiles) { index ->

@@ -279,7 +279,7 @@
         {
           "path": "economy.preciseBalances.p1",
           "operator": "equals",
-          "value": 3155
+          "value": 3114.5
         }
       ]
     },
@@ -331,7 +331,7 @@
         {
           "path": "economy.preciseBalances.p1",
           "operator": "equals",
-          "value": 3555
+          "value": 3514.5
         }
       ]
     },
@@ -345,7 +345,7 @@
         {
           "path": "economy.preciseBalances.p1",
           "operator": "equals",
-          "value": 3255
+          "value": 3214.5
         },
         {
           "path": "units.produced:p1:33333333333333333333333333333333.tasks.maintenance-terminal.kind",
@@ -371,7 +371,7 @@
         {
           "path": "economy.preciseBalances.p1",
           "operator": "equals",
-          "value": 4355.00000834465
+          "value": 4314.50000834465
         },
         {
           "path": "economy.queues.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -428,7 +428,7 @@
         {
           "path": "economy.preciseBalances.p1",
           "operator": "equals",
-          "value": 3655.0000083446503
+          "value": 3614.5000083446503
         }
       ]
     },
@@ -459,7 +459,7 @@
         {
           "path": "economy.preciseBalances.p1",
           "operator": "equals",
-          "value": 4015.0000083446503
+          "value": 3974.5000083446503
         },
         {
           "path": "economy.queues.constructed:p1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",

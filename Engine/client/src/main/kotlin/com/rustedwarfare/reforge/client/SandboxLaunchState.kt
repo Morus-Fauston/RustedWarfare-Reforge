@@ -6,7 +6,8 @@ data class SandboxConfiguration(val root: Path, val options: SandboxOptions,
     val visuals: VisualAssetSelection = VisualAssetSelection(), val contentPack: ContentPackChoice? = null,
     val testScenario: TestScenarioChoice? = null,
     val skirmishMapPath: Path? = null,
-    val skirmishMapName: String? = null) {
+    val skirmishMapName: String? = null,
+    val catalogScenarioId: String? = null) {
     constructor(root: Path, options: SandboxOptions) : this(root, options, VisualAssetSelection(), null)
 }
 data class SandboxLoad(val generation: Long, val configuration: SandboxConfiguration)

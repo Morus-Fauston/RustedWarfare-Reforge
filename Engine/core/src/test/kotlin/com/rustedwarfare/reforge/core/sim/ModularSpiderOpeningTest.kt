@@ -22,15 +22,11 @@ class ModularSpiderOpeningTest {
     @field:TempDir
     lateinit var workspace: Path
 
-    private val fixtures = System.getProperty("public.fixtures.dir")?.let(Path::of)
-        ?: Path.of("../../SimulationTest/public/inputs")
+    private val fixtures = com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks.publicFixturesRoot()
 
-    private fun pack(format: String): LoadedContentPack {
-        val input = fixtures.resolve("modular-spider-start/$format/opening-package")
-        val loaded = ContentLoader.loadContentPack(input)
-        return assertIs<ContentResult.Success<LoadedContentPack>>(loaded,
-            (loaded as? ContentResult.Failure)?.error?.describe()).value
-    }
+    private fun pack(format: String): LoadedContentPack =
+        com.rustedwarfare.reforge.core.content.ReadOnlyTestContentPacks
+            .loadStaticPack(fixtures.resolve("modular-spider-start/$format/opening-package"))
 
     private fun start(map: MapDefinition, credits: Long, enemyDamage: Double? = null, fogWitness: Position? = null): SimulationContext {
         val content = pack("ini")

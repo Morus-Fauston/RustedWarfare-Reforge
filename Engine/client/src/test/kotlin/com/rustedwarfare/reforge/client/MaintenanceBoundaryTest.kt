@@ -29,7 +29,9 @@ class MaintenanceBoundaryTest {
             val spawns = listOf(UnitSpawn("worker", "p1", "builder", Position(120.0, 170.0), 90.0),
                 UnitSpawn("factory", "p1", "landFactory", Position(190.0, 170.0), 0.0),
                 UnitSpawn("sink", "p1", "landFactory", Position(450.0, 310.0), 0.0),
-                UnitSpawn("gun", "p2", "c_tank", Position(310.0, 170.0), 270.0))
+                // Spawn clear of cliff tile (16, 8) while staying inside tank attackRange (121.65 < 130)
+                // so the redirected tank does not detour around the cliff under 009C unified terrain hull.
+                UnitSpawn("gun", "p2", "c_tank", Position(310.0, 190.0), 270.0))
             val scene = base.copy(units = spawns, players = base.players.map { it.copy(control = PlayerControl.LOCAL) },
                 combatContract = CombatContract(1, -1, spawns.mapIndexed { i, s -> s.unitId to i + 1L }.toMap(), 5L))
             val c = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context

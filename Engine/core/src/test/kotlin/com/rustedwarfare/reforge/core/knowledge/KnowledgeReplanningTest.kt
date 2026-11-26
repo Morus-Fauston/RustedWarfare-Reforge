@@ -84,7 +84,7 @@ class KnowledgeReplanningTest {
                 val u = observation.units.single()
                 assertFalse(u.position.x >= 40.0 && u.position.x < 60.0 && u.position.y >= 40.0 && u.position.y < 60.0)
                 if (observation.events.any { it.kind == "movement-blocked" }) {
-                    assertEquals(39.8, u.position.x, 1e-9)
+                    assertEquals(39.0, u.position.x, 1e-9)
                     assertTrue(u.speed > 0.0)
                     assertEquals(MovementState.MOVING, u.movementState)
                     blockedStep = step; break

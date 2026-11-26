@@ -81,13 +81,13 @@ object DiagnosticContactSheetRenderer {
         val worldH = (map.heightTiles * map.tileHeight).toDouble()
         val panelMapW = 420
         val panelMapH = (panelMapW * (worldH / max(1.0, worldW))).roundToInt().coerceIn(200, 380)
-        val panelHeaderH = 38
+        val panelHeaderH = if (sequence.gateSummaries.isNotEmpty()) 52 else 38
         val panelW = panelMapW + 16
         val panelH = panelMapH + panelHeaderH + 12
 
         val effectiveCols = columns.coerceIn(1, max(1, panels.size))
         val rows = max(1, ceil(panels.size.toDouble() / effectiveCols).toInt())
-        val topBannerH = 68
+        val topBannerH = if (sequence.gateSummaries.isNotEmpty()) 88 else 68
         val pad = 14
         val imgW = pad * 2 + effectiveCols * panelW + (effectiveCols - 1) * pad
         val imgH = topBannerH + pad + rows * panelH + (rows - 1) * pad
@@ -129,6 +129,23 @@ object DiagnosticContactSheetRenderer {
         val legendLine = "Legend: [RED RING+FILL] = Stalled >= 2s (120 steps) unarrived | [BLUE/GREEN] = P1/P2 hulls | [CYAN] = Buffer/Arrived | [YELLOW] = Velocity"
         g.drawString(legendLine, pad, 62)
 
+        if (sequence.gateSummaries.isNotEmpty()) {
+            g.color = Color(135, 225, 210)
+            val gateBanner = sequence.gateSummaries.joinToString(" | ") { gs ->
+                String.format(
+                    Locale.ROOT,
+                    "%s: in=%d out=%d set=%d (%.1f/s, gap=%d)",
+                    compactGateId(gs.gateId),
+                    gs.enteredCount,
+                    gs.sternExitedCount,
+                    gs.targetSideSettledCount,
+                    gs.throughputUnitsPerSec,
+                    gs.maxExitGapSteps,
+                )
+            }
+            g.drawString("Gates: $gateBanner", pad, 79)
+        }
+
         val terrainLayer = buildTerrainImage(map, panelMapW, panelMapH, 0.0, 0.0, worldW, worldH)
 
         panels.forEachIndexed { index, kf ->
@@ -160,6 +177,14 @@ object DiagnosticContactSheetRenderer {
                 ),
                 px + 8, py + 31
             )
+            if (kf.frame.gateStats.isNotEmpty()) {
+                g.font = Font(Font.MONOSPACED, Font.PLAIN, 10)
+                g.color = Color(135, 225, 210)
+                val panelGateLine = kf.frame.gateStats.joinToString(" ") { gs ->
+                    "${compactGateId(gs.gateId)}:${gs.enteredCount}/${gs.sternExitedCount}"
+                }
+                g.drawString(panelGateLine.take(64), px + 8, py + 45)
+            }
 
             val mapX = px + 8
             val mapY = py + panelHeaderH
@@ -462,6 +487,15 @@ object DiagnosticContactSheetRenderer {
         path.closePath()
         if (fill) g.fill(path) else g.draw(path)
     }
+
+    private fun compactGateId(gateId: String): String = gateId
+        .replace("wall1-narrow-y12", "W1N")
+        .replace("wall1-wide-y23..28", "W1W")
+        .replace("wall2-narrow-y15", "W2N")
+        .replace("wall2-wide-y20..25", "W2W")
+        .replace("wall3-narrow-y11", "W3N")
+        .replace("wall3-wide-y25..30", "W3W")
+        .take(12)
 
     private fun configureGraphics(g: Graphics2D) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)

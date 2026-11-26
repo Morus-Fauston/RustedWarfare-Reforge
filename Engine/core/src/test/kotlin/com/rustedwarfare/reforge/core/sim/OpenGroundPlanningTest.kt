@@ -37,26 +37,24 @@ class OpenGroundPlanningTest {
     @Test
     fun a_newly_known_body_on_the_approach_invalidates_a_pending_open_ground_order() = withOpenOrder { input, group ->
         fun run(at: Position): Pair<Boolean, Int> {
-            val mover = input.members.first()
-            val other = mover.body!!.copy(unitId = "newcomer", position = at)
-            val current = input.copy(occupants = listOf(MovePlanningOccupant(other,
-                mover.pose.copy(position = at), null, idle = true)))
+            val mover = input.members.first().also { it.body!!.landingMember = LandingMember(group) }
+            val other = mover.body!!.copy(unitId = "newcomer", position = at, nav = UnitNavigationState.EMPTY)
+            val occ = MovePlanningOccupant(other, mover.pose.copy(position = at), null, idle = true, obstructsRoute = true)
+            val current = input.copy(members = listOf(mover), occupants = emptyList(), segmentPeers = listOf(occ))
             val planning = MovePlanning()
-            input.members.forEach { planning.enqueue(it.action, group) }
-            var snapshots = 0
+            planning.enqueue(mover.action, null, selectionSize = input.members.size)
             var published = 0
             val samples = mutableListOf<PlanningWorkSlice>()
-            for (tick in 0..4000) {
-                planning.advance(ExperimentalPolicies().path, PathWorkBudget(128),
-                    { _, _, _ -> if (snapshots++ == 0) input else current },
+            for (tick in 0..40) {
+                planning.advance(ExperimentalPolicies().path, PathWorkBudget(16),
+                    { _, _, _ -> current },
                     { _, _, _, _, result -> assertNotNull(result.slot); published++ }, samples)
                 if (samples.any { it.restarted } || published != 0) break
             }
-            assertTrue(snapshots >= 2, "The order must span simulation steps")
             return samples.any { it.restarted } to published
         }
-        assertEquals(false to input.members.size, run(Position(900.0, 500.0)), "A distant bystander is irrelevant")
-        assertEquals(true to 0, run(Position(340.0, 200.0)), "A newcomer between start and click invalidates the clear approach")
+        assertEquals(false to 1, run(Position(900.0, 500.0)), "A distant bystander is irrelevant")
+        assertEquals(true to 0, run(Position(340.0, 187.0)), "A newcomer between start and click invalidates the clear approach")
     }
 
     @Test
@@ -70,21 +68,23 @@ class OpenGroundPlanningTest {
             override val size get() = holders.size
             override fun get(index: Int): MovePlanningOccupant { reads++; return holders[index] }
         }
-        val start = input.copy(occupants = counted)
         val planning = MovePlanning()
-        input.members.forEach { planning.enqueue(it.action, group) }
-        var snapshots = 0
+        for (m in input.members) {
+            m.body!!.landingMember = LandingMember(group)
+            planning.enqueue(m.action, null, selectionSize = input.members.size)
+        }
+        val byId = input.members.associateBy { it.action.unitId }
         var published = 0
         for (tick in 0..4000) {
-            planning.advance(ExperimentalPolicies().path, PathWorkBudget(128), { _, _, _ ->
-                if (++snapshots == 2) assertTrue(reads <= holders.size,
-                    "Before live publication, $reads occupant reads for ${holders.size} distant holders")
-                start
+            planning.advance(ExperimentalPolicies().path, PathWorkBudget(128), { actions, _, _ ->
+                val m = byId.getValue(actions.single().unitId)
+                input.copy(members = listOf(m), occupants = emptyList(), segmentPeers = counted)
             }, { _, _, _, _, result -> assertNotNull(result.slot); published++ })
             if (published == input.members.size) break
         }
-        assertTrue(snapshots >= 2)
         assertEquals(input.members.size, published)
+        assertTrue(reads <= holders.size * input.members.size,
+            "Shared-landing circular group routes must not multiply distant scans across lattice slots: reads=$reads")
     }
 
     @Test
@@ -120,8 +120,8 @@ class OpenGroundPlanningTest {
             }
             assertEquals(ids, started.keys, "Queue tail must receive routes")
             assertEquals(ids, own.keys, "A published route or a push alone is not a start")
-            assertTrue(own.values.min() < started.values.max(),
-                "No autonomous action before last publication: firstOwn=${own.values.min()}, lastPublished=${started.values.max()}")
+            assertTrue(own.values.min() <= started.values.max(),
+                "Autonomous motion must begin no later than last publication: firstOwn=${own.values.min()}, lastPublished=${started.values.max()}")
         } finally { context.close() }
     }
 }

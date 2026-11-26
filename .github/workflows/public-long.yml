@@ -4,6 +4,11 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      execution:
+        description: Continuous long execution mode (when pr/qualification are empty)
+        type: choice
+        options: [parallel, serial]
+        default: parallel
       pr:
         description: PR number for fixed candidate verification
         type: string
@@ -14,9 +19,9 @@ permissions:
   contents: read
 jobs:
   public-long:
-    if: github.event_name == 'push' || (inputs.pr == '' && inputs.qualification == '')
+    if: (github.event_name == 'push' && vars.PUBLIC_LONG_PARALLEL == 'false') || (github.event_name == 'workflow_dispatch' && inputs.pr == '' && inputs.qualification == '' && (inputs.execution == 'serial' || vars.PUBLIC_LONG_PARALLEL == 'false'))
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
@@ -33,6 +38,159 @@ jobs:
         with:
           name: public-long-evidence
           path: SimulationTest/build/public-long
+          if-no-files-found: error
+
+  public-long-prepare:
+    if: (github.event_name == 'push' && vars.PUBLIC_LONG_PARALLEL != 'false') || (github.event_name == 'workflow_dispatch' && inputs.pr == '' && inputs.qualification == '' && inputs.execution != 'serial' && vars.PUBLIC_LONG_PARALLEL != 'false')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      plan_sha: ${{ steps.prepare.outputs.plan_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - name: Freeze long coverage and build the portable distribution
+        id: prepare
+        run: python -B SimulationTest/ci/public_parallel.py prepare --layer long --output SimulationTest/build/public-long-parallel
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: public-long-plan-${{ github.run_attempt }}
+          path: SimulationTest/build/public-long-parallel/transfer/plan.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: public-long-distribution-${{ github.run_attempt }}
+          path: SimulationTest/build/public-long-parallel/transfer/distribution.tar
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-long-prepare-evidence-${{ github.run_attempt }}
+          path: |
+            SimulationTest/build/public-long-parallel/build
+            SimulationTest/build/public-long-parallel/preparation.json
+            SimulationTest/build/public-long-parallel/gradle-version*
+            !SimulationTest/build/public-long-parallel/build/package/**
+          if-no-files-found: error
+
+  public-long-scenarios:
+    needs: public-long-prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [long-1, long-2, long-3]
+    outputs:
+      long_1: ${{ steps.run.outputs.long_1 }}
+      long_1_artifact: ${{ steps.names.outputs.long_1_artifact }}
+      long_2: ${{ steps.run.outputs.long_2 }}
+      long_2_artifact: ${{ steps.names.outputs.long_2_artifact }}
+      long_3: ${{ steps.run.outputs.long_3 }}
+      long_3_artifact: ${{ steps.names.outputs.long_3_artifact }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-long-plan-${{ github.run_attempt }}
+          path: SimulationTest/build/public-long-transfer
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: public-long-distribution-${{ github.run_attempt }}
+          path: SimulationTest/build/public-long-transfer
+      - name: Run assigned long scenarios with the relocated distribution
+        id: run
+        env:
+          PUBLIC_PLAN_SHA: ${{ needs.public-long-prepare.outputs.plan_sha }}
+          SHARD: ${{ matrix.shard }}
+        run: >-
+          python -B SimulationTest/ci/public_parallel.py shard --layer long
+          --transfer SimulationTest/build/public-long-transfer --shard "$SHARD"
+          --output SimulationTest/build/public-long-shard
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-long-receipt-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: SimulationTest/build/public-long-shard/receipt.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: evidence
+        if: always()
+        with:
+          name: public-long-raw-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: SimulationTest/build/public-long-shard/scenarios
+          if-no-files-found: error
+      - name: Pin the raw long shard artifact
+        id: names
+        if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
+          ARTIFACT_DIGEST: ${{ steps.evidence.outputs.artifact-digest }}
+        run: printf '%s_artifact=%s\n' "${SHARD//-/_}" "$ARTIFACT_DIGEST" >> "$GITHUB_OUTPUT"
+
+  public-long-coverage:
+    if: always() && ((github.event_name == 'push' && vars.PUBLIC_LONG_PARALLEL != 'false') || (github.event_name == 'workflow_dispatch' && inputs.pr == '' && inputs.qualification == '' && inputs.execution != 'serial' && vars.PUBLIC_LONG_PARALLEL != 'false'))
+    needs: [public-long-prepare, public-long-scenarios]
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: always()
+        with:
+          name: public-long-plan-${{ github.run_attempt }}
+          path: SimulationTest/build/public-long-transfer
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: always()
+        with:
+          pattern: public-long-receipt-${{ github.run_attempt }}-*
+          path: SimulationTest/build/public-long-receipts
+      - name: Verify complete current attempt long coverage
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLIC_PLAN_SHA: ${{ needs.public-long-prepare.outputs.plan_sha }}
+          PUBLIC_JOBS: >-
+            {"prepare":"${{ needs.public-long-prepare.result }}","scenarios":"${{ needs.public-long-scenarios.result }}"}
+          PUBLIC_PINS: >-
+            {"long-1":"${{ needs.public-long-scenarios.outputs.long_1 }}","long-2":"${{ needs.public-long-scenarios.outputs.long_2 }}","long-3":"${{ needs.public-long-scenarios.outputs.long_3 }}"}
+          PUBLIC_ARTIFACTS: >-
+            {"long-1":"${{ needs.public-long-scenarios.outputs.long_1_artifact }}","long-2":"${{ needs.public-long-scenarios.outputs.long_2_artifact }}","long-3":"${{ needs.public-long-scenarios.outputs.long_3_artifact }}"}
+        run: >-
+          python -B SimulationTest/ci/public_parallel.py summary --layer long
+          --transfer SimulationTest/build/public-long-transfer --receipts SimulationTest/build/public-long-receipts
+          --output SimulationTest/build/public-long-coverage
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: public-long-coverage-${{ github.run_attempt }}
+          path: SimulationTest/build/public-long-coverage
           if-no-files-found: error
 
   public-final-candidate:

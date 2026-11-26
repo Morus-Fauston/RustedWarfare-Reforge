@@ -29,7 +29,31 @@ fun main(args: Array<String>) {
         combat = loadedTank.combat, durability = loadedTank.durability, build = loadedTank.build,
         movementCollision = MovementCollisionShape.Circle(6.0), mass = 3000.0,
     )
-    val definitions = mapOf("c_tank" to smallTank, "mechGun" to largeMech)
+    val fastScout = UnitDefinition(
+        id = "fast_scout", className = loadedTank.className, radius = 6.0, displayRadius = 6.0,
+        totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
+        movement = loadedTank.movement.copy(moveSpeed = 1.65, maxTurnSpeed = 8.0, turnAcceleration = 1.2),
+        retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+        combat = loadedTank.combat, durability = loadedTank.durability, build = loadedTank.build,
+        movementCollision = MovementCollisionShape.Circle(6.0), mass = 2200.0,
+    )
+    val slowHeavy = UnitDefinition(
+        id = "slow_heavy", className = loadedTank.className, radius = 14.0, displayRadius = 14.0,
+        totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
+        movement = loadedTank.movement.copy(moveSpeed = 0.55, maxTurnSpeed = 2.0, turnAcceleration = 0.2),
+        retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+        combat = loadedTank.combat, durability = loadedTank.durability, build = loadedTank.build,
+        movementCollision = MovementCollisionShape.Circle(14.0), mass = 36000.0,
+    )
+    val loadedChopper = pack.units.getValue("helicopter")
+    val airChopper = loadedChopper
+    val definitions = mapOf(
+        "c_tank" to smallTank,
+        "mechGun" to largeMech,
+        "fast_scout" to fastScout,
+        "slow_heavy" to slowHeavy,
+        "helicopter" to airChopper,
+    )
 
     val reports = mutableListOf<JsonObject>()
 
@@ -38,7 +62,7 @@ fun main(args: Array<String>) {
         id = "v0546-rocks-small-100",
         title = "v0.5.46 Baseline: rocks-small-100 (100x c_tank through staggered gates)",
         scenario = buildRocksScenario("rocks-small-100", definitions, mixed = false),
-        steps = 2600,
+        steps = 2900,
         outputDir = outputDir.resolve("rocks-small-100"),
     ) { ctx ->
         val ids = (0 until 100).map { String.format("tank-%02d", it) }
@@ -90,6 +114,80 @@ fun main(args: Array<String>) {
         val gWest = checkNotNull(ctx.requestGroupMove("p2", westIds, westGoal))
         for (id in westIds) {
             check(ctx.submitGroupMove(MoveAction("cwest-$id", "p2", id, westGoal, ctx.world), gWest) is ActionResult.Accepted)
+        }
+    }
+
+    // 4. Mixed wide-road overtaking: fast scouts overtake slow heavy giants without stopping (ENG-P016-007)
+    reports += runAndExport(
+        id = "p016-007-mixed-overtake-wide",
+        title = "ENG-P016-007: mixed-overtake-wide (8 fast scouts overtaking 3 slow heavies)",
+        scenario = buildMixedOvertakeScenario("mixed-overtake-wide", definitions),
+        steps = 1300,
+        outputDir = outputDir.resolve("mixed-overtake-wide"),
+    ) { ctx ->
+        val ids = listOf("heavy-0", "heavy-1", "heavy-2") + (0 until 8).map { "scout-$it" }
+        val click = Position(780.0, 220.0)
+        val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
+        for (id in ids) {
+            check(ctx.submitGroupMove(MoveAction("ov-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
+        }
+    }
+
+    // 5. Single-lane narrow bridge with waiting unit clearing mouth outlet laterally (ENG-P016-007)
+    reports += runAndExport(
+        id = "p016-007-narrow-bridge-yield",
+        title = "ENG-P016-007: narrow-bridge-yield (single-lane bridge outside mouth lateral clearing)",
+        scenario = buildNarrowBridgeYieldScenario("narrow-bridge-yield", definitions),
+        steps = 900,
+        outputDir = outputDir.resolve("narrow-bridge-yield"),
+    ) { ctx ->
+        check(ctx.submit(MoveAction("nb-east", "p1", "east-0", Position(580.0, 210.0), ctx.world)) is ActionResult.Accepted)
+        check(ctx.submit(MoveAction("nb-west", "p2", "west-0", Position(140.0, 210.0), ctx.world)) is ActionResult.Accepted)
+    }
+
+    // 6. Air-layer lightweight 2D Boids soft separation on shared rally click (ENG-P016-007)
+    reports += runAndExport(
+        id = "p016-007-air-flock-rally",
+        title = "ENG-P016-007: air-flock-rally (16 airborne choppers soft-separating at shared rally)",
+        scenario = buildAirFlockScenario("air-flock-rally", definitions),
+        steps = 600,
+        outputDir = outputDir.resolve("air-flock-rally"),
+    ) { ctx ->
+        val click = Position(540.0, 240.0)
+        for (i in 0 until 16) {
+            check(ctx.submit(MoveAction("air-$i", "p1", "chopper-$i", click, ctx.world)) is ActionResult.Accepted)
+        }
+    }
+
+    // 7. Mixed 100-unit rocks field: 75 small tanks + 25 slow heavies through staggered gates (ENG-P016-008)
+    reports += runAndExport(
+        id = "p016-008-rocks-mixed-100",
+        title = "ENG-P016-008: rocks-mixed-100 (75 small + 25 large through staggered gates)",
+        scenario = buildRocksScenario("rocks-mixed-100", definitions, mixed = true),
+        steps = 4200,
+        outputDir = outputDir.resolve("rocks-mixed-100"),
+    ) { ctx ->
+        val ids = (0 until 100).map { String.format("tank-%02d", it) }
+        val click = Position(1260.0, 400.0)
+        val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
+        for (id in ids) {
+            check(ctx.submitGroupMove(MoveAction("rocksmix-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
+        }
+    }
+
+    // 8. Cul-de-sac 100-unit capacity saturation overflow (ENG-P016-008)
+    reports += runAndExport(
+        id = "p016-008-culdesac-overflow-100",
+        title = "ENG-P016-008: culdesac-overflow-100 (100 tanks into small dead-end pocket)",
+        scenario = buildCulDeSacScenario("culdesac-overflow-100", definitions),
+        steps = 2200,
+        outputDir = outputDir.resolve("culdesac-overflow-100"),
+    ) { ctx ->
+        val ids = (0 until 100).map { String.format("cds-%02d", it) }
+        val click = Position(710.0, 260.0)
+        val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
+        for (id in ids) {
+            check(ctx.submitGroupMove(MoveAction("cds100-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
         }
     }
 
@@ -178,7 +276,7 @@ private fun buildRocksScenario(
     val units = (0 until 100).map { index ->
         val x = 420.0 - 36.0 * (index / 10)
         val y = 180.0 + 36.0 * (index % 10)
-        val type = if (mixed && index % 4 == 3) "mechGun" else "c_tank"
+        val type = if (mixed && index % 4 == 3) "slow_heavy" else "c_tank"
         UnitSpawn(String.format("tank-%02d", index), "p1", type, Position(x, y), 90.0)
     }
     return baseScenario(id, map, definitions, units)
@@ -260,3 +358,81 @@ private fun baseScenario(
         nextObjectId = 8L + units.size,
     ),
 )
+
+private fun buildMixedOvertakeScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
+    val w = 44
+    val h = 22
+    val blocked = BooleanArray(w * h) { idx ->
+        val x = idx % w
+        val y = idx / w
+        if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
+        else (y < 6 || y > 15) // 10-tile wide road (200u)
+    }
+    val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
+    val units = buildList {
+        add(UnitSpawn("heavy-0", "p1", "slow_heavy", Position(340.0, 220.0), 90.0))
+        add(UnitSpawn("heavy-1", "p1", "slow_heavy", Position(280.0, 190.0), 90.0))
+        add(UnitSpawn("heavy-2", "p1", "slow_heavy", Position(280.0, 250.0), 90.0))
+        for (i in 0 until 8) {
+            val col = i / 4
+            val row = i % 4
+            add(UnitSpawn("scout-$i", "p1", "fast_scout", Position(190.0 - col * 24.0, 185.0 + row * 24.0), 90.0))
+        }
+    }
+    return baseScenario(id, map, definitions, units)
+}
+
+private fun buildNarrowBridgeYieldScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
+    val w = 36
+    val h = 21
+    val blocked = BooleanArray(w * h) { idx ->
+        val x = idx % w
+        val y = idx / w
+        if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
+        else (x in 15..20) && (y != 10) // single-tile bridge at row 10 (y=200..220)
+    }
+    val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
+    val units = listOf(
+        UnitSpawn("east-0", "p1", "c_tank", Position(330.0, 210.0), 90.0),
+        UnitSpawn("west-0", "p2", "c_tank", Position(440.0, 210.0), 270.0),
+    )
+    return baseScenario(id, map, definitions, units)
+}
+
+private fun buildAirFlockScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
+    val w = 36
+    val h = 24
+    val blocked = BooleanArray(w * h) { idx ->
+        val x = idx % w
+        val y = idx / w
+        x == 0 || x == w - 1 || y == 0 || y == h - 1
+    }
+    val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
+    val units = (0 until 16).map { i ->
+        val col = i / 4
+        val row = i % 4
+        UnitSpawn("chopper-$i", "p1", "helicopter", Position(100.0 + col * 34.0, 160.0 + row * 34.0), 90.0)
+    }
+    return baseScenario(id, map, definitions, units)
+}
+
+private fun buildCulDeSacScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
+    val w = 44
+    val h = 26
+    // Dead-end pocket on east side: x in 28..37 (10 tiles), y in 11..14 (4 tiles -> holds ~15-20 tanks),
+    // closed on top, bottom, and east, open only on west mouth x=27.
+    val blocked = BooleanArray(w * h) { idx ->
+        val x = idx % w
+        val y = idx / w
+        if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
+        else if (x >= 28 && (y < 11 || y > 14 || x > 37)) true
+        else false
+    }
+    val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
+    val units = (0 until 100).map { i ->
+        val col = i / 10
+        val row = i % 10
+        UnitSpawn(String.format("cds-%02d", i), "p1", "c_tank", Position(420.0 - col * 24.0, 160.0 + row * 22.0), 90.0)
+    }
+    return baseScenario(id, map, definitions, units)
+}

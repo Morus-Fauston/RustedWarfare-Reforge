@@ -592,9 +592,6 @@ internal data class MutableUnit(
     var landingMember: LandingMember?
         get() = nav.landingMember
         set(value) { nav = nav.withLandingMember(value) }
-    var lastRoadProgress: RoadProgress?
-        get() = nav.lastRoadProgress
-        set(value) { if (nav.lastRoadProgress != value) nav = nav.copy(lastRoadProgress = value) }
     var adoptedRouteRevision: Long
         get() = nav.adoptedRouteRevision
         set(value) { if (nav.adoptedRouteRevision != value) nav = nav.copy(adoptedRouteRevision = value) }
@@ -607,6 +604,18 @@ internal data class MutableUnit(
     var terrainClearSteps: Int
         get() = nav.terrainClearSteps
         set(value) { if (nav.terrainClearSteps != value) nav = nav.copy(terrainClearSteps = value) }
+    var terrainOnlyStall: Boolean
+        get() = nav.terrainOnlyStall
+        set(value) { if (nav.terrainOnlyStall != value) nav = nav.copy(terrainOnlyStall = value) }
+    var optimisticSteerTarget: Position?
+        get() = nav.optimisticSteerTarget
+        set(value) { if (nav.optimisticSteerTarget != value) nav = nav.copy(optimisticSteerTarget = value) }
+    var repairBackoffStep: Long
+        get() = nav.repairBackoffStep
+        set(value) { if (nav.repairBackoffStep != value) nav = nav.copy(repairBackoffStep = value) }
+    var repairConsecutiveFailures: Int
+        get() = nav.repairConsecutiveFailures
+        set(value) { if (nav.repairConsecutiveFailures != value) nav = nav.copy(repairConsecutiveFailures = value) }
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
     val alive: Boolean get() = !destroyedWithoutHealth && (deathPending || health == null || checkNotNull(health) > 0.0)

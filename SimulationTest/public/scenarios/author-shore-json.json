@@ -144,7 +144,7 @@
       "unitId": "a",
       "kind": "move",
       "target": {
-        "x": 176,
+        "x": 170,
         "y": 210
       }
     },
@@ -157,7 +157,7 @@
       "buildingTypeId": "spshipyard",
       "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "target": {
-        "x": 250,
+        "x": 230,
         "y": 210
       },
       "append": false

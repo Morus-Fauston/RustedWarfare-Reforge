@@ -92,6 +92,8 @@ object PathPerfBatch {
     const val TILE_WIDTH = 20
     const val TILE_HEIGHT = 20
     const val UNIT_RADIUS = 11.0
+    /** Unified ENG-P016-009C implicit-INI static terrain passability radius: min(radius, 0.45 * minTile) = 9.0. */
+    const val TERRAIN_RADIUS = 9.0
     const val PATH_POINT_RADIUS = 16.0
     const val TARGET_RADIUS = 4.0
 
@@ -228,7 +230,11 @@ object PathPerfBatch {
                 val advanceStart = System.nanoTime()
                 observation = context.advance(Step(step++, 1.0, "sim-tick"))
                 advanceNanos += (System.nanoTime() - advanceStart).coerceAtLeast(0L)
-                if (diagnosticsEnabled) samples += context.drainPathDiagnostics(world)
+                if (diagnosticsEnabled) {
+                    // Only collect initial USER_MOVE planning samples; units published on early steps of
+                    // a multi-step batch may later emit ROUTE_REPAIR samples during movement.
+                    samples += context.drainPathDiagnostics(world).filter { it.reason == PathSearchReason.USER_MOVE }
+                }
                 events += observation.events.map { BatchEvent(it.kind, it.unitId) }
                 actionResults += observation.actionResults.map {
                     when (it) {
@@ -868,15 +874,15 @@ object PathPerfBatch {
         return cells
     }
 
-    /** Development expectation independently derived from the unchanged fixture coordinates. */
+    /** Development expectation independently derived from the unchanged fixture coordinates under unified 009C Circle(9.0) terrain clearance. */
     private fun fixedDirectCenter(scenarioKey: String, index: Int): Boolean = when (scenarioKey) {
         "MEMORY_UNREACHABLE" -> false
-        "MEMORY_GAP" -> 7 * (index % 10) - 9 * (index / 10) in -11..27
+        "MEMORY_GAP" -> 7 * (index % 10) - 9 * (index / 10) in -4..21
         else -> true
     }
 
     private fun fixedPlanningEndpoint(scenarioKey: String, index: Int): Position =
-        Position(if (scenarioKey == "MEMORY_UNREACHABLE") 16 * TILE_WIDTH - UNIT_RADIUS else goalX(index), goalY(index))
+        Position(if (scenarioKey == "MEMORY_UNREACHABLE") 16 * TILE_WIDTH - TERRAIN_RADIUS else goalX(index), goalY(index))
 
     /** Fixed fixture geometry, independently derived in the reviewed D-076 validator contract.
      * In MEMORY_GAP, -4 <= 7a-9b <= 20 gives 18 direct and 32 fallback requests for n=50.
@@ -935,10 +941,26 @@ object PathPerfBatch {
         val units = (0 until n).map { index ->
             UnitSpawn("perf-u%03d".format(index), "p1", unit.id, Position(startX(index), startY(index)), 90.0)
         }
+        // PathPerfBatch is a development-path-planning-only benchmark whose fixed 20u spawn lattice is tighter
+        // than diameter 22u (radius=11); keep movementCollision = Circle(radius) for terrain clearance while
+        // setting mass = null so already-planned units cannot shove waiting units off their fixed spawn coordinates.
+        val isolatedUnit = UnitDefinition(
+            id = unit.id,
+            className = unit.className,
+            radius = unit.radius,
+            displayRadius = unit.displayRadius,
+            totalFrames = unit.totalFrames,
+            imagePath = unit.imagePath,
+            imageScale = unit.imageScale,
+            movement = unit.movement,
+            retainedUnconsumed = unit.retainedUnconsumed,
+            fogOfWarSightRange = unit.fogOfWarSightRange,
+            mass = null,
+        )
         return Scenario(
             scenarioId = "path-perf-$scenarioKey",
             map = map,
-            unitDefinitions = mapOf(unit.id to unit),
+            unitDefinitions = mapOf(isolatedUnit.id to isolatedUnit),
             players = listOf(Player("p1", PlayerControl.LOCAL)),
             units = units,
             coordinateModel = CoordinateModel(

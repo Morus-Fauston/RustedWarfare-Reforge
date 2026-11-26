@@ -7,22 +7,18 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import kotlin.test.*
 
 class SharedLandingClaimsTest {
-    @Test fun a_displaced_car_outside_all_pads_leaves_work_for_other_arrivals() {
+    @Test fun terminal_landing_ignores_far_enroute_units_and_keeps_budget_free() {
         val cells = BooleanArray(48 * 32)
         val map = MapDefinition(48, 32, 20, 20, emptyList(), IntArray(cells.size), BlockingGrid(48, 32, cells))
-        val ground = com.rustedwarfare.reforge.core.path.PlanningTerrain(48, 32, 20, 20, cells)
         val click = Position(640.0, 320.0)
         val group = GroupMoveRequest(WorldHandle("push"), null, "p1", click, (1..32).map { "car-$it" }.toSet(), true)
         val def = TestContentFactory.openScenario().unitDefinitions.getValue("tank")
         val car = MutableUnit("car-1", "p1", "tank", def, Position(80.0, 120.0), 90.0)
         car.moveTarget = click
-        car.landingMember = LandingMember(group, pushedPose = car.position)
+        car.landingMember = LandingMember(group)
         val pool = SharedLandingSites.forGroup(map, group, listOf(car))
-        pool.supply(ground, car, PathWorkBudget(128))
-        val slice = PathWorkBudget(8)
-        pool.checkPushed(listOf(car), listOf(car), slice, 2.0, { car }, { false }, { ground }, { _, _, _ -> false }) { _, _ -> fail("no pad within reach") }
-        assertNull(car.landingMember!!.pushedPose, "Finish the distant check in this slice")
-        assertTrue(slice.used < slice.limit, "Keep capacity for a car at a pad")
+        assertNull(pool.mixedBays, "Homogeneous circular group needs no mixed bay survey")
+        assertFalse(pool.near(car.position), "Far en-route unit is outside terminal landing zone")
     }
     @Test fun overlapping_legacy_orders_keep_separate_parking_rights() = checkReissuedParking(false)
     @Test fun a_shared_order_cannot_grant_parking_rights_to_its_legacy_predecessor() = checkReissuedParking(true)
@@ -65,6 +61,8 @@ class SharedLandingClaimsTest {
             val parked = parkedBody()
             assertTrue(current.hasParkedMember(parked))
             assertFalse(old.hasParkedMember(parked), "Previous order must not own the reissued member at the same click")
+            assertIs<ActionResult.Accepted>(ctx.submit(StopAction("stop-old-peer", "p1", "a", ctx.world, atStep = step)))
+            ctx.advance(Step(step++, 1.0, "sim-tick"))
             // Probe the same physical pose with each actual order's parking clearance.
             val clears = SimulationContext::class.java.getDeclaredMethod("groupStopClearsSlots", MutableUnit::class.java)
                 .apply { isAccessible = true }
@@ -91,7 +89,7 @@ class SharedLandingClaimsTest {
             assertEquals(resolved(null), resolved(old))
             assertNotEquals(resolved(null), resolved(current))
             assertFalse(canStop(current), "The current order protects its parked body")
-            assertTrue(canStop(old), "The superseded order has no parking clearance claim")
+            assertTrue(canStop(old), "The superseded order has no parking clearance claim; parked=${parked.position} all=${ctx.observe().units.map { listOf(it.unitId, it.position, it.moveTarget, it.moveArrival != null) }}")
             assertIs<ActionResult.Accepted>(ctx.submit(StopAction("stop", "p1", "b", ctx.world, atStep = step)))
             failStopStep = true
             assertEquals("discard scheduled stop", assertFailsWith<IllegalStateException> {
@@ -145,7 +143,7 @@ class SharedLandingClaimsTest {
             var armed = false
             var tripped = false
             val steering = SteeringPolicy { body, aim, delta, coordinates ->
-                if (armed && !tripped && body.landingMember?.claimed != null) {
+                if (armed && !tripped && body.position.x > 340.0) {
                     tripped = true
                     error("retry reissued landing")
                 }
@@ -183,8 +181,7 @@ class SharedLandingClaimsTest {
                     rows += listOf(index, work.used, work.slices.map { it.firstSegment }, frame.events,
                         frame.units.map { listOf(it.unitId, it.tasks, it.moveTarget, it.pathPoints.toList()) }, motion.map { listOf(it.unitId, it.originMoveId,
                         it.finalPosition, it.finalHeading, it.landingClaim, it.landingIngress, it.landingParked) })
-                    if (!replaced && motion.any { it.landingClaim != null }) {
-                        assertTrue(frame.units.any { it.pathPoints.isNotEmpty() && it.moveTarget != null })
+                    if (!replaced && index >= 80 && frame.units.all { it.pathPoints.isNotEmpty() && it.moveTarget != null }) {
                         send("new")
                         replaced = true
                         armed = inject
@@ -217,11 +214,19 @@ class SharedLandingClaimsTest {
                     MoveAction("order-${body.unitId}", "p1", body.unitId, click, context.world), group))
             }
             repeat(1500) { tick ->
-                context.advance(Step(tick.toLong(), 1.0, "sim-tick"))
+                val frame = context.advance(Step(tick.toLong(), 1.0, "sim-tick"))
                 val samples = context.drainMotionDiagnostics(context.world)
                 val claims = samples.mapNotNull { it.landingClaim }
                 assertEquals(claims.size, claims.distinct().size, "duplicate claims at step $tick")
-                if (samples.count { it.landingParked } == 4) return
+                val minDist = opening.unitDefinitions.getValue("tank").movementCollision.boundingRadius * 2.0
+                for (i in frame.units.indices) for (j in i + 1 until frame.units.size) {
+                    assertTrue(ScreenPlane.distanceSquared(frame.units[i].position, frame.units[j].position) >= minDist * minDist - 1e-6,
+                        "Zero hard overlap between competing orders at step $tick")
+                }
+                if (samples.count { it.landingParked } == 4) {
+                    assertEquals(4, frame.units.map { it.position }.distinct().size)
+                    return
+                }
             }
             fail("both orders must reach four distinct physical sites ${context.observe().units.map { listOf(it.unitId, it.position, it.moveTarget, it.pathPoints, it.moveArrival) }}")
         } finally { context.close() }

@@ -342,4 +342,57 @@ class DiagnosticSceneProjectorTest {
         val scene2 = tracker.updateAndProjectPlayer(pObs2)
         assertFalse(scene2.units.single { it.unitId == "own" }.arrived)
     }
+
+    @Test fun bidirectional_gate_throughput_counts_only_forward_crossings_without_opposing_double_count() {
+        // P1-3 regression: opposing vehicles exiting a bidirectional gate upstream must NOT be counted
+        // as entering the positive-direction gate (and vice versa).
+        val base = TestContentFactory.openScenario()
+        val tank = base.unitDefinitions.getValue("tank")
+        val unitDef = UnitDefinition(
+            id = "c_tank", className = tank.className, radius = 6.0, displayRadius = 6.0,
+            totalFrames = tank.totalFrames, imagePath = tank.imagePath, imageScale = tank.imageScale,
+            movement = tank.movement.copy(moveSpeed = 2.0), retainedUnconsumed = emptySet(),
+            movementCollision = MovementCollisionShape.Circle(6.0), mass = 3000.0
+        )
+        val defs = mapOf("c_tank" to unitDef)
+        val gates = listOf(
+            DiagnosticGateLine("E+", axisX = true, entryThreshold = 200.0, exitThreshold = 260.0, minOrtho = 100.0, maxOrtho = 300.0, positiveDirection = true),
+            DiagnosticGateLine("W-", axisX = true, entryThreshold = 260.0, exitThreshold = 200.0, minOrtho = 100.0, maxOrtho = 300.0, positiveDirection = false),
+        )
+        // 2 eastbound units move x: 140 -> 340; 2 westbound units move x: 340 -> 140 over steps 0..110, settling at step 100
+        val observations = (0L..110L).map { step ->
+            val moving = step < 100L
+            val t = step.coerceAtMost(100L) / 100.0
+            val eastX = 140.0 + 200.0 * t
+            val westX = 340.0 - 200.0 * t
+            val events = if (step == 100L) listOf(
+                Event("movement-arrived", "e1"), Event("movement-arrived", "e2"),
+                Event("movement-arrived", "w1"), Event("movement-arrived", "w2"),
+            ) else emptyList()
+            Observation(
+                sampleId = if (step == 0L) "sc:1:initial:0" else "sc:1:step$step:$step",
+                worldId = "w", scenarioId = "sc", stepIndex = step, simulationTime = step / 60.0,
+                units = listOf(
+                    UnitObservation("e1", "p1", "c_tank", Position(eastX, 160.0), 90.0, if (moving) 2.0 else 0.0, 0.0,
+                        if (moving) Position(340.0, 160.0) else null, emptyList(), if (moving) MovementState.MOVING else MovementState.IDLE),
+                    UnitObservation("e2", "p1", "c_tank", Position(eastX - 16.0, 180.0), 90.0, if (moving) 2.0 else 0.0, 0.0,
+                        if (moving) Position(340.0, 180.0) else null, emptyList(), if (moving) MovementState.MOVING else MovementState.IDLE),
+                    UnitObservation("w1", "p2", "c_tank", Position(westX, 220.0), 270.0, if (moving) 2.0 else 0.0, 0.0,
+                        if (moving) Position(140.0, 220.0) else null, emptyList(), if (moving) MovementState.MOVING else MovementState.IDLE),
+                    UnitObservation("w2", "p2", "c_tank", Position(westX + 16.0, 240.0), 270.0, if (moving) 2.0 else 0.0, 0.0,
+                        if (moving) Position(140.0, 240.0) else null, emptyList(), if (moving) MovementState.MOVING else MovementState.IDLE),
+                ),
+                events = events, actionResults = emptyList()
+            )
+        }
+        val seq = DiagnosticSceneProjector.projectSequence(observations, defs, gates = gates)
+        val eastGate = seq.gateSummaries.single { it.gateId == "E+" }
+        val westGate = seq.gateSummaries.single { it.gateId == "W-" }
+        assertEquals(2, eastGate.enteredCount, "E+ must count only the 2 eastbound units, not opposing westbound exits")
+        assertEquals(2, eastGate.sternExitedCount)
+        assertEquals(2, eastGate.targetSideSettledCount)
+        assertEquals(2, westGate.enteredCount, "W- must count only the 2 westbound units, not opposing eastbound exits")
+        assertEquals(2, westGate.sternExitedCount)
+        assertEquals(2, westGate.targetSideSettledCount)
+    }
 }

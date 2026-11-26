@@ -7,14 +7,16 @@ import kotlin.test.*
 
 class CenterTerrainMovementTest {
     private fun open(start: Position, heading: Double, walls: Set<Pair<Int, Int>>,
-                     speed: Double = 1.0, hidden: Boolean = false, radius: Double = 11.0): SimulationContext {
+                     speed: Double = 1.0, hidden: Boolean = false, radius: Double = 11.0,
+                     movementCollision: MovementCollisionShape? = MovementCollisionShape.Circle(0.0)): SimulationContext {
         val source = TestContentFactory.openScenario()
         val tank = source.unitDefinitions.getValue("tank")
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
             map = MapDefinition(30, 20, 20, 20, emptyList(), IntArray(600),
                 BlockingGrid(30, 20, BooleanArray(600) { (it % 30 to it / 30) in walls })),
             unitDefinitions = mapOf("tank" to TestContentFactory.unitWith(tank, radius = radius, movement = tank.movement.copy(
-                moveSpeed = speed, moveAccelerationSpeed = 1.0, moveDecelerationSpeed = 1.0))),
+                moveSpeed = speed, moveAccelerationSpeed = 1.0, moveDecelerationSpeed = 1.0),
+                movementCollision = movementCollision)),
             units = listOf(UnitSpawn("u1", "p1", "tank", start, heading)), automaticVision = null,
         ))).context
         if (hidden) context.enableKnowledge(context.world, KnowledgeRules(
@@ -78,7 +80,7 @@ class CenterTerrainMovementTest {
 
     @Test fun radius_eleven_can_plan_through_a_twenty_unit_corridor() {
         val walls = (4..15).flatMap { row -> listOf(13 to row, 15 to row) }.toSet()
-        val context = open(Position(290.0, 110.0), 180.0, walls)
+        val context = open(Position(290.0, 110.0), 180.0, walls, movementCollision = null)
         try {
             assertIs<ActionResult.Accepted>(context.submit(
                 MoveAction("move", "p1", "u1", Position(290.0, 270.0), context.world)))

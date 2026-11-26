@@ -12,7 +12,7 @@
   },
   "approval": {
     "status": "tool-fixture-only",
-    "source": "Same menu/Core/Session seed starts builder110/210 eastward,3000 credits. Owned dock700/.004, T2 upgrade900/.004, FIFO corvette350/.002 and frigate450/.002. Existing construction, movement, steering and stopping policies unchanged; no original or performance claim. In this paired initial layout the ordinary builder approaches the site after Build180; actual site creation/charge is189. T1 must be complete by499; upgrade700 completes949, first1700/second2201. This is a self-owned fixture checkpoint, not an original timing standard."
+    "source": "Same menu/Core/Session seed starts builder110/210 eastward,3000 credits. Owned dock700/.004, T2 upgrade900/.004, FIFO corvette350/.002 and frigate450/.002. Existing construction, movement, steering and stopping policies unchanged; no original or performance claim. In this paired initial layout the ordinary builder approaches the site after Build180; actual site creation/charge is188. T1 must be complete by499; upgrade700 completes949, first1700/second2201. This is a self-owned fixture checkpoint, not an original timing standard."
   },
   "exclusions": [
     "original-compatibility",
@@ -24,7 +24,7 @@
       "ruleId": "first-charge",
       "when": {
         "phase": "after-advance",
-        "stepIndex": 189
+        "stepIndex": 188
       },
       "assertions": [
         {
@@ -181,7 +181,7 @@
       "owner": "p1",
       "typeId": "spdock",
       "buildingNonce": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "birthStepIndex": 189
+      "birthStepIndex": 188
     }
   ],
   "producedUnits": [

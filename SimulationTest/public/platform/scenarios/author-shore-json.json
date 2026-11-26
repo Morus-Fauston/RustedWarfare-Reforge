@@ -21,7 +21,7 @@
       "kind": "move",
       "unitId": "a",
       "position": {
-        "x": 176,
+        "x": 170,
         "y": 210
       },
       "waitSteps": 180
@@ -32,7 +32,7 @@
       "unitId": "a",
       "typeId": "spshipyard",
       "position": {
-        "x": 250,
+        "x": 230,
         "y": 210
       },
       "waitSteps": 300
@@ -41,7 +41,7 @@
       "intentId": "select-shipyard",
       "kind": "select",
       "position": {
-        "x": 250,
+        "x": 230,
         "y": 210
       }
     },
@@ -55,7 +55,7 @@
       "intentId": "wait-exit",
       "kind": "select",
       "position": {
-        "x": 250,
+        "x": 230,
         "y": 210
       },
       "waitSteps": 150
@@ -64,7 +64,7 @@
       "intentId": "select-ship",
       "kind": "select",
       "position": {
-        "x": 249,
+        "x": 229,
         "y": 345
       }
     },

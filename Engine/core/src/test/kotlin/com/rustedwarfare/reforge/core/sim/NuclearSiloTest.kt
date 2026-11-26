@@ -6,9 +6,8 @@ import kotlin.test.*
 
 internal object NuclearScene {
     fun scenario(map: MapDefinition, format: String = "ini"): Scenario {
-        val root = Path.of(checkNotNull(System.getProperty("public.fixtures.dir")))
-        val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(
-            root.resolve("nuclear-silo/$format/package"))).value
+        val root = ReadOnlyTestContentPacks.publicFixturesRoot()
+        val pack = ReadOnlyTestContentPacks.loadStaticPack(root.resolve("nuclear-silo/$format/package"))
         return WaterTestScene.scenario(map, MovementType.LAND, Position(180.0, 180.0)).copy(
             unitDefinitions = pack.units,
             units = listOf(UnitSpawn("silo", "p1", "nukeLauncherC", Position(180.0, 180.0), 90.0)),

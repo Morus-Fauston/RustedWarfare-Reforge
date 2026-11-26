@@ -105,7 +105,8 @@ class PathPlannerTest {
     @Test fun ki09_truth_collision_pair_and_zero_radius_core_remain_unchanged() {
         val source=TestContentFactory.openScenario()
         val original=source.unitDefinitions.getValue("tank")
-        val fast=TestContentFactory.unitWith(original,movement=original.movement.copy(moveSpeed=20.0,moveAccelerationSpeed=20.0))
+        val fast=TestContentFactory.unitWith(original,movement=original.movement.copy(moveSpeed=20.0,moveAccelerationSpeed=20.0),
+            movementCollision=MovementCollisionShape.Circle(0.0))
         fun truth(blocked:Boolean):MapDefinition {
             val cells=BooleanArray(600)
             if(blocked) cells[5*30+8]=true

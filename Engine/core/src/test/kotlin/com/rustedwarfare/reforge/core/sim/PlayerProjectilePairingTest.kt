@@ -29,7 +29,8 @@ class PlayerProjectilePairingTest {
                     UnitSpawn(near, "p2", "near", Position(110.0, 210.0), 90.0),
                     UnitSpawn(far, "p2", "far", Position(82.0, 210.0), 90.0)),
                 combatContract = CombatContract(12345, -1, mapOf("observer" to 10L, "target" to 11L, near to 8L, far to 9L), 12L))
-            assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+            // Isolate exact visibility-boundary tick timing from lateral 2D avoidance around the adjacent target unit.
+            assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context.also { it.trafficSeparationEnabled = false }
         }
         try {
             contexts.forEach { it.observePlayer(it.world, "p1") }

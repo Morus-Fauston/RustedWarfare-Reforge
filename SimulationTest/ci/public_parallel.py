@@ -30,8 +30,10 @@ from public_scenarios import run_scenarios
 
 PRODUCTION = ('production-1', 'production-2', 'production-3')
 SCENARIOS = (*PRODUCTION, 'other-short', 'content-three-formats')
+LONG_SHARDS = ('long-1', 'long-2', 'long-3')
 COLD_BUILD_TIMEOUT = 900
 COMMAND_TIMEOUT = 600
+LONG_COMMAND_TIMEOUT = 900
 FORKS = 4
 WORKERS = 4
 
@@ -155,13 +157,32 @@ def verify_distribution(archive, expected_sha, destination, files):
     return destination
 
 
-def new_plan(repo):
-    layer = plan_layer(repo, 'pr')
+def allocate_long(cases):
+    rows = {name: [] for name in LONG_SHARDS}
+    session_cases = [case for case in cases if case.get('backend') == 'session']
+    core_cases = [case for case in cases if case.get('backend') != 'session']
+    ordered = [*session_cases, *core_cases]
+    for index, case in enumerate(ordered):
+        rows[LONG_SHARDS[index % len(LONG_SHARDS)]].append(case)
+    if any(not rows[name] for name in LONG_SHARDS):
+        raise ValueError('A public long scenario shard is empty')
+    return rows
+
+
+def new_plan(repo, layer_kind='pr'):
+    if layer_kind not in ('pr', 'long'):
+        raise ValueError(f'Unsupported parallel layer: {layer_kind}')
+    layer = plan_layer(repo, layer_kind)
     suites = [(row['name'], row['plan']) for row in layer['suites']]
     cases = [dict(case, suite=suite) for suite, selection in suites for case in selection['scenarios']]
     keys = [(case['suite'], case['id']) for case in cases]
     if len(set(keys)) != len(keys) or len({case['id'] for case in cases}) != len(cases):
         raise ValueError('Scenario identities must be unique across the public matrix')
+    if layer_kind == 'long':
+        if any(selection['tests'] or selection.get('pythonTests') for _, selection in suites):
+            raise ValueError('Continuous long layer cannot skip selected mechanism tests')
+        shards = allocate_long(cases)
+        return dict(layer=layer, mechanisms=None, shards=shards, timing='balanced-backend-round-robin-v1')
     timing = read_json(repo/'SimulationTest/ci/public_scenario_timings.json')
     shards = {'mechanisms': [], **allocate(cases, timing['seconds'])}
     if any(not shards[shard] for shard in SCENARIOS):
@@ -169,13 +190,13 @@ def new_plan(repo):
     return dict(layer=layer, mechanisms=plan_mechanisms(suites), shards=shards, timing=timing['source'])
 
 
-def prepare(repo, output):
+def prepare(repo, output, layer_kind='pr'):
     output.mkdir(parents=True)
     transfer = output/'transfer'
     transfer.mkdir()
     started = time.monotonic()
     identity, sources, tools = candidate(repo), identities(repo), toolchain(repo)
-    plan = new_plan(repo)
+    plan = new_plan(repo, layer_kind=layer_kind)
     with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
         gradle = measure_gradle(repo, output)
         built = build_shared_distribution(repo, output/'build', sources, COLD_BUILD_TIMEOUT)
@@ -305,7 +326,8 @@ def run_shard(repo, bundle, plan_sha, shard, archive, output):
                 admit_distribution()
             folder = output/'scenarios'
             folder.mkdir()
-            execution = run_scenarios(repo, folder, cases, distribution, WORKERS, COMMAND_TIMEOUT, admit, execute_command)
+            timeout = LONG_COMMAND_TIMEOUT if shard in LONG_SHARDS else COMMAND_TIMEOUT
+            execution = run_scenarios(repo, folder, cases, distribution, WORKERS, timeout, admit, execute_command)
             if execution['status'] != 'passed':
                 raise ValueError(f'Current scenarios failed: {execution["firstError"]}')
             receipt['coverage'] = scenario_coverage(cases, execution)
@@ -364,7 +386,7 @@ def download_raw(artifact_id, output):
         raise ValueError('Could not download the raw artifact archive') from None
 
 
-def verify_raw_artifacts(bundle, receipts, artifacts, folder):
+def verify_raw_artifacts(bundle, receipts, artifacts, folder, *, raw_prefix='public-raw'):
     if not receipts:
         return {}, []
     attempt = bundle['identity']['attempt']
@@ -380,7 +402,7 @@ def verify_raw_artifacts(bundle, receipts, artifacts, folder):
             batch = json.load(response)['artifacts']
         for artifact in batch:
             name = artifact['name']
-            if name.startswith(f'public-raw-{attempt}-'):
+            if name.startswith(f'{raw_prefix}-{attempt}-'):
                 if name in items:
                     raise ValueError('Duplicate raw evidence artifact')
                 items[name] = artifact
@@ -389,7 +411,7 @@ def verify_raw_artifacts(bundle, receipts, artifacts, folder):
         page += 1
 
     def verify(shard):
-        artifact = items[f'public-raw-{attempt}-{shard}']
+        artifact = items[f'{raw_prefix}-{attempt}-{shard}']
         expected = artifacts[shard]
         if artifact['expired'] or artifact['digest'] != 'sha256:'+expected:
             raise ValueError('Raw artifact missing, expired or disagrees with the upload digest')
@@ -406,16 +428,18 @@ def verify_raw_artifacts(bundle, receipts, artifacts, folder):
                 results[shard] = future.result()
             except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
                 errors.append(f'{shard} raw evidence: {error}')
-    unexpected = set(items) - {f'public-raw-{attempt}-{shard}' for shard in bundle['shards']}
+    unexpected = set(items) - {f'{raw_prefix}-{attempt}-{shard}' for shard in bundle['shards']}
     if unexpected:
         errors.append('Unexpected raw artifacts: '+', '.join(sorted(unexpected)))
     return results, errors
 
 
-def aggregate(bundle, plan_sha, folder, pins, jobs, artifacts, admit_raw):
+def aggregate(bundle, plan_sha, folder, pins, jobs, artifacts, admit_raw, *, receipt_prefix='public-receipt', layer_kind=None):
     receipts, errors = {}, []
     attempt = bundle['identity']['attempt']
     expected = bundle['shards']
+    effective_layer = layer_kind or bundle.get('layer', {}).get('kind', 'pr')
+    required_jobs = ('prepare', 'scenarios') if effective_layer == 'long' else ('prepare', 'mechanism', 'scenarios')
     inputs = {}
     for path in sorted(folder.glob('*/receipt.json')):
         try:
@@ -427,7 +451,7 @@ def aggregate(bundle, plan_sha, folder, pins, jobs, artifacts, admit_raw):
             receipts[shard] = receipt
         except (OSError, ValueError, KeyError, TypeError) as error:
             errors.append(f'{path.parent.name}: {error}')
-    for job in ('prepare', 'mechanism', 'scenarios'):
+    for job in required_jobs:
         if jobs.get(job) != 'success':
             errors.append(f'{job} job conclusion: {jobs.get(job)}')
     for shard, cases in expected.items():
@@ -435,7 +459,7 @@ def aggregate(bundle, plan_sha, folder, pins, jobs, artifacts, admit_raw):
             path = inputs[shard]
             if not re.fullmatch(r'[0-9a-f]{64}', artifacts.get(shard, '')):
                 raise ValueError('Raw evidence artifact has no platform digest')
-            if path.parent.name != f'public-receipt-{attempt}-{shard}':
+            if path.parent.name != f'{receipt_prefix}-{attempt}-{shard}':
                 raise ValueError('Unexpected artifact name')
             row = checked_json(path, pins[shard])
             if row != receipts[shard]:
@@ -466,15 +490,16 @@ def output_pin(name, sha):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['prepare', 'shard', 'summary'])
+    parser.add_argument('--layer', choices=['pr', 'long'], default='pr')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--transfer', type=Path)
     parser.add_argument('--plan-sha', default=os.environ.get('PUBLIC_PLAN_SHA'))
-    parser.add_argument('--shard', choices=('mechanisms', *SCENARIOS))
+    parser.add_argument('--shard', choices=('mechanisms', *SCENARIOS, *LONG_SHARDS))
     parser.add_argument('--receipts', type=Path)
     args = parser.parse_args()
     output = args.output.resolve()
     if args.action == 'prepare':
-        output_pin('plan_sha', prepare(REPO, output))
+        output_pin('plan_sha', prepare(REPO, output, layer_kind=args.layer))
         return 0
     if args.action == 'shard':
         try:
@@ -492,18 +517,21 @@ def main():
         return int(receipt['status'] != 'passed')
     output.mkdir(parents=True)
     jobs = json.loads(os.environ['PUBLIC_JOBS'])
+    receipt_prefix = 'public-long-receipt' if args.layer == 'long' else 'public-receipt'
+    raw_prefix = 'public-long-raw' if args.layer == 'long' else 'public-raw'
     try:
         bundle = checked_json(args.transfer/'plan.json', args.plan_sha)
         if (bundle['identity'] != candidate(REPO) or bundle['source'] != identities(REPO)
-                or any(bundle[key] != value for key, value in new_plan(REPO).items())):
+                or bundle.get('layer', {}).get('kind') != args.layer
+                or any(bundle[key] != value for key, value in new_plan(REPO, layer_kind=args.layer).items())):
             raise ValueError('Summary checkout, attempt or planned coverage differs')
         admitted = {}
         artifacts = json.loads(os.environ['PUBLIC_ARTIFACTS'])
         result = aggregate(bundle, args.plan_sha, args.receipts, json.loads(os.environ['PUBLIC_PINS']), jobs,
-                           artifacts, admitted.__setitem__)
+                           artifacts, admitted.__setitem__, receipt_prefix=receipt_prefix, layer_kind=args.layer)
         try:
             with tempfile.TemporaryDirectory(prefix='public-raw-evidence-') as raw:
-                verified, errors = verify_raw_artifacts(bundle, admitted, artifacts, Path(raw))
+                verified, errors = verify_raw_artifacts(bundle, admitted, artifacts, Path(raw), raw_prefix=raw_prefix)
         except (OSError, ValueError, KeyError, TypeError) as error:
             verified, errors = {}, [f'Raw artifact enumeration failed: {error}']
         result['verifiedRawEvidence'] = verified

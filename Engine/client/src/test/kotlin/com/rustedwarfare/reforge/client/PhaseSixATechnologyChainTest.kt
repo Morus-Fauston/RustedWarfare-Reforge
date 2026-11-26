@@ -70,9 +70,10 @@ class PhaseSixATechnologyChainTest {
                 session.phaseSixOwned().single { it.unitId == dropship.unitId }.transport?.passengerIds == listOf(tank.unitId)
             }
             assertTrue(session.phaseSixOwned().none { it.unitId == tank.unitId })
-            assertIs<ActionResult.Accepted>(session.move(Position(320.0, 240.0)))
+            assertIs<ActionResult.Accepted>(session.move(Position(240.0, 430.0)))
             session.phaseSixAwait(1500, "dropship arrives at the landing site") {
-                session.phaseSixOwned().single { it.unitId == dropship.unitId }.moveTarget == null
+                val ds = session.phaseSixOwned().single { it.unitId == dropship.unitId }
+                ds.moveTarget == null && ds.tasks.isEmpty()
             }
             assertIs<ActionResult.Accepted>(session.unload(true))
             session.phaseSixAwait(600, "tank returns to the ground under its original ID") {

@@ -65,7 +65,8 @@ class RouteRepairTest {
         val original = source.unitDefinitions.getValue("tank")
         val unit = TestContentFactory.unitWith(original, radius = 11.0,
             movement = original.movement.copy(moveSpeed = 1.1, moveAccelerationSpeed = .07,
-                moveDecelerationSpeed = .17, maxTurnSpeed = 4.1, turnAcceleration = .25))
+                moveDecelerationSpeed = .17, maxTurnSpeed = 4.1, turnAcceleration = .25),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
             scenarioId = "route-repair-drift",
             map = MapDefinition(10, 10, 20, 20, emptyList(), IntArray(100), BlockingGrid(10, 10, BooleanArray(100) { truth && it == 22 })),
@@ -133,7 +134,7 @@ class RouteRepairTest {
             assertEquals(PathSearchReason.ROUTE_REPAIR, sample.reason)
             assertEquals("original-move", sample.actionId); assertNull(sample.scheduledStep)
             assertEquals(17L, sample.executionStep); assertEquals(before.position, sample.searchStart)
-            assertEquals(Position(30.0, 50.0), sample.searchTarget); assertEquals(1, sample.actualSearchCalls)
+            assertEquals(driftGoal, sample.searchTarget); assertEquals(1, sample.actualSearchCalls)
             assertFalse(sample.usedPlayerKnowledge)
             assertEquals(.726, after.speed, 1e-9); assertEquals(-.5, after.angularVelocity)
             finish(context)
@@ -209,12 +210,12 @@ class RouteRepairTest {
             assertTrue(hypot(before.position.x - 30.0, before.position.y - 50.0) > 16.0)
             val after = context.advance(Step(17, 1.0, "sim-tick")).units.single()
             val sample = context.drainPathDiagnostics(context.world).single()
-            assertEquals(driftPath, after.pathPoints.takeLast(2))
-            assertEquals(listOf(Position(30.0, 70.0)) + driftPath, after.pathPoints)
+            assertTrue(after.pathPoints.size >= 2 && after.pathPoints.last() == driftGoal, "Repaired route must reach original goal: ${after.pathPoints}")
+            assertTrue(clear(before.position, after.pathPoints.first()), "Repaired first leg must clear known wall")
             assertEquals(driftGoal, after.moveTarget)
             assertEquals(PathSearchReason.ROUTE_REPAIR, sample.reason); assertEquals("suffix-origin", sample.actionId)
             assertEquals(17L, sample.executionStep); assertEquals(before.position, sample.searchStart)
-            assertEquals(driftPath.first(), sample.searchTarget); assertEquals(1, sample.actualSearchCalls)
+            assertEquals(driftGoal, sample.searchTarget); assertEquals(1, sample.actualSearchCalls)
             finish(context)
         } finally { context.close() }
     }

@@ -13,7 +13,8 @@ class CornerCaptureTest {
         val height = 5 + offsetRows
         val offset = offsetRows * 20.0
         val tank = UnitDefinition("tank", "CustomUnitMetadata", radius, radius, 1, Path.of("owned-unused.png"), 1.0,
-            MovementProfile(MovementType.LAND, speed, acceleration, deceleration, 4.1, 0.25, false, false), emptySet())
+            MovementProfile(MovementType.LAND, speed, acceleration, deceleration, 4.1, 0.25, false, false), emptySet(),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(Scenario("capture-owned",
             MapDefinition(5, height, 20, 20, emptyList(), IntArray(5 * height), BlockingGrid(5, height,
                 BooleanArray(5 * height) { it == 12 + 5 * offsetRows || (hiddenWall && it == 8 + 5 * offsetRows) })), mapOf("tank" to tank),
@@ -77,7 +78,8 @@ class CornerCaptureTest {
 
     @Test fun cp02_strict_sixteen_boundary_keeps_a_safe_corner_until_the_following_step() {
         val tank = UnitDefinition("tank", "CustomUnitMetadata", 8.0, 8.0, 1, Path.of("owned-unused.png"), 1.0,
-            MovementProfile(MovementType.LAND, 8.0, 8.0, 8.0, 4.1, 0.25, false, false), emptySet())
+            MovementProfile(MovementType.LAND, 8.0, 8.0, 8.0, 4.1, 0.25, false, false), emptySet(),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val path = listOf(Position(130.0, 30.0), Position(130.0, 50.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(Scenario("capture-strict-owned",
             MapDefinition(7, 5, 20, 20, emptyList(), IntArray(35), BlockingGrid(7, 5, BooleanArray(35) { it == 19 })),

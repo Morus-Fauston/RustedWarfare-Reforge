@@ -1,3 +1,56 @@
+v0.5.78 (2026-11-26 21:36)
+  修复: 放行跨 2 的幂次坐标边界推挤时的单调非恶化亚 ULP 接触间隙，消除浮点容差减半引发的同向推挤原地冻结 / 为偏角顶推贴墙静置圆形单位补齐微移阻塞回退与沿墙切向同向等距伴随滑行，消除窄道门内亚像素僵持且严守空闲位移上界
+  技术: 新增 2 项接触边界单测，全量核心单测、公开短测、PC 与 Android 构建校验、核心基准与两批已知回归探针全绿，经独立目视与代码复核通过
+
+====
+
+v0.5.77 (2026-11-26 19:52)
+  修复: 异构群移仅剩小车未停稳时自动回退常规向心切向落位，并将接触早停收束为前方确有静止阻挡单位时生效 / 为半对角线可过弯的紧凑长矩形引入 2x2 转角内偏枢轴采样，补齐矩形邻域缓存隔离键与寻路优先队列全序确定性 / 将停稳免推保护限定在同次群移内以支持合围破围，放开近垂直顺路擦掠滑行并在硬接触超时后停止强顶贴墙静置车交还局部避让绕行，同时将被推空闲车单步位移严限在推手步长内并清零贴墙探测分配 / 修正群移槽位贴近收口到达结算、舰船离岸引导门限与空军密集软分离单步航速钳制
+  调整: 放宽跨介质陆海空混编规模群移按通行层启用共享流场并发起步（小规模纯水军矩形编队保留精确船体航线，空军不占地面落位） / 客户端在常规运行下合并多选与批量指令为单次末帧发布以消除点击帧构建卡顿，并同步公开五期四格式会话契约与维护防守长链时序基线
+  技术: 新增 5 项通用机制回归单测，全量核心与客户端单测、公开短测与连续长测全套、PC 安装包、Android Debug 构建及宿主校验、核心 dev-ab 与原 12 组已知回归及双根布局检查全绿；经独立目视审查与独立代码架构整审复核通过（0 必修） [已知问题: 极端单口死胡同百车维持 87/100 已知限制，窄港双长舰紧贴与峡内顶推边缘场景留待后续海战专项]
+
+====
+
+v0.5.76 (2026-11-26 08:38)
+  修复: 将 RouteOccupancy 贯穿 Pathfinding.findPathToRange 并为建造/续建/回收工程接近段补齐轮廓交接防切角与受阻绕障重规划 / 补齐共享流场 USER_MOVE 与 KNOWLEDGE_REPLAN 诊断样本上报及回滚一致性，修正四邻全封单格圆形单位的无法移动拒绝
+  调整: 按统一静态地形轮廓校准 phase-five 四格式公开场景（保里程碑步序不变）、MaintenanceBoundaryTest、PhaseSixATechnologyChainTest 及 PathPerfBatch（TERRAIN_RADIUS=9.0，直连 19 辆，最近合法边 311.0）
+  技术: 新增 MovementRegression011Test，全量公开 PR CI 7/7 套、统一 CLI dev-ab 10 场景（双百 100/100 真分流，open-50 稳停超 900 步）、同机冷热 R3 配对（对比 v0.5.31/v0.5.46 起步 0-2 步、规划 CPU 降 15.7x-27x）、Windows 试玩包 1x 原版素材实窗采样及双根 workspace_layout.py 全绿；独立 Hydrogen 目视 APPROVED，独立 Neon 代码与账本整审 APPROVE（0 必修） [已知问题: culdesac-overflow-100 极端死胡同当前 87/100，维持已知限制单列]
+
+====
+
+v0.5.75 (2026-11-26 05:48)
+  新增: 在 Engine/core 建立 ScenarioCatalog 与 MovementParameterFingerprint 统一纳管 A/B 开发组 10 个核心移动与对抗场景及程序化地形呈现 / 融合 SkirmishMapPanel 分类可滚动列表、实时地形缩略图、ADR-014 主题热切与 PC --scene <id> 直达，并支持非 pack 目录内容包回退与槽位完备视觉别名绑定 / SimulationTest 主入口与 MovementMicroProbe 统一对接 ScenarioCatalog，支持 --list、--scene、--assert、--sheets 与带安全/组别/回执校验的 --holdout-file 外部 C-F 留出加载
+  技术: 新增 ScenarioCatalogTest、SkirmishMapCatalogUiTest、PcCatalogSceneOptionTest 与 MovementMicroProbeCliTest，跨模块测试、:pc:installDist、统一 CLI、public_batch.py --kind short 6/6 与双根 workspace_layout.py 全绿；原版 PC 资源 6 态实窗与拼图经独立 Hydrogen 目视 APPROVED，独立 Neon 代码与主题整审返修复核 APPROVE（0 必修） [已知问题: culdesac-overflow-100 保留选图与回放入口并按已知限制单列提示]
+
+====
+
+v0.5.74 (2026-11-26 04:32)
+  调整: 规模圆形群移落地真·共享流场 O(1) 直驱与封闭目标单次最近可达连通种子，取消百次单车 A* 陪跑并补齐驱逐降级防饥饿 / 重写 ChunkedFlowFieldAdapter 为正交 Eikonal 二次求解、2x2 双线性光滑梯度与 1 格窄门轴线对齐，废除窄门静态重罚，落地基于 shadowMinCut 不变式的 P1 影子双缓冲纯单调重算、COW 回滚与连点干道防 2-cycle 复用 / 混编小车流场宽道及肩格让大车，门区拥堵仅计迎门低速受阻车流并经滞回分流，直连捷径校验全轮廓净空且禁止跨收费门逃费 / 升级同源诊断拼图门控进入、车尾穿出与目标侧停稳吞吐指标并修正双向对穿计数
+  技术: 全量 :core:test（424 套 1578 用例 0 失败，含 6 项流场与门控新增回归单测）、公开短测 6 套与历史双 14 混编（876/907 步稳停 600 步）全绿；双百石阵 rocks-small-100（1855 步 W3=7/93）与 rocks-mixed-100（3212 步 W3=23/77）均 100/100 到达停稳且真分流；经独立 Hydrogen 目视 APPROVED 与独立 Neon 代码数学整审 APPROVE，双工作区布局校验通过 [已知问题: culdesac-overflow-100 极端死胡同当前 87/100，维持已知限制单列]
+
+====
+
+v0.5.73 (2026-11-26 03:27)
+  调整: 废除圆形群移方形点阵预造坑、16 倍细分网格绕路、五阶段让位与中途引路，重铸为连续向心切向滑行与防单格喉道栓塞的单一终点落位层 / 升级 LandingOccupancy 为与距离无关的跨命令稀缺宽位认领保护并按车体全宽校验地形视距 / recoverStalledMoves 静置单位早退并惰性求值邻车查询
+  修复: 修复释放失效车位重入排队引发的并发修改与索引覆盖 / 修正喉道侧滑贴撞前车与窄桥末段减速退化
+  技术: 全量 :Engine:core:test（424 套 1568 用例）与公开短测 6 套全绿，双 14 混编原令与 50 车开阔地全员稳停，密集静置测试耗时下降；经独立 12 图目视与全新上下文独立代码整审通过，工作区布局校验通过 [已知问题: culdesac-overflow-100 极端死胡同当前 78/100，维持已知限制单列]
+
+====
+
+v0.5.72 (2026-11-26 01:25)
+  调整: 统一单选与群移静态地形通行轮廓（UnitLocomotion.terrainHull 与 explicitMovementCollision，隐式 INI 陆地单位地形内切封顶 0.45*minTile、互碰与地图外边界保完整 radius） / 重写 WorldSpatialIndex 原始数组零分配快照、BuildingTerrain.isBuildingCell O(1) 建筑重叠预检与 Pathfinding.findPathToRange 去全图分配，收窄 NarrowPassage 为真单行窄口局部空间反查与对向门外让空 / 清除 LocomotionModule 全部上层命令特判与大面积 passthrough 旁路，收束对向视距并修复 wall-only 零分配 3D LP 退化
+  修复: 修复 NarrowPassage 单行窄桥重入提前刹停与对向推让判定，对齐自有 author-shore 测试夹具合法格位与关联地形轮廓单测
+  技术: 新增 BottleneckContractABTest（含宽半径隐式 INI 单格走廊 beginNearest 回归），:core:test 424 套 1565 用例与 public_batch.py --kind short 6/6 全绿，5 场景 :movementProbe 全达停稳；独立 Hydrogen 10 图目视 APPROVED，独立 Neon 代码整审返修复核 APPROVE（0 必修），workspace_layout.py 通过
+
+====
+
+v0.5.71 (2026-11-25 16:59)
+  新增: SimulationTest 新增 :movementProbe 秒级移动微基准与 2 秒停滞标红拼图探针
+  调整: 新增 ReadOnlyTestContentPacks 只读测试包进程内缓存并开启 :core:test 可控并行执行 / public_batch.py --kind short 复用带摘要校验的单次共享分发包并支持多核场景并发 / 放开 public-pr.yml 全仓 PR 并行矩阵并新增 public-long.yml 三分片并行汇总与串行回退
+  技术: 同机全新重跑 :core:test、公开短测六套、CI Python 单测与移动探针自测通过且覆盖清单完全守恒，经独立非作者整审通过
+
+====
+
 v0.5.70 (2026-11-24 03:05)
   新增: 以统一 90° 俯视工业像素风全量补绘 phase-seven-sandbox 全 65 单位（136 张活体/残骸/阴影 PNG，含 18 蜘蛛模块与炮艇/重战舰/实验厂/核弹井等）及随包 visuals/placeholder/units 全部 28 张单位图，同步更新 manifest.json 哈希与真实来源（100% 保原尺寸/多帧动效与纯绿合规，残骸/阴影零纯绿误染，不动地形与 phase-six-a-sandbox）
   技术: 新增 PublicUnitSpriteIntegrityTest 全量校验 145+28 张 PNG 尺寸/帧间变化/纯绿阈值与 manifest 来源一致，受影响 :client:test/:pc:test/:pc:installDist 全绿，workspace_layout.py --root 返回 ok: true / 完成双色全阵容拼图与公开占位 1920x1080 5 态实窗采集 / Hydrogen 9 图视觉审查首轮 APPROVED，独立 Neon 代码与清单整审返修闭合后定向复核 APPROVED（0 必修）
@@ -95,9 +148,22 @@ v0.5.56 (2026-11-22 04:15)
 
 ====
 
+v0.5.55 (2026-11-22 23:13)
+  架构改进: 物理删除 TrafficSeparation / CorridorChoice / OvertakePublication、16 折线缓存、60 步超车等待及全部死引用死字段，UnitContact.contactSlide 瘦身为 parkedPeerTangentSlide；清理 3 个绑定已删旧模块的废测并按真实玩法不变量收敛旧寻路单测
+  修复: 补齐 LocomotionModule 非接触体过滤与几何边界、海厂脱口避让豁免、SharedLandingSites 选位预算挂起、Pathfinding 占用快判与 recoverStalledMoves 惰性接触查询；销账悬浮艇陆水占位与寻路性能 CLI MEMORY_GAP 两项历史红项
+  技术: 净减 2,049 行；全量 :core:test（1,551 项）、SimulationTest 专项、PathPerfBatchMain CLI、公开短测批跑与工作区布局检查全绿；全新上下文独立 Neon 整审修复 2 项 P1 后定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.55 (2026-11-22 03:03)
   新增: 打包 65 枚自有 72px RGBA 指令图标图集（MipMapLinearLinear 与完整显存回收）/ 实现能力驱动动作列表与 HudActionPanel 并彻底移除 NativeActionPanel（置顶共用命令行停止 S/巡逻 P/守卫 G 弹 amber 未支持、两列骨白键帽与按下态/激活 rust 描边/资金不足禁用闪烁/排队徽标与底进度条、逐像素平滑 ScrollPane 与滚动实时对齐悬停提示框）/ 战场顶部居中 300 宽目标模式提示卡（建造三态、回收修理、巡逻计数与右键 Esc 退出）
   技术: 迁移 15 项旧测试并新增 UiHudActionListAndIconsTest；通过 1920×1080 与 960×640 实窗四态对照，Hydrogen 视觉并排审阅与 Neon 独立代码整审定向复核均 0 必修
+
+====
+
+v0.5.54 (2026-11-22 12:46)
+  架构改进: 建立双适配器接缝 NavigationGuidance 与按需分块共享流场深模块 ChunkedFlowFieldAdapter（16×16 分块、步内 P1 预算增量构建、候选步安全回滚与按玩家严格迷雾隔离）；落地大车宽道让道代价、单格针眼门与多缝隙滞回软拥堵分流、局域脏块增量重算（含前沿堆清理、懒删除与阻塞下游防倒灌）、高频连点取消旧未完建场及同地形远端主干复用、O(1) 规模群移快启与死胡同/岸线饱和外溢统一结算（settleSaturationOverflow 原子取消挂起修路并同步 landingOccupancy）；将 OVER_CLIFF 纳入 sharedLanding 并保留水域最近点共享落点，修复历史 14 混编原令 30910/31060 全部 14/14 到达稳态
+  技术: 新增 ChunkedFlowFieldTest 10 项单测及 rocks-mixed-100 / culdesac-overflow-100 诊断场景，59 项核心专项单测、历史 14 原令 30910/31060（双 14/14 稳态 600 步）与公开短场景批跑全通过；8 套同源 2 秒停滞标红拼图及峰值放大图（rocks-small-100 100/100、rocks-mixed-100 97/100 零停滞标红、culdesac-overflow-100 100/100 步 459 收敛及全部回归场景）经 Hydrogen 强制目视复核 APPROVE，全新上下文 Neon 非作者整审发现 4 项 P1 修复后定向复核 APPROVE（0 必修）
 
 ====
 
@@ -107,9 +173,21 @@ v0.5.54 (2026-11-22 02:24)
 
 ====
 
+v0.5.53 (2026-11-22 06:12)
+  架构改进: 扩展 LocomotionModule 分级互让权重（结合质量/面积/敏捷度映射 [0.10, 0.90]）、站定开火与已离口静候 0 责任、宽路 0 停顿斜向超车与远程射程弧自然展开（攻击目标严格迷雾可见性校验、显式 32-bit FNV-1a 确定性并列打破）；新增单行窄口门外侧方让空与重入中心对齐接入 UnitMovementOrchestrator；新增独立 AIR 层轻量二维 Boids 软分离与环落位（按真实定义半径分离、边界钳位、起降与轰炸机豁免）
+  技术: 新增 MixedOvertakeAndAirSeparationTest 5 项单测及 3 个混编/窄桥/空军诊断场景，55 项专项单测与公开短场景批跑（6 套）全通过；6 套 2 秒停滞标红拼图（rocks-small-100 100/100、opposed-open-25v25 50/50、opposed-corridor-8v8 16/16、mixed-overtake-wide 11/11、narrow-bridge-yield 2/2、air-flock-rally 16/16 零红标零重叠）经 Hydrogen 目视复核 APPROVE，Carbon 非作者审阅与定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.53 (2026-11-22 01:37)
   新增: 废除 StretchViewport/FitViewport 升级短边 640 连续等比 ScreenViewport（含触控 ppcY 8mm 键高下限与 Android 全屏战场）/ 接入 gdx-freetype 1.13.1（PC 与 Android 四 ABI）及随包 OFL 开源 NotoSansSC + JetBrainsMono 增量字体、预热与拖拽防抖重建 / 落地 UiTokens 设计令牌与中英双语 UiStrings（含核心 kebab-case 拒绝码映射、内容包原文透传）
   技术: 补齐缩放/坐标往返/15 色 RGBA/防抖/双语与 OFL 资源单测；通过 PC 实窗冒烟、:pc:installDist 与 :android:assembleDebug 四 ABI 构建，独立非作者代码整审定向复核 0 必修
+
+====
+
+v0.5.52 (2026-11-22 03:27)
+  架构改进: 新增二维局部速度避让深模块 LocomotionModule，在步初冻结空间索引与严格迷雾隔离下实现无量纲自适应二维 Boids 软分离（真单行窄道与地图边界净宽衰减）、靠右微偏置 2D ORCA 半平面线性规划、硬保静态墙体的 3D LP 最小侵入退化（含切线平局正向投影）及短窗可达转向扇区/滞回/余弦节流；不可变 UnitNavigationState 增加 lastAvoidHeadingDeg 随候选步回滚，接入 UnitMovementOrchestrator 并跳过旧一维 separationCaps
+  技术: 新增 LocomotionModuleTest 10 项单测，536 项核心回归与公开短场景批跑（6 套）全通过；三套 2 秒停滞标红拼图（rocks-small-100 100/100、opposed-open-25v25 50/50、opposed-corridor-8v8 16/16）经 Hydrogen 目视复核 APPROVE，非作者代码整审与定向复核 APPROVE（0 必修）
 
 ====
 
@@ -123,6 +201,12 @@ v0.5.51 (2026-11-21 23:35)
   新增: 通用多层 TMX/TSX 解析（csv 与 base64/gzip/zlib、翻转位保留、非整除及省略尺寸图集、默认水体兜底）/ 多图层通行、矿池、禁建、液体与悬崖真值合并，忽略 set 辅助层并提取开局单位与 map_info
   文档: CONTEXT.md 补充主选单位、动作列表、动作键、共用命令、专属动作、地图视觉图层与地块图集 7 条术语
   技术: 补齐多层合并与安全边界单测；公共内容/移动/知识机制套件、49 项内容回归及 48 张本地原版遭遇战地图解析通过，独立非作者整审复核 0 必修
+
+====
+
+v0.5.51 (2026-11-21 22:59)
+  架构改进: MovePlanning 建立 P0 玩家新令快车道（1–5 辆抢占与超编降级迁移）/ P1 流场挂点 / P2 修路三级优先级预算隔离（P2 3/4 上限与跨步轮转）及同步 0 步二轮推进，收回 repairInvalidConnections 普通 MOVE 至步级预算；新增微移短接驳防活锁（adoptSpliced）、新令 ScreenPlane 前向净空护栏下的当步乐观转向，以及 12 步快敏物理脱困与 12→24→48 指数退避
+  技术: 新增 PriorityPlanningSchedulerTest 8 项单测，33 类 136 项核心回归、知识前缀回归及公开短场景批跑（6 套）全通过，3 轮独立非作者审阅与定向复核 APPROVE（0 必修）
 
 ====
 

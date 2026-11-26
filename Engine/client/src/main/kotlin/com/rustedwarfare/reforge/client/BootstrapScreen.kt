@@ -46,6 +46,7 @@ class BootstrapScreen(
     private val cameraStartSeed: Path? = null,
     private val initialSkirmishMap: Path? = null,
     private val initialUiThemePacks: List<Path> = emptyList(),
+    private val initialCatalogSceneId: String? = null,
 ) : ApplicationAdapter() {
     private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT, MAPS }
     private data class ContentCandidate(val root: Path, val content: ContentPackChoice?)
@@ -531,7 +532,7 @@ class BootstrapScreen(
         previewHeading = label("", 178f, 449f, 256f, 52f).apply { setAlignment(Align.topLeft) }
         mapPreview = object : Actor() {
             override fun draw(batch: Batch, parentAlpha: Float) {
-                val map = skirmishMapState.selected?.map ?: testScenes.choice?.scenario?.map ?: qualifiedContent?.getOrNull()?.scenario?.map ?: return
+                val map = skirmishMapState.activeMap ?: testScenes.choice?.scenario?.map ?: qualifiedContent?.getOrNull()?.scenario?.map ?: return
                 val pxPerUnitX = if (viewport.worldWidth > 0f && viewport.screenWidth > 0) viewport.screenWidth.toFloat() / viewport.worldWidth else 1f
                 val pxPerUnitY = if (viewport.worldHeight > 0f && viewport.screenHeight > 0) viewport.screenHeight.toFloat() / viewport.worldHeight else 1f
                 val maxPxW = width * pxPerUnitX
@@ -616,22 +617,43 @@ class BootstrapScreen(
         testSceneTab = button(if (alternateStartSeed == null) "Development" else "Starting units", 424f, 568f, 176f) {
             openSettingsPage(StartupPage.DEVELOPMENT)
         }
-        skirmishMapTab = button("Maps (.tmx)", 424f, 568f, 112f) {
+        skirmishMapTab = button("Maps & Scenes", 424f, 568f, 128f) {
             openSettingsPage(StartupPage.MAPS)
+        }
+        val discoveredSandboxSeeds = buildList {
+            testScenarioSeed?.let { add("Command Center" to it) }
+            alternateStartSeed?.let { add("Modular Spider" to it) }
+            cameraStartSeed?.let { add("Camera Demo" to it) }
         }
         skirmishMapPanel = SkirmishMapPanel(
             skirmishMapState,
             skin,
             originalDirectoryProvider = { visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory },
+            themeProvider = uiThemeProvider,
+            sandboxPresetSeeds = discoveredSandboxSeeds,
+            onSelectSandboxSeed = { seed ->
+                testScenes.choose(seed)
+                if (testScenes.selected) {
+                    if (!rootField.isDisabled) customRootText = rootField.text
+                    testScenes.choice?.let { rootField.text = it.root.toString() }
+                }
+            },
+            onClearSandboxSeed = {
+                if (testScenes.selected) {
+                    testScenes.useCustomContent()
+                    rootField.text = customRootText
+                }
+            },
         ) {
-            if (skirmishMapState.selected != null && testScenes.selected) {
+            if (skirmishMapState.hasSelection && testScenes.selected) {
                 testScenes.useCustomContent()
                 rootField.text = customRootText
             }
             evidence.record("skirmish-map-choice", mapOf(
-                "selected" to (skirmishMapState.selected != null),
+                "selected" to skirmishMapState.hasSelection,
                 "path" to skirmishMapState.selected?.path?.toString(),
-                "displayName" to skirmishMapState.selected?.displayName,
+                "catalogSceneId" to skirmishMapState.selectedCatalog?.entry?.id,
+                "displayName" to skirmishMapState.activeDisplayName,
                 "error" to skirmishMapState.error,
             ))
             loadError = null; lastHudState = null; updateHud()
@@ -643,11 +665,17 @@ class BootstrapScreen(
                     it.refresh()
                 }
             }
+            if (!skirmishMapState.hasSelection && initialCatalogSceneId != null) {
+                if (skirmishMapState.selectCatalog(initialCatalogSceneId)) {
+                    it.refresh()
+                }
+            }
         }
         testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, cameraStartSeed, skin,
             visualSettings?.let { it::createUiFont }) {
             if (visualState?.busy == true) visualState.cancel()
             if (testScenes.selected) {
+                skirmishMapState.clear()
                 if (!rootField.isDisabled) customRootText = rootField.text
                 testScenes.choice?.let { rootField.text = it.root.toString() }
             } else rootField.text = customRootText
@@ -1219,7 +1247,7 @@ class BootstrapScreen(
             menu.selectedTitle?.let(::add)
             menu.battleActions().forEach { add(it.title); add(it.hint) }
         }
-        skirmishMapState.selected?.displayName?.let(::add)
+        skirmishMapState.activeDisplayName?.let(::add)
     }
 
     private fun rebuildFontsForScale(targetScale: Float) {
@@ -1428,6 +1456,7 @@ class BootstrapScreen(
 
     private fun canStartMatch(): Boolean = visualState?.canStart != false &&
         when {
+            skirmishMapState.selectedCatalog != null -> true
             skirmishMapState.selected != null -> packState.canStart && (packState.choice() != null || qualifiedContent?.isSuccess == true || rootField.text.trim().takeIf { it.isNotEmpty() }?.let { raw -> runCatching { java.nio.file.Files.isRegularFile(java.nio.file.Paths.get(raw).resolve("pack.json")) }.getOrDefault(false) } == true)
             testScenes.selected -> testScenes.choice != null
             else -> packState.canStart && qualifiedContent?.isSuccess == true
@@ -1443,7 +1472,8 @@ class BootstrapScreen(
                 refreshContentQualification()
                 if (!canStartMatch()) return
                 val skirmish = skirmishMapState.selected
-                val scene = if (skirmish != null) null else testScenes.choice
+                val catalog = skirmishMapState.selectedCatalog
+                val scene = if (skirmish != null || catalog != null) null else testScenes.choice
                 val content = contentCandidate
                 launch.configure(launch.configuration.copy(
                     root = scene?.root ?: content?.root ?: activeRoot,
@@ -1451,7 +1481,8 @@ class BootstrapScreen(
                     contentPack = scene?.content ?: content?.content ?: packState.choice(),
                     testScenario = scene,
                     skirmishMapPath = skirmish?.path,
-                    skirmishMapName = skirmish?.displayName,
+                    skirmishMapName = skirmish?.displayName ?: catalog?.entry?.displayName,
+                    catalogScenarioId = catalog?.entry?.id,
                 ))
                 launch.start()
             } else launch.reopen()
@@ -1471,13 +1502,18 @@ class BootstrapScreen(
                 "deploymentEnabled" to request.configuration.options.deploymentEnabled,
                 "cameraJoystickEnabled" to request.configuration.options.cameraJoystickEnabled,
                 "nukesEnabled" to request.configuration.options.nukesEnabled,
+                "catalogScenarioId" to request.configuration.catalogScenarioId,
                 "testScenarioId" to request.configuration.testScenario?.id, "testScenarioSeed" to request.configuration.testScenario?.seed?.toString()))
             val contentPack = request.configuration.contentPack
             val prepare = visualState?.prepareForLoad(contentPack)
                 ?: visualSettings?.let { settings -> { settings.prepareForContent(request.configuration.visuals, contentPack) } }
             val skirmishMapPath = request.configuration.skirmishMapPath
+            val catalogId = request.configuration.catalogScenarioId
+            val catalogEntry = catalogId?.let(com.rustedwarfare.reforge.core.sim.ScenarioCatalog::byId)
             val testScenario = request.configuration.testScenario
-            if (skirmishMapPath != null) {
+            if (catalogEntry != null) {
+                loader.requestCatalogScenario(catalogEntry, activeRoot, contentPack, prepare)
+            } else if (skirmishMapPath != null) {
                 val origDir = request.configuration.visuals.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
                 loader.requestSkirmishMap(skirmishMapPath, activeRoot, contentPack, origDir, request.configuration.skirmishMapName, prepare)
             } else if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
@@ -1662,7 +1698,7 @@ class BootstrapScreen(
                 visualSettings?.preparationDiagnostics?.takeIf { it.isNotEmpty() }?.let {
                     evidence.record("resource-acceptance-reuse", it + mapOf("generation" to generation))
                 }
-                activeMapId = skirmishMapState.selected?.displayName
+                activeMapId = skirmishMapState.activeDisplayName
                     ?: testScenes.choice?.id
                     ?: "sandbox"
                 debugLayerState = debugLayerState.reset()
@@ -2516,19 +2552,19 @@ class BootstrapScreen(
             home -> "RustedWarfare-Reforge"
             setup -> "Skirmish setup"
             startupPage == StartupPage.DEVELOPMENT -> "Development"
-            startupPage == StartupPage.MAPS -> "Skirmish Maps (.tmx)"
+            startupPage == StartupPage.MAPS -> "Maps & Scenarios"
             else -> "RustedWarfare-Reforge"
         })
         setupButton.isVisible = home
-        retryContentButton.isVisible = setup && !testScenes.selected && skirmishMapState.selected == null && qualifiedContent?.isFailure == true
+        retryContentButton.isVisible = setup && !testScenes.selected && !skirmishMapState.hasSelection && qualifiedContent?.isFailure == true
         quitButton.isVisible = home
         menuBackButton.isVisible = setup || managing
         previewHeading.isVisible = setup
         mapPreview.isVisible = setup
-        val selectedTmx = skirmishMapState.selected
+        val selectedSummary = skirmishMapState.activePreviewSummary
         val prepared = testScenes.choice?.scenario ?: qualifiedContent?.getOrNull()?.scenario
         previewHeading.setText(when {
-            selectedTmx != null -> "${selectedTmx.displayName}\n${selectedTmx.map.widthTiles} x ${selectedTmx.map.heightTiles} tiles (${selectedTmx.playerCount}p)"
+            selectedSummary != null -> selectedSummary
             prepared != null -> {
                 val choice = contentCandidate?.content
                 val name = testScenes.choice?.name ?: choice?.content?.openingPack?.name ?: choice?.pack?.name ?: "Selected map"
@@ -2542,13 +2578,13 @@ class BootstrapScreen(
             testScenes.selected && testScenes.error != null -> testScenes.error
             packState.error != null -> packState.error
             packState.compositionError != null -> packState.compositionError
-            skirmishMapState.selected == null && qualifiedContent?.isFailure == true -> qualifiedContent?.exceptionOrNull()?.message
+            !skirmishMapState.hasSelection && qualifiedContent?.isFailure == true -> qualifiedContent?.exceptionOrNull()?.message
             visualState?.canStart == false -> visualState.error ?: "Apply the resource selection before starting."
-            skirmishMapState.selected == null && contentCandidate != null && qualifiedContent == null -> "Checking map and content..."
+            !skirmishMapState.hasSelection && contentCandidate != null && qualifiedContent == null -> "Checking map and content..."
             !canStartMatch() -> if (rootField.text.isBlank())
                 "Check and enable a base package in Content packs."
             else "Choose a checked content folder and enable any content packs you want to use."
-            else -> ""
+            else -> skirmishMapState.selectedCatalog?.entry?.knownLimitation ?: ""
         }.orEmpty()
         startupNotice.isVisible = (loading || setup) && startupMessage.isNotEmpty()
         if (!startupStatus.textEquals(startupMessage)) {
@@ -2588,7 +2624,7 @@ class BootstrapScreen(
         visualsTab.isVisible = (setup || home) && visualPanel != null
         visualsTab.setBounds(sxOff + (if (home) 346f else 404f), syOff + (if (home) 251f else 76f), if (home) 268f else 108f, 40f)
         skirmishMapTab.isVisible = setup
-        skirmishMapTab.setBounds(sxOff + (if (retryContentButton.isVisible) 326f else 178f), syOff + 174f, 114f, 34f)
+        skirmishMapTab.setBounds(sxOff + (if (retryContentButton.isVisible) 326f else 178f), syOff + 174f, 128f, 34f)
         testSceneTab.isVisible = (setup || home) && development && testScenarioSeed != null && !touchControls
         testSceneTab.setBounds(sxOff + (if (home) 346f else 520f), syOff + (if (home) 132f else 76f), if (home) 268f else 118f, 40f)
         skirmishMapPanel?.let {

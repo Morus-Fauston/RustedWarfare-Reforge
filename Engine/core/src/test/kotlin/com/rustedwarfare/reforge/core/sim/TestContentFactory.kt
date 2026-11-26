@@ -3,14 +3,21 @@ package com.rustedwarfare.reforge.core.sim
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.content.UnitDefinition
+import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementProfile
 import java.nio.file.Path
 
 internal object TestContentFactory {
-    fun unitWith(source: UnitDefinition, radius: Double = source.radius,
-                 movement: MovementProfile = source.movement): UnitDefinition = UnitDefinition(
+    fun unitWith(
+        source: UnitDefinition,
+        radius: Double = source.radius,
+        movement: MovementProfile = source.movement,
+        movementCollision: MovementCollisionShape? = null,
+    ): UnitDefinition = UnitDefinition(
         source.id, source.className, radius, source.displayRadius, source.totalFrames, source.imagePath,
         source.imageScale, movement, source.retainedUnconsumed,
+        movementCollision = movementCollision,
+        explicitMovementCollision = movementCollision != null || radius != source.radius || source.explicitMovementCollision,
     )
 
     fun openScenario(): Scenario {

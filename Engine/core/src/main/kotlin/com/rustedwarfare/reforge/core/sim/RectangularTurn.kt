@@ -39,7 +39,7 @@ internal object RectangularTurn {
         }
         fun at(progress: Double) =
             if (progress == 1.0) requested else ScreenPlane.normalize(from + change * progress)
-        fun fits(heading: Double) = RectangularTerrain(shape, heading).contains(map, center)
+        fun fits(heading: Double) = UnitContact.poseFits(shape, center, heading, map)
         val heading = at(fraction)
         if (heading != requested && ScreenPlane.difference(requested, heading) == 0.0 &&
             UnitContact.poseFits(shape, center, requested, map)) return requested

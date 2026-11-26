@@ -1,4 +1,158 @@
 # Changelog
+
+## v0.5.78 (2026-11-26 21:36)
+
+### 修复
+
+- **跨 2^k 坐标幂次边界同向推挤防冻结**：当推手与被推单位保持刚性接触同步跨越 `128.0`、`256.0` 等 2 的整数次幂坐标边界向低指数区间移动时，原先因终点浮点步距容差 `positionRoundoff` 减半导致原本合法的亚 ULP 接触间隙被二分搜索全部拒绝而原地停滞；现对非恶化亚皮像素接触放行单调不缩小的终点间隙（仍严格拦截向受阻单位进一步挤压与扫掠穿模），消除跨幂次边界推挤假死。
+- **单格窄道贴墙静置圆壳切向伴随推出**：当运动单位以微小偏角顶推紧贴走廊墙壁的静置圆形单位时，原先轴向二分搜索偶发因地形浮点容差返回亚纳米级微移而跳过侧滑，或侧滑结算中推手继续斜向顶入被推车侧翼导致被推车位移略超推手步长而被硬上界退回；现对静置阻挡物轴向推进落入浮点噪声的情形回退滑行分支，并新增沿墙切向投影与推手同向等距伴随结算，在严守地形净空、质量代价与空闲位移硬上界的前提下顺畅清出窄道。
+
+### 技术
+
+- **物理接触边界回归验证与独立双审**：新增跨 `2^k` 坐标边界同向接触推进与单格走廊微偏角贴墙推出 2 项回归单测；全量核心单测、公开短测全套、PC 安装包、Android Debug 构建及宿主校验、核心基准集与两批已知回归移动探针及双工作区布局检查全部通过，经独立目视审查与独立代码及数学不变量复核通过。
+
+---
+
+## v0.5.77 (2026-11-26 19:52)
+
+### 修复
+
+- **受限空间异构群移末车落位与阻挡停稳收束**：当混编队伍驶入窄口后方的受限港湾且大车已在门外停稳、内部仅剩小车寻位时，原先异构稀缺宽位保护持续挂起导致末车既不切向绕行也未触发停稳，且无固定阻挡物时的短时降速可能误判早停；现改为未停稳成员仅剩小车时自动回退常规连续向心切向落位，并将接触早停严格收束为仅在前方存在静止阻挡单位且持续受阻时生效，消除受限区域末车滞留与空场提前假停稳。
+- **紧凑长矩形车体单格直段入 2×2 转角过弯与寻路确定性**：当半对角线小于单格宽度的紧凑长矩形车体沿单格走廊驶入 `2×2` 转角箱时，原先格心枢轴擦碰内角墙体导致提前回退停在弯前；现为几何上可在转角箱内无碰旋转的紧凑矩形引入偏向内角的转角枢轴采样，并补齐矩形邻域缓存的机动、格位、转角模式隔离键与寻路优先队列全序比较，确保过弯顺畅且候选步回滚完全确定。
+- **停稳集群合围破围、贴墙阻挡交还与被推空闲位移硬上界**：当单位被早先已停稳的友军群闭环合围后接新移动令，或在门外近垂直擦过静置友军、持续顶撞贴墙静置车时，原先因跨次群移共享免推保护、链式微推锁死本步结算或长期旁路局部避让而陷入死锁，且慢速推手推动高速空闲车时偶发单步超速微滑；现将停稳免推保护收束在同次群移内部，放开顺路近垂直擦掠切向滑行，在硬接触受阻超时后停止强顶贴墙静置车并交还二维局部避让绕行，同时将被推空闲单位的单步位移严格限制在推手实际步长以内（不可动障碍夹逼除外），并消除邻车贴墙探测的短命对象分配。
+- **群移槽位贴近收口、离岸引导收束与空军密集分离限速**：针对已贴近分配槽位（距离平方不超过 `4.0`）却触发槽位重排的单位直接按当前执行步号结算到达，避免静默丢令；将舰船离岸航向引导收束在实际发生地形修正期间以消除窄口门前折返；将空军密集悬停软分离的合成单步位移严格钳制在最大航速以内。
+
+### 调整
+
+- **跨介质规模群移共享流场直驱与批量下令帧合并**：放宽规模群移启用共享流场的编组条件，使包含陆军、跨崖悬浮/两栖、空军及开阔水域矩形舰船的中大规模混编下令后按各自通行层流场即刻并发起步（纯小规模矩形水军编队仍保留精确船体航线），空军不占用地面落位名额；客户端在无逐指令取证要求时将多选框选与批量下令合并为单次末帧发布，消除大规模框选点击时的逐单位帧构建卡顿；同步对齐公开五期四格式会话契约与维护防守长链的工程车接近时序基线。
+
+### 已知问题
+
+- **百车极端死胡同外溢与极端窄峡长舰贴靠**：`culdesac-overflow-100` 极端单口死胡同实测维持 87/100 到达停稳的已知限制；个别窄港双长舰紧贴并泊与窄峡内顶推退让边缘场景仍留待后续海战矩形机动专项深化（全程保持零瞬移与零硬侵入）。
+
+### 技术
+
+- **全门禁回归验证与独立双审**：新增 5 项通用机制回归单测（覆盖异构余车回退、紧凑长矩形 `2×2` 转角过弯、360° 停稳集群合围破围与慢推快闲位移上界、空军分离限速及跨介质流场分流）；全量核心与客户端单测、公开短测与连续长测全套、PC 安装包、Android Debug 构建及宿主校验、核心 `dev-ab` 基准集与原 12 组已知回归复测及双根 `workspace_layout.py` 全部通过；经独立 Hydrogen 目视审查与独立 Neon 代码架构整审返修复核 `APPROVED`（0 必修）。
+
+---
+
+## v0.5.76 (2026-11-26 08:38)
+
+### 修复
+
+- **建造与维修接近阶段的停滞绕障与防切角**：当工程车执行建造、续建或回收移动且被友方静置大车阻挡在窄缝时，原先因 `Pathfinding.findPathToRange` 忽略动态占用且 `recoverStalledMoves` 跳过工程任务而原地卡滞；现将 `RouteOccupancy` 贯穿 `findPathToRange` 线段与格位净空检查，并在 `UnitMovementOrchestrator` 与 `SimulationContext.recoverStalledMoves` 中为工程接近段补齐车体轮廓交接校验与低速避让停滞绕障重规划，避免贴墙切角与友军堵路卡死。
+- **共享流场路径诊断上报与单格封闭圆壳拒移**：补齐 `ChunkedFlowFieldAdapter` 首次群移 `USER_MOVE` 与地形重建 `KNOWLEDGE_REPLAN` 诊断样本上报及 `copyForRollback()` 回滚一致性；修正 `Pathfinding.canLeaveStart` 与流场单格封闭口袋判定，使四邻全封的圆形单位即使在静态地形内切半径下仍准确回退并触发无法移动拒绝。
+
+### 调整
+
+- **公开场景与路径基准夹具对齐统一地形轮廓**：按统一静态地形通过轮廓（隐式 INI 圆形陆军 `min(radius, 0.45 * minTile)`）校准 `phase-five-{ini,json,hjson,mixed}.json`（保持全部出厂/建造里程碑步序不变）、`MaintenanceBoundaryTest`、`PhaseSixATechnologyChainTest` 及 `PathPerfBatch` / `PathPerfBatchTest`（`TERRAIN_RADIUS = 9.0`、`MEMORY_GAP` 直连 19 辆、`MEMORY_UNREACHABLE` 最近合法边 `311.0`）。
+
+### 已知问题
+
+- **百车极端死胡同外溢**：`culdesac-overflow-100` 极端单口死胡同实测 87/100 到达停稳，维持已知限制单列记录，不阻断常规地图与核心场景。
+
+### 技术
+
+- **整期候选全量验证、R3 同机性能定标、Windows 试玩包与独立双审**：新增 `MovementRegression011Test`；全量公开 PR CI（`public_batch.py --kind pr`，含全部 7 套机制、Python 工具与场景测试）、统一 CLI 10 场景 `dev-ab`（双百石阵 `rocks-small-100` 100/100 / 1855 步与 `rocks-mixed-100` 100/100 / 3212 步双过审，`open-50-217-166` 50/50 到达后稳定超 900 步）、历史双 14 混编复放与双根 `workspace_layout.py` 全绿；完成同机冷热 R3 性能配对（对比 `v0.5.31` 与 `v0.5.46`，双百首末车起步由 14~559 步降至 0~2 步、规划步 CPU 下降 15.7x–27x，稳态 P99 12.1–13.2ms）；构建 Windows `:pc:installDist` 试玩包并完成原版素材 1× 实窗选图、60 车框选移动、单拉与 `F3` 采样；经独立 Hydrogen 全套拼图与实窗目视复核 `APPROVED` 及独立 Neon 代码与账本整审复核 `APPROVE`（0 必修）。
+
+---
+
+## v0.5.75 (2026-11-26 05:48)
+
+### 新增
+
+- **统一场景与地图目录（`ScenarioCatalog`）**：在 `Engine/core` 新增 `ScenarioCatalog`、`ScenarioCategory` 与 `MovementParameterFingerprint` 单一权威来源，统一纳管七期补充二 A/B 开发组 10 个核心移动与对抗场景（含同型/混编百车石阵、25v25 空地对向、宽廊混编对向与窄桥让空、走廊实时超车与途中单拉、空军软分离与 50 车开阔回归，以及单列已知限制的死胡同百车外溢），输出稳定的族/组别、地图哈希与运动参数指纹；为程序化基准地图写入草地/石墙地形 GID 并扩展 `SandboxGraphics` 程序化图块合成，使战场与小地图同步清晰呈现。
+- **启动页融合选图面板与 PC `--scene` 直达**：在已合入主干的 `SkirmishMapPanel` 上融合 `All` / `Skirmish` / `P016` / `Sandbox` 分类可滚动列表，实时联动右侧地形缩略图、地图尺寸与单位/已知限制摘要，支持 `ADR-014` `UiTheme` 热切刷新及与 `TestScenarioPanel` 的双向清空同步；扩展 `WindowsLaunchOptions` 与 `WindowsLauncher` 支持 `--scene <id>` 参数直达，无需为新增场景修改 `BootstrapScreen` 构造签名；`SandboxLoader.requestCatalogScenario` 支持从非 `pack.json` 目录自动回退基础内容包并按槽位完备性解析单位视觉别名。
+- **统一场景测试 CLI 与外部 C–F 留出安全加载**：将 `SimulationTest` 的 `MovementMicroProbeMain` 与 `Main`（`isSceneCliInvocation`）统一对接 `ScenarioCatalog`，支持任意参数顺序调用 `--list`、`--scene <id|all|dev-ab|holdout>`、`--assert true|false`、`--sheets true|false` 与 `--holdout-file <json>`；默认开发集严格限定 A/B，外部 C–F 留出 JSON 严格校验安全 ID、禁止路径穿越与覆盖内置场景、限制组别为 `C..F` 并验证每条下令回执为 `ActionResult.Accepted`。
+
+### 已知问题
+
+- **百车极端死胡同外溢**：`culdesac-overflow-100` 保留在 `ScenarioCatalog` 选图与回放入口中，行为仍按已知限制单列记录并在加载通知中显式提示。
+
+### 技术
+
+- **跨模块测试、公开短测、实窗采图与独立双审**：新增 `ScenarioCatalogTest`、`SkirmishMapCatalogUiTest`、`PcCatalogSceneOptionTest` 与 `MovementMicroProbeCliTest`（覆盖占位视觉槽位完备回退、`--assert true` 失败退出码 2、`--list` Schema v2、安全拒绝与路由隔离），跨模块测试、`:pc:installDist`、`--list`、`--scene mixed-overtake-single-pull --assert true --sheets true`（11/11 全员 907 步到达、`maxStalled=0`）、`:run --scene narrow-bridge-yield`、`public_batch.py --kind short`（6/6 套）与双根目录 `workspace_layout.py` 全部通过；使用已核验原版 PC 资源完成 6 态 Windows 实窗采集；独立 Hydrogen 8 图目视审查 `APPROVED`（0 必修），独立 Neon 代码、目录模型与主题整审返修复核 `APPROVE`（0 必修）。
+
+---
+
+## v0.5.74 (2026-11-26 04:32)
+
+### 调整
+
+- **真·共享流场 O(1) 直驱与单次最近可达连通种子**：规模圆形群移通过 `pendingFlowStart` 在共享 Eikonal 流场覆盖本车格位后直接发布单点路由并由流场 O(1) 实时导航，彻底取消百车群移的百次单车 A* 陪跑；点击封闭孤岛或不可达区域时改由 `TerrainClearanceField` 单次最近可达连通分量边缘播种，避免群移内触发百次 `beginNearest` 搜索；字段被高频重击取消或 LRU 驱逐时自动降级回 `MovePlanning` 防止起步饥饿。
+- **Eikonal 双线性光滑流场与 P1 影子双缓冲无环重算**：重写 `ChunkedFlowFieldAdapter` 为正交双邻格 Eikonal 二次势场求解与 `2×2` 无墙面污染双线性负梯度，彻底废除单格窄门静态重罚（`PINHOLE_BASE_SURCHARGE`）并新增 1 格窄门中心轴线对齐与宽门肩格防跨薄墙内拉；动态地形/迷雾与拥堵变更全面采用基于 `shadowMinCut` 截断不变式的 P1 影子双缓冲纯单调重算与完工原子切换，消除涨价回灌环与重建期梯度撕裂；同时接入零分配 COW 候选步回滚（`fork(PathSearchRollback)`）及高频连点远端干道复用防 2-cycle 保护。
+- **混编宽道让大车与迎门低速受阻排队分流**：混编小车流场对大车宽道及宽门贴墙肩格统一施加让道慢度溢价，引导轻单位自然分流至上方窄门；门区拥堵统计仅对迎门方向且前进速率低于自由流阈值的受阻低速车流按单次门喉截面归因计队（顺畅穿出车流零罚分），并以滞回平滑步进驱动双百石阵实现真实多门分流；直连目标捷径严格校验全车体地形轮廓净空且禁止跨收费门逃费。
+- **同源诊断拼图门控吞吐指标升级**：扩展 `DiagnosticSceneProjector` 与 `DiagnosticContactSheetRenderer`，为各门截面输出去重进入数、车尾穿出数、目标侧停稳数及穿出吞吐率，并修正双向对穿门控的逆向穿出误计问题，便于在 2 秒停滞标红拼图上直接区分正常排队与真板结。
+
+### 已知问题
+
+- **百车极端死胡同外溢**：`culdesac-overflow-100` 极端单口死胡同当前实测 87/100 到达停稳，继续维持已知限制单列记录。
+
+### 技术
+
+- **全量回归、双百石阵达标与独立双审**：`:core:test --rerun-tasks`（424 套 1,578 用例 0 失败，新增同块障碍保零势、重叠影子变更、并发多队防饥饿、干道复用无回环、混含封闭分量隔离与双向门控计数 6 项回归单测）、`public_batch.py --kind short`（6/6 套）及历史双 14 混编复放（876 / 907 步全员到达、`maxWork=24` 并连续稳停 600 步）全部通过；`:movementProbe` 8 大核心场景全员 100% 到达停稳（`rocks-small-100` 100/100、`lastArrivalStep=1855`、`W3=7/93`；`rocks-mixed-100` 100/100、`lastArrivalStep=3212`、`W3=23/77`、`mean=3.91ms`、`max=26.38ms`）；经独立 Hydrogen 拼图与放大图目视复查 `APPROVED` 与全新上下文独立 Neon 代码、数学与契约整审返修复核 `APPROVE`（0 必修），双根目录 `workspace_layout.py` 通过。
+
+---
+
+## v0.5.73 (2026-11-26 03:27)
+
+### 调整
+
+- **单一终点落位层重铸与废除细网格抢坑**：删除 `OpenGroundGroup` 圆形群移方形点阵预造坑、16 倍细分网格绕路搜索、五阶段让位状态机与 `incomingGuide` 中途引路，将共享群移收束为 `TerminalLanding` 单一终点落位层；单位进入目标邻域后基于连续向心收敛与左右切向滑行寻找更近合法空位，并通过 `O(1)` 传染停稳与四向轮廓极值防单格喉道栓塞检测防止堵死门洞（保留盲端尽头与 48 步饱和房间防死锁退出）。
+- **受限区域异构稀缺宽位保护与全轮廓地形视距**：升级 `LandingOccupancy` 为与距离无关的活动认领索引，按实际终态进位朝向跨命令检测矩形与异构车体重叠并保持候选步回滚安全；将落位直达视距改为按车体真实静态通行轮廓全宽逐点校验，统一 `nearestMoveTarget` 邻域到达结算并消除外围接壤死区。
+- **静置单位停滞修复早退优化**：在 `SimulationContext.recoverStalledMoves` 开头对 `moveTarget == null` 静止单位直接早退并将 `routeContacts` 惰性延迟到其余条件成立后求值，消除千单位静置场景无谓空间索引查询。
+
+### 修复
+
+- **迷雾/障碍释放车位重入并发修改**：在 `MovePlanning.processQueue` 完成订单回调 `publish` 前先移出队列与内部索引，并在 `SimulationContext.publishMove` 释放失效车位后同步 `landingOccupancy` 并重排至原点击目标，消除失联重排导致的 `ConcurrentModificationException` 与索引覆盖。
+- **单格喉道侧滑贴边与窄桥退化回归**：侧滑阶段临时关闭终点停靠收缩权重并施加门内微外偏角以防贴撞前车硬壳，同时修正无侧滑时的末段减速曲线传递，保住对向窄桥会车与 50 车开阔地收队表现。
+
+### 已知问题
+
+- **百车极端死胡同外溢**：`culdesac-overflow-100` 极端单口死胡同当前实测 78/100 到达停稳，维持已知限制单列记录，不阻断正常开放场与常规瓶颈群移。
+
+### 技术
+
+- **全量回归与独立双审**：全量 `:Engine:core:test`（424 套 1,568 用例 0 失败）、公开短测（6 套）全绿，双 14 混编原令（322 / 308 步全员到达并稳停 600 步）与 50 车开阔地（50/50、0 停滞）通过，密集静置单测耗时同步下降；经独立目视审查 12 张拼图/放大图通过与全新上下文独立代码整审返修复核通过（0 必修），双工作区布局校验通过。
+
+---
+
+## v0.5.72 (2026-11-26 01:25)
+
+### 调整
+
+- **单选与群移地形通行轮廓统一**：新增 `UnitDefinition.explicitMovementCollision` 与 `UnitLocomotion.terrainHull` / `terrainPassabilityRadius`，废除按 `landingMember != null` 或半径差异切换地形碰撞的双标规则；显式 `movementCollision` 及海军 `WATER` 单位全程实算声明轮廓，未显式声明的原版 INI 圆形陆地/悬浮单位在单位互碰与地图外边界保持完整 `radius`，静态地形通行半径统一内切封顶为 `min(radius, 0.45 * minTile)`，并在 `CircularTerrain`、`Pathfinding.considerNearest*`、`UnitContact`、`FactoryExit` 及 `SimulationContext` 全链保持一致。
+- **60Hz 热路径零分配与局部空间反查**：重写 `WorldSpatialIndex` 内部存储为可复用原始数组网格链表与步级扁平只读快照，消除每步 `beginStep()` 与 `queryFrozenTopK()` 堆分配；新增 `BuildingTerrain.isBuildingCell` O(1) 零分配掩码预检以消除 `FactoryExit.departingOverlappedBuildingCells` 60Hz 全图单位扫描；消除 `Pathfinding.findPathToRange` 全图 `Position[]` 分配与 `MovePlanningInput` 全层拷贝；将 `NarrowPassage` 收窄为仅在已知真单行窄道入口邻域经 `WorldSpatialIndex` 反查对向争用车辆、门外侧方让空与清尾交接，彻底移除顺向测绘与 `mouthAim` 门洞强拉。
+- **`LocomotionModule` 零上层命令特判净身**：彻底清除对 `landingMember`、`groupMoveReservation`、群规模、目标相等及大面积 `passthrough` 旁路的依赖，上游仅通过 `allowContactPush` 等纯抽象运动学输入协同 ADR-009 质量推挤与工厂出生脱离；收束对向预判闭合视距、修复 wall-only fallback 走零分配 3D LP 退化，保持宽通道二维 Boids 分离与群内 2D ORCA 实时超车生效。
+
+### 修复
+
+- **窄口重入防刹停与自有岸线测试夹具对齐**：修复 `NarrowPassage` 窄桥重入航向导引提前刹停与单行对向推让判定；将自有 `author-shore-{ini,json,hjson}` 公开测试夹具建造者接近点与船厂坐标对齐至统一静态地形轮廓合法格，并同步更新关联单测断言。
+
+### 技术
+
+- **契约测试、避让探针与双独立审阅（`ENG-P016-009C`）**：新增 `BottleneckContractABTest` 覆盖 A/B 瓶颈双车并行、2v2 单行窄桥清尾交接、单群同轨迹一致性及隐式 INI 宽半径单格封死走廊 `beginNearest` 回归；全量 `:core:test --rerun-tasks` 424 套 1,565 用例 0 失败、`public_batch.py --kind short` 6/6 套全绿、5 大局部避让 `:movementProbe` 场景全达停稳；经独立 Hydrogen 10 张拼图/放大图目视 `APPROVED` 及独立全新上下文 Neon 代码整审返修后定向复核 `APPROVE`（0 必修），双根目录 `workspace_layout.py` 通过。
+
+---
+
+## v0.5.71 (2026-11-25 16:59)
+
+### 新增
+
+- **秒级移动微基准与同源拼图探针**：在 `SimulationTest` 新增 `:movementProbe` CLI 与验证入口，支持单场景或场景集按固定步数执行无头推进、单步耗时与线程堆分配采样，并在模拟结束后输出 JSON 摘要与 2 秒停滞标红同源关键帧拼图及峰值放大图。
+
+### 调整
+
+- **核心单测只读内容包进程内缓存与可控并行**：新增 `ReadOnlyTestContentPacks` 只读静态夹具与派生不可变包缓存（严格限定公开只读输入目录，保留损坏包与负例测试独立临时目录），消除多格式内容包与走廊测试地图在单进程内的重复磁盘解析；为 `:core:test` 配置可覆盖的 `maxParallelForks` 与构建守护进程堆上限。
+- **公开短测共享分发包复用**：扩展 `public_distribution.py`、`public_check.py` 与 `public_batch.py`，使 `--kind short` 同批次先构建一次带 SHA-256 与来源清单校验的 `shared-distribution` 再供全部短场景复用，并按多核主机默认启用 4 路场景并发。
+- **公共 PR 与连续长测云端并行门禁**：解除 `public-pr.yml` 仅对历史特定分支启用并行矩阵的白名单限制；在 `public_parallel.py` 与 `public-long.yml` 新增连续长测 3 分片均衡分配、收据校验与覆盖汇总，同时完整保留串行回退输入与仓库变量紧急关闭开关。
+
+### 技术
+
+- **覆盖守恒验证与独立非作者审阅**：同机全新重跑核验 `:core:test` 全部测试套件与方法、`public_batch.py --kind short` 六套短场景及 `--kind pr`/`--kind long` 场景清单前后完全一致且全部通过，CI 工具链 Python 单元测试与移动探针自测通过，工作区布局检查通过；经独立非作者代码与覆盖守恒整审通过（0 必修）。
+
+---
+
 ## v0.5.70 (2026-11-24 03:05)
 
 ### 新增
@@ -13,6 +167,7 @@
 - **自动化契约检验与双审收据（`UI-P003-003`）**：新增 `PublicUnitSpriteIntegrityTest`，覆盖 `phase-seven-sandbox` 全 145 张与随包 28 张单位图的精确尺寸、多帧相邻帧差异、基于 `MatchPlayerColors.PURE_GREEN_THRESHOLD` 的活体纯绿合规与残骸/阴影/非染色图零纯绿断言，以及 `manifest.json` 来源路径逐字节一致性校验；受影响 `:client:test`、`:pc:test` 与 `:pc:installDist`（`--rerun-tasks`）全绿，`workspace_layout.py --root` 返回 `ok: true`；完成全阵容 P1 绿 / P2 红 / 18 蜘蛛模块 / 28 残骸着色器验证拼图与 1920×1080 公开占位模式 `river_crossing.tmx` 5 态 Windows 实窗采集；Hydrogen 9 张目视审查首轮 0 必修 `APPROVED`，全新上下文 Neon 独立代码与清单整审经 2 项 P1 返修后定向复核 `APPROVED`（0 必修）。
 
 ---
+
 ## v0.5.69 (2026-11-23 23:01)
 
 ### 调整
@@ -34,6 +189,7 @@
 - **验证与双审收据（`UI-P003-002`）**：新增 `UiHudBrightQueueAndBadgeTest` 与 `PcOriginalDirectLaunchTest`，受影响 `:client:test`、`:pc:test` 与 `:pc:installDist` 全绿，`workspace_layout.py --root` 返回 `ok: true`；完成 Steam PC 原版目录直开 `[p2]Big Island (2p).tmx` 1920×1080 Windows 实窗 6 态采集（证实 `activeProfileId=rw.pc.steam.9902063.images.v8.mapped`、`resolvedUnitImageCount=188`、空队列→入队动作键 Y 差值 `0.0`、相邻出界红标 `3`/`2`/`4` 置顶无压切、`repairbay`/`experimentalLandFactory`/`nukeLauncherC`/`antiNukeLauncherC`/`hoverTank` 全部显示原版美术）；全新上下文 Neon 独立代码整审与 Hydrogen 6 张实窗目视审查均首轮 0 必修 `APPROVED`。
 
 ---
+
 ## v0.5.68 (2026-11-23 00:25)
 
 ### 新增
@@ -54,6 +210,7 @@
 - **验证与独立审阅收据（`UI-P003-001`）**：新增 `UiThemeAndOverlayTest`（覆盖内置默认与历史 `UiTokens` 零回归、三层局部覆写、恶意/越界/超限/NaN 拦截、匿名同 ID 主题值比较）与 `PcUiThemeResourcePackTest`（覆盖受托包删源复原、非 `ui/` 托管资产篡改检测、保留文件名拒绝、未托管主题篡改与事后新增拦截）；受影响 `:client:test`、`:pc:test` 与 `:pc:installDist` 全绿，`workspace_layout.py --root` 返回 `ok: true`；全新上下文 Neon 独立非作者代码整审首轮提出 3 项 P1（非 `ui/` 托管与 `JsonValue` 链表复验、未托管外部包冻结读取复核、完整主题值比较）及 4 项 P2 均完成返修，经原审定向复核 `APPROVED`（0 必修）。
 
 ---
+
 ## v0.5.67 (2026-11-22 21:41)
 
 ### 修复
@@ -177,6 +334,7 @@
 - **高分后台抓图选项、单测与四分辨率实窗复核**：`WindowsLaunchOptions` 补充 `2560x1440` 与 `3840x2160` 后台窗口尺寸选项；更新 `UiFoundationScaleTokensAndStringsTest` 覆盖小窗地板、基准 640、1080p/2560×1080/4K 非线性曲线、8K 最小占比地板与触控高/低 DPI；扩充 `UiHudDebugLayerAndConsoleTest` 覆盖 `/`、小键盘、中文输入法与多行反馈高度计算；受影响客户端/PC 单测、`:pc:installDist`、`:android:assembleDebug` 与 `:android:verifySandboxHostChecks`（4 项 414 检查）全绿；完成 `960×640`、`1920×1080`、`2560×1080`、`3840×2160`（实际 3840×2130）四分辨率实窗、`/` 默认唤出指令台（含修复后多行 `/help` 目视复核）及 4K F3 调试层核验。
 
 ---
+
 ## v0.5.60 (2026-11-22 08:36)
 
 ### 修复
@@ -192,6 +350,7 @@
 - **未验证边界与合并接缝**：Android 真机触控手感、最终人工试玩接收与合入 `main` 留待维护者确认；与并行 `ENG-P016` 分支（`fbd2d5f0`）同文件改动包括 `CHANGELOG.md`、`CHANGELOG.txt`、`Model.kt`（行段不重叠）、`SimulationContext.kt`（行段不重叠），并持续关注 `CONTEXT.md`、`BootstrapScreen.kt`、`SandboxSession.kt`。
 
 ---
+
 ## v0.5.59 (2026-11-22 06:58)
 
 ### 新增
@@ -205,6 +364,7 @@
 - **测试、实窗对照与双门禁复核**：补齐 `UiStrings` 翻译键（`pick.repeat`、`arrivalDeviatedMulti`）及开发背景抓图 `1280x800` / `f3` 组合键支持；新增 `UiHudDebugLayerAndConsoleTest`（覆盖子图层默认/重置、`<780` 堆叠阈值、`SandboxMode.MEMORY` 视野外隐藏敌军不泄露实证、调试开关前后权威模拟位级一致、`HudSandboxConsole` 460 居中布局与动作 ID 及单/多选到达偏差 4 秒淡出），与 `UiHud*` / `KnowledgeSandboxSessionTest` / `BackgroundLaunchTest` 回归全绿；采集 1920×1080（常态与半透明 F3+G 网格）、960×640 窄窗单列、1280×800 底部居中指令台及触控 2400×1080 系统条“调试”按钮共 5 张实窗图，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审经 3 P1 + 4 P2 返修复核 0 必修 PASS。
 
 ---
+
 ## v0.5.58 (2026-11-22 06:05)
 
 ### 新增
@@ -218,6 +378,7 @@
 - **测试、开发支撑、实窗对照与双门禁复核**：为 `SandboxInput` 补齐 `keyDown/keyUp` 修饰键追踪与 `cancel()` 清理；为开发/测试专用的 `WindowsLaunchOptions` / `BackgroundClientInput` 增补 `--touch true`、多分辨率 `--background-size`（`960x640 / 1920x1080 / 2400x1080 / 2560x1080`）与 `ctrl`/`shift` 按键组合支持；新增 `UiHudGroupsAndTouchTest`（覆盖 10 组非空跳号、触控前 3 固定格、`0.83s / 1.67s` 全边界、真实 `SandboxInput` `Ctrl/Shift` 编组与 `cancel()` 清理、真实 `SandboxSession` 工厂首点预览不入队与次点入队及建造首点直进）及 `BackgroundLaunchTest` 启动项校验并通过全部回归；完成 PC 1920×1080 与触控 2400×1080（常态、首点预览、次点入队）实窗采集，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审定向复核 0 必修 PASS。
 
 ---
+
 ## v0.5.57 (2026-11-22 05:21)
 
 ### 新增
@@ -231,6 +392,7 @@
 - **双语预热、测试与双门禁复核**：全部新增固定 UI 文案纳入 `UiStrings.kt`（ZH/EN 键对称并预热 FreeType 字形）；新增 `CancelConstructionActionTest`（3 项含整数余额溢出预留验证）与 `UiHudBuildingStockpileStatesTest`（10 项覆盖在建取消、核弹储备与多选、炮塔分支锁定与取消恢复、潜艇/移动炮塔过渡防连点、点防御与武器能量锁定、反核图标极性及镜头跟随），并与既有核心/客户端回归全绿；完成 1920×1080 实窗六态（工地、炮塔分支、潜艇、核弹井目标模式、点防御充能锁定、镜头跟随标签）对照采集，Hydrogen 视觉并排审阅 0 必修 PASS，独立非作者 Neon 代码整审经 10+1 项定向返修复核 0 必修 PASS。
 
 ---
+
 ## v0.5.56 (2026-11-22 04:15)
 
 ### 新增
@@ -244,6 +406,25 @@
 - **测试、实窗对照与双门禁复核**：新增 `UiHudMultiSpiderTransportTest`（8 项测试覆盖主选切换、6 标签溢出、模块蜘蛛槽位联动、货舱合并、`unloadAt` 到达卸载与新移动覆盖取消、敌方隐私裁剪及副标题翻译键）并通过既有 `ActionMenuTest` / `ConstructionMixedDispatchTest` / `ConstructionHotkeyInputTest` / `SelectionSandboxSessionTest` / `ModularSpiderSandboxTest` / `RoleCompositionHudTest` 共 46/46 全绿；为 `BackgroundClientInput` 增补带严格边界校验的 `drag` / `key` 驱动指令，在 1920×1080 实窗采集多选混合、模块蜘蛛槽位与运输机货舱 3 组画面，Hydrogen 视觉对照 0 必修 PASS，独立非作者 Neon 代码整审及 6 项必修返修复核 0 必修 PASS。
 
 ---
+
+## v0.5.55 (2026-11-22 23:13)
+
+### 架构改进
+
+- **物理删除旧移动浅模块补丁与死链路**：彻底移除 `TrafficSeparation.kt`、`CorridorChoice.kt`、`OvertakePublication.kt`、`MovePlanning.corridors`（16 折线缓存）、`ManeuverRepair.OVERTAKE`、60 步超车等待与全部残留死字段/死引用（`separationVisits`、`separationCaps`、`parkedNeighbors`、`lastRoadProgress`、`LandingMember.branch`、`queuePeers`、`knownRouteAim`、`lookupTraffic`、`preserveCurrentRoute`、`impendingRouteContacts`）；将 `UnitContact.contactSlide` 瘦身为仅服务同指令已停靠圆形同伴的 `parkedPeerTangentSlide`，移除移动车流硬蹭与 `convoy` 分支。
+- **不向前兼容旧寻路实现测试清理**：删除直接绑定已删旧模块的 `OvertakingTest`、`SharedCorridorTest`、`TrafficSeparationTest`；其余旧寻路白盒单测改为按真实玩法不变量（零硬侵入、不穿墙、迷雾隔离、质量推挤与终态可达停稳）断言，同步将 `PathKnownConnectorRepairTest` 对齐步预算修路语义并更新 `dual-ship-production.json` 建厂步点（`189 → 188`）。
+
+### 修复
+
+- **局部避让几何过滤、海厂脱口与落位预算修复**：`LocomotionModule` 入口限定正半径圆形碰撞体、邻车与空军查询过滤建筑/附属槽位等非接触实体、修正静止体超车几何边界与空军核心占领停稳判定；海厂新生船在厂房足迹脱口阶段跳过 2D 避让防被推回逆行；`SharedLandingSites.choose` 优先选择无已停靠阻挡车位并在共享预算耗尽时原样挂起续扫；`Pathfinding` 补齐目标占用初始化快判与最近点合法性校验；`recoverStalledMoves` 惰性求值 `routeContacts` 消除千单位静止场景退化；`UnitContactTest` 悬浮艇陆水占位测试零修改自然转绿。
+- **开发寻路性能 CLI `MEMORY_GAP` 销账**：`PathPerfBatch` 仅采集 `PathSearchReason.USER_MOVE` 区分初始寻路与移动中 `ROUTE_REPAIR`，对齐惰性净空评估计数口径并将 20u 密排基准测试单位 `mass` 置空消除出生重叠推挤，CLI 实跑全绿（`exitCode=0`）。
+
+### 技术
+
+- **验证与审查**：净减代码 2,049 行（31 files changed, +265 / -2,314）；全量 `:core:test`（421 suites / 1,551 tests 全绿）、`SimulationTest` 专项（`TestScenarioSeedParityTest`、`PathPerfBatchTest`、`PathKnownConnectorRepairTest` 全绿）、`PathPerfBatchMain` CLI 实跑（`EXIT=0`）、公开短场景批跑（`public_batch.py --kind short` 全通过）与 `workspace_layout.py`（`ok: true`）全绿；经全新上下文独立 Neon 非作者代码与反特判整审发现 2 项 P1，全部修复后定向复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.55 (2026-11-22 03:03)
 
 ### 新增
@@ -257,6 +438,21 @@
 - **单测迁移、实窗验证与双门禁复核**：将 15 项既有客户端测试迁出旧 `NativeActionPanel` 并新增 `UiHudActionListAndIconsTest` 覆盖 65 图标清单、共用命令能力判定、资金不足禁用态、目标模式三态及旧文件移除校验；在 `1920×1080` 与 `960×640` 实窗采集工厂生产、建造者/资金不足/守卫提示/目标模式卡及滚动悬停提示 4 组画面，Hydrogen 视觉并排对照 0 必修 PASS，独立非作者 Neon 代码整审及定向复核 0 必修 PASS。
 
 ---
+
+## v0.5.54 (2026-11-22 12:46)
+
+### 架构改进
+
+- **双适配器接缝与按需分块共享流场深模块（`NavigationGuidance` / `ChunkedFlowFieldAdapter`）**：建立 `NavigationGuidance` 双适配器接口（`WaypointRouteAdapter` 与 `ChunkedFlowFieldAdapter`），在步内 P1 预算下按 `16×16` 分块增量构建同通行层规模群移共享流场（随 `StepState.fork` 深拷贝安全回滚、按 `ownerId` 与 `planningTerrainFor` 严格迷雾隔离）；落地净宽档位与 `GroupMoveRequest.maxRadiusByMovement` 预计算、小车在大车宽道上叠加轻量让道代价（宽窄并存时优先窄门、唯一路时照常通行），以及 1 格针眼门识别与带滞回软拥堵分流（按步初冻结 `WorldSpatialIndex.frozenLayerUnits` 确定性统计、局域分块刷新且保留既有方向场）。
+- **局域脏块增量重算、高频改点主干复用与 O(1) 群移快启**：新增建筑或迷雾探出新墙时仅标脏受影响分块及下游阻塞代价带，在 `applyDirtyChunkReset` 中清理过期前沿堆与 `inFrontier` 并在 `expandWavefront` 中加入标准懒删除守卫防止旧低代价倒灌；高频连点立即取消未完旧建场并在地形一致时复用远端稳定主干块；共享流场覆盖单位格后即 O(1) 快启行进并取消冗余单车 A* 排队，配合 5 步最陡下降净空校验与门洞中心对齐避免墙角切角。
+- **死胡同饱和外溢结算与历史 14 混编原令修复**：`SharedLandingSites` 对受限口袋点击改为由里向外优先排满，流场群移未获直线视野时不提前抢占口外落点；在 `UnitNavigationState` 新增真实位移进度锚点并在 `UnitMovementOrchestrator.settleSaturationOverflow` 统一处理饱和外溢结算（原子取消挂起规划/修路并同步 `landingOccupancy`）；将 `OVER_CLIFF` 纳入 `sharedLanding` 且水域/不可达点击保留共享落点与 0 基准前沿归一化，查明并修复历史 14 成员混编原令 `30910`、`31060` 全部 `14/14` 到达并停稳 600 步。
+
+### 技术
+
+- **验证与审查**：新增 `ChunkedFlowFieldTest` 10 项单测（宽道让大车、局域脏块重算、中途建场落墙无倒灌、高频连点主干复用、待快启单位地形检测、同目标混编/纯小车场严格隔离、滞回拥堵分流衰减、迷雾与回滚隔离、60 车死胡同饱和外溢及 14 混编石门全员通过）及 `DiagnosticBaselineCaptureMain` 的 `rocks-mixed-100`、`culdesac-overflow-100` 诊断场景；59 项核心专项单测、历史 14 混编原令 `30910`/`31060`（均 `EXIT=0`、`14/14` 到达且 `stableAfterAll=600`、`maxWork=512`）与公开短场景批跑（6 套）全通过；8 套 2 秒停滞标红拼图及峰值放大图经 Hydrogen 强制目视复核 `APPROVE`（0 必修）；经全新上下文 Neon 非作者代码整审修复 4 项 P1 后定向复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.54 (2026-11-22 02:24)
 
 ### 新增
@@ -270,6 +466,21 @@
 - **测试、实窗对照与双门禁审阅**：新增 `UiHudSkeletonAndEventsTest` 覆盖事件流 TTL/上限/去重/拒绝码、小地图钳制与居中适配、队列 5 格与 `+N` 溢出、建造者施工队列、侧栏自适应透传及真实 `SandboxSession` 己方/敌方投影；通过 1920×1080 五态实窗采集（无选+amber、己方+队列、菜单展开、暂停压暗、敌方单选）与 §13.1 动作 ID 链路验证，Hydrogen 并排对照基准图 0 必修 PASS，独立非作者 Neon 代码整审定向复核 0 必修 PASS。
 
 ---
+
+## v0.5.53 (2026-11-22 06:12)
+
+### 架构改进
+
+- **混编分级互让权重与宽路 0 停顿实时超车**：扩展 `LocomotionModule` 分级互惠避让权重（结合质量、面积与敏捷度映射至 `[0.10, 0.90]`，灵活小车承担 `0.75–0.90` 侧让责任，重型慢车保持平顺航线且无通用碾压致死）；站定开火单位及已腾空通道出口阻塞带的门外静候车避让责任为 `0`；宽走廊与开阔地同向追赶慢车或锚定车时结合授权地形净空探针施加斜向变道偏置，经 2D ORCA 实时 0 停顿超车，对向靠右分流激活时自动抑制左超防逆行，并收束窄门同组同速误触发；远程追击单位在接近射程外缘受静止友军阻挡时沿射程弧自然扇形展开（攻击目标严格经迷雾可见性过滤）。
+- **单行窄口门外侧方让空与重入对齐**：新增 `computeNarrowMouthStagingAim` 与 `alignNarrowMouthReentryAim` 并接入 `UnitMovementOrchestrator`；未获 `PassageAdmission` 准入且阻塞出口的自由圆形单位自动在门外搜索经授权地形与双向段净空校验的侧方待命点（豁免矩形船体、机动路径、慢转水船及跨地形共享门），获准入后先对准门外中心锚点再切入窄道，避免切角撞墙或堵死出口车流。
+- **独立 `AIR` 层高空机群轻量二维 Boids 软分离**：新增 `solveAirSoftSeparation` 与 `isAirRallyRingArrived`，严格查询步初冻结 `SpatialLayer.AIR` 同阵营高空巡航友机，按 `max(definition.radius, movementCollision.boundingRadius)` 保持清晰可视间距并豁免未移动静态空军、起降中低空机与轰炸机进近；采用显式 32-bit FNV-1a（基于 `updateKey`）跨端确定性黄金角打破同像素重合，在 Phase 4 叠加轻量分离位移并钳位在地图边界内，使 16 架直升机同点集结自然散开且无 2 秒停滞。
+
+### 技术
+
+- **验证与审查**：新增 `MixedOvertakeAndAirSeparationTest` 5 项单测及 `DiagnosticBaselineCaptureMain` 3 个混编/窄桥/空军诊断场景；55 项专项单测（含 `NarrowPassageTest`、`LocomotionModuleTest`、`UnitContactTest`、`HeavyMech*`、`AirMovementTest`、`HelicopterCombatTest`）与公开短场景批跑（6 套）全通过；6 套 2 秒停滞标红拼图（`rocks-small-100` 100/100、`opposed-open-25v25` 50/50 零红标、`opposed-corridor-8v8` 16/16 零红标、`mixed-overtake-wide` 11/11 零红标、`narrow-bridge-yield` 2/2 零硬接触、`air-flock-rally` 16/16 零红标零重叠）经 Hydrogen 独立目视复核 `APPROVE`（0 必修）；经全新上下文 Carbon 非作者审阅并修复 2 项问题（显式 FNV-1a 跨端确定性哈希与门外静候阻塞带边界）后定向复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.53 (2026-11-22 01:37)
 
 ### 新增
@@ -283,6 +494,21 @@
 - **测试、多端构建与独立整审**：新增 `UiFoundationScaleTokensAndStringsTest` 覆盖三分辨率/竖屏/触控 8mm 下限、`ScreenViewport` 坐标往返、15 色完整 RGBA、防抖、双语键齐与 OFL 资源校验；通过 PC `1920×1080` 与 `960×640` 实窗 FreeType 冒烟、`:pc:installDist` 及 `:android:assembleDebug`（确认四 ABI `libgdx-freetype.so` 与字体/OFL 许可全部打入 APK），独立非作者代码整审与两轮定向复核归零（0 必修）。
 
 ---
+
+## v0.5.52 (2026-11-22 03:27)
+
+### 架构改进
+
+- **二维局部速度避让深模块（`LocomotionModule`）**：新建自包含二维局部运动解算模块，在步初冻结空间索引（`WorldSpatialIndex`）上严格按战争迷雾隔离采样 Top-K 近邻与远距对向流；建立由单位硬半径、最大速度、最大转向速度与刹车距离推导的无量纲比例尺，封装自适应二维 Boids 软分离（真单行窄道与开放地图边界按净宽平滑衰减）及完整 2D ORCA 半平面线性规划，移除旧 `|dot| >= 0.75` 过滤与单轴投影；对向与共线接近统一施加靠右/顺时针微偏置，使 25v25 空地及 8v8 宽廊道对向编队在接触前提前分道错身，消除顶牛死锁。
+- **静态墙体硬约束与 3D LP 最小侵入退化**：构建基于授权规划地形的静态墙壁与地图边界硬半平面，多车夹击无严格 2D 解时退化至 ORCA 3D LP 最小侵入求解并硬保静态墙体不穿墙，修复正交壁面切线平局时的反向跳变退化，并保留四面硬重叠围死回退 ADR-009 接触解算的兼容链路。
+- **差速转向扇区、防抖滞回与主运动管线接通**：在不可变 `UnitNavigationState` 中增加 `lastAvoidHeadingDeg` 随 `StepState.fork` 自动回滚，并在采纳新路/重插航点时清理；按当前行进朝向（含倒车）约束短窗可达转向扇区、防抖滞回与余弦平滑节流，接入 `UnitMovementOrchestrator` 并在 2D 避让生效时跳过旧一维 `separationCaps`，同时保留纯距离末段制动曲线与 `SharedLandingSites` 精准入位。
+
+### 技术
+
+- **验证与审查**：新增 `LocomotionModuleTest` 10 项单测（覆盖无量纲比例尺、静态墙 3D LP 最小侵入与切线正向滑行、迷雾敌军零泄漏、25v25 跨玩家与 12v12 同玩家对向靠右双车道、8v8 宽廊道对穿、20 车空地自然摊开、单行窄道与地图边界衰减、慢转矩形船体防扫尾防抖头及候选步回滚位级确定性）；536 项核心回归与公开短场景批跑（6 套全通过）全绿；`rocks-small-100`（100/100）、`opposed-open-25v25`（50/50，2 秒停滞峰值 0）与 `opposed-corridor-8v8`（16/16，2 秒停滞峰值 0）经 Hydrogen 独立目视检查 `APPROVE`（0 必修），经全新上下文 Carbon 非作者代码整审与定向复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.52 (2026-11-22 00:41)
 
 ### 新增
@@ -296,6 +522,7 @@
 - **验证与双门禁审阅**：补齐按需激活、同源纹理去重、四级图集解析与换包变色、路径穿越防护、全 8 种翻转解码、小地图等比与非法路径容错单测；通过 `1920×1080` 自有双示范图（含 `Memory` 迷雾）与原版 `Big Island` / `Fire Bridge` 实窗采集验证，经独立非作者代码整审与 Hydrogen 视觉对照门禁定向复核均达到 0 必修。
 
 ---
+
 ## v0.5.51 (2026-11-21 23:35)
 
 ### 新增
@@ -312,6 +539,20 @@
 - **测试与审阅**：新增多层编码、翻转位、非整除图集、水桥/矿池/树木/禁建/覆盖层合并、解压炸弹与路径穿越防护单测；`content-movement-knowledge` 公共机制套件、10 个核心内容测试类（49 项）及本地 48 张原版遭遇战 `.tmx` 读取均通过，独立非作者代码整审与返修复核剩余必修归零。
 
 ---
+
+## v0.5.51 (2026-11-21 22:59)
+
+### 架构改进
+
+- **三级优先级规划调度与同步 0 步二轮**：在 `MovePlanning` 建立 `P0` 玩家新令快车道（1–5 辆选队抢占，超编自动降级迁移至常规 `P0` 队）、`P1` 共享流场挂点与 `P2` 后台修路三级优先级调度，提供 `P2` 步级 `3/4` 预算硬顶与跨步队头轮转；`SimulationContext.advanceInternal` 增加同步 0 步二次推进且不重复轮转队列、不超步级 `P2` 上限，并将 `repairInvalidConnections` 的全部普通 `MOVE` 修路纳入步级预算内调度。
+- **微移短接驳防活锁、当步乐观转向与快敏脱困**：圆形单位在跨步规划期间被轻推 `1.5` 格内（含原地小幅转向）经 `trySpliceMicroNudge` 与 `Work.adoptSpliced` 原子更新输入和路线直接接驳发布，根除反复作废重排活锁；新移动命令在首段直线连通且 `ScreenPlane` 航向前向净空校验通过时当步乐观转向并在迎墙时自动制动；无前车推进的物理地形卡死按 12 步触发快敏脱困并执行 `12 → 24 → 48` 指数退避，同时与 `periodicRetry` 协同防抖。
+
+### 技术
+
+- **验证与审阅**：新增 `PriorityPlanningSchedulerTest`（8 项测试覆盖 2 车抢占、P0→P1→P2 优先级与 `3/4` 硬顶、微移接驳、高频右键不断速、静态阻塞 `repairInvalidConnections` 预算内 `ROUTE_REPAIR`、`12 → 24 → 48` 退避、候选步 `fork` 确定性与行进迎墙制动）；33 类 136 项核心回归、知识前缀回归与公开短场景批跑（6 套）全绿，3 轮独立非作者代码整审与返修复核 `APPROVE`（剩余必修 0）。
+
+---
+
 ## v0.5.50 (2026-11-21 18:15)
 
 ### 架构改进
@@ -324,6 +565,7 @@
 - **验证与性能**：补充净空距离场精确对照、迷雾增量更新、大半径/细分边缘可达性、封闭孤岛 0 展开秒判及候选步回滚池复用单测；32 类 199 项核心测试全通过，120×120 石阵 ABBA 基准单次寻路均值下降 62.9%（2.69× 加速）、封闭孤岛拒判由 7.07 ms 降至 0.0054 ms（1308× 加速），非作者代码整审与返修复核剩余必修归零。
 
 ---
+
 ## v0.5.49 (2026-11-21 03:18)
 
 ### 架构改进
@@ -336,6 +578,7 @@
 - **验证与回归**：补充导航状态不可变性、统一群移预留、原子到点/暂停转换与候选步 $O(1)$ 共享回滚隔离单测；32 个核心移动/接触/群移测试类共 235 项测试与公开短场景批跑全通过，100 车密集接触基线终态位级一致，非作者代码整审 0 项必修。
 
 ---
+
 ## v0.5.48 (2026-11-21 01:54)
 
 ### 架构改进
@@ -348,6 +591,7 @@
 - **验证与性能**：补充空间索引分桶、250 车密集 Top-K、迷雾可见性、跨格缓冲查询、候选步回滚与最大半径收缩测试；定向核心单测与非作者代码整审（返修定向复核）均通过，100 车对向密集接触 ABBA 同机对照保持终态位级一致，步耗与 P95 均较基线下降。
 
 ---
+
 ## v0.5.47 (2026-11-20 22:13)
 
 ### 新增
@@ -360,6 +604,7 @@
 - **开发碰撞箱视图适配**：客户端 `F3` 碰撞箱视图改为消费核心同源诊断图元，按模拟步增量维护历史并在开启视图时按需投影，叠加显示速度矢量、指引方向与 2 秒停滞标红圈。
 
 ---
+
 ## v0.5.46 (2026-11-20 13:45)
 
 ### 技术

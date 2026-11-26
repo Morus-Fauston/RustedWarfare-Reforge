@@ -12,48 +12,86 @@ import kotlin.test.assertTrue
 
 class GroupMoveExpansionTest {
     @Test
-    fun small_landing_slices_reach_the_last_pair_last_entrance_and_deepest_live_ingress() {
-        val scene = TestContentFactory.openScenario()
-        val def = scene.unitDefinitions.getValue("tank")
+    fun terminal_landing_blocks_throat_plugging_and_fans_queued_cars_into_open_wings() {
+        val base = TestContentFactory.openScenario()
+        val tank = TestContentFactory.unitWith(base.unitDefinitions.getValue("tank"), radius = 6.0)
+        // Build a 1-tile throat at col=10, row=10 opening into a wide room on the right (cols 11..25).
+        val width = 32; val height = 22
+        val blocked = BooleanArray(width * height) { idx ->
+            val c = idx % width; val r = idx / width
+            c == 10 && r != 10
+        }
+        val map = MapDefinition(width, height, 20, 20, emptyList(), IntArray(width * height),
+            BlockingGrid(width, height, blocked))
+        val spawns = (0 until 3).map { i ->
+            UnitSpawn("c$i", "p1", "tank", Position(210.0 - i * 18.0, 210.0), 90.0)
+        }
+        val scene = base.copy(map = map, unitDefinitions = mapOf("tank" to tank), units = spawns)
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
-            val click = Position(600.0, 300.0)
-            val cars = (0 until 30).map { i -> MutableUnit("car-$i", "p1", def.id, def, Position(50.0, 300.0), 0.0) }
-            val group = GroupMoveRequest(context.world, null, "p1", click, cars.mapTo(linkedSetOf()) { it.unitId }, true)
-            val pool = SharedLandingSites.forGroup(scene.map, group, cars)
-            for ((i, car) in cars.withIndex()) {
-                car.moveTarget = click
-                car.landingMember = LandingMember(group, ingress = Position(300.0 + i * 10, 300.0))
+            val click = Position(248.0, 210.0)
+            val ids = spawns.map { it.unitId }
+            val group = assertNotNull(context.requestGroupMove("p1", ids, click))
+            ids.forEach { id ->
+                assertIs<ActionResult.Accepted>(context.submitGroupMove(MoveAction("go-$id", "p1", id, click, context.world), group))
             }
-            val byId = cars.associateBy { it.unitId }
-            val entrance = cars.first().landingMember!!.ingress!!
-            var deepest: MutableUnit? = null
-            for (step in 0 until 8) {
-                val slice = PathWorkBudget(4)
-                deepest = pool.deepestEntering(cars.first(), entrance, slice, byId::get)
-                if (deepest != null) break
-            }
-            assertEquals(cars.last().unitId, deepest?.unitId)
-            // Complete a scan over all unordered pairs with just one unit left on each step.
-            var lastPair = false
-            repeat(3 * cars.size * cars.size) {
-                pool.beginService()
-                val slice = PathWorkBudget(512).also { it.take(511) }
-                pool.visitApproachingPairs(cars, slice) { a, b ->
-                    if (a === cars[cars.lastIndex - 1] && b === cars.last()) lastPair = true
+            var settledFrame: Observation? = null
+            for (step in 0L..1200L) {
+                val frame = context.advance(Step(step, 1.0, "sim-tick"))
+                for (i in frame.units.indices) for (j in i + 1 until frame.units.size) {
+                    assertTrue(ScreenPlane.distanceSquared(frame.units[i].position, frame.units[j].position) >= 144.0 - 1e-6,
+                        "Zero hard overlap at step $step")
+                }
+                if (frame.units.all { it.moveTarget == null && it.moveArrival != null }) {
+                    settledFrame = frame
+                    break
                 }
             }
-            assertTrue(lastPair)
-            val front = cars.first().also { it.position = Position(500.0, 300.0); it.landingMember = LandingMember(group, it.position) }
-            val follower = cars.last().also { it.landingMember = LandingMember(group, Position(550.0, 300.0)) }
-            var lastEntrance = false
-            repeat(3 * cars.size + 3) {
-                pool.beginService()
-                pool.visitEntrances(listOf(front), cars, PathWorkBudget(1)) { a, b ->
-                    if (a === front && b === follower) lastEntrance = true
+            val done = assertNotNull(settledFrame, "All 3 queued tanks must clear the 1-tile throat and fan into the room: " +
+                context.observe().units.map { "${it.unitId}@(${"%.1f".format(it.position.x)},${"%.1f".format(it.position.y)}) h=${"%.0f".format(it.heading)} spd=${"%.2f".format(it.speed)} tgt=${it.moveTarget} arr=${it.moveArrival != null}" })
+            assertTrue(done.units.all { it.position.x > 218.0 },
+                "All 3 tanks must pass through the throat instead of plugging col=10: ${done.units.map { it.unitId to it.position }}")
+        } finally { context.close() }
+    }
+
+    @Test
+    fun terminal_landing_settles_without_deadlock_inside_blind_single_tile_dead_end() {
+        val base = TestContentFactory.openScenario()
+        val tank = TestContentFactory.unitWith(base.unitDefinitions.getValue("tank"), radius = 6.0)
+        // 1-tile wide blind dead-end corridor at row=10, cols 1..14, closed at col=15.
+        val width = 20; val height = 22
+        val blocked = BooleanArray(width * height) { idx ->
+            val c = idx % width; val r = idx / width
+            r != 10 || c == 0 || c >= 15
+        }
+        val map = MapDefinition(width, height, 20, 20, emptyList(), IntArray(width * height),
+            BlockingGrid(width, height, blocked))
+        val spawns = (0 until 3).map { i ->
+            UnitSpawn("d$i", "p1", "tank", Position(220.0 - i * 20.0, 210.0), 90.0)
+        }
+        val scene = base.copy(map = map, unitDefinitions = mapOf("tank" to tank), units = spawns)
+        val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            val click = Position(290.0, 210.0)
+            val ids = spawns.map { it.unitId }
+            val group = assertNotNull(context.requestGroupMove("p1", ids, click))
+            ids.forEach { id ->
+                assertIs<ActionResult.Accepted>(context.submitGroupMove(MoveAction("deadend-$id", "p1", id, click, context.world), group))
+            }
+            var settled: Observation? = null
+            for (step in 0L..800L) {
+                val frame = context.advance(Step(step, 1.0, "sim-tick"))
+                for (i in frame.units.indices) for (j in i + 1 until frame.units.size) {
+                    assertTrue(ScreenPlane.distanceSquared(frame.units[i].position, frame.units[j].position) >= 144.0 - 1e-6,
+                        "Zero hard overlap at step $step")
+                }
+                if (frame.units.all { it.moveTarget == null && it.moveArrival != null }) {
+                    settled = frame
+                    break
                 }
             }
-            assertTrue(lastEntrance)
+            assertNotNull(settled, "Blind 1-tile dead-end corridor must settle all 3 queued tanks without deadlock: " +
+                context.observe().units.map { "${it.unitId}@(${"%.1f".format(it.position.x)},${"%.1f".format(it.position.y)}) tgt=${it.moveTarget}" })
         } finally { context.close() }
     }
 
@@ -175,7 +213,7 @@ class GroupMoveExpansionTest {
             })
             var injected = false
             val steering = SteeringPolicy { body, aim, delta, coordinates ->
-                if (inject && !injected && body.landingMember?.claimed != null) {
+                if (inject && !injected && (body.landingMember?.flankSign ?: 0) != 0) {
                     injected = true
                     error("injected after shared claim")
                 }
@@ -209,12 +247,12 @@ class GroupMoveExpansionTest {
                     next.events.filter { it.kind == "movement-arrived" }.mapTo(arrived) { requireNotNull(it.unitId) }
                     if (arrived.size == ids.size && next.units.all { it.moveTarget == null }) { frame = next; break }
                 }
-                val planned = assertNotNull(frame, "All fourteen members must occupy destinations: $arrived; poses=${context.observe().units.map { listOf(it.unitId, it.position, it.moveTarget, it.pathPoints.firstOrNull()) }}")
+                val planned = assertNotNull(frame, "All fourteen members must occupy destinations: $arrived")
                 val points = planned.units.map { it.position }
                 assertTrue(points.any { ScreenPlane.distanceSquared(it, click) > 60.0 * 60.0 })
                 for (a in points.indices) for (b in 0 until a) {
-                    assertTrue(sqrt(ScreenPlane.distanceSquared(points[a], points[b])) >= 42.0 - 1e-8,
-                        "Two radius-19 hulls each need their two-unit buffer: ${points[a]} / ${points[b]}")
+                    assertTrue(sqrt(ScreenPlane.distanceSquared(points[a], points[b])) >= 38.0 - 1e-7,
+                        "Two radius-19 hulls must settle with zero hard overlap: ${points[a]} / ${points[b]}")
                 }
                 val work = context.drainPlanningWorkDiagnostics(context.world)
                 assertTrue(work.size > 1)

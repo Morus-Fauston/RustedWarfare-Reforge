@@ -236,16 +236,17 @@ def plan_suite(repo, name, kind, public_sources=None):
                 pythonTests=python_tests, inputScope=suite.get('inputScope', 'public'), fixture=suite.get('fixture'))
 
 
-def build_shared_distribution(repo, output, source, command_timeout_seconds=600, preparation_plan=None, forks=1):
+def build_shared_distribution(repo, output, source, command_timeout_seconds=600, preparation_plan=None, forks=1, *, kind=None):
     """Pin one batch's package and, for PR, its compiled test inputs; never test results."""
     from public_distribution import seal, verify, toolchain_identity, artifact_identities
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     project = repo/'SimulationTest'
     wrapper = [str(project/'gradlew.bat')] if os.name == 'nt' else ['sh', str(project/'gradlew')]
-    argv = wrapper + [':installDist', '--no-daemon', '--console=plain', '--max-workers=1', '--rerun-tasks']
+    build_workers = min(4, max(1, (os.cpu_count() or 2) // 2))
+    argv = wrapper + [':installDist', '--no-daemon', '--console=plain', '--max-workers='+str(build_workers), '--rerun-tasks']
     preparation = None
-    kind = 'pr' if preparation_plan is not None else 'long'
+    kind = 'pr' if preparation_plan is not None else (kind or 'long')
     if preparation_plan is not None:
         modules = sorted({m for row in preparation_plan['suites'] for m in row['plan']['tests']})
         tasks = [(':testClasses' if m == 'tools' else ':'+m+':testClasses') for m in modules] + [':installDist']
@@ -327,11 +328,13 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
         if identities(repo) != initial:
             raise ValueError('Public source changed during verification')
 
+    dist_kind = plan['kind'] if plan['kind'] in ('short', 'long') else 'pr'
+
     def admit():
         from public_distribution import verify
         return measure_check('preparation', lambda: verify(
             prepared_distribution[0], prepared_distribution[1], identities(repo),
-            kind='long' if plan['kind'] == 'long' else 'pr', plan=plan, repo=repo))
+            kind=dist_kind, plan=plan, repo=repo))
     def command(name, args, cwd):
         if prepared_distribution is not None:
             admit()
@@ -351,8 +354,8 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
         with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
             project = repo / 'SimulationTest'
             if prepared_distribution is not None:
-                if plan['kind'] not in ('pr', 'mechanism', 'long') or plan['inputScope'] != 'public':
-                    raise ValueError('A prepared package requires its exact public PR or long selection')
+                if plan['kind'] not in ('pr', 'mechanism', 'short', 'long') or plan['inputScope'] != 'public':
+                    raise ValueError('A prepared package requires its exact public PR, short or long selection')
                 distribution = admit()
                 result['preparedDistribution'] = dict(receipt=str(prepared_distribution[0]), sha256=prepared_distribution[1])
             wrapper = [str(project / 'gradlew.bat')] if os.name == 'nt' else ['sh', str(project / 'gradlew')]
@@ -404,7 +407,7 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
             if prepared_distribution is not None:
                 admit()
                 scenario_pin = read_receipt(*prepared_distribution, initial,
-                    kind='long' if plan['kind'] == 'long' else 'pr', plan=plan, repo=repo)
+                    kind=dist_kind, plan=plan, repo=repo)
 
             expected_source = {row['path']: row['sha256'] for row in initial}
 
@@ -412,7 +415,7 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
                 verify_scenario_sources(repo, case, expected_source)
                 if scenario_pin is not None:
                     current = read_receipt(*prepared_distribution, initial,
-                        kind='long' if plan['kind'] == 'long' else 'pr', plan=plan, repo=repo)
+                        kind=dist_kind, plan=plan, repo=repo)
                     verify_members(prepared_distribution[0], current)
                 elif package_files(distribution) != fixed_files:
                     raise ValueError('Scenario distribution changed during verification')

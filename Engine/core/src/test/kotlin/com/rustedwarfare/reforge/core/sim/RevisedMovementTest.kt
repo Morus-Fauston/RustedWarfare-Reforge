@@ -36,7 +36,8 @@ class RevisedMovementTest {
         val source = TestContentFactory.openScenario()
         val tank = source.unitDefinitions.getValue("tank")
         val unit = TestContentFactory.unitWith(tank, radius = 8.0, movement = tank.movement.copy(
-            moveSpeed = 8.0, moveAccelerationSpeed = 8.0, moveDecelerationSpeed = 8.0))
+            moveSpeed = 8.0, moveAccelerationSpeed = 8.0, moveDecelerationSpeed = 8.0),
+            movementCollision = com.rustedwarfare.reforge.core.content.MovementCollisionShape.Circle(0.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
             map = MapDefinition(7, 5, 20, 20, emptyList(), IntArray(35), BlockingGrid(7, 5, BooleanArray(35) { it == 19 })),
             unitDefinitions = mapOf("tank" to unit),

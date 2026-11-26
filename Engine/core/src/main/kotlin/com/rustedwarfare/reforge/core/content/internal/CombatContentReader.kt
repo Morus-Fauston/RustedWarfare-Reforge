@@ -461,7 +461,7 @@ internal object CombatContentReader {
             build = BuildProfile(price, buildRate), mech = gait, rotor = rotor, reclaimPrice = reclaimPrice,
             building = if (stationary) BuildingProfile(BuildingFootprint(0, 0, 0, 0)) else null,
             authoredAirCombat = authoredAir,
-            movementCollision = MovementCollisionContent.read(path, loaded, radius),
+            movementCollision = MovementCollisionContent.readDeclared(path, loaded),
             mass = loaded.mass(path, movable = movement != MovementType.NONE && !stationary),
             construction = if (mech) ConstructionProfile(price, buildRate) else null, techLevel = techLevel,
             authoredWaterCombat = authorWater, shadowImagePath = if (hover) image("image_shadow") else null,

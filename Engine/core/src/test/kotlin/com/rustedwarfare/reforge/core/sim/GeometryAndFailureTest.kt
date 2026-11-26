@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -71,7 +72,8 @@ class GeometryAndFailureTest {
     @Test
     fun exact_open_center_target_survives_circle_overlap_and_blocked_click_stays_outside_the_tile() {
         val source = TestContentFactory.openScenario()
-        val unit = TestContentFactory.unitWith(source.unitDefinitions.getValue("tank"), radius = 10.0)
+        val unit = TestContentFactory.unitWith(source.unitDefinitions.getValue("tank"), radius = 10.0,
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
             map = map(7 to 7), unitDefinitions = mapOf("tank" to unit),
             units = listOf(UnitSpawn("u1", "p1", "tank", Position(110.0, 110.0), 90.0)),
@@ -99,7 +101,8 @@ class GeometryAndFailureTest {
         val source = TestContentFactory.openScenario()
         val definition = source.unitDefinitions.getValue("tank")
         val unit = TestContentFactory.unitWith(definition,
-            movement = definition.movement.copy(moveSpeed = 20.0, moveAccelerationSpeed = 20.0))
+            movement = definition.movement.copy(moveSpeed = 20.0, moveAccelerationSpeed = 20.0),
+            movementCollision = MovementCollisionShape.Circle(0.0))
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(source.copy(
             map = map(8 to 5), unitDefinitions = mapOf("tank" to unit),
             units = listOf(UnitSpawn("u1", "p1", "tank", Position(110.0, 110.0), 90.0)),
