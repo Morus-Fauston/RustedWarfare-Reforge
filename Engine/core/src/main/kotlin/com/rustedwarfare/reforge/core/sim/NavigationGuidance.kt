@@ -882,12 +882,10 @@ internal class ChunkedFlowFieldAdapter private constructor(
      */
     internal fun fieldForUnit(unit: MutableUnit, terrain: PlanningTerrain): ChunkedField? {
         val group = unit.landingMember?.group ?: return null
-        if (group.members.size < MIN_GROUP_SIZE ||
-            unit.definition.movementCollision is MovementCollisionShape.Rectangle
-        ) return null
+        if (group.members.size < MIN_GROUP_SIZE) return null
         val movement = UnitLocomotion.movement(unit)
         if (movement.type == MovementType.AIR || movement.type == MovementType.NONE) return null
-        val unitRadius = max(1.0, UnitLocomotion.terrainPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
+        val unitRadius = max(1.0, flowPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
         val band = clearanceBandFor(terrain, unitRadius)
         val goalCol = floor(group.click.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
         val goalRow = floor(group.click.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
@@ -942,7 +940,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val tw = terrain.tileWidth.toDouble()
         val th = terrain.tileHeight.toDouble()
         val minTile = min(tw, th)
-        val unitRadius = max(1.0, UnitLocomotion.terrainPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
+        val unitRadius = max(1.0, flowPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
         val col = floor(unit.position.x / tw).toInt().coerceIn(0, w - 1)
         val row = floor(unit.position.y / th).toInt().coerceIn(0, h - 1)
         var idx = row * w + col
@@ -1926,6 +1924,12 @@ internal class ChunkedFlowFieldAdapter private constructor(
         private val ORTHO_DY = intArrayOf(0, 0, 1, -1)
         private val DX = intArrayOf(1, -1, 0, 0, 1, -1, 1, -1)
         private val DY = intArrayOf(0, 0, 1, -1, 1, 1, -1, -1)
+
+        internal fun flowPassabilityRadius(unit: MutableUnit, tileWidth: Int = 20, tileHeight: Int = 20): Double =
+            when (val shape = unit.definition.movementCollision) {
+                is MovementCollisionShape.Rectangle -> shape.boundingRadius
+                else -> UnitLocomotion.terrainPassabilityRadius(unit, tileWidth, tileHeight)
+            }
 
         internal fun clearanceBandFor(terrain: PlanningTerrain, radius: Double): Int {
             val minTile = min(terrain.tileWidth, terrain.tileHeight).toDouble()

@@ -52,7 +52,9 @@ internal class FrozenSpatialUnit(
     var definitionRadius: Double = hardRadius,
     var height: Double = 0.0,
     var flightTargetHeight: Double = 0.0,
+    var parkedClusterKey: Any? = null,
 ) {
+    /** Compares core pose and kinematic snapshot fields (aux traits like [collisionShape], [mass], [parkedClusterKey] are refreshed in [WorldSpatialIndex.beginStep]). */
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is FrozenSpatialUnit) return false
@@ -602,6 +604,7 @@ internal class WorldSpatialIndex private constructor(
                     val mv = UnitLocomotion.movement(u)
                     val flightTargetH = u.definition.movement.flight?.targetHeight ?: 0.0
                     val hasAtt = u.attachmentOffsets.isNotEmpty()
+                    val parkedGroup = if (u.landingMember?.parked == true) u.landingMember?.group else null
                     val entry = entries[u.unitId]
                     val prior = entry?.cachedFrozen
                     val snap = if (prior != null) {
@@ -629,6 +632,7 @@ internal class WorldSpatialIndex private constructor(
                         prior.definitionRadius = u.definition.radius
                         prior.height = u.height
                         prior.flightTargetHeight = flightTargetH
+                        prior.parkedClusterKey = parkedGroup
                         prior
                     } else {
                         FrozenSpatialUnit(
@@ -656,6 +660,7 @@ internal class WorldSpatialIndex private constructor(
                             definitionRadius = u.definition.radius,
                             height = u.height,
                             flightTargetHeight = flightTargetH,
+                            parkedClusterKey = parkedGroup,
                         ).also { if (entry != null) entry.cachedFrozen = it }
                     }
                     if (idx >= frozenUnits.size) ensureFrozenCapacity(idx + 1)

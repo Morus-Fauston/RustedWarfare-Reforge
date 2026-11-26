@@ -439,17 +439,28 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
         val members = orderedUnits().filter { it.unitId in requested && it.ownerPlayerId == actor && it.alive &&
             it.carriedBy == null && it.attachment == null && it.definition.movement.type != MovementType.NONE }
         if (members.size < 2) return null
-        val shared = members.all {
+        val allLandShared = members.all {
             (it.definition.movement.type == MovementType.LAND || it.definition.movement.type == MovementType.OVER_CLIFF) &&
                 it.birthRemaining <= 0f
         }
+        val allSameWater = members.all { it.definition.movement.type == MovementType.WATER }
+        val hasRectWater = allSameWater && members.any {
+            it.definition.movementCollision is MovementCollisionShape.Rectangle
+        }
+        val mixedThreshold = if (hasRectWater) 8 else ChunkedFlowFieldAdapter.MIN_GROUP_SIZE
+        val largeMixedGroup = members.size >= mixedThreshold && members.count {
+            val mt = it.definition.movement.type
+            (mt == MovementType.LAND || mt == MovementType.OVER_CLIFF || mt == MovementType.HOVER || mt == MovementType.WATER) &&
+                it.birthRemaining <= 0f
+        } >= 2
+        val shared = allLandShared || largeMixedGroup
         val mapForGroup = scenario?.map
         val gTw = mapForGroup?.tileWidth ?: 20
         val gTh = mapForGroup?.tileHeight ?: 20
         val maxRadiusByMovement = LinkedHashMap<MovementType, Double>()
         for (m in members) {
             val mt = UnitLocomotion.movement(m).type
-            val r = UnitLocomotion.terrainPassabilityRadius(m, gTw, gTh)
+            val r = ChunkedFlowFieldAdapter.flowPassabilityRadius(m, gTw, gTh)
             val prev = maxRadiusByMovement[mt]
             if (prev == null || r > prev) maxRadiusByMovement[mt] = r
         }
@@ -697,6 +708,27 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
             }
         }
         if (slot == null) {
+            if (repair == ManeuverRepair.GROUP_SLOT && planned.nearest) {
+                val currentRes = unit.groupMoveReservation
+                if (currentRes != null && ScreenPlane.distanceSquared(unit.position, currentRes.slot.position) <= 4.0) {
+                    val originalTarget = unit.nearestMoveTarget ?: currentRes.plan.click
+                    val arrival = MoveArrival(
+                        originalTarget, unit.position,
+                        MoveArrival.distanceToHull(unit.definition.movementCollision, unit.position, unit.heading, originalTarget),
+                        executionStep, group = true,
+                    )
+                    unit.cancelRoute()
+                    unit.nav = unit.nav.markArrived(null, currentRes.plan, arrival)
+                    if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE) unit.taskQueue = unit.taskQueue.pop()
+                    unit.speed = 0.0
+                    unit.angularVelocity = 0.0
+                    unit.flightVelocity = Position(0.0, 0.0)
+                    unit.movementState = MovementState.IDLE
+                    pendingEvents += Event("movement-arrived", unit.unitId)
+                    pendingEvents += Event("movement-nearest-reached", unit.unitId)
+                    return
+                }
+            }
             val amphibiousPaused = repair == ManeuverRepair.CONNECTION && unit.amphibiousState != null && task.kind == UnitTaskKind.MOVE
             if (!amphibiousPaused) {
                 unit.taskQueue = unit.taskQueue.pop()
@@ -1595,12 +1627,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     group.sharedLanding &&
                     group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
                     unit.birthRemaining <= 0f &&
-                    unit.definition.movementCollision !is MovementCollisionShape.Rectangle &&
                     optMovement.type != MovementType.AIR &&
                     optMovement.type != MovementType.NONE
                 if (flowDirectEligible) {
                     val mType = optMovement.type
-                    val terrainR = maxOf(1.0, UnitLocomotion.terrainPassabilityRadius(unit, currentScenario.map.tileWidth, currentScenario.map.tileHeight))
+                    val terrainR = maxOf(1.0, ChunkedFlowFieldAdapter.flowPassabilityRadius(unit, currentScenario.map.tileWidth, currentScenario.map.tileHeight))
                     val maxGroupR = maxOf(
                         terrainR,
                         group.maxRadiusByMovement[mType] ?: terrainR,
@@ -1610,8 +1641,11 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     val uRow = MapBounds.cell(unit.position.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles)
                     val gCol = MapBounds.cell(group.click.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles)
                     val gRow = MapBounds.cell(group.click.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles)
+                    val isRectUnit = unit.definition.movementCollision is MovementCollisionShape.Rectangle
+                    val rectInOpenWater = !isRectUnit ||
+                        terrain.clearanceField().clearanceRings(uCol, uRow) >= ChunkedFlowFieldAdapter.clearanceBandFor(terrain, terrainR)
                     val srcComp = steps.current.flowFields.resolveSourceComponent(terrain, terrainR, gCol, gRow, uCol, uRow)
-                    val flowField = steps.current.flowFields.ensureFieldForGroup(
+                    val flowField = if (rectInOpenWater) steps.current.flowFields.ensureFieldForGroup(
                         ownerId = unit.ownerPlayerId,
                         movementType = mType,
                         unitRadius = terrainR,
@@ -1620,8 +1654,8 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                         goalWorld = group.click,
                         stepIndex = stepIndex,
                         sourceComponentId = srcComp,
-                    )
-                    if (pathDiagnostics != null && steps.current.flowFields.consumeInitialDiagnostic(flowField)) {
+                    ) else null
+                    if (flowField != null && pathDiagnostics != null && steps.current.flowFields.consumeInitialDiagnostic(flowField)) {
                         pathDiagnostics?.add(
                             PathSearchSample(
                                 action.actionId, unit.unitId, action.atStep,
@@ -1634,20 +1668,24 @@ class SimulationContext internal constructor(private val policies: ExperimentalP
                     }
                     unit.landingMember = LandingMember(group)
                     // True O(1) shared flow-field direct drive (ENG-P016-009D): bypass 100 individual A* companion jobs!
-                    // Fall back to MovePlanning when the unit sits in an unpassable cell or a 1x1 immobile pocket
-                    // so canonical `immobile-unit` rejection fires immediately.
+                    // Fall back to MovePlanning when the unit sits in an unpassable cell, narrow canal (for rectangles),
+                    // or a 1x1 immobile pocket so canonical `immobile-unit` rejection / maneuver routing fires cleanly.
                     val goalBlocked = terrain.isBlocked(gCol, gRow)
                     val immobilePocket = srcComp != 0 &&
                         steps.current.flowFields.isSingleCellImmobilePocket(terrain, terrainR, uCol, uRow)
-                    if ((goalBlocked && srcComp == 0) || immobilePocket) {
+                    if (flowField == null || (goalBlocked && srcComp == 0) || immobilePocket) {
                         steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
                     } else {
                         steps.current.movePlanning.cancel(unit.unitId)
                         steps.current.pendingFlowStart.add(unit.unitId)
                     }
                 } else if (group?.sharedLanding == true) {
-                    unit.landingMember = LandingMember(group)
-                    steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
+                    if (optMovement.type == MovementType.AIR) {
+                        steps.current.movePlanning.enqueue(action, null, selectionSize = 1)
+                    } else {
+                        unit.landingMember = LandingMember(group)
+                        steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
+                    }
                 } else {
                     steps.current.movePlanning.enqueue(action, group, selectionSize = group?.members?.size ?: 1)
                 }

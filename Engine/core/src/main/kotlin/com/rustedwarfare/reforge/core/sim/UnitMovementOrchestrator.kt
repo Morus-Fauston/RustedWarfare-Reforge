@@ -561,6 +561,7 @@ internal object UnitMovementOrchestrator {
                     coordinates = policies.coordinates,
                     terminalDockingWeight = maneuverDockingWeight,
                     ignoredContactUnitId = ignoredTargetId,
+                    protectedClusterKey = unit.landingMember?.group,
                 ).takeIf { it.applied } else null
             if (maneuverAvoid != null) {
                 avoidanceApplied = true
@@ -748,6 +749,7 @@ internal object UnitMovementOrchestrator {
                     ignoredContactUnitId = ignoredTargetId,
                     engagementArcCenter = visibleCombatTarget?.position,
                     engagementArcRadius = combatArcRadius,
+                    protectedClusterKey = unit.landingMember?.group,
                 )
             } else null
             val useFlowAimFallback = guidanceSample != null && guidanceSample.fromFlowField && unit.landingMember?.claimed == null
@@ -980,14 +982,16 @@ internal object UnitMovementOrchestrator {
                 unit, hull, headingBefore, turnProbe, host.spatialIndex,
                 { host.knowsRouteOccupant(unit, it) }, host::canDisplaceInContact,
             )
-        val sailClearOfBank = nearShoreLeg && terrainHeading != requestedHeading && legalHeading == terrainHeading
+        val sailClearOfBank = hull != null && maneuverLeg != null &&
+            terrainHeading != requestedHeading && legalHeading == terrainHeading &&
+            (nearShoreLeg || (unit.terrainCorrectionTime > 0.0 && abs(steering.differenceForSample) > 25.0))
         var speedTarget = steering.speedTarget
         var requestedFraction = steering.requestedFraction
         if (forwardTurnEscape || sailClearOfBank) {
             speedTarget = maximumSpeed
             requestedFraction = if (maximumSpeed > 0.0) 1.0 else 0.0
         }
-        if (legalHeading != requestedHeading) {
+        if (legalHeading != unit.heading) {
             unit.heading = legalHeading
             unit.angularVelocity = 0.0
             val adjustment = policies.coordinates.difference(legalHeading, requestedHeading)
@@ -1065,10 +1069,12 @@ internal object UnitMovementOrchestrator {
             val airSep = if (air) steering.airSeparationVel else null
             if (airSep != null) {
                 val sepGain = if (steering.target == null) 0.75 else 0.55
-                Position(
-                    unit.flightVelocity.x * delta + airSep.x * delta * sepGain,
-                    unit.flightVelocity.y * delta + airSep.y * delta * sepGain,
-                )
+                val dx = unit.flightVelocity.x * delta + airSep.x * delta * sepGain
+                val dy = unit.flightVelocity.y * delta + airSep.y * delta * sepGain
+                val maxStep = maximumSpeed * delta
+                val len = hypot(dx, dy)
+                if (len > maxStep && len > 1e-9) Position(dx * (maxStep / len), dy * (maxStep / len))
+                else Position(dx, dy)
             } else {
                 Position(unit.flightVelocity.x * delta, unit.flightVelocity.y * delta)
             }
@@ -1081,7 +1087,12 @@ internal object UnitMovementOrchestrator {
             } else policies.coordinates.displacement(unit.heading, unit.speed * delta)
             val airSep = if (air) steering.airSeparationVel else null
             if (airSep != null && !sliding) {
-                Position(baseDisp.x + airSep.x * delta * 0.65, baseDisp.y + airSep.y * delta * 0.65)
+                val dx = baseDisp.x + airSep.x * delta * 0.65
+                val dy = baseDisp.y + airSep.y * delta * 0.65
+                val maxStep = maximumSpeed * delta
+                val len = hypot(dx, dy)
+                if (len > maxStep && len > 1e-9) Position(dx * (maxStep / len), dy * (maxStep / len))
+                else Position(dx, dy)
             } else baseDisp
         }
 
@@ -1175,8 +1186,10 @@ internal object UnitMovementOrchestrator {
         val contactMap = host.buildingTerrain?.collisionMap ?: map
         val canPush: ((MutableUnit, MutableUnit) -> Boolean)? = if (unit.birthRemaining == 0f && insideMap(boundedPosition)) {
             { pusher, blocker ->
-                host.canDisplaceInContact(blocker) && !(pusher.landingMember != null &&
-                    blocker.ownerPlayerId == pusher.ownerPlayerId && blocker.landingMember?.parked == true) &&
+                host.canDisplaceInContact(blocker) && !(unit.landingMember != null &&
+                    blocker.ownerPlayerId == unit.ownerPlayerId &&
+                    blocker.landingMember?.parked == true &&
+                    blocker.landingMember?.group === unit.landingMember?.group) &&
                     !Transport.isLoadingPairAtContact(pusher, blocker, host.units)
             }
         } else null

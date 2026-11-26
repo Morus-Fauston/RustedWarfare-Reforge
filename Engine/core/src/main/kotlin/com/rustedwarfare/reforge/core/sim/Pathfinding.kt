@@ -24,7 +24,7 @@ internal interface PathPolicy {
 
 
 internal data class PathGridKey(val col: Int, val row: Int, val heading: Double = 0.0,
-                                val initialPose: Boolean = false)
+                                val initialPose: Boolean = false, val cornerMode: Int = 0)
 
 internal class PathWorkBudget(val limit: Int) {
     private var _remaining = limit
@@ -182,8 +182,8 @@ internal class PathClearanceCache(
         rectangleChecks.arrival(map, terrain, hull, from, target, fromHeading)
 
     fun rectangularNeighbors(map: PlanningTerrain, hull: RectangularDeparture, radius: Double,
-                             from: Position, heading: Double, build: () -> List<PathGridKey>): List<PathGridKey> =
-        rectangleChecks.neighbors(map, hull, radius, from, heading, build)
+                             key: PathGridKey, from: Position, build: () -> List<PathGridKey>): List<PathGridKey> =
+        rectangleChecks.neighbors(map, hull, radius, key, from, build)
 
     /** These caches affect cost on the host but every queue pop consumes the same work allowance. */
     internal class RectangleChecks {
@@ -192,7 +192,8 @@ internal class PathClearanceCache(
         private data class Sweep(val map: PlanningTerrain, val shape: MovementCollisionShape.Rectangle,
                                  val from: Position, val target: Position, val heading: Double)
         private data class NeighborSource(val map: PlanningTerrain, val shape: MovementCollisionShape.Rectangle,
-                                          val radius: Double, val reverse: Boolean,
+                                          val radius: Double, val reverse: Boolean, val maneuver: Boolean,
+                                          val col: Int, val row: Int, val cornerMode: Int,
                                           val at: Position, val heading: Double)
         private val turns = BoundedChecks<Turn, Boolean>()
         private val sweeps = BoundedChecks<Sweep, Boolean>()
@@ -212,9 +213,15 @@ internal class PathClearanceCache(
             return next.takeIf { turnsClear }
         }
 
-        fun neighbors(map: PlanningTerrain, hull: RectangularDeparture, radius: Double, from: Position,
-                      heading: Double, build: () -> List<PathGridKey>): List<PathGridKey> =
-            local.getOrPut(NeighborSource(map, hull.shape, radius, hull.reverse, from, heading), build)
+        fun neighbors(map: PlanningTerrain, hull: RectangularDeparture, radius: Double,
+                      key: PathGridKey, from: Position, build: () -> List<PathGridKey>): List<PathGridKey> =
+            local.getOrPut(
+                NeighborSource(
+                    map, hull.shape, radius, hull.reverse, hull.maneuver,
+                    key.col, key.row, key.cornerMode, from, key.heading,
+                ),
+                build,
+            )
 
         private class BoundedChecks<K, V> : LinkedHashMap<K, V>(64, .75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<K, V>?) = size > 32_768
@@ -515,6 +522,43 @@ internal class ClearanceAStarPolicy(
                 start.y + (row - origin.row).toDouble() * map.tileHeight)
         }
 
+        private fun routePoint(key: PathGridKey): Position {
+            if (key.cornerMode == 0) return routePoint(key.col, key.row)
+            val base = pointPolicy.point(map, key.col, key.row)
+            val rect = hull as? RectangularDeparture ?: return base
+            val minTile = minOf(map.tileWidth, map.tileHeight).toDouble()
+            val halfDiag = kotlin.math.hypot(rect.shape.length * 0.5, rect.shape.width * 0.5)
+            val shift = maxOf(0.20 * minTile, halfDiag + 0.5 - 0.5 * minTile).coerceAtMost(0.5 * minTile)
+            val sx = if (key.cornerMode == 1 || key.cornerMode == 3) -1.0 else 1.0
+            val sy = if (key.cornerMode == 1 || key.cornerMode == 2) -1.0 else 1.0
+            return Position(base.x + sx * shift, base.y + sy * shift)
+        }
+
+        private fun hasOpenCornerBlock(col: Int, row: Int, cornerMode: Int): Boolean {
+            val dx = if (cornerMode == 1 || cornerMode == 3) -1 else 1
+            val dy = if (cornerMode == 1 || cornerMode == 2) -1 else 1
+            val c2 = col + dx
+            val r2 = row + dy
+            if (c2 !in 0 until map.widthTiles || r2 !in 0 until map.heightTiles) return false
+            if (map.isBlocked(col, row) || map.isBlocked(c2, row) ||
+                map.isBlocked(col, r2) || map.isBlocked(c2, r2)) return false
+            // Only emit interior 2x2 turn pivots at genuinely wall-constrained 2x2 boxes
+            // (never on open ocean where standard tile centers already have full swing clearance).
+            val minC = minOf(col, c2)
+            val maxC = maxOf(col, c2)
+            val minR = minOf(row, r2)
+            val maxR = maxOf(row, r2)
+            for (c in (minC - 1)..(maxC + 1)) {
+                for (r in (minR - 1)..(maxR + 1)) {
+                    if (c in minC..maxC && r in minR..maxR) continue
+                    if (c !in 0 until map.widthTiles || r !in 0 until map.heightTiles || map.isBlocked(c, r)) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
         private fun arrival(from: Position, point: Position, heading: Double, cache: PathClearanceCache?): Double? {
             if (cache != null && hull is RectangularDeparture && occupancy == null)
                 return cache.rectangularArrival(map, checkNotNull(hullGrid), hull, from, point, heading)
@@ -652,7 +696,7 @@ internal class ClearanceAStarPolicy(
             if (counters != null) counters.popped++
             val key = current.key
             if (routes.costs[key] != current.g) return
-            val from = if (key == startKey) start else routePoint(key.col, key.row)
+            val from = if (key == startKey) start else routePoint(key)
             if (nearest) considerNearest(key, from)
             val targetCell = checkNotNull(goal)
             val reached = if (nearest) nearestDistance == 0.0
@@ -679,7 +723,7 @@ internal class ClearanceAStarPolicy(
                 }
             }
             if (cache != null && hull is RectangularDeparture && occupancy == null && !useDepartureLattice) {
-                val neighbors = cache.rectangularNeighbors(map, hull, radius, from, key.heading) {
+                val neighbors = cache.rectangularNeighbors(map, hull, radius, key, from) {
                     buildList { scanNeighbors(key, from, cache) { add(it) } }
                 }
                 neighbors.forEach(::visit)
@@ -721,7 +765,7 @@ internal class ClearanceAStarPolicy(
                 fromHeading = 0.0
             } else {
                 val key = checkNotNull(boundaryKey)
-                from = if (key == startKey) start else routePoint(key.col, key.row)
+                from = if (key == startKey) start else routePoint(key)
                 fromHeading = key.heading
             }
             val heading = ScreenPlane.desired(from, probe)
@@ -885,7 +929,13 @@ internal class ClearanceAStarPolicy(
 
         private inline fun scanNeighbors(key: PathGridKey, from: Position, cache: PathClearanceCache?,
                                          accept: (PathGridKey) -> Unit) {
-            val directions = if (key == startKey && from != routePoint(key.col, key.row)) listOf(0 to 0) + offsets else offsets
+            val includeSelf = (key == startKey && from != routePoint(key.col, key.row)) || key.cornerMode != 0
+            val directions = if (includeSelf) listOf(0 to 0) + offsets else offsets
+            val minTile = minOf(map.tileWidth, map.tileHeight).toDouble()
+            val rectPivot = hull is RectangularDeparture && hull.maneuver && !useDepartureLattice &&
+                kotlin.math.hypot(hull.shape.length * 0.5, hull.shape.width * 0.5).let { hd ->
+                    hd > 0.5 * minTile && hd < 0.98 * minTile
+                }
             for ((dx, dy) in directions) {
                 val col = key.col + dx
                 val row = key.row + dy
@@ -893,11 +943,23 @@ internal class ClearanceAStarPolicy(
                 if (counters != null) counters.neighborsChecked++
                 if (if (useDepartureLattice) map.isBlocked(col, row) else !isCandidate(col, row)) continue
                 val point = routePoint(col, row)
-                val heading = if (checkEverySegment) arrival(from, point, key.heading, cache) ?: continue else {
-                    if (key == startKey && !PlanningSegmentClearance.allows(map, from, point, radius)) continue
-                    0.0
+                if (point != from) {
+                    val heading = if (checkEverySegment) arrival(from, point, key.heading, cache) else {
+                        if (key == startKey && !PlanningSegmentClearance.allows(map, from, point, radius)) null else 0.0
+                    }
+                    if (heading != null) accept(PathGridKey(col, row, heading))
                 }
-                accept(PathGridKey(col, row, heading))
+                if (rectPivot) {
+                    for (cm in 1..4) {
+                        if (dx == 0 && dy == 0 && cm == key.cornerMode) continue
+                        if (!hasOpenCornerBlock(col, row, cm)) continue
+                        val pivotKey = PathGridKey(col, row, 0.0, cornerMode = cm)
+                        val pivotPoint = routePoint(pivotKey)
+                        if (pivotPoint == from) continue
+                        val heading = arrival(from, pivotPoint, key.heading, cache) ?: continue
+                        accept(PathGridKey(col, row, heading, cornerMode = cm))
+                    }
+                }
             }
         }
 
@@ -916,7 +978,7 @@ internal class ClearanceAStarPolicy(
             } else {
                 val key = checkNotNull(cursor)
                 if (key != startKey) {
-                    appendRoutePoint(points, routePoint(key.col, key.row))
+                    appendRoutePoint(points, routePoint(key))
                     cursor = checkNotNull(frontier).parents.getValue(key)
                     return
                 }
@@ -1176,7 +1238,7 @@ internal class ClearanceAStarPolicy(
         val orthogonal = listOf(0 to -1, -1 to 0, 1 to 0, 0 to 1)
         val rectangleOffsets = orthogonal + listOf(-1 to -1, 1 to -1, -1 to 1, 1 to 1)
         val nodeOrder = compareBy<Node> { it.f }.thenBy { it.key.row }.thenBy { it.key.col }
-            .thenBy { it.g }.thenBy { it.key.heading }
+            .thenBy { it.g }.thenBy { it.key.heading }.thenBy { it.key.cornerMode }.thenBy { it.key.initialPose }
 
         private val rangeFrontierPool = ThreadLocal<PrimitiveGridFrontier?>()
 

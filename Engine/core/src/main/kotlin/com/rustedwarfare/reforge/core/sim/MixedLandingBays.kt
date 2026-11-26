@@ -134,6 +134,15 @@ internal class MixedLandingBays(private val click: Position, private val horizon
                obstacles: (MutableUnit) -> List<MutableUnit>): Decision {
         val pending = members.filter { it.landingMember?.let { state -> !state.parked && state.claimed == null } == true }
         if (pending.size !in 1..2) return Decision.Ordinary
+        val minGroupRadius = members.minOfOrNull { it.definition.movementCollision.boundingRadius } ?: 0.0
+        val maxGroupRadius = members.maxOfOrNull { it.definition.movementCollision.boundingRadius } ?: 0.0
+        val hasLargerInGroup = maxGroupRadius > minGroupRadius + 0.5 ||
+            members.any { it.definition.movementCollision is MovementCollisionShape.Rectangle }
+        val hasLargerPending = pending.any {
+            it.definition.movementCollision is MovementCollisionShape.Rectangle ||
+                it.definition.movementCollision.boundingRadius > minGroupRadius + 0.5
+        }
+        if (hasLargerInGroup && !hasLargerPending) return Decision.Ordinary
         val ready = pending.filter { near(it.position) && it.moveTarget != null && it.pathPoints.isNotEmpty() }
             .sortedBy { ScreenPlane.distanceSquared(it.position, click) }
         val car = ready.firstOrNull { it.unitId != lastServed } ?: ready.firstOrNull() ?: return Decision.Pending

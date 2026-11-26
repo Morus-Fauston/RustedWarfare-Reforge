@@ -783,8 +783,9 @@ internal class MovePlanning {
             val unit = member.body ?: return false
             if (unit.stalledRouteTicks < 420L) return false
             val blockers = occupants.filter { it.obstructsRoute }
+            if (blockers.isEmpty()) return false
             if (unit.landingMember != null || unit.groupMoveReservation != null)
-                return blockers.isEmpty() || blockers.any { it.fixed }
+                return blockers.any { it.fixed && it.body.moveTarget == null }
             return blockers.all {
                 it.fixed && it.body.moveTarget == null || opposingBlockedMoves(unit, it.body)
             }

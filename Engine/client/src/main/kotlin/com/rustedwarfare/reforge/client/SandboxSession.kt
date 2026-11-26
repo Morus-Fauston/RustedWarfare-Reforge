@@ -686,10 +686,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         arrivalCommandStep = nextStep
         immobileMoveMembers.clear()
         lastCommandBatch = null
+        val batchMulti = members.size > 1 && evidence === ClientEvidence.NONE
         for (id in members) {
             if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
             pendingUnloadTargets.remove(id)
-            results += SelectionCommandMember(id, apply(action(id), moveGroup))
+            results += SelectionCommandMember(id, apply(action(id), moveGroup, deferPublish = batchMulti))
+        }
+        if (batchMulti && results.isNotEmpty()) {
+            publishFrame()
         }
         val batch = SelectionCommandBatch(results, skipped)
         lastCommandBatch = batch
@@ -856,8 +860,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             it.displayedBodyPosition().let { center -> center.x in left..right && center.y in top..bottom } }
         val mobile = candidates.filter { scenario.unitDefinitions.getValue(it.typeId).movement.type !=
             com.rustedwarfare.reforge.core.content.MovementType.NONE }
-        val accepted = (mobile.ifEmpty { candidates }).sortedBy { it.unitId }.mapNotNull { unit ->
-            unit.unitId.takeIf { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world)) is ActionResult.Accepted }
+        val selectedCandidates = (mobile.ifEmpty { candidates }).sortedBy { it.unitId }
+        val batchSelect = selectedCandidates.size > 1 && evidence === ClientEvidence.NONE
+        val accepted = selectedCandidates.mapNotNull { unit ->
+            unit.unitId.takeIf { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world), deferPublish = batchSelect) is ActionResult.Accepted }
+        }
+        if (batchSelect && selectedCandidates.isNotEmpty()) {
+            publishFrame()
         }
         val visible = observation.units.filter { it.alive }.map { it.unitId }.toSet()
         selection.select(selectionAtStart.filter { it in visible })
@@ -890,10 +899,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         .sortedWith(compareBy<Pair<UnitObservation, Double>> { it.second }.thenBy { it.first.unitId })
         .firstOrNull()?.first?.unitId
 
-    private fun apply(action: Action, moveGroup: GroupMoveRequest? = null): ActionResult {
-        capture("before-action")
+    private fun apply(action: Action, moveGroup: GroupMoveRequest? = null, deferPublish: Boolean = false): ActionResult {
+        if (!deferPublish) capture("before-action")
         val result = if (moveGroup == null) context.submit(action) else context.submitGroupMove(action as MoveAction, moveGroup)
-        publishFrame()
+        if (!deferPublish) publishFrame()
         feedback = when (result) {
             is ActionResult.Rejected -> result.error.code
             is ActionResult.Accepted -> result.events.lastOrNull()?.kind ?: "Accepted"
@@ -915,7 +924,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             (if (action is UnitAction) mapOf("actionName" to action.actionName, "cancelQueued" to action.cancelQueued) else emptyMap()) +
             (if (action is LoadAction) mapOf("direction" to action.direction.name) else emptyMap()) +
             (if (action is UnloadAction) mapOf("unloading" to action.unloading) else emptyMap()) }
-        capture("after-action")
+        if (!deferPublish) capture("after-action")
         return result
     }
 

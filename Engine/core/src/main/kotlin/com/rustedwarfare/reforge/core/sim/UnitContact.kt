@@ -280,6 +280,7 @@ internal object UnitContact {
             val connected = members.mapTo(mutableSetOf(unit.unitId)) { it.unit.unitId }
             var freeShare = Double.POSITIVE_INFINITY
             var pinned: ChainLink? = null
+            var pinnedByImmovable = false
             while (freeShare > 0.0) {
                 // Every link sees the same share and set of connected bodies in a round.
                 val share = minOf(freeShare, shareForPressure(pressureTravel, members))
@@ -296,6 +297,7 @@ internal object UnitContact {
                             if (offset < freeShare) {
                                 freeShare = offset
                                 pinned = member.takeIf { next.blocker.unitId !in settled && support?.contains(next.blocker.unitId) != true }
+                                pinnedByImmovable = pinned != null && ratio == null
                             }
                             continue
                         }
@@ -314,9 +316,11 @@ internal object UnitContact {
             val pressureShare = shareForPressure(pressureTravel, members)
             val requestedShare = minOf(freeShare, pressureShare)
 
-            val chain = members.map { constrainedLink(it, map) }
-            val rootBody = Body(unit.definition.movementCollision, unit.heading)
             val producerId = unit.productionOrigin?.producerId
+            val chain = members.map {
+                constrainedLink(it, map, sameProducer = producerId != null && it.unit.productionOrigin?.producerId == producerId)
+            }
+            val rootBody = Body(unit.definition.movementCollision, unit.heading)
             // A newer hull can be born inside its predecessor. Hold the newborn at
             // first contact while the existing hull clears that overlap under pressure.
             val separatingBirth = if (producerId != null && FactoryExit.isNativeSeaDeparture(unit)) {
@@ -376,7 +380,8 @@ internal object UnitContact {
             val translation = sideRelease ?: if (axialAdjustments.isNotEmpty()) Translation(moverEnd(actualShare), axialAdjustments)
                 else if (softContact != null || (requestedShare == 0.0 && pinned == null)) Translation(clipped)
                 else slide(unit, target, clipped, origin, drift, pressureShare,
-                    (pinned?.let { link -> chain.firstOrNull { it.link == link } } ?: chain.last()), unitsById, map, ground)
+                    (pinned?.let { link -> chain.firstOrNull { it.link == link } } ?: chain.last()), unitsById, map, ground,
+                    allowIdleSelfTravel = pinnedByImmovable)
             if (translation.displaced.isEmpty()) return translation
             settled += unit.unitId
             for (adjustment in translation.displaced) {
@@ -396,22 +401,30 @@ internal object UnitContact {
             unitsById: Map<String, MutableUnit>, map: MapDefinition, ground: MapDefinition,
         ): Translation? {
             if (unit.moveTarget == null || other.moveTarget != null || movePending(other.unitId)) return null
+            val bothCircles = unit.definition.movementCollision is MovementCollisionShape.Circle &&
+                other.definition.movementCollision is MovementCollisionShape.Circle
+            if (!bothCircles) return null
             val reservation = unit.groupMoveReservation
             val sameLandingParked = unit.landingMember != null &&
                 other.landingMember?.group === unit.landingMember?.group &&
                 other.landingMember?.parked == true
-            val parkedPeer = (reservation?.plan?.hasParkedMember(other) == true || sameLandingParked) &&
-                unit.definition.movementCollision is MovementCollisionShape.Circle &&
-                other.definition.movementCollision is MovementCollisionShape.Circle
-            if (!parkedPeer) return null
+            val parkedPeer = reservation?.plan?.hasParkedMember(other) == true || sameLandingParked
             val drift = subtract(target, unit.position)
             val length = hypot(drift.x, drift.y)
             if (length == 0.0) return null
             val normal = subtract(unit.position, other.position)
             val separation = hypot(normal.x, normal.y)
-            if (separation == 0.0 || normal.x * drift.x + normal.y * drift.y >= 0.0) return null
+            if (separation == 0.0) return null
+            val normalDotDrift = normal.x * drift.x + normal.y * drift.y
+            if (normalDotDrift >= 0.0) return null
+            val headOnCos = -normalDotDrift / (separation * length)
+            // Always tangent-slide around same-order parked companions; for other stationary circles,
+            // tangent-slide only on near-perpendicular grazing contact (headOnCos < 0.25) so movers glide past
+            // instead of initiating a stalled chain push against an entire parked cluster.
+            if (!parkedPeer && headOnCos >= 0.25) return null
             var tangent = Position(-normal.y / separation, normal.x / separation)
-            val toward = subtract(checkNotNull(unit.moveTarget), unit.position)
+            val aim = if (parkedPeer) checkNotNull(unit.moveTarget) else (unit.pathPoints.firstOrNull() ?: checkNotNull(unit.moveTarget))
+            val toward = subtract(aim, unit.position)
             val projection = dot(tangent, toward)
             if (projection < 0.0 || (projection == 0.0 && tangent.x * -drift.y + tangent.y * drift.x < 0.0)) {
                 tangent = negate(tangent)
@@ -433,13 +446,14 @@ internal object UnitContact {
         private fun slide(unit: MutableUnit, target: Position, clipped: Position, origin: Position, drift: Position,
                           share: Double, member: ConstrainedLink,
                           unitsById: Map<String, MutableUnit>, map: MapDefinition, ground: MapDefinition,
-                          chargeMass: Boolean = false): Translation {
+                          chargeMass: Boolean = false, allowIdleSelfTravel: Boolean = false): Translation {
             val pushed = member.link.unit
             val length = hypot(drift.x, drift.y)
             val side = Position(-drift.y / length, drift.x / length)
             val shape = pushed.definition.movementCollision
+            val effectiveMaxTravel = if (allowIdleSelfTravel) maximumTravel(pushed) else member.maxTravel
             for (direction in listOf(-1.0, 1.0)) {
-                val initialLimit = maxOf(member.maxTravel, distance(origin, clipped))
+                val initialLimit = maxOf(effectiveMaxTravel, distance(origin, target))
                 val wanted = offsetAlong(pushed.position, side, minOf(share * length, initialLimit) * direction)
                 val actual = lastLegalPoint(pushed.position, wanted) { candidate ->
                     distance(member.start, candidate) <= initialLimit + positionRoundoff(member.start, candidate) &&
@@ -461,7 +475,7 @@ internal object UnitContact {
                 }
                 val destination = lastLegalPoint(pushed.position, actual) { at ->
                     val end = settle(at)
-                    end != null && distance(member.start, at) <= maxOf(member.maxTravel, distance(origin, end)) +
+                    end != null && distance(member.start, at) <= maxOf(effectiveMaxTravel, distance(origin, end)) +
                         positionRoundoff(member.start, at)
                 }
                 if (distance(pushed.position, destination) <= positionRoundoff(pushed.position, destination)) continue
@@ -470,12 +484,13 @@ internal object UnitContact {
             return Translation(clipped)
         }
 
-        private fun constrainedLink(link: ChainLink, map: MapDefinition): ConstrainedLink {
+        private fun constrainedLink(link: ChainLink, map: MapDefinition, sameProducer: Boolean = false): ConstrainedLink {
             val pushed = link.unit
             val motion = UnitLocomotion.movement(pushed).type
             val terrain = if (motion != MovementType.AIR) motion
                 else if (pushed.flightLandedInWater) MovementType.WATER else MovementType.LAND
-            return ConstrainedLink(link, startingPositions.getOrPut(pushed.unitId) { pushed.position }, maximumTravel(pushed),
+            val selfTravel = if (!sameProducer && pushed.moveTarget == null && pushed.birthRemaining <= 0f) 0.0 else maximumTravel(pushed)
+            return ConstrainedLink(link, startingPositions.getOrPut(pushed.unitId) { pushed.position }, selfTravel,
                 Body(pushed.definition.movementCollision, pushed.heading), terrain, HullTerrainGrid.authoritative(map, terrain))
         }
 

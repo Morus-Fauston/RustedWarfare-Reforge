@@ -299,16 +299,19 @@
         "intentId": "wait-2"
       },
       {
+        "intentId": "select-builder-mech"
+      },
+      {
+        "intentId": "approach-mech"
+      },
+      {
         "intentId": "select-land"
       },
       {
         "intentId": "produce-tank"
       },
       {
-        "intentId": "select-builder-mech"
-      },
-      {
-        "intentId": "approach-mech"
+        "intentId": "reselect-builder-mech-face"
       },
       {
         "intentId": "approach-mech-face-build"

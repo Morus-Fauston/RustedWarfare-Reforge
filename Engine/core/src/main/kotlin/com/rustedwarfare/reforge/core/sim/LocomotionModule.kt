@@ -160,6 +160,7 @@ internal object LocomotionModule {
         val wallCands: Array<WallCand> = Array(49) { WallCand() }
         val wallLines: ArrayList<HalfPlane> = ArrayList(16)
         val dynamicLines: ArrayList<HalfPlane> = ArrayList(TOP_K_NEIGHBORS)
+        val dynamicPushable: BooleanArray = BooleanArray(TOP_K_NEIGHBORS)
         val allLines: ArrayList<HalfPlane> = ArrayList(40)
         val projLines: ArrayList<HalfPlane> = ArrayList(40)
         val lpOut: Array<Vec2> = Array(1) { Vec2.ZERO }
@@ -187,6 +188,7 @@ internal object LocomotionModule {
         ignoredContactUnitId: String? = null,
         engagementArcCenter: Position? = null,
         engagementArcRadius: Double = 0.0,
+        protectedClusterKey: Any? = null,
     ): SolveResult {
         if (maximumSpeed <= EPS || delta <= 0.0) {
             return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
@@ -304,8 +306,10 @@ internal object LocomotionModule {
         var activeDynamicConstraints = 0
         var hasExistingHardOverlap = false
         var hasDirectImmovableContact = false
+        var hasClosePushableBlocker = false
 
         val dynamicLines = scratch.dynamicLines
+        val dynamicPushable = scratch.dynamicPushable
         dynamicLines.clear()
 
         // Pure geometric centroid of nearby stationary obstacles from step-start frozen snapshot (zero allocation,
@@ -381,7 +385,12 @@ internal object LocomotionModule {
                 val peerHeadingDir = Vec2.fromHeading(peer.heading, 1.0)
                 val peerOpposing = peerHeadingDir.dot(desiredDir) < 0.15 ||
                     (peerMoving && peerVel.dot(desiredDir) < -0.10)
-                if (peerOpposing || fwdDot <= 0.0 || (peerAnchored && latAbs >= combinedHard * 1.05)) {
+                val skipPinnedAnchor = peerAnchored &&
+                    unit.hardContactLimitedTicks >= 18L &&
+                    localClearanceWorld >= selfHalfWidth * 2.2
+                if (!skipPinnedAnchor &&
+                    (peerOpposing || fwdDot <= 0.0 || (peerAnchored && latAbs >= combinedHard * 1.05))
+                ) {
                     continue
                 }
             }
@@ -398,7 +407,9 @@ internal object LocomotionModule {
 
             // Pure kinematic ADR-009 single-lane & contact/push harmony (zero `passthrough`, zero command-identity checks):
             if (!pairCanPassSideBySide) {
-                if (peerAnchored && fwdDot > 0.0 && latAbs < combinedHard) {
+                if (peerAnchored && fwdDot > 0.0 && latAbs < combinedHard &&
+                    (unit.hardContactLimitedTicks < 18L || localClearanceWorld < selfHalfWidth * 2.2)
+                ) {
                     continue
                 }
                 if (corridorOpenness <= 0.05 &&
@@ -449,7 +460,10 @@ internal object LocomotionModule {
                 if (finalPoint && peerVerySlow && !isRangedPursuer && peerToGoal <= combinedHard + 6.0) {
                     continue
                 }
-                if (peerAnchored && dist <= combinedHard * 1.03 && fwdDot > 0.0 && latAbs < combinedHard * 0.35 && !isRangedPursuer) {
+                if (peerAnchored && dist <= combinedHard * 1.03 && fwdDot > 0.0 && latAbs < combinedHard * 0.35 &&
+                    !isRangedPursuer &&
+                    (unit.hardContactLimitedTicks < 18L || localClearanceWorld < selfHalfWidth * 2.2)
+                ) {
                     continue
                 }
             }
@@ -683,7 +697,28 @@ internal object LocomotionModule {
                 tieBreakSign = if (unit.updateKey < peer.updateKey) 1.0 else -1.0,
             )
             if (orcaPlane != null) {
+                val sameClusterParked = protectedClusterKey != null &&
+                    peer.parkedClusterKey === protectedClusterKey
+                val canPushPeerBase = peerAnchored &&
+                    peer.displaceableInContact &&
+                    !sameClusterParked &&
+                    canPushMassFrozen(selfMass, peerMass)
+                val peerWallPinned = if (canPushPeerBase) {
+                    val probeDist = peer.hardRadius + 6.0
+                    !isPointClearOnTerrain(
+                        terrain,
+                        peer.position.x + desiredDir.x * probeDist,
+                        peer.position.y + desiredDir.y * probeDist,
+                        max(1.0, peer.hardRadius * 0.85),
+                    )
+                } else false
+                val isPushableStationary = canPushPeerBase && !peerWallPinned
+                val lineIdx = dynamicLines.size
                 dynamicLines.add(orcaPlane)
+                if (lineIdx < dynamicPushable.size) dynamicPushable[lineIdx] = isPushableStationary
+                if (isPushableStationary && dist <= combinedHard * 1.45 && fwdDot > -0.25) {
+                    hasClosePushableBlocker = true
+                }
                 activeDynamicConstraints++
             }
         }
@@ -803,6 +838,31 @@ internal object LocomotionModule {
             }
             chosen ?: vSolved
         } else vSolved
+
+        // Pure kinematic push-through release: when boxed in against pushable stationary units (NOT walls,
+        // NOT immovable/anchored structures, NOT same-group parked peers) so that ORCA chokes forward progress
+        // near zero, re-solve keeping ALL wall, immovable, moving, and same-group constraints intact so ADR-009
+        // UnitContact physical pushing parts the pushable stationary units cleanly instead of decaying to 0.
+        val stalledPushInTransit = (!finalPoint || distToTarget > scale.hardRadius * 6.0) &&
+            unit.hardContactLimitedTicks >= 18L
+        if (!hasDirectImmovableContact && hasClosePushableBlocker &&
+            !stalledPushInTransit &&
+            desiredSpeed > 0.1 * maximumSpeed &&
+            terminalDockingWeight < 0.25 &&
+            vFinal.dot(desiredDir) < 0.18 * desiredSpeed
+        ) {
+            allLines.clear()
+            for (i in 0 until wallLines.size) allLines.add(wallLines[i])
+            for (i in 0 until dynamicLines.size) {
+                if (i >= dynamicPushable.size || !dynamicPushable[i]) allLines.add(dynamicLines[i])
+            }
+            val pushVel = solveLinearProgramScratch(
+                allLines, numFixed, maximumSpeed, basePrefVel, scratch.projLines, scratch.lpOut,
+            ).velocity
+            if (pushVel.dot(desiredDir) > vFinal.dot(desiredDir) + 0.08 * maximumSpeed) {
+                vFinal = pushVel
+            }
+        }
 
         // If boxed-in with an existing hard body overlap (3D LP ~0) or pinned in direct bow-on contact against an
         // immovable blocker, solve the wall-only LP strictly against ALL static wall half-planes (`wallLines`) with
@@ -1717,16 +1777,19 @@ internal object LocomotionModule {
             (blockingPeerAhead || closingSpeed < 0.30 * maxSpeed)
     }
 
-    private fun isPointClearOnTerrain(terrain: PlanningTerrain, p: Position, radius: Double): Boolean {
+    private fun isPointClearOnTerrain(terrain: PlanningTerrain, p: Position, radius: Double): Boolean =
+        isPointClearOnTerrain(terrain, p.x, p.y, radius)
+
+    private fun isPointClearOnTerrain(terrain: PlanningTerrain, px: Double, py: Double, radius: Double): Boolean {
         val tw = terrain.tileWidth.toDouble()
         val th = terrain.tileHeight.toDouble()
         val mapW = terrain.widthTiles * tw
         val mapH = terrain.heightTiles * th
-        if (p.x < radius || p.x > mapW - radius || p.y < radius || p.y > mapH - radius) return false
-        val c0 = floor((p.x - radius) / tw).toInt().coerceIn(0, terrain.widthTiles - 1)
-        val c1 = floor((p.x + radius) / tw).toInt().coerceIn(0, terrain.widthTiles - 1)
-        val r0 = floor((p.y - radius) / th).toInt().coerceIn(0, terrain.heightTiles - 1)
-        val r1 = floor((p.y + radius) / th).toInt().coerceIn(0, terrain.heightTiles - 1)
+        if (px < radius || px > mapW - radius || py < radius || py > mapH - radius) return false
+        val c0 = floor((px - radius) / tw).toInt().coerceIn(0, terrain.widthTiles - 1)
+        val c1 = floor((px + radius) / tw).toInt().coerceIn(0, terrain.widthTiles - 1)
+        val r0 = floor((py - radius) / th).toInt().coerceIn(0, terrain.heightTiles - 1)
+        val r1 = floor((py + radius) / th).toInt().coerceIn(0, terrain.heightTiles - 1)
         for (r in r0..r1) {
             val minY = r * th
             val maxY = minY + th
@@ -1734,10 +1797,10 @@ internal object LocomotionModule {
                 if (!terrain.isBlocked(c, r)) continue
                 val minX = c * tw
                 val maxX = minX + tw
-                val cx = p.x.coerceIn(minX, maxX)
-                val cy = p.y.coerceIn(minY, maxY)
-                val dx = p.x - cx
-                val dy = p.y - cy
+                val cx = px.coerceIn(minX, maxX)
+                val cy = py.coerceIn(minY, maxY)
+                val dx = px - cx
+                val dy = py - cy
                 if (dx * dx + dy * dy < radius * radius) return false
             }
         }
