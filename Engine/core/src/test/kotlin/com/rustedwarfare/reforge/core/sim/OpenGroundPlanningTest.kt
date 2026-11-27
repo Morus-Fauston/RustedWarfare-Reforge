@@ -37,7 +37,9 @@ class OpenGroundPlanningTest {
     @Test
     fun a_newly_known_body_on_the_approach_invalidates_a_pending_open_ground_order() = withOpenOrder { input, group ->
         fun run(at: Position): Pair<Boolean, Int> {
-            val mover = input.members.first().also { it.body!!.landingMember = LandingMember(group) }
+            val mover = input.members.first().also {
+                it.body!!.updateNavigation { nav -> nav.withLandingMember(LandingMember(group)) }
+            }
             val other = mover.body!!.copy(unitId = "newcomer", position = at, nav = UnitNavigationState.EMPTY)
             val occ = MovePlanningOccupant(other, mover.pose.copy(position = at), null, idle = true, obstructsRoute = true)
             val current = input.copy(members = listOf(mover), occupants = emptyList(), segmentPeers = listOf(occ))
@@ -70,7 +72,7 @@ class OpenGroundPlanningTest {
         }
         val planning = MovePlanning()
         for (m in input.members) {
-            m.body!!.landingMember = LandingMember(group)
+            m.body!!.updateNavigation { it.withLandingMember(LandingMember(group)) }
             planning.enqueue(m.action, null, selectionSize = input.members.size)
         }
         val byId = input.members.associateBy { it.action.unitId }

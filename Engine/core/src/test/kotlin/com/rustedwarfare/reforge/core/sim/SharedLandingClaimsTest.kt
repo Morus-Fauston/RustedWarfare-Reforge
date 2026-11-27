@@ -14,8 +14,10 @@ class SharedLandingClaimsTest {
         val group = GroupMoveRequest(WorldHandle("push"), null, "p1", click, (1..32).map { "car-$it" }.toSet(), true)
         val def = TestContentFactory.openScenario().unitDefinitions.getValue("tank")
         val car = MutableUnit("car-1", "p1", "tank", def, Position(80.0, 120.0), 90.0)
-        car.moveTarget = click
-        car.landingMember = LandingMember(group)
+        car.updateNavigation {
+            it.withMoveTarget(click, MotionContract.sharedCluster(click))
+                .withLandingMember(LandingMember(group))
+        }
         val pool = SharedLandingSites.forGroup(map, group, listOf(car))
         assertNull(pool.mixedBays, "Homogeneous circular group needs no mixed bay survey")
         assertFalse(pool.near(car.position), "Far en-route unit is outside terminal landing zone")
@@ -68,7 +70,7 @@ class SharedLandingClaimsTest {
             val probe = MutableUnit("probe", "p1", "tank", tank, parked.position, parked.heading)
             val slot = GroupMoveSlot(probe.position, probe.heading, listOf(probe.position))
             fun canStop(order: GroupMoveRequest): Boolean {
-                probe.groupMoveReservation = GroupMoveReservation(order, slot)
+                probe.updateNavigation { it.withGroupMoveReservation(GroupMoveReservation(order, slot)) }
                 return clears.invoke(ctx, probe) as Boolean
             }
             // Apply the contact solver to the published parking identity at a controlled angle.
@@ -78,8 +80,10 @@ class SharedLandingClaimsTest {
             fun resolved(order: GroupMoveRequest?): Position {
                 val rest = parked.copy(definition = body, position = Position(119.0, 207.0))
                 val mover = MutableUnit("probe", "p1", "tank", body, Position(100.0, 200.0), 90.0)
-                mover.moveTarget = click
-                mover.groupMoveReservation = order?.let { GroupMoveReservation(it, slot) }
+                mover.updateNavigation {
+                    it.withMoveTarget(click)
+                        .withGroupMoveReservation(order?.let { g -> GroupMoveReservation(g, slot) })
+                }
                 val units = listOf(mover, rest)
                 val spatial = WorldSpatialIndex().apply { syncAll(units) }
                 return UnitContact.Translations(1.0, spatial) { false }.resolve(mover, Position(102.0, 200.0),
@@ -115,12 +119,16 @@ class SharedLandingClaimsTest {
         fun translate(group: GroupMoveRequest?): Position {
             val moving = MutableUnit("moving", "p1", "tank", tank, Position(100.0, 200.0), 90.0)
             val resting = MutableUnit("parked", "p1", "tank", tank, Position(119.0, 207.0), 90.0)
-            moving.moveTarget = click
-            moving.landingMember = LandingMember(own, claimed = click)
-            moving.groupMoveReservation = GroupMoveReservation(own, GroupMoveSlot(click, 90.0, listOf(click)))
+            moving.updateNavigation {
+                it.withMoveTarget(click, MotionContract.sharedCluster(click))
+                    .withLandingMember(LandingMember(own, claimed = click))
+                    .withGroupMoveReservation(GroupMoveReservation(own, GroupMoveSlot(click, 90.0, listOf(click))))
+            }
             if (group != null) {
-                resting.landingMember = LandingMember(group, claimed = resting.position, parked = true)
-                resting.moveArrival = MoveArrival(click, resting.position, 0.0, 1, true)
+                resting.updateNavigation {
+                    it.withLandingMember(LandingMember(group, claimed = resting.position, parked = true))
+                        .withMoveArrival(MoveArrival(click, resting.position, 0.0, 1, true))
+                }
             }
             val units = listOf(moving, resting)
             val spatial = WorldSpatialIndex().apply { syncAll(units) }

@@ -201,14 +201,15 @@ internal object UnitContact {
         fun finish(units: Collection<MutableUnit>, samples: MutableList<MotionStepSample>?, occupancy: LandingOccupancy? = null) {
             occupancy?.update(units)
             for (unit in units) {
-                val active = unit.moveTarget != null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
-                unit.hardContactLimitedTicks = when {
+                val active = unit.moveTarget != null && unit.motionContract?.tracksHardContactLimit == true
+                val nextHardTicks = when {
                     !active -> 0
                     unit.unitId in planningWait -> unit.hardContactLimitedTicks
                     unit.unitId in hardLimited -> unit.hardContactLimitedTicks + 1
                     unit.unitId in pushedDisplacements && unit.unitId !in ownProgress -> unit.hardContactLimitedTicks
                     else -> 0
                 }
+                unit.updateNavigation { it.withHardContactLimitedTicks(nextHardTicks) }
             }
             if (samples != null) {
                 val byId = units.associateBy { it.unitId }
@@ -561,7 +562,7 @@ internal object UnitContact {
 
     private fun gatheringGoal(unit: MutableUnit, movePending: (String) -> Boolean): GatheringGoal? {
         if (movePending(unit.unitId)) return null
-        val target = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE && !it.factoryExit }?.target ?: return null
+        val target = unit.motionContract?.gatheringTarget ?: return null
         val layer = layer(unit) ?: return null
         return GatheringGoal(unit.ownerPlayerId, layer, target)
     }

@@ -23,18 +23,22 @@ class RouteContinuationTest {
             val target = Position(10.0, 30.0)
             val start = Position(10.0, 82.0)
             val follower = MutableUnit("follower", "p1", definition.id, definition, start, 0.0).apply {
-                stalledRouteTicks = 480L
-                moveTarget = target
-                pathPoints = mutableListOf(target)
+                updateNavigation {
+                    it.withStalledRouteTicks(480L)
+                        .withMoveTarget(target, MotionContract.pointMove(target))
+                        .withPathPoints(listOf(target))
+                }
                 taskQueue = taskQueue.append(UnitTask(UnitTaskKind.MOVE, "follow", target))
             }
             val leader = MutableUnit("leader", "p1", definition.id, definition, Position(10.0, 70.0), 0.0).apply {
-                stalledRouteTicks = 480L
+                updateNavigation { it.withStalledRouteTicks(480L) }
                 taskQueue = taskQueue.append(UnitTask(UnitTaskKind.MOVE, "lead", Position(10.0, 22.0)))
             }
             fun commandLeader(id: String, goal: Position) {
-                leader.moveTarget = goal
-                leader.pathPoints = mutableListOf(goal)
+                leader.updateNavigation {
+                    it.withMoveTarget(goal, MotionContract.pointMove(goal))
+                        .withPathPoints(listOf(goal))
+                }
                 leader.taskQueue = leader.taskQueue.replaceHead(UnitTask(UnitTaskKind.MOVE, id, goal))
             }
             fun pose(unit: MutableUnit) = MovePlanningPose(

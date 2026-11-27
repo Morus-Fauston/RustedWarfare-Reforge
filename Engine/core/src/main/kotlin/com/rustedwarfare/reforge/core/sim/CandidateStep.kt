@@ -165,13 +165,7 @@ internal data class StepState(
             require(unit.nanoHeading?.isFinite() != false) { "Nano heading must stay finite" }
             CustomUnitActions.validateCandidate(unit)
             NuclearOrdnance.validate(unit)
-            require((unit.logicalRequestX == null) == (unit.logicalRequestY == null) &&
-                unit.logicalRequestX?.isFinite() != false && unit.logicalRequestY?.isFinite() != false) {
-                "Logical movement coordinates must be a finite pair"
-            }
-            require(unit.pendingPathNodeCounts.all { it >= 0 } && unit.consumedPathNodeCounts.all { it >= 0 }) {
-                "Accepted path node counts must remain nonnegative"
-            }
+            unit.nav.requestAudit.validate()
             require(previousKey?.let { it < unit.updateKey } != false) { "Unit update keys must remain strictly ordered" }
             previousKey = unit.updateKey
             if (input.combatContract != null) {

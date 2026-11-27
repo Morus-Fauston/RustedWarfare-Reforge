@@ -134,7 +134,7 @@ data class UnitTask(val kind: UnitTaskKind, val actionId: String, val target: Po
     val targetUnitId: String? = null, val atStep: Long? = null,
     val buildingTypeId: String? = null, val buildingNonce: String? = null,
     val automaticRepair: Boolean = false, val extraWorkRange: Float = 0f, internal val startsAfterFactoryExit: Boolean = false,
-    internal val factoryExit: Boolean = false)
+    internal val factoryExit: Boolean = false, internal val motionContract: MotionContract? = null)
 
 data class UnitObservation(
     val unitId: String,
@@ -440,8 +440,6 @@ internal data class MutableUnit(
     var shieldDisplayDamage: Float = 0f,
     var attackCommand: ManualAttackCommand? = null,
     var taskQueue: UnitTaskQueue = UnitTaskQueue(),
-    /** Last activity's logical request, independent of propulsion and path success. */
-    var movementRequested: Boolean = false,
     var lastAttackPathAttemptStep: Long? = null,
     var combat: MutableCombat? = definition.combat?.let { MutableCombat(heading) },
     var height: Double = definition.movement.flight?.startingHeightOffset ?: 0.0,
@@ -475,12 +473,6 @@ internal data class MutableUnit(
     /** Native r.d is independent of the work preparation and Stop fields. */
     var repairScanElapsed: Float = 0f,
     var reclaimed: Boolean = false,
-    var singleNodePathCount: Byte = 0,
-    var logicalRequestX: Float? = null,
-    var logicalRequestY: Float? = null,
-    var pendingPathNodeCounts: List<Int> = emptyList(),
-    var consumedPathNodeCounts: List<Int> = emptyList(),
-    var qBeforeDispatch: Byte = 0,
     var namedWeapons: MutableMap<String, MutableCombat>? = NamedWeaponRuntime.initialStates(definition.combat, heading, combat),
     var sharedWeaponTargetId: String? = null,
     var mechState: MechState? = MechMotion.initial(definition, position, heading),
@@ -520,99 +512,45 @@ internal data class MutableUnit(
     var spiderBlink: SpiderBlink? = null,
     var destroyedWithoutHealth: Boolean = false,
 ) {
-    var moveTarget: Position?
-        get() = nav.moveTarget
-        set(value) { if (nav.moveTarget != value) nav = nav.copy(moveTarget = value) }
-    var nearestMoveTarget: Position?
-        get() = nav.nearestMoveTarget
-        set(value) { if (nav.nearestMoveTarget != value) nav = nav.copy(nearestMoveTarget = value) }
-    var nearestMoveIsGroup: Boolean
-        get() = nav.nearestMoveIsGroup
-        set(value) { if (nav.nearestMoveIsGroup != value) nav = nav.copy(nearestMoveIsGroup = value) }
-    var moveArrival: MoveArrival?
-        get() = nav.moveArrival
-        set(value) { if (nav.moveArrival != value) nav = nav.copy(moveArrival = value) }
-    var pathPoints: List<Position>
-        get() = nav.pathPoints
-        set(value) { nav = nav.withPathPoints(value) }
-    var originMoveId: String?
-        get() = nav.originMoveId
-        set(value) { if (nav.originMoveId != value) nav = nav.copy(originMoveId = value) }
-    var originAtStep: Long?
-        get() = nav.originAtStep
-        set(value) { if (nav.originAtStep != value) nav = nav.copy(originAtStep = value) }
-    var lastPlannedKnowledgeRevision: Long
-        get() = nav.lastPlannedKnowledgeRevision
-        set(value) { if (nav.lastPlannedKnowledgeRevision != value) nav = nav.copy(lastPlannedKnowledgeRevision = value) }
-    var lastPlannedBuildingRevision: Long
-        get() = nav.lastPlannedBuildingRevision
-        set(value) { if (nav.lastPlannedBuildingRevision != value) nav = nav.copy(lastPlannedBuildingRevision = value) }
-    var nearTargetTime: Double
-        get() = nav.nearTargetTime
-        set(value) { if (nav.nearTargetTime != value) nav = nav.copy(nearTargetTime = value) }
-    var routeContinuation: RouteContinuation?
-        get() = nav.routeContinuation
-        set(value) { if (nav.routeContinuation != value) nav = nav.copy(routeContinuation = value) }
-    var stalledRouteTicks: Long
-        get() = nav.stalledRouteTicks
-        set(value) { if (nav.stalledRouteTicks != value) nav = nav.copy(stalledRouteTicks = value) }
-    var hardContactLimitedTicks: Long
-        get() = nav.hardContactLimitedTicks
-        set(value) { if (nav.hardContactLimitedTicks != value) nav = nav.copy(hardContactLimitedTicks = value) }
-    var routeTranslationClipped: Boolean
-        get() = nav.routeTranslationClipped
-        set(value) { if (nav.routeTranslationClipped != value) nav = nav.copy(routeTranslationClipped = value) }
-    var followsManeuverRoute: Boolean
-        get() = nav.followsManeuverRoute
-        set(value) { if (nav.followsManeuverRoute != value) nav = nav.copy(followsManeuverRoute = value) }
-    var maneuverTurnWaypoint: Position?
-        get() = nav.maneuverTurnWaypoint
-        set(value) { if (nav.maneuverTurnWaypoint != value) nav = nav.copy(maneuverTurnWaypoint = value) }
-    var lastManeuverContactRepair: Long?
-        get() = nav.lastManeuverContactRepair
-        set(value) { if (nav.lastManeuverContactRepair != value) nav = nav.copy(lastManeuverContactRepair = value) }
-    var routeOccupantIds: List<String>
-        get() = nav.routeOccupantIds
-        set(value) { nav = nav.withRouteOccupantIds(value) }
-    var passageEntry: PassageEntry?
-        get() = nav.passageEntry
-        set(value) { if (nav.passageEntry != value) nav = nav.copy(passageEntry = value) }
-    var groupMoveReservation: GroupMoveReservation?
-        get() = nav.groupMoveReservation
-        set(value) { nav = nav.withGroupMoveReservation(value) }
-    var parkedReservationOwner: GroupMoveRequest?
-        get() = nav.parkedReservationOwner
-        set(value) { nav = nav.withParkedReservationOwner(value) }
-    var indexedLandingBody: LandingOccupancy.IndexedBody?
-        get() = nav.indexedLandingBody
-        set(value) { if (nav.indexedLandingBody !== value) nav = nav.copy(indexedLandingBody = value) }
-    var landingMember: LandingMember?
-        get() = nav.landingMember
-        set(value) { nav = nav.withLandingMember(value) }
-    var adoptedRouteRevision: Long
-        get() = nav.adoptedRouteRevision
-        set(value) { if (nav.adoptedRouteRevision != value) nav = nav.copy(adoptedRouteRevision = value) }
-    var localProgressTime: Double
-        get() = nav.localProgressTime
-        set(value) { if (nav.localProgressTime != value) nav = nav.copy(localProgressTime = value) }
-    var terrainCorrectionTime: Double
-        get() = nav.terrainCorrectionTime
-        set(value) { if (nav.terrainCorrectionTime != value) nav = nav.copy(terrainCorrectionTime = value) }
-    var terrainClearSteps: Int
-        get() = nav.terrainClearSteps
-        set(value) { if (nav.terrainClearSteps != value) nav = nav.copy(terrainClearSteps = value) }
-    var terrainOnlyStall: Boolean
-        get() = nav.terrainOnlyStall
-        set(value) { if (nav.terrainOnlyStall != value) nav = nav.copy(terrainOnlyStall = value) }
-    var optimisticSteerTarget: Position?
-        get() = nav.optimisticSteerTarget
-        set(value) { if (nav.optimisticSteerTarget != value) nav = nav.copy(optimisticSteerTarget = value) }
-    var repairBackoffStep: Long
-        get() = nav.repairBackoffStep
-        set(value) { if (nav.repairBackoffStep != value) nav = nav.copy(repairBackoffStep = value) }
-    var repairConsecutiveFailures: Int
-        get() = nav.repairConsecutiveFailures
-        set(value) { if (nav.repairConsecutiveFailures != value) nav = nav.copy(repairConsecutiveFailures = value) }
+    val moveTarget: Position? get() = nav.moveTarget
+    val motionContract: MotionContract? get() = nav.motionContract
+    val nearestMoveTarget: Position? get() = nav.nearestMoveTarget
+    val nearestMoveIsGroup: Boolean get() = nav.nearestMoveIsGroup
+    val moveArrival: MoveArrival? get() = nav.moveArrival
+    val pathPoints: List<Position> get() = nav.pathPoints
+    val originMoveId: String? get() = nav.originMoveId
+    val originAtStep: Long? get() = nav.originAtStep
+    val lastPlannedKnowledgeRevision: Long get() = nav.lastPlannedKnowledgeRevision
+    val lastPlannedBuildingRevision: Long get() = nav.lastPlannedBuildingRevision
+    val nearTargetTime: Double get() = nav.nearTargetTime
+    val routeContinuation: RouteContinuation? get() = nav.routeContinuation
+    val stalledRouteTicks: Long get() = nav.stalledRouteTicks
+    val hardContactLimitedTicks: Long get() = nav.hardContactLimitedTicks
+    val routeTranslationClipped: Boolean get() = nav.routeTranslationClipped
+    val followsManeuverRoute: Boolean get() = nav.followsManeuverRoute
+    val maneuverTurnWaypoint: Position? get() = nav.maneuverTurnWaypoint
+    val lastManeuverContactRepair: Long? get() = nav.lastManeuverContactRepair
+    val routeOccupantIds: List<String> get() = nav.routeOccupantIds
+    val passageEntry: PassageEntry? get() = nav.passageEntry
+    val groupMoveReservation: GroupMoveReservation? get() = nav.groupMoveReservation
+    val parkedReservationOwner: GroupMoveRequest? get() = nav.parkedReservationOwner
+    val indexedLandingBody: LandingOccupancy.IndexedBody? get() = nav.indexedLandingBody
+    val landingMember: LandingMember? get() = nav.landingMember
+    val adoptedRouteRevision: Long get() = nav.adoptedRouteRevision
+    val localProgressTime: Double get() = nav.localProgressTime
+    val terrainCorrectionTime: Double get() = nav.terrainCorrectionTime
+    val terrainClearSteps: Int get() = nav.terrainClearSteps
+    val terrainOnlyStall: Boolean get() = nav.terrainOnlyStall
+    val optimisticSteerTarget: Position? get() = nav.optimisticSteerTarget
+    val repairBackoffStep: Long get() = nav.repairBackoffStep
+    val repairConsecutiveFailures: Int get() = nav.repairConsecutiveFailures
+    val movementRequested: Boolean get() = nav.requestAudit.movementRequested
+    val singleNodePathCount: Byte get() = nav.requestAudit.singleNodePathCount
+    val logicalRequestX: Float? get() = nav.requestAudit.logicalRequestX
+    val logicalRequestY: Float? get() = nav.requestAudit.logicalRequestY
+    val pendingPathNodeCounts: List<Int> get() = nav.requestAudit.pendingPathNodeCounts
+    val consumedPathNodeCounts: List<Int> get() = nav.requestAudit.consumedPathNodeCounts
+    val qBeforeDispatch: Byte get() = nav.requestAudit.qBeforeDispatch
     val producerId: String? get() = productionOrigin?.producerId
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
     val alive: Boolean get() = !destroyedWithoutHealth && (deathPending || health == null || checkNotNull(health) > 0.0)
@@ -630,14 +568,15 @@ internal data class MutableUnit(
         }
     }
 
+    inline fun updateNavigation(transform: (UnitNavigationState) -> UnitNavigationState) {
+        val next = transform(nav)
+        if (next !== nav) nav = next
+    }
+
     /** End the command while preserving linear/angular speed for the existing coasting rule. */
-    fun cancelRoute() {
-        pauseRoute()
-        singleNodePathCount = 0
-        logicalRequestX = null
-        logicalRequestY = null
-        pendingPathNodeCounts = emptyList()
-        consumedPathNodeCounts = emptyList()
+    fun cancelRoute(clearRequested: Boolean = false) {
+        nav = nav.cancelRoute(clearRequested = clearRequested)
+        movementState = if (speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
     }
 
     /** No usable physical route; a still-active logical approach may remain. */
@@ -647,42 +586,50 @@ internal data class MutableUnit(
     }
 
     /** Replanning and repair preserve command identity, completion time and terrain history. */
-    fun adoptRoute(points: List<Position>, logicalTarget: Position, knowledgeRevision: Long, buildingRevision: Long = -1L,
-                   occupantIds: List<String> = emptyList()) {
-        recordLogicalTarget(logicalTarget)
-        pendingPathNodeCounts = immutable(pendingPathNodeCounts + points.size)
-        nav = nav.adoptRoute(points, knowledgeRevision, buildingRevision, occupantIds)
+    fun adoptRoute(
+        points: List<Position>,
+        logicalTarget: Position,
+        knowledgeRevision: Long,
+        buildingRevision: Long = -1L,
+        occupantIds: List<String> = emptyList(),
+        repairReset: Boolean = false,
+    ) {
+        nav = nav.adoptTrackedRoute(
+            points = points,
+            logicalTarget = logicalTarget,
+            knowledgeRevision = knowledgeRevision,
+            buildingRevision = buildingRevision,
+            occupantIds = occupantIds,
+            repairReset = repairReset,
+        )
         movementState = MovementState.MOVING
     }
 
     fun requestMovement(target: Position) {
-        movementRequested = true
-        recordLogicalTarget(target)
+        nav = nav.copy(requestAudit = nav.requestAudit.recordLogicalTarget(target, markRequested = true))
     }
 
-    private fun recordLogicalTarget(target: Position) {
-        val x = target.x.toFloat(); val y = target.y.toFloat()
-        require(x.isFinite() && y.isFinite()) { "Logical movement target must remain finite" }
-        val oldX = logicalRequestX; val oldY = logicalRequestY
-        if (oldX == null || oldY == null || oldX.toFloat() != x || oldY.toFloat() != y) {
-            singleNodePathCount = 0
-            pendingPathNodeCounts = emptyList()
+    fun beginMovementStep(): Boolean {
+        val previous = nav.requestAudit.movementRequested
+        if (previous) nav = nav.copy(requestAudit = nav.requestAudit.beginMovementStep())
+        return previous
+    }
+
+    fun clearMovementRequested() {
+        if (nav.requestAudit.movementRequested) {
+            nav = nav.copy(requestAudit = nav.requestAudit.beginMovementStep())
         }
-        logicalRequestX = x; logicalRequestY = y
+    }
+
+    fun snapshotDispatchWindow() {
+        val updated = nav.requestAudit.snapshotDispatchWindow()
+        if (updated !== nav.requestAudit) nav = nav.copy(requestAudit = updated)
     }
 
     /** Count each real acceptance only after this worker's activity dispatch. */
     fun finishMovementRequest() {
-        if (!movementRequested) {
-            singleNodePathCount = 0
-            logicalRequestX = null; logicalRequestY = null
-            pendingPathNodeCounts = emptyList(); consumedPathNodeCounts = emptyList()
-            return
-        }
-        val consumed = pendingPathNodeCounts
-        for (count in consumed) if (count == 1) singleNodePathCount = (singleNodePathCount + 1).toByte()
-        pendingPathNodeCounts = emptyList()
-        consumedPathNodeCounts = consumed
+        val updated = nav.requestAudit.finishMovementStep()
+        if (updated !== nav.requestAudit) nav = nav.copy(requestAudit = updated)
     }
 
     fun clearMoveOrigin() {

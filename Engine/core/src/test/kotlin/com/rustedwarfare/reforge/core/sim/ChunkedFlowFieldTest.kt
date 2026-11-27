@@ -282,7 +282,7 @@ class ChunkedFlowFieldTest {
         val activeFollower = MutableUnit(
             unitId = "sub-0", ownerPlayerId = "p1", typeId = "tank", definition = def,
             position = Position(80.0, 230.0), heading = 90.0, speed = def.movement.moveSpeed,
-        ).also { it.moveTarget = goal }
+        ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         spatial.syncAll(idleGarrison + activeFollower)
         spatial.beginStep(true)
         adapter.advanceP1Budget(idleGarrison + activeFollower, spatial, { _, _ -> terrain }, 30L, 10000)
@@ -294,7 +294,7 @@ class ChunkedFlowFieldTest {
             MutableUnit(
                 unitId = "crowd-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
                 position = Position(385.0 + i * 2.0, 128.0 + (i % 2) * 2.0), heading = 90.0, speed = 0.05,
-            ).also { it.moveTarget = goal }
+            ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(crowdedUnits + activeFollower)
         spatial.beginStep(true)
@@ -404,8 +404,12 @@ class ChunkedFlowFieldTest {
             unitId = "pending-1", ownerPlayerId = "p1", typeId = "tank", definition = def,
             position = Position(120.0, 320.0), heading = 90.0,
         )
-        // Pending fast-start state: moveTarget == null, MOVE task queued
-        pendingUnit.taskQueue = pendingUnit.taskQueue.append(UnitTask(UnitTaskKind.MOVE, "act-1", Position(520.0, 320.0)))
+        // Pending fast-start state: moveTarget == null, MOVE task queued with orthogonal MotionContract
+        val pendingTarget = Position(520.0, 320.0)
+        pendingUnit.taskQueue = pendingUnit.taskQueue.append(
+            UnitTask(UnitTaskKind.MOVE, "act-1", pendingTarget, motionContract = MotionContract.pointMove(pendingTarget)),
+        )
+        pendingUnit.updateNavigation { it.withMotionContract(MotionContract.pointMove(pendingTarget)) }
 
         val spatial = WorldSpatialIndex()
         adapter.advanceP1Budget(listOf(pendingUnit), spatial, { _, _ -> t2 }, 1L, 20000)
@@ -454,7 +458,7 @@ class ChunkedFlowFieldTest {
             maxRadiusByMovement = mapOf(MovementType.LAND to 6.0),
         )
         val pureUnit = MutableUnit("p-0", "p1", "sm", smallDef, Position(240.0, 230.0), 90.0)
-        pureUnit.landingMember = LandingMember(pureReq)
+        pureUnit.updateNavigation { it.withLandingMember(LandingMember(pureReq)) }
 
         assertTrue(adapter.hasValidGuidanceFor(pureUnit, terrain),
             "Pure small group must resolve its own smallYieldsWide=false field instead of hitting incomplete mixed field")
@@ -465,7 +469,7 @@ class ChunkedFlowFieldTest {
             maxRadiusByMovement = mapOf(MovementType.LAND to 14.0),
         )
         val mixedUnit = MutableUnit("m-0", "p1", "sm", smallDef, Position(240.0, 230.0), 90.0)
-        mixedUnit.landingMember = LandingMember(mixedReq)
+        mixedUnit.updateNavigation { it.withLandingMember(LandingMember(mixedReq)) }
         assertFalse(adapter.hasValidGuidanceFor(mixedUnit, terrain),
             "Mixed group small member must resolve smallYieldsWide=true field strictly")
     }
@@ -521,7 +525,7 @@ class ChunkedFlowFieldTest {
             MutableUnit(
                 unitId = "fast-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
                 position = Position(385.0 + i * 3.0, 130.0), heading = 90.0, speed = fullSpeed,
-            ).also { it.moveTarget = goal }
+            ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(smoothUnits)
         spatial.beginStep(true)
@@ -535,7 +539,7 @@ class ChunkedFlowFieldTest {
             MutableUnit(
                 unitId = "slow-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
                 position = Position(385.0 + i * 3.0, 130.0), heading = 90.0, speed = 0.05,
-            ).also { it.moveTarget = goal }
+            ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(slowUnits)
         spatial.beginStep(true)
@@ -698,7 +702,7 @@ class ChunkedFlowFieldTest {
             MutableUnit(
                 unitId = "ov-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
                 position = Position(385.0 + i * 3.0, 130.0), heading = 90.0, speed = 0.05,
-            ).also { it.moveTarget = goal }
+            ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(slowUnits)
         spatial.beginStep(true)
@@ -790,8 +794,12 @@ class ChunkedFlowFieldTest {
             world = WorldHandle("w"), completedStep = 0L, actor = "p1", click = goal,
             members = members, sharedLanding = true, maxRadiusByMovement = mapOf(MovementType.LAND to 6.0),
         )
-        val outerUnit = MutableUnit("out-0", "p1", "sm", smallDef, Position(340.0, 220.0), 90.0).also { it.landingMember = LandingMember(req) }
-        val innerUnit = MutableUnit("in-0", "p1", "sm", smallDef, Position(150.0, 220.0), 90.0).also { it.landingMember = LandingMember(req) }
+        val outerUnit = MutableUnit("out-0", "p1", "sm", smallDef, Position(340.0, 220.0), 90.0).also {
+            it.updateNavigation { nav -> nav.withLandingMember(LandingMember(req)) }
+        }
+        val innerUnit = MutableUnit("in-0", "p1", "sm", smallDef, Position(150.0, 220.0), 90.0).also {
+            it.updateNavigation { nav -> nav.withLandingMember(LandingMember(req)) }
+        }
 
         val outerComp = adapter.resolveSourceComponent(terrain, 6.0, 28, 11, 17, 11)
         val innerComp = adapter.resolveSourceComponent(terrain, 6.0, 28, 11, 7, 11)
@@ -987,7 +995,7 @@ class ChunkedFlowFieldTest {
         val spatial = WorldSpatialIndex()
         val initDrivers = (0 until 3).map { i ->
             MutableUnit("init-$i", "p1", "c_tank", smallDef, Position(80.0 + i * 24.0, 120.0), 90.0, speed = 0.8)
-                .also { it.moveTarget = goal }
+                .also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(initDrivers)
         spatial.beginStep(true)
@@ -1006,7 +1014,7 @@ class ChunkedFlowFieldTest {
         aborted1.ensureFieldForGroup("p1", MovementType.LAND, 6.0, 6.0, t1, goal, 99L)
         val extraDrivers = initDrivers + (3 until 5).map { i ->
             MutableUnit("init-$i", "p1", "c_tank", smallDef, Position(80.0 + i * 24.0, 144.0), 90.0, speed = 0.8)
-                .also { it.moveTarget = goal }
+                .also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         aborted1.advanceP1Budget(extraDrivers, spatial, { _, _ -> t1 }, 2L, 400)
         assertEquals(5, fClean.activeSubscribers)
@@ -1024,7 +1032,7 @@ class ChunkedFlowFieldTest {
         assertTrue(restoredInit.completed)
         val slowQueue = (0 until 4).map { i ->
             MutableUnit("sq-$i", "p1", "c_tank", smallDef, Position(445.0 + i * 2.0, 140.0), 90.0, speed = 0.05)
-                .also { it.moveTarget = goal }
+                .also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(slowQueue)
         spatial.beginStep(true)

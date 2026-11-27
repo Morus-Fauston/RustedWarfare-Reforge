@@ -153,8 +153,8 @@ class UnitNavigationStateTest {
     fun step_state_fork_shares_navigation_reference_in_o1_and_isolates_rollback() {
         val unit = sampleUnit()
         val points = listOf(Position(140.0, 100.0), Position(180.0, 100.0))
+        unit.updateNavigation { it.withMoveTarget(Position(180.0, 100.0)) }
         unit.adoptRoute(points, logicalTarget = Position(180.0, 100.0), knowledgeRevision = 3L)
-        unit.moveTarget = Position(180.0, 100.0)
         val originalNav = unit.nav
         val state = StepState(
             units = linkedMapOf(unit.unitId to unit),
@@ -177,22 +177,43 @@ class UnitNavigationStateTest {
     }
 
     @Test
-    fun mutable_unit_setters_defensively_freeze_lists_and_pause_preserves_terrain_history() {
+    fun atomic_navigation_transitions_defensively_freeze_lists_and_seal_mutable_unit_setters() {
         val unit = sampleUnit()
         val rawPath = mutableListOf(Position(120.0, 100.0))
         val rawOccupants = mutableListOf("u2")
-        unit.pathPoints = rawPath
-        unit.routeOccupantIds = rawOccupants
+        unit.updateNavigation {
+            it.withPathPoints(rawPath)
+                .withRouteOccupantIds(rawOccupants)
+                .withTerrainHistory(correctionTime = 0.75, clearSteps = 2)
+        }
         rawPath.add(Position(999.0, 999.0))
         rawOccupants.add("u3")
         assertEquals(1, unit.pathPoints.size)
         assertEquals(1, unit.routeOccupantIds.size)
 
-        unit.terrainCorrectionTime = 0.75
-        unit.terrainClearSteps = 2
         unit.pauseRoute()
         assertEquals(0.75, unit.terrainCorrectionTime)
         assertEquals(2, unit.terrainClearSteps)
+
+        // Verify MutableUnit exposes zero mutable setter methods for any navigation or request-audit field (ENG-P017-005).
+        val setterNames = MutableUnit::class.java.declaredMethods
+            .map { it.name }
+            .filter { it.startsWith("set") }
+        val forbiddenNavSetters = listOf(
+            "setMoveTarget", "setNearestMoveTarget", "setNearestMoveIsGroup", "setMoveArrival", "setPathPoints",
+            "setOriginMoveId", "setOriginAtStep", "setLastPlannedKnowledgeRevision", "setLastPlannedBuildingRevision",
+            "setNearTargetTime", "setRouteContinuation", "setStalledRouteTicks", "setHardContactLimitedTicks",
+            "setRouteTranslationClipped", "setFollowsManeuverRoute", "setManeuverTurnWaypoint",
+            "setLastManeuverContactRepair", "setRouteOccupantIds", "setPassageEntry", "setGroupMoveReservation",
+            "setParkedReservationOwner", "setIndexedLandingBody", "setLandingMember", "setAdoptedRouteRevision",
+            "setLocalProgressTime", "setTerrainCorrectionTime", "setTerrainClearSteps", "setTerrainOnlyStall",
+            "setOptimisticSteerTarget", "setRepairBackoffStep", "setRepairConsecutiveFailures",
+            "setSingleNodePathCount", "setLogicalRequestX", "setLogicalRequestY", "setPendingPathNodeCounts",
+            "setConsumedPathNodeCounts", "setQBeforeDispatch", "setMovementRequested",
+        )
+        for (forbidden in forbiddenNavSetters) {
+            assertFalse(forbidden in setterNames, "MutableUnit must not expose $forbidden; found setters=$setterNames")
+        }
     }
 
     @Test

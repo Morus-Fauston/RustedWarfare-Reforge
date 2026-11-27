@@ -58,14 +58,18 @@ class MovementRegression012Test {
             val click = Position(240.0, 140.0)
             val group = assertNotNull(ctx.requestGroupMove("p1", listOf("s-1", "s-2", "h-1"), click))
             val s1 = MutableUnit("s-1", "p1", "small", smallDef, Position(200.0, 130.0), 90.0).apply {
-                landingMember = LandingMember(group, parked = false)
-                moveTarget = click
-                pathPoints = listOf(click)
+                updateNavigation {
+                    it.withLandingMember(LandingMember(group, parked = false))
+                        .withMoveTarget(click, MotionContract.sharedCluster(click))
+                        .withPathPoints(listOf(click))
+                }
             }
             val h1 = MutableUnit("h-1", "p1", "heavy", heavyDef, Position(220.0, 140.0), 90.0).apply {
-                landingMember = LandingMember(group, parked = false)
-                moveTarget = click
-                pathPoints = listOf(click)
+                updateNavigation {
+                    it.withLandingMember(LandingMember(group, parked = false))
+                        .withMoveTarget(click, MotionContract.sharedCluster(click))
+                        .withPathPoints(listOf(click))
+                }
             }
             val terrain = PlanningTerrain.fromNoFog(scene.map)
             val paths = ClearanceAStarPolicy.DEFAULT
@@ -86,7 +90,7 @@ class MovementRegression012Test {
             assertIs<MixedLandingBays.Decision.Pending>(whileHeavyPending)
 
             // Once h-1 is parked, only small unit s-1 remains pending -> must fall back to Decision.Ordinary.
-            h1.landingMember = LandingMember(group, parked = true)
+            h1.updateNavigation { it.withLandingMember(LandingMember(group, parked = true)) }
             val afterHeavyParked = bays.choose(
                 members = listOf(s1, h1),
                 candidates = emptyList(),

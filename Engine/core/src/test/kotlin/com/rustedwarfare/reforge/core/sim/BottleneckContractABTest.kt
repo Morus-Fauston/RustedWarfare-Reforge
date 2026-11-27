@@ -363,8 +363,13 @@ class BottleneckContractABTest {
         val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(map, MovementType.LAND)
         val admission = PassageAdmission(listOf(heavy, scout))
         val soloUnit = MutableUnit("solo-1", "p1", "scout", scout, Position(470.0, 150.0), 90.0).apply {
-            moveTarget = Position(600.0, 150.0)
-            originMoveId = "m-solo"
+            updateNavigation {
+                it.bindCommandTarget(
+                    target = Position(600.0, 150.0),
+                    originMoveId = "m-solo",
+                    contract = MotionContract.pointMove(Position(600.0, 150.0)),
+                )
+            }
             taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, "m-solo", Position(600.0, 150.0)))
             adoptRoute(listOf(Position(600.0, 150.0)), Position(600.0, 150.0), 0L, 0L)
         }
@@ -377,8 +382,13 @@ class BottleneckContractABTest {
         assertNull(soloUnit.passageEntry, "Unopposed mover must keep passageEntry == null")
 
         val opposedEast = MutableUnit("opp-e", "p2", "scout", scout, Position(570.0, 150.0), 270.0).apply {
-            moveTarget = Position(440.0, 150.0)
-            originMoveId = "m-opp"
+            updateNavigation {
+                it.bindCommandTarget(
+                    target = Position(440.0, 150.0),
+                    originMoveId = "m-opp",
+                    contract = MotionContract.pointMove(Position(440.0, 150.0)),
+                )
+            }
             taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, "m-opp", Position(440.0, 150.0)))
             adoptRoute(listOf(Position(440.0, 150.0)), Position(440.0, 150.0), 0L, 0L)
         }
@@ -478,8 +488,13 @@ class BottleneckContractABTest {
         val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(map, MovementType.LAND)
         val admission = PassageAdmission(listOf(tank))
         val uWest = MutableUnit("w0", "p1", "tank", tank, Position(242.0, 150.0), 90.0).apply {
-            moveTarget = Position(420.0, 150.0)
-            originMoveId = "mw"
+            updateNavigation {
+                it.bindCommandTarget(
+                    target = Position(420.0, 150.0),
+                    originMoveId = "mw",
+                    contract = MotionContract.pointMove(Position(420.0, 150.0)),
+                )
+            }
             taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, "mw", Position(420.0, 150.0)))
             adoptRoute(listOf(Position(420.0, 150.0)), Position(420.0, 150.0), 0L, 0L)
         }

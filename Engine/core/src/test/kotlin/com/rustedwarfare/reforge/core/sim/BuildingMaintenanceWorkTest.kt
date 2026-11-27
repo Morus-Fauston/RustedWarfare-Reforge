@@ -25,9 +25,11 @@ class BuildingMaintenanceWorkTest {
             helper, scene, units))
         worker.taskQueue = worker.taskQueue.append(UnitTask(UnitTaskKind.PATROL, "tail", Position(450.0, 170.0)))
         val access = object : BuildingWorkAccess {
-            override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? =
+            override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRouteResolution =
                 ClearanceAStarPolicy.DEFAULT.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
-                    worker.position, target, worker.definition.radius, targetRange = range)?.let { BuildingRoute(it, -1L, -1L) }
+                    worker.position, target, worker.definition.radius, targetRange = range)
+                    ?.let { BuildingRouteResolution.Ready(BuildingRoute(it, -1L, -1L)) }
+                    ?: BuildingRouteResolution.Unreachable
             override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
                                    paidLedger: ProductionLedger): ConstructionRegistration =
                 error("Maintenance does not create an object")

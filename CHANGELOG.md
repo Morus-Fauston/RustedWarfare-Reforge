@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.84 (2026-11-27 21:50)
+
+### 架构改进
+
+- **导航状态写口封死与正交 `MotionContract` 解耦**：删除 `MutableUnit` 暴露的 32 个逐字段 `var` 导航写代理（全部收敛为只读 `val` 委托），并将 6 个游离的路径节点审计字段与 `movementRequested` 合并收拢至不可变 `UnitNavigationState.NavigationRequestAudit`，仅通过语义级原子转换方法更新状态（配反射单测守卫）；引入与上层任务解耦的 `MotionContract`（描述 `Point / SharedCluster / RangeBand` 目标几何、显式装载接近语义 `isBoardingApproach`、通道让行资格与 `INDEPENDENT / COHORT_ESCORT` 通行修饰），彻底拔除 `BodyMotion`、`NarrowPassage`、`SharedLandingSites`、`UnitMovementOrchestrator`、`MovePlanning`、`NavigationGuidance`、`UnitContact` 对 `UnitTaskKind` 及任务队列长度的直接读取。
+- **步内预算统一范围寻路与 4 条场外寻路通道收口**：以实现 `ExactPathSearch` 的分步预算 `RangePathSearch`（每节点 `budget.take(1)`、1 步无障碍直线快检、`O(1)` 连通性预检、KKT 闭式可容许 $\ell_1$-到圆盘启发式与 `PathSearchRollback` 回滚隔离）取代无预算同步 `findPathToRange` 及 `ThreadLocal<PrimitiveGridFrontier>`；将施工接近、攻击追击（叠加 `O(1)` 尾段视线接驳与 2 格/15 步绕障迟滞防移动目标每步重搜）、巡逻往返与运输装载全部接入 `MovePlanning.resolveTactical` 与 `ADR-010` 步内预算账本，在预留单位循环战术预算的同时为跨步修路不可达显式区分 `SILENT_IGNORE`、`STALL_MOVE_GUARDED`（严格复核停滞与占位豁免并弹出队头 `MOVE` 防僵尸任务复活）与 `CANCEL_ROUTE` 语义，并消除 `planningSlices` 对修路切片的重复统计。
+
+### 修复
+
+- **并行构建 `:publicPreparation` 无锁解析与受限内存收敛**：修复 `org.gradle.parallel=true` 下 `SimulationTest/ci/development_tests.gradle` 在根任务 `:publicPreparation` 的 `doLast` 阶段无锁跨项目解析 `:client:testRuntimeClasspath` 触发的 Gradle 9.3.1 并发锁异常（前移至持有全局独占锁的 `gradle.taskGraph.whenReady` 阶段）；同时为双根 `gradle.properties` 与 `development_tests.gradle` 测试子进程配置有界堆/元空间/代码缓存与 `G1PeriodicGCInterval=5000`，防止受限虚拟内存主机并发测试触发本地内存分配失败。
+
+### 调整
+
+- **维护防守长链时序基线同步**：同步更新 `SimulationTest/public/contracts/maintenance-defense-chain.json` 中 6 处 `economy.preciseBalances.p1` 基线（12 辆围攻坦克改走连续前视跟随与预算化范围追击后主基地多存 30 步，余额一致偏移 `+13.5`，其余全部战斗与维护事件断言保持不变）。
+
+### 技术
+
+- **大地图预算/回滚单测、全套公开短长测与独立整审**：新增 `MotionContractAndBudgetTest`（覆盖 `350×350` 大地图 50 车追击移动目标与 30 建造者跨障施工预算受控及回滚逐字节一致、队列长度 `>= 2` 与非 `MOVE` 任务的短距倒车/窄桥让空/共享落位、动态封堵跨步不可达三策略守卫，以及导航与避让文件零 `UnitTaskKind`/`ThreadLocal` 静态扫描）并登记入 `content-movement-knowledge` 套件，同时在 `UnitNavigationStateTest` 新增 38 项禁用导航 setter 反射守卫；全量 `:core:test`、`:android:compileDebugAndroidTestKotlin`、`dev-ab` 10 场景、`public_batch.py --kind pr`（全部 7 套机制与公开短测）、`public_batch.py --kind long`（全部 33 条连续长链）及双根 `workspace_layout.py` 全绿，经全新上下文独立非作者代码整审及 R01 定向复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.83 (2026-11-27 18:08)
 
 ### 修复

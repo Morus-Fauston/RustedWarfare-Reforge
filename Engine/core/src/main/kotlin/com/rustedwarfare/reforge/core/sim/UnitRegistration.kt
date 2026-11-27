@@ -52,11 +52,26 @@ internal object UnitRegistration {
             if (customProducer) unit.nativeTransportPlacement = true
             val rally = factory.factoryRally.takeIf { factory.definition.production?.rallyEnabled == true }
             if (reachable) {
-                unit.moveTarget = birth.target
-                unit.originMoveId = "production-exit:$publicId"
-                if (rally != null || definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP || definition.energy != null)
-                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, checkNotNull(unit.originMoveId), birth.target,
-                        factoryExit = rally != null))
+                val exitId = "production-exit:$publicId"
+                val hasQueuedExitTask = rally != null ||
+                    definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP ||
+                    definition.energy != null
+                val exitContract = MotionContract.factoryExit(
+                    target = birth.target,
+                    hasQueuedExitTask = hasQueuedExitTask,
+                    hasRally = rally != null,
+                )
+                unit.updateNavigation {
+                    it.bindCommandTarget(
+                        target = birth.target,
+                        originMoveId = exitId,
+                        originAtStep = null,
+                        contract = exitContract,
+                    )
+                }
+                if (hasQueuedExitTask)
+                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, exitId, birth.target,
+                        factoryExit = rally != null, motionContract = exitContract))
                 unit.adoptRoute(listOf(birth.target), birth.target, -1L)
             }
             if (rally != null) unit.taskQueue = unit.taskQueue.append(UnitTask(UnitTaskKind.MOVE, "production-rally:$publicId", rally, startsAfterFactoryExit = true))

@@ -85,12 +85,83 @@ private fun MoveAction.sameMoveRequest(other: MoveAction): Boolean =
 internal data class PlannedMove(val slot: GroupMoveSlot?, val counters: PathSearchCounters?, val searchNanos: Long,
                                 val nearest: Boolean = false)
 
-/** The ordinary order queue belongs to the same candidate transaction as movement. */
+internal enum class TacticalUnreachablePolicy {
+    CANCEL_ROUTE,
+    SILENT_IGNORE,
+    STALL_MOVE_GUARDED,
+}
+
+internal data class TacticalRouteRequest(
+    val unitId: String,
+    val actionId: String,
+    val atStep: Long?,
+    val start: Position,
+    val target: Position,
+    val radius: Double,
+    val targetRange: Double,
+    val terrain: PlanningTerrain,
+    val hull: HullRoute?,
+    val occupancy: RouteOccupancy? = null,
+    val occupantIds: List<String> = emptyList(),
+    val reason: PathSearchReason,
+    val isRepair: Boolean = false,
+    val collectDiagnostics: Boolean = false,
+    val inputPreparationNanos: Long = 0L,
+    val preservedPrefix: List<Position> = emptyList(),
+    val preservedSuffix: List<Position> = emptyList(),
+    val fallbackFullTarget: Position? = null,
+    val isCircleShape: Boolean = true,
+    val unreachablePolicy: TacticalUnreachablePolicy = TacticalUnreachablePolicy.CANCEL_ROUTE,
+)
+
+internal sealed interface TacticalRouteResolution {
+    data class Ready(
+        val points: List<Position>,
+        val counters: PathSearchCounters?,
+        val preparationNanos: Long,
+        val searchNanos: Long,
+        val preservedPrefixCount: Int,
+    ) : TacticalRouteResolution
+
+    data class Unreachable(
+        val counters: PathSearchCounters?,
+        val preparationNanos: Long,
+        val searchNanos: Long,
+    ) : TacticalRouteResolution
+
+    data object Pending : TacticalRouteResolution
+}
+
+/** The ordinary order queue and all tactical route searches belong to the same budgeted candidate transaction. */
 internal class MovePlanning {
     private class Order(val group: GroupMoveRequest?, val actions: MutableList<MoveAction>,
                         val repair: ManeuverRepair? = null, var requestKey: Any = Any(),
                         var fastLaneEligible: Boolean = false)
 
+    private class TacticalJob(
+        var request: TacticalRouteRequest,
+        var search: ExactPathSearch,
+        var cache: PathClearanceCache,
+        var searchNanos: Long = 0L,
+    ) {
+        fun fork(rollback: PathSearchRollback): TacticalJob = TacticalJob(
+            request = request,
+            search = search.fork(rollback),
+            cache = cache.fork(),
+            searchNanos = searchNanos,
+        )
+
+        fun advance(budget: PathWorkBudget): Int {
+            if (search.finished || budget.exhausted) return 0
+            val usedBefore = budget.used
+            val t0 = if (request.collectDiagnostics) System.nanoTime() else 0L
+            search.advance(budget, cache)
+            if (request.collectDiagnostics) {
+                searchNanos += (System.nanoTime() - t0).coerceAtLeast(0L)
+            }
+            return budget.used - usedBefore
+        }
+    }
 
     companion object {
         internal const val FAST_LANE_MAX_SQUAD_SIZE: Int = 5
@@ -105,6 +176,8 @@ internal class MovePlanning {
     private val byMember = HashMap<String, Order>()
     private val byGroup = HashMap<GroupMoveRequest, Order>()
     private val workByOrder = HashMap<Order, Work>()
+    private val tacticalJobs = LinkedHashMap<String, TacticalJob>()
+    private var activeRollback: PathSearchRollback? = null
 
     private fun queueFor(order: Order): LinkedHashSet<Order> = when {
         order.repair == ManeuverRepair.SHORE_REJOIN -> optionalRejoins
@@ -122,12 +195,16 @@ internal class MovePlanning {
         p0FastLane.asSequence() + p0Ordinary.asSequence() + p2Repairs.asSequence() + optionalRejoins.asSequence()
 
     fun fork(rollback: PathSearchRollback): MovePlanning = MovePlanning().also { pending ->
+        pending.activeRollback = rollback
         for (order in allOrdersSequence()) {
             // Single orders are removed as a whole, so their requests can be shared across rollback.
             val request = if (order.group == null) order else
                 Order(order.group, order.actions.toMutableList(), order.repair, order.requestKey, order.fastLaneEligible)
             pending.add(request)
             workByOrder[order]?.let { pending.workByOrder[request] = it.fork(rollback) }
+        }
+        for ((unitId, job) in tacticalJobs) {
+            pending.tacticalJobs[unitId] = job.fork(rollback)
         }
     }
 
@@ -166,6 +243,7 @@ internal class MovePlanning {
     }
 
     fun cancel(unitId: String) {
+        tacticalJobs.remove(unitId)
         val order = byMember.remove(unitId) ?: return
         workByOrder.remove(order)
         if (order.actions.size == 1) {
@@ -192,16 +270,22 @@ internal class MovePlanning {
         for (action in order.actions) byMember[action.unitId] = order
     }
 
-    fun pending(unitId: String): Boolean = unitId in byMember
-    fun repairing(unitId: String): Boolean = byMember[unitId]?.repair != null
+    fun pending(unitId: String): Boolean = unitId in byMember || unitId in tacticalJobs
+    fun hasPendingTactical(unitId: String): Boolean = unitId in tacticalJobs
+    fun repairing(unitId: String): Boolean = byMember[unitId]?.repair != null || tacticalJobs[unitId]?.request?.isRepair == true
     fun holdsManeuverRoute(unitId: String): Boolean = byMember[unitId]?.repair?.let { it != ManeuverRepair.SHORE_REJOIN } == true
     fun replacingDestination(unitId: String): Boolean = byMember[unitId]?.repair == ManeuverRepair.GROUP_SLOT
 
     fun hasPendingFastLaneOrders(): Boolean = p0FastLane.isNotEmpty()
 
-    fun hasPendingPlayerOrders(): Boolean = p0FastLane.isNotEmpty() || p0Ordinary.isNotEmpty()
+    fun hasPendingPlayerOrders(): Boolean =
+        p0FastLane.isNotEmpty() || p0Ordinary.isNotEmpty() || tacticalJobs.values.any { !it.request.isRepair && !it.search.finished }
 
-    fun hasPendingRepairs(): Boolean = p2Repairs.isNotEmpty() || optionalRejoins.isNotEmpty()
+    fun hasPendingRepairs(): Boolean =
+        p2Repairs.isNotEmpty() || optionalRejoins.isNotEmpty() || tacticalJobs.values.any { it.request.isRepair && !it.search.finished }
+
+    fun completedRepairTacticalRequests(): List<TacticalRouteRequest> =
+        tacticalJobs.values.filter { it.request.isRepair && it.search.finished }.map { it.request }
 
     fun advance(
         pathPolicy: ClearanceAStarPolicy,
@@ -232,8 +316,10 @@ internal class MovePlanning {
         processQueue(p0FastLane, pathPolicy, budget, snapshot, publish, samples, liveUnitCount, executionStep)
         if (budget.exhausted) return 0
 
-        // Tier 0b: Ordinary fresh player orders (large groups) run ahead of P1/P2 so player clicks are never starved.
+        // Tier 0b: Ordinary fresh player orders (large groups) and suspended P0 tactical searches run ahead of P1/P2.
         processQueue(p0Ordinary, pathPolicy, budget, snapshot, publish, samples, liveUnitCount, executionStep)
+        if (budget.exhausted) return 0
+        advanceSuspendedTactical(isRepair = false, budget = budget, samples = samples)
         if (budget.exhausted) return 0
 
         // Tier 1: Shared flow-field build / dirty-chunk refresh slot (hook ready for ENG-P016-008).
@@ -243,8 +329,6 @@ internal class MovePlanning {
         }
 
         // Tier 2: Background repairs (fair round-robin within tier, strictly isolated budget cap).
-        // Enforce a step-wide 3/4 budget cap on P2 repairs whenever P1 flow work or optional rejoins
-        // share the step (or across multiple same-step advance passes), leaving headroom without starving repairs.
         val stepP2Cap = if (p1FlowWork != null || optionalRejoins.isNotEmpty()) {
             maxOf(8, budget.limit * P2_REPAIR_MAX_SHARE_NUMERATOR / P2_REPAIR_MAX_SHARE_DENOMINATOR)
         } else budget.limit
@@ -254,6 +338,9 @@ internal class MovePlanning {
         processQueue(
             p2Repairs, pathPolicy, p2SubBudget, snapshot, publish, samples, liveUnitCount, executionStep,
         )
+        if (!p2SubBudget.exhausted) {
+            advanceSuspendedTactical(isRepair = true, budget = p2SubBudget, samples = samples)
+        }
         val p2Consumed = p2SubBudget.used - p2UsedBefore
         if (p2Consumed > 0) budget.take(p2Consumed)
         if (budget.exhausted) return p2Consumed
@@ -261,6 +348,269 @@ internal class MovePlanning {
         // Optional lowest-priority shore rejoins.
         processQueue(optionalRejoins, pathPolicy, budget, snapshot, publish, samples, liveUnitCount, executionStep)
         return p2Consumed
+    }
+
+    private fun advanceSuspendedTactical(
+        isRepair: Boolean,
+        budget: PathWorkBudget,
+        samples: MutableList<PlanningWorkSlice>?,
+    ) {
+        if (tacticalJobs.isEmpty() || budget.exhausted) return
+        // Fair round-robin: rotate head if multi-entry unfinished jobs exist
+        val matchingKeys = tacticalJobs.entries
+            .filter { it.value.request.isRepair == isRepair && !it.value.search.finished }
+            .map { it.key }
+        for (unitId in matchingKeys) {
+            if (budget.exhausted) break
+            val job = tacticalJobs[unitId] ?: continue
+            val consumed = job.advance(budget)
+            if (consumed > 0) {
+                samples?.add(
+                    PlanningWorkSlice(
+                        Collections.singletonList(unitId),
+                        job.request.reason,
+                        consumed,
+                        job.search.finished,
+                        false,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun resolveTactical(
+        request: TacticalRouteRequest,
+        pathPolicy: ClearanceAStarPolicy,
+        budget: PathWorkBudget,
+        samples: MutableList<PlanningWorkSlice>? = null,
+    ): TacticalRouteResolution {
+        val existing = tacticalJobs[request.unitId]
+        val job = if (existing != null && canReuseTacticalJob(existing.request, request, existing.search.finished)) {
+            existing
+        } else {
+            createTacticalJob(request, pathPolicy).also { tacticalJobs[request.unitId] = it }
+        }
+
+        if (!job.search.finished && !budget.exhausted) {
+            val consumed = job.advance(budget)
+            if (consumed > 0) {
+                samples?.add(
+                    PlanningWorkSlice(
+                        Collections.singletonList(request.unitId),
+                        request.reason,
+                        consumed,
+                        job.search.finished,
+                        false,
+                    ),
+                )
+            }
+        }
+
+        if (!job.search.finished) {
+            return TacticalRouteResolution.Pending
+        }
+
+        tacticalJobs.remove(request.unitId)
+        val rawPath = job.search.path
+            ?: return TacticalRouteResolution.Unreachable(
+                counters = job.search.counters,
+                preparationNanos = job.request.inputPreparationNanos,
+                searchNanos = job.searchNanos,
+            )
+
+        val adaptedStart = spliceTacticalStartIfNeeded(job.request, request, rawPath)
+        if (adaptedStart == null) {
+            // Unit moved significantly across blocked terrain while search was suspended: restart cleanly on next slice
+            val restarted = createTacticalJob(request, pathPolicy)
+            tacticalJobs[request.unitId] = restarted
+            samples?.add(
+                PlanningWorkSlice(
+                    Collections.singletonList(request.unitId),
+                    request.reason,
+                    0,
+                    completed = false,
+                    restarted = true,
+                ),
+            )
+            return TacticalRouteResolution.Pending
+        }
+
+        val adaptedEnd = spliceTacticalGoalIfNeeded(job.request, request, adaptedStart)
+        if (adaptedEnd == null) {
+            val restarted = createTacticalJob(request, pathPolicy)
+            tacticalJobs[request.unitId] = restarted
+            samples?.add(
+                PlanningWorkSlice(
+                    Collections.singletonList(request.unitId),
+                    request.reason,
+                    0,
+                    completed = false,
+                    restarted = true,
+                ),
+            )
+            return TacticalRouteResolution.Pending
+        }
+
+        val withPrefix = if (request.preservedPrefix.isEmpty()) {
+            adaptedEnd
+        } else {
+            val suffix = if (adaptedEnd.firstOrNull() == request.preservedPrefix.last()) adaptedEnd.drop(1) else adaptedEnd
+            request.preservedPrefix + suffix
+        }
+        val finalPoints = if (request.preservedSuffix.isEmpty()) {
+            withPrefix
+        } else {
+            withPrefix + request.preservedSuffix
+        }
+
+        return TacticalRouteResolution.Ready(
+            points = finalPoints,
+            counters = job.search.counters,
+            preparationNanos = job.request.inputPreparationNanos,
+            searchNanos = job.searchNanos,
+            preservedPrefixCount = request.preservedPrefix.size + request.preservedSuffix.size,
+        )
+    }
+
+    private fun createTacticalJob(
+        request: TacticalRouteRequest,
+        pathPolicy: ClearanceAStarPolicy,
+    ): TacticalJob {
+        val counters = if (request.collectDiagnostics) PathSearchCounters() else null
+        val cache = PathClearanceCache(reuseApproach = false)
+        val rawSearch = if (request.targetRange > 0.0) {
+            pathPolicy.beginRange(
+                request.terrain,
+                request.start,
+                request.target,
+                request.radius,
+                request.targetRange,
+                request.hull,
+                request.occupancy,
+                counters,
+            )
+        } else {
+            pathPolicy.beginExact(
+                request.terrain,
+                request.start,
+                request.target,
+                request.radius,
+                request.hull,
+                request.occupancy,
+                counters,
+            )
+        }
+        val boundSearch = activeRollback?.let { rawSearch.fork(it) } ?: rawSearch
+        return TacticalJob(request = request, search = boundSearch, cache = cache)
+    }
+
+    private fun canReuseTacticalJob(
+        saved: TacticalRouteRequest,
+        live: TacticalRouteRequest,
+        finished: Boolean = false,
+    ): Boolean {
+        if (saved.actionId != live.actionId ||
+            saved.reason != live.reason ||
+            saved.isRepair != live.isRepair ||
+            saved.radius != live.radius ||
+            saved.targetRange != live.targetRange ||
+            saved.terrain !== live.terrain ||
+            saved.occupantIds != live.occupantIds ||
+            saved.preservedPrefix != live.preservedPrefix
+        ) return false
+
+        val minTile = minOf(live.terrain.tileWidth, live.terrain.tileHeight).toDouble()
+        val startOkay = if (saved.start == live.start || (finished && live.isCircleShape)) {
+            saved.hull == live.hull || live.isCircleShape
+        } else if (live.isCircleShape) {
+            val maxDrift = minTile * 2.0
+            ScreenPlane.distanceSquared(saved.start, live.start) <= maxDrift * maxDrift ||
+                com.rustedwarfare.reforge.core.path.PlanningSegmentClearance.allows(
+                    live.terrain, saved.start, live.start, live.radius,
+                )
+        } else false
+        if (!startOkay) return false
+
+        if (saved.target == live.target) return true
+        if (live.targetRange > 0.0) {
+            val driftSq = ScreenPlane.distanceSquared(saved.target, live.target)
+            return driftSq <= minTile * minTile
+        }
+        // Moving pursuit target hysteresis while multi-step search is in flight:
+        // keep in-flight search as long as target stays within 2 tiles of saved goal cell,
+        // or within 35% of remaining straight-line distance while crossing distant obstacles
+        // (preventing live-lock starvation in large-group 350x350 pursuits; tail is spliced on completion).
+        val sc = MapBounds.cell(saved.target.x, live.terrain.tileWidth, live.terrain.widthTiles)
+        val sr = MapBounds.cell(saved.target.y, live.terrain.tileHeight, live.terrain.heightTiles)
+        val lc = MapBounds.cell(live.target.x, live.terrain.tileWidth, live.terrain.widthTiles)
+        val lr = MapBounds.cell(live.target.y, live.terrain.tileHeight, live.terrain.heightTiles)
+        if (maxOf(kotlin.math.abs(sc - lc), kotlin.math.abs(sr - lr)) <= 2) return true
+        val minBridgeDistSq = (6.0 * minTile) * (6.0 * minTile)
+        val remainingDistSq = ScreenPlane.distanceSquared(live.start, live.target)
+        return remainingDistSq > minBridgeDistSq &&
+            ScreenPlane.distanceSquared(saved.target, live.target) <= 0.12 * remainingDistSq
+    }
+
+    private fun spliceTacticalStartIfNeeded(
+        saved: TacticalRouteRequest,
+        live: TacticalRouteRequest,
+        rawPath: List<Position>,
+    ): List<Position>? {
+        if (saved.start == live.start || rawPath.isEmpty()) return rawPath
+        if (!live.isCircleShape) return null
+        fun legClear(from: Position, to: Position): Boolean {
+            if (!com.rustedwarfare.reforge.core.path.PlanningSegmentClearance.allows(live.terrain, from, to, live.radius)) {
+                return false
+            }
+            val hull = live.hull
+            if (hull != null && hull.arrival(HullTerrainGrid.authorized(live.terrain), from, to, hull.heading) == null) {
+                return false
+            }
+            return live.occupancy?.allows(from, to, 0.0, 0.0) != false
+        }
+        val first = rawPath.first()
+        return when {
+            legClear(live.start, first) -> rawPath
+            rawPath.size > 1 && legClear(live.start, rawPath[1]) -> rawPath.drop(1)
+            else -> {
+                val mid = Position(
+                    (kotlin.math.floor(live.start.x / live.terrain.tileWidth) + 0.5) * live.terrain.tileWidth,
+                    (kotlin.math.floor(live.start.y / live.terrain.tileHeight) + 0.5) * live.terrain.tileHeight,
+                )
+                val bend = listOf(mid, saved.start).firstOrNull { p ->
+                    p != live.start && p != first && legClear(live.start, p) && legClear(p, first)
+                } ?: return null
+                listOf(bend) + rawPath
+            }
+        }
+    }
+
+    private fun spliceTacticalGoalIfNeeded(
+        saved: TacticalRouteRequest,
+        live: TacticalRouteRequest,
+        path: List<Position>,
+    ): List<Position>? {
+        if (saved.target == live.target || path.isEmpty()) return path
+        if (live.targetRange > 0.0) {
+            val end = path.last()
+            return if (ScreenPlane.distanceSquared(end, live.target) < live.targetRange * live.targetRange) path else null
+        }
+        val width = live.terrain.widthTiles.toDouble() * live.terrain.tileWidth
+        val height = live.terrain.heightTiles.toDouble() * live.terrain.tileHeight
+        if (!MapBounds.contains(width, height, live.target, live.radius) ||
+            PlanningCenterTerrain.intersects(live.terrain, live.target, live.radius)
+        ) return null
+        val anchor = if (path.size >= 2) path[path.size - 2] else live.start
+        val tailOk = if (live.hull == null) {
+            com.rustedwarfare.reforge.core.path.PlanningSegmentClearance.allows(live.terrain, anchor, live.target, live.radius)
+        } else {
+            live.hull.arrival(HullTerrainGrid.authorized(live.terrain), anchor, live.target, live.hull.heading) != null
+        }
+        if (tailOk && live.occupancy?.allows(anchor, live.target, 0.0, 0.0) != false) {
+            return if (path.size == 1) listOf(live.target) else path.dropLast(1) + live.target
+        }
+        // If multi-segment detour around obstacle, keep prefix to reach around obstacle first; updateAttackRoute will refine tail near arrival
+        return if (path.size >= 2) path else null
     }
 
     private fun processQueue(
@@ -797,8 +1147,8 @@ internal class MovePlanning {
             // Each current route must lead into the other hull. A new order can
             // change that fact before either unit has changed pose.
             fun blockedBy(driver: MutableUnit, blocker: MutableUnit): Boolean {
-                val task = driver.tasks.firstOrNull() ?: return false
-                if (task.kind != UnitTaskKind.MOVE || task.target != driver.moveTarget) return false
+                val pointGoal = driver.motionContract?.goal as? MotionGoalGeometry.Point
+                if (pointGoal == null || driver.moveTarget == null || pointGoal.anchor != driver.moveTarget) return false
                 val first = driver.pathPoints.firstOrNull() ?: return false
                 val aim = if (first == driver.position) driver.pathPoints.getOrNull(1) ?: return false else first
                 return UnitContact.routeAround(driver, listOf(blocker))

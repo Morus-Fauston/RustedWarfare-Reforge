@@ -44,6 +44,7 @@
       "com.rustedwarfare.reforge.core.sim.LocalMotionFollowingTest",
       "com.rustedwarfare.reforge.core.sim.LocalMotionMaintenanceTest",
       "com.rustedwarfare.reforge.core.sim.MapBoundaryTest",
+      "com.rustedwarfare.reforge.core.sim.MotionContractAndBudgetTest",
       "com.rustedwarfare.reforge.core.sim.MotionDiagnosticsTest",
       "com.rustedwarfare.reforge.core.sim.MovementContractTest",
       "com.rustedwarfare.reforge.core.sim.MovementSweepTest",

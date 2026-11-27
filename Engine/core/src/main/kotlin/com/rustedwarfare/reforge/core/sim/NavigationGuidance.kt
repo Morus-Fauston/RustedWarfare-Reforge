@@ -702,7 +702,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
         movementType: MovementType,
         terrain: PlanningTerrain,
     ): ChunkedField? {
-        val target = unit.moveTarget ?: unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }?.target ?: return null
+        val target = unit.moveTarget ?: unit.motionContract?.goal?.anchor ?: return null
         val tCol = floor(target.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
         val tRow = floor(target.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
         val unitRadius = max(1.0, flowPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
@@ -732,7 +732,8 @@ internal class ChunkedFlowFieldAdapter private constructor(
             if (!unit.alive || unit.carriedBy != null || unit.attachment != null) continue
             val hasPendingMove = unit.moveTarget != null ||
                 (unit.landingMember != null && !unit.landingMember!!.parked) ||
-                unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE
+                unit.motionContract != null ||
+                unit.optimisticSteerTarget != null
             if (!hasPendingMove) continue
             val mType = UnitLocomotion.movement(unit).type
             if (mType == MovementType.AIR || mType == MovementType.NONE) continue

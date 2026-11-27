@@ -266,10 +266,16 @@ internal object Transport {
                             Position((point.x.toFloat() + GroundMath.cos(angle) * 70f).toDouble(),
                                 (point.y.toFloat() + GroundMath.sin(angle) * 70f).toDouble())
                         }
-                        passenger.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE,
-                            "transport-exit:${unit.unitId}:${passenger.unitId}", target))
-                        passenger.moveTarget = target
-                        passenger.originMoveId = passenger.tasks.first().actionId
+                        val exitActionId = "transport-exit:${unit.unitId}:${passenger.unitId}"
+                        passenger.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, exitActionId, target))
+                        passenger.updateNavigation {
+                            it.bindCommandTarget(
+                                target = target,
+                                originMoveId = exitActionId,
+                                originAtStep = null,
+                                contract = MotionContract.pointMove(target),
+                            )
+                        }
                         passenger.adoptRoute(listOf(target), target, -1L)
                         if (state.passengerIds.isEmpty()) state = state.copy(unloading = false)
                         events += Event("unit-unloaded", passenger.unitId)
@@ -407,8 +413,7 @@ internal object Transport {
 
     private fun finishOrder(actor: MutableUnit) {
         actor.taskQueue = actor.taskQueue.pop()
-        actor.cancelRoute()
-        actor.movementRequested = false
+        actor.cancelRoute(clearRequested = true)
     }
 
     private fun admission(carrier: MutableUnit, passenger: MutableUnit, units: Map<String, MutableUnit>): SimulationError? {

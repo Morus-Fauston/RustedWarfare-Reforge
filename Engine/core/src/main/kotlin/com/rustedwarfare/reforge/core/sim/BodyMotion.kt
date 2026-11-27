@@ -16,12 +16,12 @@ internal object BodyMotion {
         faultHook: ((MutableUnit) -> Unit)? = null,
     ): BodyTurn {
         val desired = ScreenPlane.desired(unit.position, target)
-        // Native jet inherits bc=.6: its ordinary single-unit Move is a group
-        // leader of size one. The source additionally requires 1..2 remaining
-        // nodes and a local aim strictly closer than 100 world units.
+        // Native jet inherits bc=.6: short-distance point moves permit reversing when turning > 100 degrees,
+        // governed orthogonally by MotionContract (independent of UnitTaskKind and task-queue length >= 2).
+        val pointGoal = unit.motionContract?.goal as? MotionGoalGeometry.Point
         val shortJetMove = (unit.amphibiousState != null ||
             unit.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP) && unit.birthRemaining == 0f &&
-            unit.tasks.singleOrNull()?.kind == UnitTaskKind.MOVE && unit.pathPoints.size in 1..2 &&
+            pointGoal?.allowShortReverse == true && unit.pathPoints.size in 1..2 &&
             ScreenPlane.distanceSquared(unit.position, target) < 10000.0
         val reverse = allowReverse && (unit.definition.movement.reverseSpeedPercentage > .95 || shortJetMove) &&
             abs(ScreenPlane.difference(desired, unit.heading)) > 100.0

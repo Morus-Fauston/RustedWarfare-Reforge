@@ -40,6 +40,7 @@ def plan = new JsonSlurper().parse(new File(System.getProperty('development.sele
 def output = new File(plan.output)
 if (!(plan.testForks in [1, 2, 4]) || gradle.startParameter.maxWorkerCount != plan.testForks)
     throw new GradleException('Test forks must match the bounded Gradle worker budget')
+def preparedClasspathRoots = []
 gradle.projectsEvaluated {
     if (plan.mode == 'prepare') {
         gradle.rootProject.tasks.register('publicPreparation') {
@@ -47,10 +48,7 @@ gradle.projectsEvaluated {
             doLast {
                 def roots = gradle.taskGraph.allTasks.findAll { it.path != ':publicPreparation' }
                     .collectMany { it.outputs.files.files.collect { f -> f.absolutePath } }
-                plan.modules.each { module ->
-                    def path = module == 'tools' ? ':test' : ':'+module+':test'
-                    roots.addAll(gradle.rootProject.tasks.getByPath(path).classpath.files.collect { it.absolutePath })
-                }
+                roots.addAll(preparedClasspathRoots)
                 new File(output, 'artifact-roots.json').text = JsonOutput.toJson(roots.unique().sort())
             }
         }
@@ -62,6 +60,8 @@ gradle.projectsEvaluated {
                 task.filter.setIncludePatterns(selection.classes as String[])
                 maxParallelForks = task.path == ':pc:test' ? 1 : plan.testForks
                 forkEvery = 0
+                maxHeapSize = '1024m'
+                jvmArgs('-XX:MaxMetaspaceSize=160m', '-XX:ReservedCodeCacheSize=64m')
                 outputs.upToDateWhen { false }
                 outputs.cacheIf { false }
                 if (plan.fixture != null) {
@@ -110,6 +110,12 @@ gradle.projectsEvaluated {
     }
 }
 gradle.taskGraph.whenReady { graph ->
+    if (plan.mode == 'prepare') {
+        preparedClasspathRoots = plan.modules.collectMany { module ->
+            def path = module == 'tools' ? ':test' : ':'+module+':test'
+            gradle.rootProject.tasks.getByPath(path).classpath.files.collect { it.absolutePath }
+        }
+    }
     def tests = graph.allTasks.findAll { it instanceof Test }
     if ((tests.collect { it.path } as Set) != (plan.tasks.keySet() as Set))
         throw new GradleException('Unexpected or missing test task')

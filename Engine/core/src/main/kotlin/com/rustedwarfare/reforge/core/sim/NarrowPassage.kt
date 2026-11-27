@@ -71,7 +71,7 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             if (isEligibleMover(u)) {
                 eligibleById[u.unitId] = u
             } else {
-                if (u.passageEntry != null) u.passageEntry = null
+                if (u.passageEntry != null) u.updateNavigation { it.withPassageEntry(null) }
                 entranceTracker.remove(u.unitId)
             }
         }
@@ -114,7 +114,7 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             }
         }
         if (proposals.isEmpty()) {
-            for (u in units) if (u.passageEntry != null) u.passageEntry = null
+            for (u in units) if (u.passageEntry != null) u.updateNavigation { it.withPassageEntry(null) }
             return emptySet()
         }
 
@@ -161,7 +161,7 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             }
         }
 
-        for (unit in units) if (unit.passageEntry != null) unit.passageEntry = null
+        for (unit in units) if (unit.passageEntry != null) unit.updateNavigation { it.withPassageEntry(null) }
         val waiting = HashSet<String>()
         val byPassage = (proposals.values + additional).groupBy { it.entry.passage }
         for (approaches in byPassage.values) {
@@ -190,7 +190,7 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
                         wasWaitingAtMouth = own.entry.wasWaitingAtMouth || (blocked && !own.entry.entered),
                     )
                     if (own.unit.passageEntry == null || blocked) {
-                        own.unit.passageEntry = updated
+                        own.unit.updateNavigation { it.withPassageEntry(updated) }
                         entranceTracker[own.unit.unitId] = updated
                     }
                     if (blocked) waiting += own.unit.unitId
@@ -199,7 +199,7 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
                     // until its hull enters the passage cleanly.
                     val updated = own.entry.copy(admitted = true, wasWaitingAtMouth = true)
                     if (own.unit.passageEntry == null) {
-                        own.unit.passageEntry = updated
+                        own.unit.updateNavigation { it.withPassageEntry(updated) }
                         entranceTracker[own.unit.unitId] = updated
                     }
                 } else {
@@ -216,7 +216,7 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
     private fun isEligibleMover(u: MutableUnit): Boolean =
         u.alive && u.carriedBy == null && u.attachment == null && u.birthRemaining == 0f &&
             u.originMoveId != null && u.pathPoints.isNotEmpty() &&
-            u.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE &&
+            u.motionContract?.allowPassageYield == true &&
             UnitLocomotion.movement(u).type.let { type -> type != MovementType.AIR && type != MovementType.NONE }
 
     /**

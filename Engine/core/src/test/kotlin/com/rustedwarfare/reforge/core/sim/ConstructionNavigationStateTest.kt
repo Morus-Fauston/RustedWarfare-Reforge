@@ -41,7 +41,7 @@ class ConstructionNavigationStateTest {
         assertEquals(1.toByte(), unit.singleNodePathCount)
         unit.adoptRoute(listOf(target), target, 0)
         // Mirrors the real dispatch boundary; this module fixture never sets q.
-        unit.movementRequested = false
+        unit.clearMovementRequested()
         unit.finishMovementRequest()
         assertEquals(0.toByte(), unit.singleNodePathCount)
         assertNull(unit.logicalRequestX); assertNull(unit.logicalRequestY)

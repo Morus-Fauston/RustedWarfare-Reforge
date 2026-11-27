@@ -84,8 +84,10 @@ class MixedLandingTest {
             car.speed = 0.0
             car.adoptRoute(listOf(Position(200.0, 300.0), click), click, car.lastPlannedKnowledgeRevision,
                 car.lastPlannedBuildingRevision, listOf("parked"))
-            car.followsManeuverRoute = true
-            car.landingMember = LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked"), true))
+            car.updateNavigation {
+                it.withFollowsManeuverRoute(true)
+                    .withLandingMember(LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked"), true)))
+            }
             val first = state.stepIndex + 1
             for (tick in first until first + 600) {
                 val frame = ctx.advance(Step(tick, 1.0, "sim-tick"))
@@ -128,9 +130,11 @@ class MixedLandingTest {
             val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "b"), click))
             val def = scene.unitDefinitions.getValue("small")
             val car = MutableUnit("b", "p1", def.id, def, Position(370.0, 260.0), 90.0).apply {
-                landingMember = LandingMember(group)
-                moveTarget = click
-                pathPoints = mutableListOf(click)
+                updateNavigation {
+                    it.withLandingMember(LandingMember(group))
+                        .withMoveTarget(click, MotionContract.sharedCluster(click))
+                        .withPathPoints(listOf(click))
+                }
             }
             val other = MutableUnit("parked", "p1", def.id, def, site, 90.0)
             var blockers = emptyList<MutableUnit>()
@@ -227,12 +231,16 @@ class MixedLandingTest {
         val groupA = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("big", "escort"), true)
         val groupB = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("small"), true)
         val big = MutableUnit("big", "p1", "rect", rectDef, Position(220.0, 260.0), 0.0).apply {
-            moveTarget = Position(420.0, 260.0)
-            landingMember = LandingMember(groupA, claimed = Position(420.0, 260.0), claimedHeading = 90.0)
+            updateNavigation {
+                it.withMoveTarget(Position(420.0, 260.0), MotionContract.sharedCluster(Position(420.0, 260.0)))
+                    .withLandingMember(LandingMember(groupA, claimed = Position(420.0, 260.0), claimedHeading = 90.0))
+            }
         }
         val small = MutableUnit("small", "p1", "small", smallDef, Position(444.0, 260.0), 90.0).apply {
-            moveTarget = Position(420.0, 260.0)
-            landingMember = LandingMember(groupB)
+            updateNavigation {
+                it.withMoveTarget(Position(420.0, 260.0), MotionContract.sharedCluster(Position(420.0, 260.0)))
+                    .withLandingMember(LandingMember(groupB))
+            }
         }
         val units = mapOf("big" to big, "small" to small)
         val occupancy = LandingOccupancy()

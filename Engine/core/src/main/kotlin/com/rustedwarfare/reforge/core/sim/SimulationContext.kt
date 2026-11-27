@@ -32,6 +32,8 @@ import com.rustedwarfare.reforge.core.path.movementBlocked
 import com.rustedwarfare.reforge.core.path.PathSearchReason
 import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
 import com.rustedwarfare.reforge.core.path.PlanningWorkSample
+import com.rustedwarfare.reforge.core.sim.TacticalRouteRequest
+import com.rustedwarfare.reforge.core.sim.TacticalRouteResolution
 import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -158,6 +160,8 @@ class SimulationContext internal constructor(
         set(value) { steps.current.motionDiagnostics = value }
     private val pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>>
         get() = steps.current.pendingKnowledgeDiscoveries
+    private var activeStepPlanningBudget: PathWorkBudget? = null
+    private var activeStepPlanningSlices: MutableList<PlanningWorkSlice>? = null
     var hotspotCollector: SimHotspotCollector? = null
     val liveUnitCountForProfiler: Int get() = units.values.count { it.alive }
     val activeFlowFieldCountForProfiler: Int get() = steps.current.flowFields.activeSubscriberFieldCount()
@@ -508,7 +512,7 @@ class SimulationContext internal constructor(
             val hull = HullRoute.forUnit(unit, map, maneuver = true)
             val preparation = if (collectDiagnostics) (System.nanoTime() - started).coerceAtLeast(0) else 0
             val body = unit.copy()
-            if (repair == ManeuverRepair.SHORE_REJOIN) body.pathPoints = unit.pathPoints.take(2)
+            if (repair == ManeuverRepair.SHORE_REJOIN) body.updateNavigation { it.withPathPoints(unit.pathPoints.take(2)) }
             MovePlanningMember(action, body, movePlanningPose(unit), start, routeRadius(unit), terrain,
                 hull, unit.birthRemaining > 0f, preparation)
         }
@@ -674,8 +678,13 @@ class SimulationContext internal constructor(
             if (landing != null && lostRoute && (repair == ManeuverRepair.KNOWLEDGE ||
                     (repair == ManeuverRepair.CONTACT && unit.stalledRouteTicks >= ROUTE_FAILURE_TICKS))) {
                 val click = landing.group.click
-                unit.landingMember = LandingMember(landing.group)
-                unit.moveTarget = click
+                val releasedContract = task.motionContract ?: MotionContract.sharedCluster(click)
+                unit.updateNavigation {
+                    it.withLandingMember(LandingMember(landing.group)).bindCommandTarget(
+                        target = click,
+                        contract = releasedContract,
+                    )
+                }
                 unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = click))
                 unit.adoptRoute(emptyList(), click, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
                 steps.current.landingOccupancy.update(unit)
@@ -687,29 +696,57 @@ class SimulationContext internal constructor(
                 pendingEvents += Event("group-destination-released", unit.unitId)
                 return
             }
-            if (repair == ManeuverRepair.CONTACT) unit.lastManeuverContactRepair = executionStep
+            if (repair == ManeuverRepair.CONTACT) {
+                unit.updateNavigation { it.withLastManeuverContactRepair(executionStep) }
+            }
             if (slot != null) {
                 if (planned.nearest && unit.landingMember != null) return
                 if (repair == ManeuverRepair.CONTACT && slot.path == unit.pathPoints) return
                 if (planned.nearest) {
-                    unit.nearestMoveTarget = unit.nearestMoveTarget ?: unit.groupMoveReservation?.plan?.click ?: action.target
-                    unit.nearestMoveIsGroup = unit.nearestMoveIsGroup || unit.groupMoveReservation != null
-                    unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = slot.position))
-                    unit.moveTarget = slot.position
-                    unit.groupMoveReservation = if (repair == ManeuverRepair.CONTACT && slot.position == member.start) null
+                    val nextNearestTarget = unit.nearestMoveTarget ?: unit.groupMoveReservation?.plan?.click ?: action.target
+                    val nextNearestGroup = unit.nearestMoveIsGroup || unit.groupMoveReservation != null
+                    val nextRes = if (repair == ManeuverRepair.CONTACT && slot.position == member.start) null
                         else unit.groupMoveReservation?.copy(slot = slot)
-                    unit.followsManeuverRoute = true
+                    val nextContract = task.motionContract ?: MotionContract.pointMove(
+                        target = slot.position,
+                        allowShortReverse = !task.factoryExit,
+                        gatheringTarget = if (task.factoryExit) null else slot.position,
+                    )
+                    unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = slot.position))
+                    unit.updateNavigation {
+                        it.withGroupMoveReservation(nextRes).bindCommandTarget(
+                            target = slot.position,
+                            contract = nextContract,
+                            followsManeuverRoute = true,
+                            nearestMoveTarget = nextNearestTarget,
+                            nearestMoveIsGroup = nextNearestGroup,
+                        )
+                    }
                 }
                 if (repair == ManeuverRepair.GROUP_SLOT) {
+                    val nextContract = task.motionContract ?: MotionContract.pointMove(
+                        target = slot.position,
+                        allowShortReverse = !task.factoryExit,
+                        gatheringTarget = if (task.factoryExit) null else slot.position,
+                    )
                     unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = slot.position))
-                    unit.moveTarget = slot.position
-                    unit.groupMoveReservation = GroupMoveReservation(checkNotNull(group), slot)
-                    unit.nearTargetTime = 0.0
+                    unit.updateNavigation {
+                        it.withGroupMoveReservation(GroupMoveReservation(checkNotNull(group), slot)).bindCommandTarget(
+                            target = slot.position,
+                            contract = nextContract,
+                            nearTargetTime = 0.0,
+                        )
+                    }
                     pendingEvents += Event("group-destination-reassigned", unit.unitId)
                 }
-                unit.nav = unit.nav.copy(repairConsecutiveFailures = 0, repairBackoffStep = 0L)
-                unit.adoptRoute(slot.path, logicalRouteTarget(unit, slot.position), plannedKnowledgeRevision(unit),
-                    plannedBuildingRevision(unit), occupants)
+                unit.adoptRoute(
+                    slot.path,
+                    logicalRouteTarget(unit, slot.position),
+                    plannedKnowledgeRevision(unit),
+                    plannedBuildingRevision(unit),
+                    occupants,
+                    repairReset = true,
+                )
                 return
             }
             if (repair == ManeuverRepair.CONTACT) return
@@ -717,7 +754,7 @@ class SimulationContext internal constructor(
                 val current = unit.groupMoveReservation
                 if (current != null && unit.moveTarget == current.slot.position) {
                     // Slot replacement enters the queue after the current planning pass.
-                    unit.groupMoveReservation = current.copy(needsReplacement = true)
+                    unit.updateNavigation { it.withGroupMoveReservation(current.copy(needsReplacement = true)) }
                     return
                 }
             }
@@ -762,30 +799,47 @@ class SimulationContext internal constructor(
             return
         }
         if (task.target != slot.position) unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = slot.position))
-        unit.moveTarget = slot.position
         val priorGroup = unit.landingMember?.group
-        // Initial paths can publish before the landing pool has had its first time slice.
-        // Preserve sharedLanding membership even when the click lies in unreachable terrain (e.g. water/cliff
-        // beyond the shoreline, such as historical mixed-14 order 30910) so the group converges to the
-        // nearest reachable frontier and settles via TerminalLanding instead of piling onto one point.
         val nearSharedArea = planned.nearest && priorGroup != null && priorGroup.members.any { id ->
             units[id]?.definition?.movementCollision?.let { it != unit.definition.movementCollision } == true
         } && ScreenPlane.distanceSquared(slot.position, priorGroup.click) <= unit.definition.movementCollision.boundingRadius.let { it * it }
         val keepSharedLandingOnNearest = nearSharedArea || (planned.nearest && priorGroup != null && priorGroup.sharedLanding)
-        if (planned.nearest && !keepSharedLandingOnNearest) {
-            unit.nearestMoveTarget = action.target
-            unit.nearestMoveIsGroup = group != null || unit.landingMember != null
-            unit.landingMember = null
-        } else if (keepSharedLandingOnNearest) {
-            unit.nearestMoveTarget = action.target
-            unit.nearestMoveIsGroup = true
+        val nextNearestTarget = if (planned.nearest) action.target else unit.nearestMoveTarget
+        val nextNearestIsGroup = when {
+            planned.nearest && !keepSharedLandingOnNearest -> group != null || unit.landingMember != null
+            keepSharedLandingOnNearest -> true
+            else -> unit.nearestMoveIsGroup
         }
-        unit.groupMoveReservation = group?.let { GroupMoveReservation(it, slot) }
-        unit.nearTargetTime = 0.0
-        unit.originMoveId = action.actionId
-        unit.originAtStep = action.atStep
+        val nextLanding = if (planned.nearest && !keepSharedLandingOnNearest) null else unit.landingMember
+        val nextReservation = group?.let { GroupMoveReservation(it, slot) }
+        val nextManeuver = (planned.nearest || (member.hull as? RectangularDeparture)?.maneuver == true) && !member.hasBirthDelay
+        val publishedContract = task.motionContract ?: if (nextLanding != null) {
+            MotionContract.sharedCluster(nextLanding.group.click)
+        } else {
+            MotionContract.pointMove(
+                target = slot.position,
+                allowShortReverse = !task.factoryExit,
+                gatheringTarget = if (task.factoryExit) null else slot.position,
+            )
+        }
+        unit.updateNavigation {
+            it.bindCommandTarget(
+                target = slot.position,
+                originMoveId = action.actionId,
+                originAtStep = action.atStep,
+                contract = publishedContract,
+                followsManeuverRoute = nextManeuver,
+                nearestMoveTarget = nextNearestTarget,
+                nearestMoveIsGroup = nextNearestIsGroup,
+                nearTargetTime = 0.0,
+                groupReservation = GroupReservation.of(
+                    slot = nextReservation,
+                    parkedOwner = it.parkedReservationOwner,
+                    landing = nextLanding,
+                ),
+            )
+        }
         unit.adoptRoute(slot.path, logicalRouteTarget(unit, slot.position), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
-        unit.followsManeuverRoute = (planned.nearest || (member.hull as? RectangularDeparture)?.maneuver == true) && !member.hasBirthDelay
         pendingEvents += Event("movement-started", unit.unitId)
     }
 
@@ -883,11 +937,18 @@ class SimulationContext internal constructor(
                 val claimHeading = if (prev != site) ScreenPlane.desired(prev, site) else car.heading
                 steps.current.movePlanning.cancel(car.unitId)
                 steps.current.pendingFlowStart.remove(car.unitId)
-                car.landingMember = LandingMember(group, claimed = site, claimedHeading = claimHeading)
-                car.moveTarget = site
-                car.taskQueue = car.taskQueue.replaceHead(car.tasks.first().copy(target = site))
+                val headTask = car.tasks.first()
+                val claimContract = headTask.motionContract ?: MotionContract.sharedCluster(site)
+                car.updateNavigation {
+                    it.withLandingMember(LandingMember(group, claimed = site, claimedHeading = claimHeading))
+                        .bindCommandTarget(
+                            target = site,
+                            contract = claimContract,
+                            followsManeuverRoute = true,
+                        )
+                }
+                car.taskQueue = car.taskQueue.replaceHead(headTask.copy(target = site))
                 car.adoptRoute(decision.path, site, plannedKnowledgeRevision(car), plannedBuildingRevision(car))
-                car.followsManeuverRoute = true
                 index.update(car)
             }
             if (budget.used > before) {
@@ -933,9 +994,12 @@ class SimulationContext internal constructor(
                 else -> 0L
             }
             if (!reservation.needsReplacement && ticks < ROUTE_FAILURE_TICKS && groupSlotFits(unit, reservation.slot, map)) {
-                if (occupied) unit.nearTargetTime = 0.0
-                if (ticks != reservation.occupiedTicks || !sameHolder)
-                    unit.groupMoveReservation = reservation.copy(occupiedTicks = ticks, occupiedBy = holder?.unitId)
+                unit.updateNavigation { nav ->
+                    val withTime = if (occupied) nav.withNearTargetTime(0.0) else nav
+                    if (ticks != reservation.occupiedTicks || !sameHolder) {
+                        withTime.withGroupMoveReservation(reservation.copy(occupiedTicks = ticks, occupiedBy = holder?.unitId))
+                    } else withTime
+                }
                 continue
             }
             replaceInvalidGroupDestination(unit)
@@ -1185,47 +1249,103 @@ class SimulationContext internal constructor(
         }
     }
 
-    private fun findPathWithDiagnostics(actionId: String, atStep: Long?, target: Position,
-                                        unit: MutableUnit, map: MapDefinition,
-                                        samples: MutableList<PathSearchSample>,
-                                        reason: PathSearchReason = PathSearchReason.USER_MOVE,
-                                        executionStep: Long? = null,
-                                        start: Position = unit.position,
-                                        preservedPrefixPointCount: Int = 0,
-                                        targetRange: Double = 0.0, occupancy: RouteOccupancy? = null): List<Position>? {
-        val counters = PathSearchCounters()
-        val usedKnowledge = knowledgeStores != null && knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE
-        var outcome = PathSearchOutcome.FAILED
-        var pathPointCount = 0
-        var preparationNanos = 0L
-        var searchNanos = 0L
-        val preparationStart = System.nanoTime()
-        var preparationFinished = false
-        var searchStart = 0L
-        var searchEntered = false
-        try {
-            val terrain = planningTerrainFor(unit, map)
-            preparationNanos = (System.nanoTime() - preparationStart).coerceAtLeast(0L)
-            preparationFinished = true
-            searchStart = System.nanoTime()
-            searchEntered = true
-            val path = pathPolicy.findPath(terrain, Transport.queryPosition(unit, map, start), target,
-                routeRadius(unit), counters, targetRange, HullRoute.forUnit(unit, map), occupancy)
-            outcome = if (path == null) PathSearchOutcome.UNREACHABLE else PathSearchOutcome.FOUND
-            pathPointCount = path?.size ?: 0
-            return path
-        } catch (error: Throwable) {
-            outcome = PathSearchOutcome.FAILED
-            throw error
-        } finally {
-            if (!preparationFinished) preparationNanos = (System.nanoTime() - preparationStart).coerceAtLeast(0L)
-            if (searchEntered) searchNanos = (System.nanoTime() - searchStart).coerceAtLeast(0L)
-            samples += PathSearchSample(actionId, unit.unitId, atStep, usedKnowledge, outcome,
-                preparationNanos, searchNanos, counters.actualSearchCalls, counters.candidatesChecked, counters.popped,
-                counters.expanded, counters.enqueued, counters.neighborsChecked, counters.heuristicCalls, pathPointCount, reason, executionStep,
-                searchTarget = target, searchStart = start,
-                preservedPrefixPointCount = if (outcome == PathSearchOutcome.FOUND) preservedPrefixPointCount else 0)
+    private fun resolveBudgetedTacticalRoute(
+        unit: MutableUnit,
+        map: MapDefinition,
+        actionId: String,
+        atStep: Long?,
+        target: Position,
+        reason: PathSearchReason,
+        executionStep: Long,
+        start: Position = unit.position,
+        targetRange: Double = 0.0,
+        occupancy: RouteOccupancy? = null,
+        occupantIds: List<String> = emptyList(),
+        isRepair: Boolean = false,
+        preservedPrefix: List<Position> = emptyList(),
+        preservedSuffix: List<Position> = emptyList(),
+        fallbackFullTarget: Position? = null,
+        budgetOverride: PathWorkBudget? = null,
+        mustCompleteInStep: Boolean = false,
+        unreachablePolicy: TacticalUnreachablePolicy = TacticalUnreachablePolicy.CANCEL_ROUTE,
+    ): TacticalRouteResolution {
+        val samples = pathDiagnostics
+        val collectDiagnostics = samples != null
+        val prepStart = if (collectDiagnostics) System.nanoTime() else 0L
+        val terrain = planningTerrainFor(unit, map)
+        val queriedStart = Transport.queryPosition(unit, map, start)
+        val radius = routeRadius(unit)
+        val hull = HullRoute.forUnit(unit, map)
+        val prepNanos = if (collectDiagnostics) (System.nanoTime() - prepStart).coerceAtLeast(0L) else 0L
+
+        val stepBudget = activeStepPlanningBudget
+        val budget = when {
+            mustCompleteInStep -> PathWorkBudget(Int.MAX_VALUE)
+            budgetOverride != null -> budgetOverride
+            stepBudget != null -> stepBudget
+            else -> PathWorkBudget(movePlanningBudgetPerStep)
         }
+        val usedBefore = budget.used
+        val slices = if (mustCompleteInStep) null else activeStepPlanningSlices
+        val request = TacticalRouteRequest(
+            unitId = unit.unitId,
+            actionId = actionId,
+            atStep = atStep,
+            start = queriedStart,
+            target = target,
+            radius = radius,
+            targetRange = targetRange,
+            terrain = terrain,
+            hull = hull,
+            occupancy = occupancy,
+            occupantIds = occupantIds,
+            reason = reason,
+            isRepair = isRepair,
+            collectDiagnostics = collectDiagnostics,
+            inputPreparationNanos = prepNanos,
+            preservedPrefix = preservedPrefix,
+            preservedSuffix = preservedSuffix,
+            fallbackFullTarget = fallbackFullTarget,
+            isCircleShape = unit.definition.movementCollision is MovementCollisionShape.Circle,
+            unreachablePolicy = unreachablePolicy,
+        )
+        val resolution = steps.current.movePlanning.resolveTactical(request, pathPolicy, budget, slices)
+        if (mustCompleteInStep && stepBudget != null) {
+            val deltaUsed = (budget.used - usedBefore).coerceAtLeast(0)
+            if (deltaUsed > 0 && stepBudget.remaining > 0) {
+                stepBudget.take(minOf(deltaUsed, stepBudget.remaining))
+            }
+        }
+        if (samples != null && resolution !is TacticalRouteResolution.Pending) {
+            val usedKnowledge = knowledgeStores != null && knowledgeRules?.pathSource == PathInformationSource.PLAYER_KNOWLEDGE
+            when (resolution) {
+                is TacticalRouteResolution.Ready -> {
+                    val c = resolution.counters ?: PathSearchCounters()
+                    val suffixPointCount = (resolution.points.size - resolution.preservedPrefixCount).coerceAtLeast(0)
+                    samples += PathSearchSample(
+                        actionId, unit.unitId, atStep, usedKnowledge, PathSearchOutcome.FOUND,
+                        resolution.preparationNanos, resolution.searchNanos,
+                        c.actualSearchCalls, c.candidatesChecked, c.popped, c.expanded, c.enqueued,
+                        c.neighborsChecked, c.heuristicCalls, suffixPointCount, reason, executionStep,
+                        searchTarget = target, searchStart = start,
+                        preservedPrefixPointCount = resolution.preservedPrefixCount,
+                    )
+                }
+                is TacticalRouteResolution.Unreachable -> {
+                    val c = resolution.counters ?: PathSearchCounters()
+                    samples += PathSearchSample(
+                        actionId, unit.unitId, atStep, usedKnowledge, PathSearchOutcome.UNREACHABLE,
+                        resolution.preparationNanos, resolution.searchNanos,
+                        c.actualSearchCalls, c.candidatesChecked, c.popped, c.expanded, c.enqueued,
+                        c.neighborsChecked, c.heuristicCalls, 0, reason, executionStep,
+                        searchTarget = target, searchStart = start,
+                        preservedPrefixPointCount = 0,
+                    )
+                }
+                TacticalRouteResolution.Pending -> Unit
+            }
+        }
+        return resolution
     }
 
     private fun plannedKnowledgeRevision(unit: MutableUnit): Long =
@@ -1233,6 +1353,97 @@ class SimulationContext internal constructor(
             checkNotNull(knowledgeStores?.get(unit.ownerPlayerId)).snapshot(checkNotNull(activeWorld)).revision else -1L
 
     private fun plannedBuildingRevision(unit: MutableUnit): Long = buildingKnowledge[unit.ownerPlayerId]?.revision ?: -1L
+
+    private fun drainCompletedRepairTacticalRoutes(map: MapDefinition, executionStep: Long) {
+        val completed = steps.current.movePlanning.completedRepairTacticalRequests()
+        if (completed.isEmpty()) return
+        for (req in completed) {
+            val unit = units[req.unitId]
+            if (unit == null || !unit.alive || unit.carriedBy != null) {
+                steps.current.movePlanning.cancel(req.unitId)
+                continue
+            }
+            val currentTarget = unit.moveTarget
+            if (currentTarget == null ||
+                (unit.originMoveId != null && req.actionId != "repair:${unit.unitId}" && unit.originMoveId != req.actionId)
+            ) {
+                steps.current.movePlanning.cancel(req.unitId)
+                continue
+            }
+            val primaryRes = resolveBudgetedTacticalRoute(
+                unit = unit,
+                map = map,
+                actionId = req.actionId,
+                atStep = req.atStep,
+                target = req.target,
+                reason = req.reason,
+                executionStep = executionStep,
+                start = if (req.preservedPrefix.isNotEmpty()) req.start else unit.position,
+                targetRange = req.targetRange,
+                occupancy = req.occupancy,
+                occupantIds = req.occupantIds,
+                isRepair = true,
+                preservedPrefix = req.preservedPrefix,
+                preservedSuffix = req.preservedSuffix,
+                fallbackFullTarget = req.fallbackFullTarget,
+                unreachablePolicy = req.unreachablePolicy,
+            )
+            val res = if (primaryRes is TacticalRouteResolution.Unreachable && req.fallbackFullTarget != null) {
+                val fallbackRange = (unit.motionContract?.goal as? MotionGoalGeometry.RangeBand)?.range ?: 0.0
+                resolveBudgetedTacticalRoute(
+                    unit = unit,
+                    map = map,
+                    actionId = req.actionId,
+                    atStep = req.atStep,
+                    target = req.fallbackFullTarget,
+                    reason = req.reason,
+                    executionStep = executionStep,
+                    targetRange = fallbackRange,
+                    isRepair = true,
+                    unreachablePolicy = req.unreachablePolicy,
+                )
+            } else primaryRes
+            when (res) {
+                TacticalRouteResolution.Pending -> Unit
+                is TacticalRouteResolution.Unreachable -> {
+                    if (FactoryExit.isNativeSeaDeparture(unit)) continue
+                    when (req.unreachablePolicy) {
+                        TacticalUnreachablePolicy.SILENT_IGNORE -> continue
+                        TacticalUnreachablePolicy.STALL_MOVE_GUARDED -> {
+                            if (unit.stalledRouteTicks < ROUTE_FAILURE_TICKS) continue
+                            if ((unit.groupMoveReservation?.occupiedTicks ?: 0) > 0) continue
+                            if (replaceInvalidGroupDestination(unit)) continue
+                            if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE) {
+                                unit.taskQueue = unit.taskQueue.pop()
+                            }
+                            unit.cancelRoute()
+                            pendingEvents += Event("movement-cancelled", unit.unitId)
+                            pendingEvents += Event("path-unreachable", unit.unitId)
+                        }
+                        TacticalUnreachablePolicy.CANCEL_ROUTE -> {
+                            if (replaceInvalidGroupDestination(unit)) continue
+                            if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.BUILD) unit.pauseRoute()
+                            else unit.cancelRoute()
+                            unit.amphibiousState = unit.amphibiousState?.copy(
+                                terrainPausedMove = unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE,
+                            )
+                            pendingEvents += Event("movement-cancelled", unit.unitId)
+                            pendingEvents += Event("path-unreachable", unit.unitId)
+                        }
+                    }
+                }
+                is TacticalRouteResolution.Ready -> {
+                    unit.adoptRoute(
+                        res.points,
+                        logicalRouteTarget(unit, currentTarget),
+                        plannedKnowledgeRevision(unit),
+                        plannedBuildingRevision(unit),
+                        req.occupantIds,
+                    )
+                }
+            }
+        }
+    }
 
     private fun replanForKnowledge(map: MapDefinition, executionStep: Long) {
         if (pendingKnowledgeDiscoveries.isEmpty() && pendingBuildingDiscoveries.isEmpty()) return
@@ -1275,7 +1486,6 @@ class SimulationContext internal constructor(
                 continue
             }
             if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
-            val samples = pathDiagnostics
             val terrain = planningTerrainFor(unit, map)
             val oldPath = unit.pathPoints.toList()
             val prefix = mutableListOf<Position>()
@@ -1286,24 +1496,57 @@ class SimulationContext internal constructor(
                 prefix += point
                 from = point
             }
-            fun search(start: Position, preserved: Int = 0): List<Position>? =
-                if (samples == null) pathPolicy.findPath(terrain, Transport.queryPosition(unit, map, start), target, boundaryR, hull = HullRoute.forUnit(unit, map))
-                else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, target, unit, map, samples,
-                    PathSearchReason.KNOWLEDGE_REPLAN, executionStep, start, preserved)
-            val path = if (prefix.isNotEmpty() && prefix.size < oldPath.size) {
-                val suffix = search(prefix.last(), prefix.size)
-                if (suffix == null) search(unit.position)
-                else prefix + if (suffix.firstOrNull() == prefix.last()) suffix.drop(1) else suffix
-            } else search(unit.position)
-            if (path == null) {
-                if (FactoryExit.isNativeSeaDeparture(unit)) continue
-                if (replaceInvalidGroupDestination(unit)) continue
-                if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.BUILD) unit.pauseRoute()
-                else unit.cancelRoute()
-                pendingEvents += Event("movement-cancelled", unit.unitId)
-                pendingEvents += Event("path-unreachable", unit.unitId)
-            } else {
-                unit.adoptRoute(path, logicalRouteTarget(unit, checkNotNull(unit.moveTarget)), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+            val rangeForSearch = (unit.motionContract?.goal as? MotionGoalGeometry.RangeBand)?.range ?: 0.0
+            val primaryRes = if (prefix.isNotEmpty() && prefix.size < oldPath.size) {
+                resolveBudgetedTacticalRoute(
+                    unit = unit,
+                    map = map,
+                    actionId = checkNotNull(unit.originMoveId),
+                    atStep = unit.originAtStep,
+                    target = target,
+                    reason = PathSearchReason.KNOWLEDGE_REPLAN,
+                    executionStep = executionStep,
+                    start = prefix.last(),
+                    targetRange = rangeForSearch,
+                    isRepair = true,
+                    preservedPrefix = prefix,
+                    mustCompleteInStep = true,
+                )
+            } else null
+            val finalRes = when (primaryRes) {
+                is TacticalRouteResolution.Ready, TacticalRouteResolution.Pending -> primaryRes
+                is TacticalRouteResolution.Unreachable, null -> resolveBudgetedTacticalRoute(
+                    unit = unit,
+                    map = map,
+                    actionId = checkNotNull(unit.originMoveId),
+                    atStep = unit.originAtStep,
+                    target = target,
+                    reason = PathSearchReason.KNOWLEDGE_REPLAN,
+                    executionStep = executionStep,
+                    start = unit.position,
+                    targetRange = rangeForSearch,
+                    isRepair = true,
+                    mustCompleteInStep = true,
+                )
+            }
+            when (finalRes) {
+                TacticalRouteResolution.Pending -> Unit
+                is TacticalRouteResolution.Unreachable -> {
+                    if (FactoryExit.isNativeSeaDeparture(unit)) continue
+                    if (replaceInvalidGroupDestination(unit)) continue
+                    if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.BUILD) unit.pauseRoute()
+                    else unit.cancelRoute()
+                    pendingEvents += Event("movement-cancelled", unit.unitId)
+                    pendingEvents += Event("path-unreachable", unit.unitId)
+                }
+                is TacticalRouteResolution.Ready -> {
+                    unit.adoptRoute(
+                        finalRes.points,
+                        logicalRouteTarget(unit, checkNotNull(unit.moveTarget)),
+                        plannedKnowledgeRevision(unit),
+                        plannedBuildingRevision(unit),
+                    )
+                }
             }
         }
     }
@@ -1314,9 +1557,19 @@ class SimulationContext internal constructor(
             if (unit.amphibiousState?.terrainPausedMove == true && UnitLocomotion.movement(unit).type == MovementType.AIR) {
                 val task = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
                 if (unit.alive && unit.moveTarget == null && task?.target != null) {
-                    unit.moveTarget = task.target
-                    unit.originMoveId = task.actionId
-                    unit.originAtStep = task.atStep
+                    val resumeContract = task.motionContract ?: MotionContract.pointMove(
+                        target = task.target,
+                        allowShortReverse = !task.factoryExit,
+                        gatheringTarget = if (task.factoryExit) null else task.target,
+                    )
+                    unit.updateNavigation {
+                        it.bindCommandTarget(
+                            target = task.target,
+                            originMoveId = task.actionId,
+                            originAtStep = task.atStep,
+                            contract = resumeContract,
+                        )
+                    }
                     resumeProductionRoute(unit, map, executionStep)
                 }
                 unit.amphibiousState = checkNotNull(unit.amphibiousState).copy(terrainPausedMove = false)
@@ -1324,6 +1577,7 @@ class SimulationContext internal constructor(
             if (UnitLocomotion.movement(unit).type == MovementType.AIR) continue
             if (unit.birthRemaining > 0f) continue
             if (FactoryExit.isNativeSeaDeparture(unit)) continue
+            if (steps.current.movePlanning.pending(unit.unitId)) continue
             val target = unit.moveTarget ?: continue
             val lmFlow = unit.landingMember
             if (trafficSeparationEnabled && lmFlow != null && lmFlow.claimed == null &&
@@ -1350,31 +1604,63 @@ class SimulationContext internal constructor(
                 continue
             }
             if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
-            val samples = pathDiagnostics
-            fun search(destination: Position): List<Position>? =
-                if (samples == null) pathPolicy.findPath(terrain, Transport.queryPosition(unit, map), destination, radius, hull = HullRoute.forUnit(unit, map))
-                else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, destination, unit, map, samples,
-                    PathSearchReason.ROUTE_REPAIR, executionStep)
+            val rangeForSearch = (unit.motionContract?.goal as? MotionGoalGeometry.RangeBand)?.range ?: 0.0
             val oldPath = unit.pathPoints.toList()
-            val tailIsClear = oldPath.size > 1 && oldPath.zipWithNext().all { (a, b) ->
+            val tailIsClear = !nearCornerStall && rangeForSearch == 0.0 && oldPath.size > 1 && oldPath.zipWithNext().all { (a, b) ->
                 PlanningSegmentClearance.allows(terrain, a, b, radius)
             }
-            val path = if (nearCornerStall) {
-                search(target)
-            } else {
-                val connector = if (tailIsClear) search(first) else null
-                if (connector != null) connector + oldPath.drop(1) else search(target)
+            val repairActionId = if (pathDiagnostics != null) checkNotNull(unit.originMoveId) else (unit.originMoveId ?: "repair:${unit.unitId}")
+            val connectorRes = if (tailIsClear) {
+                resolveBudgetedTacticalRoute(
+                    unit = unit,
+                    map = map,
+                    actionId = repairActionId,
+                    atStep = unit.originAtStep,
+                    target = first,
+                    reason = PathSearchReason.ROUTE_REPAIR,
+                    executionStep = executionStep,
+                    isRepair = true,
+                    preservedSuffix = oldPath.drop(1),
+                    fallbackFullTarget = target,
+                    mustCompleteInStep = true,
+                )
+            } else null
+            val finalRes = when (connectorRes) {
+                is TacticalRouteResolution.Ready -> connectorRes
+                TacticalRouteResolution.Pending -> TacticalRouteResolution.Pending
+                is TacticalRouteResolution.Unreachable, null -> resolveBudgetedTacticalRoute(
+                    unit = unit,
+                    map = map,
+                    actionId = repairActionId,
+                    atStep = unit.originAtStep,
+                    target = target,
+                    reason = PathSearchReason.ROUTE_REPAIR,
+                    executionStep = executionStep,
+                    targetRange = rangeForSearch,
+                    isRepair = true,
+                    mustCompleteInStep = true,
+                )
             }
-            if (path == null) {
-                if (replaceInvalidGroupDestination(unit)) continue
-                if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.BUILD) unit.pauseRoute()
-                else unit.cancelRoute()
-                unit.amphibiousState = unit.amphibiousState?.copy(terrainPausedMove =
-                    unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE)
-                pendingEvents += Event("movement-cancelled", unit.unitId)
-                pendingEvents += Event("path-unreachable", unit.unitId)
-            } else {
-                unit.adoptRoute(path, logicalRouteTarget(unit, checkNotNull(unit.moveTarget)), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+            when (finalRes) {
+                TacticalRouteResolution.Pending -> Unit
+                is TacticalRouteResolution.Unreachable -> {
+                    if (replaceInvalidGroupDestination(unit)) continue
+                    if (unit.tasks.firstOrNull()?.kind == UnitTaskKind.BUILD) unit.pauseRoute()
+                    else unit.cancelRoute()
+                    unit.amphibiousState = unit.amphibiousState?.copy(
+                        terrainPausedMove = unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE,
+                    )
+                    pendingEvents += Event("movement-cancelled", unit.unitId)
+                    pendingEvents += Event("path-unreachable", unit.unitId)
+                }
+                is TacticalRouteResolution.Ready -> {
+                    unit.adoptRoute(
+                        finalRes.points,
+                        logicalRouteTarget(unit, checkNotNull(unit.moveTarget)),
+                        plannedKnowledgeRevision(unit),
+                        plannedBuildingRevision(unit),
+                    )
+                }
             }
         }
     }
@@ -1413,8 +1699,7 @@ class SimulationContext internal constructor(
             unit.taskQueue = UnitTaskQueue()
             unit.attackCommand = null
             unit.bomberApproach = null
-            unit.cancelRoute()
-            unit.movementRequested = false
+            unit.cancelRoute(clearRequested = true)
             unit.constructionElapsed = 0f
             unit.constructionWorking = false
         }
@@ -1592,9 +1877,8 @@ class SimulationContext internal constructor(
                 unit.attackCommand = null
                 unit.bomberApproach = null
                 unit.taskQueue = UnitTaskQueue()
-                unit.movementRequested = false
                 unit.clearWeaponTargets()
-                unit.cancelRoute()
+                unit.cancelRoute(clearRequested = true)
                 ActionResult.Accepted(action.actionId, listOf(Event("movement-cancelled", unit.unitId)))
             }
             is MoveAction -> {
@@ -1612,15 +1896,9 @@ class SimulationContext internal constructor(
                     unit.amphibiousState = it.copy(terrainPausedMove = false)
                 }
                 unit.pauseRoute()
-                unit.moveArrival = null
+                unit.updateNavigation { it.withMoveArrival(null) }
                 unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, action.actionId, action.target,
                     atStep = action.atStep))
-                // Optimistic same-step turn/start (ENG-P016-005): when the unit is already in motion or
-                // clicking a fresh single-unit/shared-landing direction whose immediate front is clear of
-                // terrain AND target is actually reachable (not behind an enclosing wall), turn immediately
-                // without losing momentum while planning runs.
-                // Multi-member synchronized group selections (group != null && !sharedLanding) and rectangular
-                // ships with strict swept hull proofs wait for their published maneuver route first.
                 val optMovement = UnitLocomotion.movement(unit)
                 val optShape = unit.definition.movementCollision
                 if (optMovement.type != MovementType.NONE && unit.birthRemaining <= 0f &&
@@ -1642,7 +1920,7 @@ class SimulationContext internal constructor(
                         val probe = Position(unit.position.x + dx / dist * probeDist, unit.position.y + dy / dist * probeDist)
                         if (optMovement.type == MovementType.AIR ||
                             PlanningSegmentClearance.allows(optTerrain, unit.position, probe, routeRadius(unit))) {
-                            unit.optimisticSteerTarget = action.target
+                            unit.updateNavigation { it.withOptimisticSteerTarget(action.target) }
                         }
                     }
                 }
@@ -1691,10 +1969,10 @@ class SimulationContext internal constructor(
                             ),
                         )
                     }
-                    unit.landingMember = LandingMember(group)
-                    // True O(1) shared flow-field direct drive (ENG-P016-009D): bypass 100 individual A* companion jobs!
-                    // Fall back to MovePlanning when the unit sits in an unpassable cell, narrow canal (for rectangles),
-                    // or a 1x1 immobile pocket so canonical `immobile-unit` rejection / maneuver routing fires cleanly.
+                    unit.updateNavigation {
+                        it.withLandingMember(LandingMember(group))
+                            .withMotionContract(MotionContract.sharedCluster(group.click))
+                    }
                     val goalBlocked = terrain.isBlocked(gCol, gRow)
                     val immobilePocket = srcComp != 0 &&
                         steps.current.flowFields.isSingleCellImmobilePocket(terrain, terrainR, uCol, uRow)
@@ -1706,12 +1984,17 @@ class SimulationContext internal constructor(
                     }
                 } else if (group?.sharedLanding == true) {
                     if (optMovement.type == MovementType.AIR) {
+                        unit.updateNavigation { it.withMotionContract(MotionContract.pointMove(action.target)) }
                         steps.current.movePlanning.enqueue(action, null, selectionSize = 1)
                     } else {
-                        unit.landingMember = LandingMember(group)
+                        unit.updateNavigation {
+                            it.withLandingMember(LandingMember(group))
+                                .withMotionContract(MotionContract.sharedCluster(group.click))
+                        }
                         steps.current.movePlanning.enqueue(action, null, selectionSize = group.members.size)
                     }
                 } else {
+                    unit.updateNavigation { it.withMotionContract(MotionContract.pointMove(action.target)) }
                     steps.current.movePlanning.enqueue(action, group, selectionSize = group?.members?.size ?: 1)
                 }
                 ActionResult.Accepted(action.actionId)
@@ -1741,15 +2024,30 @@ class SimulationContext internal constructor(
     }
 
     private val buildingWorkAccess = object : BuildingWorkAccess {
-        override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? {
+        override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRouteResolution {
             val map = checkNotNull(scenario).map
-            val samples = pathDiagnostics
-            val path = if (worker.birthRemaining > 0f) listOf(target)
-                else if (samples == null) pathPolicy.findPath(planningTerrainFor(worker, map), Transport.queryPosition(worker, map), target,
-                    routeRadius(worker), targetRange = range, hull = HullRoute.forUnit(worker, map))
-                else findPathWithDiagnostics(task.actionId, task.atStep, target, worker, map, samples,
-                    reason = PathSearchReason.CONSTRUCTION_APPROACH, executionStep = step, targetRange = range)
-            return path?.let { BuildingRoute(it, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)) }
+            if (worker.birthRemaining > 0f) {
+                return BuildingRouteResolution.Ready(
+                    BuildingRoute(listOf(target), plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)),
+                )
+            }
+            return when (val res = resolveBudgetedTacticalRoute(
+                unit = worker,
+                map = map,
+                actionId = task.actionId,
+                atStep = task.atStep,
+                target = target,
+                reason = PathSearchReason.CONSTRUCTION_APPROACH,
+                executionStep = step,
+                targetRange = range,
+                isRepair = false,
+            )) {
+                TacticalRouteResolution.Pending -> BuildingRouteResolution.Pending
+                is TacticalRouteResolution.Unreachable -> BuildingRouteResolution.Unreachable
+                is TacticalRouteResolution.Ready -> BuildingRouteResolution.Ready(
+                    BuildingRoute(res.points, plannedKnowledgeRevision(worker), plannedBuildingRevision(worker)),
+                )
+            }
         }
         override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
                                paidLedger: ProductionLedger): ConstructionRegistration =
@@ -2167,15 +2465,16 @@ class SimulationContext internal constructor(
                 prof.addNanos(SimHotspotStage.SIM_COMBAT, now - phaseMark)
                 phaseMark = now
             }
-            // Allocate a slice to cold gate reads on the step after they ran out, or
-            // to wall repairs when their periodic retry is due. Unused queue work is
-            // available to both services on this same step.
             val wallDue = candidate.state.sharedWallRepairDue(step.stepIndex)
             val needsGateWork = candidate.state.gateWorkDeferred
             val stepBudgetLimit = movePlanningBudgetPerStep
             val reserve = if (needsGateWork || wallDue) stepBudgetLimit / 4 else 0
             val planningBudget = PathWorkBudget(stepBudgetLimit - reserve)
             val planningSlices = candidate.state.planningWorkDiagnostics?.let { mutableListOf<PlanningWorkSlice>() }
+            val stepTacticalBudget = PathWorkBudget(stepBudgetLimit)
+            activeStepPlanningBudget = stepTacticalBudget
+            activeStepPlanningSlices = planningSlices
+            try {
             val serveLandingsFirst = candidate.state.landingsShortOfBudget &&
                 !candidate.state.movePlanning.hasPendingFastLaneOrders()
             candidate.state.landingsShortOfBudget = false
@@ -2192,15 +2491,22 @@ class SimulationContext internal constructor(
                 },
                 planningSlices, liveUnitCount = { units.size }, executionStep = step.stepIndex)
             if (!serveLandingsFirst) advanceSharedLandings(currentScenario.map, planningBudget, planningSlices)
+            // Charge stepTacticalBudget with initial MovePlanning + SharedLandings work so replan/repair shares remaining step budget
+            if (planningBudget.used > 0) stepTacticalBudget.take(planningBudget.used)
+            drainCompletedRepairTacticalRoutes(currentScenario.map, step.stepIndex)
             refreshGroupDestinations(currentScenario.map, step.delta)
             for (unit in orderedUnits()) if (unit.alive && unit.carriedBy == null && unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL)
                 retainedPatrolTarget(unit)
             replanForKnowledge(currentScenario.map, step.stepIndex)
             repairInvalidConnections(currentScenario.map, step.stepIndex)
+            // Sync any tactical work consumed inside replanForKnowledge / repairInvalidConnections back into planningBudget
+            val extraSync = (stepTacticalBudget.used - planningBudget.used).coerceAtLeast(0)
+            if (extraSync > 0) planningBudget.take(minOf(extraSync, planningBudget.remaining))
             // 0-tick static obstruction response (ENG-P016-005): immediately spend remaining step budget
             // on newly queued CONNECTION/KNOWLEDGE repairs in this same step without rotating queues a
             // second time and while honoring the step-wide P2 budget cap.
             if (!planningBudget.exhausted && candidate.state.movePlanning.hasPendingRepairs()) {
+                val beforeSecondPass = planningBudget.used
                 candidate.state.movePlanning.advance(pathPolicy, planningBudget,
                     { requests, group, repair -> movePlanningInput(currentScenario.map, requests, group, repair, step.delta) },
                     { member, group, repair, occupants, plan ->
@@ -2209,23 +2515,51 @@ class SimulationContext internal constructor(
                     },
                     planningSlices, liveUnitCount = { units.size }, executionStep = step.stepIndex,
                     rotateQueues = false, p2BudgetAlreadyUsed = p2UsedFirstPass)
+                val secondDelta = planningBudget.used - beforeSecondPass
+                if (secondDelta > 0) stepTacticalBudget.take(minOf(secondDelta, stepTacticalBudget.remaining))
+                drainCompletedRepairTacticalRoutes(currentScenario.map, step.stepIndex)
             }
-            val remaining = stepBudgetLimit - planningBudget.used
-            val gateBudget = PathWorkBudget(if (wallDue) remaining / 2 else remaining)
+            val remaining = (stepBudgetLimit - stepTacticalBudget.used).coerceAtLeast(0)
+            val orderedForStep = orderedUnits()
+            val hasUnitLoopTacticalDemand = orderedForStep.any { u ->
+                u.alive && u.carriedBy == null && (
+                    u.attackCommand != null ||
+                    (u.birthRemaining > 0f && u.birthRemaining <= 1f && u.moveTarget != null) ||
+                    (u.tasks.firstOrNull()?.kind.let { k ->
+                        k == UnitTaskKind.BUILD || k == UnitTaskKind.CONSTRUCT || k == UnitTaskKind.RECLAIM ||
+                            k == UnitTaskKind.PATROL || k == UnitTaskKind.LOAD_INTO || k == UnitTaskKind.LOAD_UP
+                    } && (u.moveTarget == null || u.pathPoints.isEmpty()))
+                )
+            }
+            val backgroundSlack = if (hasUnitLoopTacticalDemand) {
+                val p0Reserve = minOf(remaining, maxOf(8, stepBudgetLimit * 3 / 4))
+                (remaining - p0Reserve).coerceAtLeast(0)
+            } else remaining
+            val gateBudget = PathWorkBudget(if (wallDue) backgroundSlack / 2 else backgroundSlack)
             val survey = candidate.state.driverPassages
-            val passageWaiting = checkNotNull(passageAdmission).waitingUnits(orderedUnits(), spatialIndex, step,
+            val passageWaiting = checkNotNull(passageAdmission).waitingUnits(orderedForStep, spatialIndex, step,
                 { unit, type -> planningTerrainFor(unit, currentScenario.map, type) }, ::knowsRouteOccupant, survey, gateBudget,
                 entranceTracker = candidate.state.passageTracker)
             candidate.state.gateWorkDeferred = survey.shortOfBudget
-            val repairBudget = PathWorkBudget(remaining - gateBudget.used)
+            val repairBudget = PathWorkBudget((backgroundSlack - gateBudget.used).coerceAtLeast(0))
             val seaDepartureWaiting = FactoryExit.waitingNativeSeaDepartures(currentScenario.map, units)
+            val repairSlicesStart = planningSlices?.size ?: 0
             recoverStalledMoves(currentScenario.map, step.stepIndex, passageWaiting, seaDepartureWaiting, repairBudget)
-            if (planningSlices != null) {
-                val localWork = gateBudget.used + repairBudget.used
-                if (localWork > 0) planningSlices.add(PlanningWorkSlice(emptyList(), PathSearchReason.ROUTE_REPAIR,
-                    localWork, !survey.shortOfBudget && !repairBudget.exhausted, false))
-                candidate.planningWorkSample = PlanningWorkSample(step.stepIndex, stepBudgetLimit,
-                    planningBudget.used + localWork, Collections.unmodifiableList(planningSlices))
+            val localWork = gateBudget.used + repairBudget.used
+            if (localWork > 0) {
+                stepTacticalBudget.take(minOf(localWork, stepTacticalBudget.remaining))
+                val tacticalRepairWork = if (planningSlices != null) {
+                    (repairSlicesStart until planningSlices.size).sumOf { planningSlices[it].workUnits }
+                } else 0
+                val summaryLocalWork = (localWork - tacticalRepairWork).coerceAtLeast(0)
+                if (summaryLocalWork > 0) {
+                    planningSlices?.add(
+                        PlanningWorkSlice(
+                            emptyList(), PathSearchReason.ROUTE_REPAIR,
+                            summaryLocalWork, !survey.shortOfBudget && !repairBudget.exhausted, false,
+                        ),
+                    )
+                }
             }
             prepareRouteSuccessors(currentScenario.map, step.stepIndex, candidate.routeContinuationSamples)
             if (prof != null) {
@@ -2280,7 +2614,9 @@ class SimulationContext internal constructor(
                     val lm = u.landingMember
                     val headTask = u.tasks.firstOrNull()
                     if (lm == null || lm.parked || lm.claimed != null ||
-                        headTask == null || headTask.kind != UnitTaskKind.MOVE || headTask.target != lm.group.click
+                        headTask == null ||
+                        (headTask.kind != UnitTaskKind.MOVE && headTask.motionContract?.isSharedCluster != true) ||
+                        headTask.target != lm.group.click
                     ) {
                         candidate.state.pendingFlowStart.remove(uid)
                         continue
@@ -2297,24 +2633,28 @@ class SimulationContext internal constructor(
                     } else if (candidate.state.flowFields.hasValidGuidanceFor(u, uTerrain)) {
                         candidate.state.pendingFlowStart.remove(uid)
                         val effectiveTarget = if (field.goalWasNearestFallback) field.effectiveGoalWorld else lm.group.click
-                        if (field.goalWasNearestFallback) {
-                            u.nearestMoveTarget = lm.group.click
-                            u.nearestMoveIsGroup = true
-                            if (headTask.target != effectiveTarget) {
-                                u.taskQueue = u.taskQueue.replaceHead(headTask.copy(target = effectiveTarget))
-                            }
+                        if (field.goalWasNearestFallback && headTask.target != effectiveTarget) {
+                            u.taskQueue = u.taskQueue.replaceHead(headTask.copy(target = effectiveTarget))
                         }
-                        u.moveTarget = effectiveTarget
-                        u.nearTargetTime = 0.0
-                        u.originMoveId = headTask.actionId
-                        u.originAtStep = headTask.atStep
+                        val flowContract = headTask.motionContract ?: MotionContract.sharedCluster(lm.group.click)
+                        u.updateNavigation {
+                            it.bindCommandTarget(
+                                target = effectiveTarget,
+                                originMoveId = headTask.actionId,
+                                originAtStep = headTask.atStep,
+                                contract = flowContract,
+                                followsManeuverRoute = false,
+                                nearestMoveTarget = if (field.goalWasNearestFallback) lm.group.click else it.nearestMoveTarget,
+                                nearestMoveIsGroup = if (field.goalWasNearestFallback) true else it.nearestMoveIsGroup,
+                                nearTargetTime = 0.0,
+                            )
+                        }
                         u.adoptRoute(
                             listOf(effectiveTarget),
                             logicalRouteTarget(u, effectiveTarget),
                             plannedKnowledgeRevision(u),
                             plannedBuildingRevision(u),
                         )
-                        u.followsManeuverRoute = false
                         candidate.state.landingOccupancy.update(u)
                         pendingEvents += Event("movement-started", u.unitId)
                         fastStartedAny = true
@@ -2406,8 +2746,7 @@ class SimulationContext internal constructor(
                 Bunker.advanceHeight(unit, step.delta)
                 spatialIndex.relocate(unit)
                 if (unit.combat == null) MechBody.advance(unit, step.delta)
-                val previousRequest = unit.movementRequested
-                unit.movementRequested = false
+                val previousRequest = unit.beginMovementStep()
                 val constructionActivity = (unit.definition.builder != null || unit.definition.maintenance != null) &&
                     unit.tasks.firstOrNull()?.kind in setOf(UnitTaskKind.BUILD, UnitTaskKind.CONSTRUCT, UnitTaskKind.RECLAIM)
                 if (unit.birthRemaining > 0f) {
@@ -2428,20 +2767,46 @@ class SimulationContext internal constructor(
                     val endpoint = unit.moveTarget
                     if (endpoint == null || ScreenPlane.distanceSquared(endpoint, target) >= 441.0 || unit.pathPoints.isEmpty()) {
                         val planT0 = if (prof != null) System.nanoTime() else 0L
-                        val path = pathPolicy.findPath(planningTerrainFor(unit, currentScenario.map), Transport.queryPosition(unit, currentScenario.map), target,
-                            routeRadius(unit), targetRange = 21.0, hull = HullRoute.forUnit(unit, currentScenario.map))
+                        val loadTask = unit.tasks.first()
+                        val res = resolveBudgetedTacticalRoute(
+                            unit = unit,
+                            map = currentScenario.map,
+                            actionId = loadTask.actionId,
+                            atStep = loadTask.atStep,
+                            target = target,
+                            reason = PathSearchReason.USER_MOVE,
+                            executionStep = step.stepIndex,
+                            targetRange = 21.0,
+                            isRepair = false,
+                        )
                         if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
-                        if (path == null) unit.cancelRoute() else {
-                            unit.moveTarget = path.last()
-                            unit.originMoveId = unit.tasks.first().actionId
-                            unit.originAtStep = unit.tasks.first().atStep
-                            unit.adoptRoute(path, path.last(), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+                        when (res) {
+                            TacticalRouteResolution.Pending -> Unit
+                            is TacticalRouteResolution.Unreachable -> unit.cancelRoute()
+                            is TacticalRouteResolution.Ready -> {
+                                val loadEnd = res.points.last()
+                                val loadContract = loadTask.motionContract ?: MotionContract.rangeApproach(
+                                    center = target,
+                                    range = 21.0,
+                                    tracksRouteStall = false,
+                                    enableLocalAvoidance = false,
+                                    isBoardingApproach = true,
+                                )
+                                unit.updateNavigation {
+                                    it.bindCommandTarget(
+                                        target = loadEnd,
+                                        originMoveId = loadTask.actionId,
+                                        originAtStep = loadTask.atStep,
+                                        contract = loadContract,
+                                    )
+                                }
+                                unit.adoptRoute(res.points, loadEnd, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+                            }
                         }
                     }
                 }
                 if (unit.carriedBy != null) continue
-                unit.qBeforeDispatch = unit.singleNodePathCount
-                unit.consumedPathNodeCounts = emptyList()
+                unit.snapshotDispatchWindow()
                 if ((unit.definition.builder != null || unit.definition.maintenance != null) && BuildingWork.isReady(unit)) {
                     val planT0 = if (prof != null && constructionActivity) System.nanoTime() else 0L
                     updateConstruction(unit, currentScenario, step)
@@ -2480,13 +2845,26 @@ class SimulationContext internal constructor(
                     unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null &&
                     !candidate.state.movePlanning.pending(unit.unitId) &&
                     unit.unitId !in candidate.state.pendingFlowStart) {
-                    unit.moveTarget = queuedMove.target
-                    unit.originMoveId = queuedMove.actionId
-                    unit.originAtStep = queuedMove.atStep
+                    val qTarget = checkNotNull(queuedMove.target)
+                    val qContract = queuedMove.motionContract ?: MotionContract.pointMove(
+                        target = qTarget,
+                        allowShortReverse = !queuedMove.factoryExit,
+                        gatheringTarget = if (queuedMove.factoryExit) null else qTarget,
+                    )
+                    unit.updateNavigation {
+                        it.bindCommandTarget(
+                            target = qTarget,
+                            originMoveId = queuedMove.actionId,
+                            originAtStep = queuedMove.atStep,
+                            contract = qContract,
+                        )
+                    }
                     val planT0 = if (prof != null) System.nanoTime() else 0L
                     resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
                     if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
-                    if (unit.moveTarget == null && queuedMove.startsAfterFactoryExit) unit.taskQueue = unit.taskQueue.pop()
+                    if (unit.moveTarget == null && !candidate.state.movePlanning.hasPendingTactical(unit.unitId) && queuedMove.startsAfterFactoryExit) {
+                        unit.taskQueue = unit.taskQueue.pop()
+                    }
                 }
                 val trackAvoid = prof != null && unit.definition.movement.type != MovementType.NONE &&
                     (unit.moveTarget != null || unit.speed != 0.0 || unit.angularVelocity != 0.0 ||
@@ -2599,6 +2977,14 @@ class SimulationContext internal constructor(
             }
             UnitAttachments.settleLifecycle(steps.current, currentScenario)
             missileTargets = missileTargets?.refresh(orderedUnits())
+            if (planningSlices != null) {
+                candidate.planningWorkSample = PlanningWorkSample(
+                    step.stepIndex,
+                    stepBudgetLimit,
+                    stepTacticalBudget.used,
+                    Collections.unmodifiableList(planningSlices),
+                )
+            }
             if (prof != null) {
                 val now = System.nanoTime()
                 val loopTotal = (now - phaseMark).coerceAtLeast(0L)
@@ -2613,6 +2999,10 @@ class SimulationContext internal constructor(
                 prof.addNanos(SimHotspotStage.SIM_VISION, System.nanoTime() - phaseMark)
             }
             if (injectFailureAfterUpdate) throw IllegalStateException("Injected candidate step failure")
+            } finally {
+                activeStepPlanningBudget = null
+                activeStepPlanningSlices = null
+            }
         }
     }
 
@@ -3267,26 +3657,47 @@ class SimulationContext internal constructor(
 
     private fun resumeProductionRoute(unit: MutableUnit, map: MapDefinition, executionStep: Long) {
         val target = unit.moveTarget ?: return
-        val samples = pathDiagnostics
-        val path = if (samples == null)
-            pathPolicy.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), target, routeRadius(unit),
-                hull = HullRoute.forUnit(unit, map))
-        else findPathWithDiagnostics(checkNotNull(unit.originMoveId), unit.originAtStep, target, unit, map,
-            samples, PathSearchReason.ROUTE_REPAIR, executionStep)
+        val res = resolveBudgetedTacticalRoute(
+            unit = unit,
+            map = map,
+            actionId = checkNotNull(unit.originMoveId),
+            atStep = unit.originAtStep,
+            target = target,
+            reason = PathSearchReason.ROUTE_REPAIR,
+            executionStep = executionStep,
+            isRepair = true,
+            mustCompleteInStep = true,
+        )
         if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
-        if (path == null) {
-            if (FactoryExit.isNativeSeaDeparture(unit)) return
-            unit.cancelRoute()
-            pendingEvents += Event("movement-cancelled", unit.unitId)
-            pendingEvents += Event("path-unreachable", unit.unitId)
-        } else unit.adoptRoute(path, logicalRouteTarget(unit, checkNotNull(unit.moveTarget)), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+        when (res) {
+            TacticalRouteResolution.Pending -> {
+                if (!FactoryExit.isNativeSeaDeparture(unit)) {
+                    // Clear pathPoints while suspended so updateUnit stays stationary until the route finishes,
+                    // while preserving moveTarget/originMoveId/motionContract.
+                    unit.updateNavigation { it.copy(pathPoints = emptyList()) }
+                }
+            }
+            is TacticalRouteResolution.Unreachable -> {
+                if (FactoryExit.isNativeSeaDeparture(unit)) return
+                unit.cancelRoute()
+                pendingEvents += Event("movement-cancelled", unit.unitId)
+                pendingEvents += Event("path-unreachable", unit.unitId)
+            }
+            is TacticalRouteResolution.Ready -> {
+                unit.adoptRoute(
+                    res.points,
+                    logicalRouteTarget(unit, checkNotNull(unit.moveTarget)),
+                    plannedKnowledgeRevision(unit),
+                    plannedBuildingRevision(unit),
+                )
+            }
+        }
     }
 
     private fun updatePatrolRoute(unit: MutableUnit, map: MapDefinition, executionStep: Long, previousRequest: Boolean) {
         val enemy = retainedPatrolTarget(unit)
         val task = unit.tasks.first()
         var target = checkNotNull(task.target)
-        // No unit-overlap separation exists here: the source ac counter remains its initial zero.
         val multiple = unit.tasks.size > 1
         val capture = if (!previousRequest || combatFrame == 0 || combatFrame == 1)
             (if (multiple) 70.0 else 80.0) else 30.0
@@ -3294,12 +3705,14 @@ class SimulationContext internal constructor(
         val captureY = unit.position.y.toFloat() - target.y.toFloat()
         if (captureX * captureX + captureY * captureY < capture.toFloat() * capture.toFloat()) {
             if (multiple) unit.taskQueue = unit.taskQueue.append(task).pop()
+            steps.current.movePlanning.cancel(unit.unitId)
             unit.cancelRoute()
             if (multiple || enemy == null) return
         }
         if (enemy != null) {
             val stopRange = UnitCombat.range(unit).toFloat() - 1f
             if (CombatTargetQuery.patrolDistanceSquared(unit, enemy) < stopRange * stopRange) {
+                steps.current.movePlanning.cancel(unit.unitId)
                 unit.cancelRoute()
                 return
             }
@@ -3307,23 +3720,117 @@ class SimulationContext internal constructor(
         }
         unit.requestMovement(target)
         if (unit.moveTarget == target && unit.pathPoints.isNotEmpty()) return
-        val samples = pathDiagnostics
-        val path = if (unit.birthRemaining > 0f) {
-            if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                    map.heightTiles.toDouble() * map.tileHeight, target, routeRadius(unit))) listOf(target) else null
-        } else if (samples == null)
-            pathPolicy.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), target, routeRadius(unit),
-                hull = HullRoute.forUnit(unit, map))
-        else findPathWithDiagnostics(task.actionId, task.atStep, target, unit, map, samples,
-            reason = if (enemy == null) PathSearchReason.USER_MOVE else PathSearchReason.ATTACK_PURSUIT,
-            executionStep = executionStep)
-        if (path == null) unit.cancelRoute()
-        else {
-            unit.moveTarget = target
-            unit.originMoveId = task.actionId
-            unit.originAtStep = task.atStep
-            unit.adoptRoute(path, logicalRouteTarget(unit, checkNotNull(unit.moveTarget)), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+        if (enemy != null && trySpliceMovingTargetTail(unit, map, target)) return
+        if (unit.birthRemaining > 0f) {
+            val fits = MapBounds.contains(
+                map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight,
+                target,
+                routeRadius(unit),
+            )
+            if (!fits) {
+                unit.cancelRoute()
+            } else {
+                val contract = task.motionContract ?: if (enemy == null) MotionContract.patrolLeg(target) else MotionContract.pursuitPoint(target)
+                unit.updateNavigation {
+                    it.bindCommandTarget(target = target, originMoveId = task.actionId, originAtStep = task.atStep, contract = contract)
+                }
+                unit.adoptRoute(listOf(target), logicalRouteTarget(unit, target), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+            }
+            return
         }
+        val res = resolveBudgetedTacticalRoute(
+            unit = unit,
+            map = map,
+            actionId = task.actionId,
+            atStep = task.atStep,
+            target = target,
+            reason = if (enemy == null) PathSearchReason.USER_MOVE else PathSearchReason.ATTACK_PURSUIT,
+            executionStep = executionStep,
+            isRepair = false,
+        )
+        when (res) {
+            TacticalRouteResolution.Pending -> Unit
+            is TacticalRouteResolution.Unreachable -> unit.cancelRoute()
+            is TacticalRouteResolution.Ready -> {
+                val contract = task.motionContract ?: if (enemy == null) MotionContract.patrolLeg(target) else MotionContract.pursuitPoint(target)
+                unit.updateNavigation {
+                    it.bindCommandTarget(
+                        target = target,
+                        originMoveId = task.actionId,
+                        originAtStep = task.atStep,
+                        contract = contract,
+                    )
+                }
+                unit.adoptRoute(res.points, logicalRouteTarget(unit, target), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+            }
+        }
+    }
+
+    /**
+     * O(1) tail line-of-sight splice + multi-leg cell hysteresis for moving combat targets (ENG-P017-005):
+     * - When the final segment from the penultimate waypoint (or current position on a 1-leg route) to
+     *   [destination] is unobstructed, updates the terminal waypoint directly in O(1) with zero A* work.
+     * - When routing around an obstacle (`pathPoints.size >= 2`) and the moving target remains in the same
+     *   tile (or within a 2-tile hysteresis neighborhood during a recent replan cooldown while still far),
+     *   keeps following the active obstacle-detour trunk instead of restarting a whole-map search every step.
+     */
+    private fun trySpliceMovingTargetTail(
+        unit: MutableUnit,
+        map: MapDefinition,
+        destination: Position,
+        executionStep: Long = -1L,
+        allowDetourHysteresis: Boolean = false,
+        attackRange: Double = 0.0,
+    ): Boolean {
+        val routeEnd = unit.moveTarget ?: return false
+        val pts = unit.pathPoints
+        if (pts.isEmpty() || unit.birthRemaining > 0f) return false
+        if (routeEnd == destination) return true
+
+        val terrain = planningTerrainFor(unit, map)
+        val radius = routeRadius(unit)
+        val mapW = map.widthTiles.toDouble() * map.tileWidth
+        val mapH = map.heightTiles.toDouble() * map.tileHeight
+        if (MapBounds.contains(mapW, mapH, destination, radius) &&
+            !PlanningCenterTerrain.intersects(terrain, destination, radius)
+        ) {
+            val anchor = if (pts.size >= 2) pts[pts.size - 2] else Transport.queryPosition(unit, map)
+            val hull = HullRoute.forUnit(unit, map)
+            val refHeading = if (pts.size >= 2) ScreenPlane.desired(anchor, pts.last()) else unit.heading
+            val tailClear = if (hull == null) {
+                PlanningSegmentClearance.allows(terrain, anchor, destination, radius)
+            } else {
+                hull.arrival(HullTerrainGrid.authorized(terrain), anchor, destination, refHeading) != null
+            }
+            if (tailClear && routeOccupancy(unit)?.allows(anchor, destination, refHeading, refHeading) != false) {
+                unit.updateNavigation { it.spliceTailTarget(destination) }
+                return true
+            }
+        }
+
+        if (allowDetourHysteresis && pts.size >= 2) {
+            val endCol = MapBounds.cell(routeEnd.x, map.tileWidth, map.widthTiles)
+            val endRow = MapBounds.cell(routeEnd.y, map.tileHeight, map.heightTiles)
+            val destCol = MapBounds.cell(destination.x, map.tileWidth, map.widthTiles)
+            val destRow = MapBounds.cell(destination.y, map.tileHeight, map.heightTiles)
+            if (endCol == destCol && endRow == destRow) {
+                return true
+            }
+            val cellDelta = maxOf(kotlin.math.abs(endCol - destCol), kotlin.math.abs(endRow - destRow))
+            val farThreshold = maxOf(attackRange + 80.0, 160.0)
+            val lastAttempt = unit.lastAttackPathAttemptStep
+            if (pts.size >= 3 &&
+                cellDelta <= 2 &&
+                ScreenPlane.distanceSquared(unit.position, destination) > farThreshold * farThreshold &&
+                lastAttempt != null &&
+                executionStep >= 0L &&
+                executionStep - lastAttempt < 15L
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun updateAttackRoute(unit: MutableUnit, map: MapDefinition, executionStep: Long) {
@@ -3335,6 +3842,7 @@ class SimulationContext internal constructor(
         var target = units[command.targetUnitId]?.takeIf(::eligible)
         if (target == null) {
             target = CombatTargetQuery.nearestEnemy(unit, spatialIndex.queryAllLayersCenterBox(unit.position, UnitCombat.range(unit) + 1e-6), input.players, input.map)
+            steps.current.movePlanning.cancel(unit.unitId)
             unit.cancelRoute()
             unit.bomberApproach = null
             if (target == null) {
@@ -3351,6 +3859,7 @@ class SimulationContext internal constructor(
             unit.lastAttackPathAttemptStep = null
         }
         if (unit.definition.movement.type == MovementType.NONE) {
+            steps.current.movePlanning.cancel(unit.unitId)
             unit.cancelRoute()
             return
         }
@@ -3358,6 +3867,7 @@ class SimulationContext internal constructor(
         val bomber = unit.definition.attackMovement == AttackMovementProfile.BOMBER
         if (!bomber && ScreenPlane.distanceSquared(unit.position, target.position) < weapon.attackRange * weapon.attackRange &&
             (!compositeRange || NamedWeaponRuntime.inRange(unit, target, input.players, input.map))) {
+            steps.current.movePlanning.cancel(unit.unitId)
             if (unit.moveTarget != null) unit.cancelRoute()
             return
         }
@@ -3365,31 +3875,90 @@ class SimulationContext internal constructor(
         unit.requestMovement(destination)
         val targetRange = if (bomber || target.definition.building == null) 0.0 else weapon.attackRange
         val routeEnd = unit.moveTarget
-        val reusable = routeEnd != null && unit.pathPoints.isNotEmpty() &&
-            if (targetRange == 0.0 || unit.birthRemaining > 0f) routeEnd == destination
-            else ScreenPlane.distanceSquared(routeEnd, destination) < targetRange * targetRange &&
-                !PlanningCenterTerrain.intersects(planningTerrainFor(unit, map), routeEnd, routeRadius(unit))
-        if (unit.lastAttackPathAttemptStep == executionStep || reusable) return
-        unit.lastAttackPathAttemptStep = executionStep
-        val samples = pathDiagnostics
-        val path = if (unit.birthRemaining > 0f) {
-            if (MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                    map.heightTiles.toDouble() * map.tileHeight, destination, routeRadius(unit)))
-                listOf(destination) else null
-        } else if (samples == null) {
-            pathPolicy.findPath(planningTerrainFor(unit, map), Transport.queryPosition(unit, map), destination, routeRadius(unit),
-                targetRange = targetRange, hull = HullRoute.forUnit(unit, map))
-        } else findPathWithDiagnostics(command.actionId, command.atStep, destination, unit, map, samples,
-            reason = PathSearchReason.ATTACK_PURSUIT, executionStep = executionStep, targetRange = targetRange)
-        if (path == null) {
-            unit.cancelRoute()
-            pendingEvents += Event("path-unreachable", unit.unitId)
-        } else {
-            unit.moveTarget = path.last()
-            unit.originMoveId = command.actionId
-            unit.originAtStep = command.atStep
-            unit.nearTargetTime = 0.0
-            unit.adoptRoute(path, logicalRouteTarget(unit, checkNotNull(unit.moveTarget)), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+        val reusable = if (routeEnd != null && unit.pathPoints.isNotEmpty()) {
+            if (unit.birthRemaining > 0f || bomber) {
+                routeEnd == destination
+            } else if (targetRange > 0.0) {
+                ScreenPlane.distanceSquared(routeEnd, destination) < targetRange * targetRange &&
+                    !PlanningCenterTerrain.intersects(planningTerrainFor(unit, map), routeEnd, routeRadius(unit))
+            } else {
+                trySpliceMovingTargetTail(
+                    unit = unit,
+                    map = map,
+                    destination = destination,
+                    executionStep = executionStep,
+                    allowDetourHysteresis = true,
+                    attackRange = weapon.attackRange,
+                )
+            }
+        } else false
+        if (reusable) return
+        if (unit.lastAttackPathAttemptStep == executionStep && !steps.current.movePlanning.hasPendingTactical(unit.unitId)) return
+
+        if (unit.birthRemaining > 0f) {
+            unit.lastAttackPathAttemptStep = executionStep
+            val fits = MapBounds.contains(
+                map.widthTiles.toDouble() * map.tileWidth,
+                map.heightTiles.toDouble() * map.tileHeight,
+                destination,
+                routeRadius(unit),
+            )
+            if (!fits) {
+                unit.cancelRoute()
+                pendingEvents += Event("path-unreachable", unit.unitId)
+            } else {
+                val headContract = unit.tasks.firstOrNull()?.motionContract ?: MotionContract.pursuitPoint(destination)
+                unit.updateNavigation {
+                    it.bindCommandTarget(
+                        target = destination,
+                        originMoveId = command.actionId,
+                        originAtStep = command.atStep,
+                        contract = headContract,
+                        nearTargetTime = 0.0,
+                    )
+                }
+                unit.adoptRoute(listOf(destination), logicalRouteTarget(unit, destination), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+            }
+            return
+        }
+
+        val res = resolveBudgetedTacticalRoute(
+            unit = unit,
+            map = map,
+            actionId = command.actionId,
+            atStep = command.atStep,
+            target = destination,
+            reason = PathSearchReason.ATTACK_PURSUIT,
+            executionStep = executionStep,
+            targetRange = targetRange,
+            isRepair = false,
+        )
+        when (res) {
+            TacticalRouteResolution.Pending -> Unit
+            is TacticalRouteResolution.Unreachable -> {
+                unit.lastAttackPathAttemptStep = executionStep
+                unit.cancelRoute()
+                pendingEvents += Event("path-unreachable", unit.unitId)
+            }
+            is TacticalRouteResolution.Ready -> {
+                unit.lastAttackPathAttemptStep = executionStep
+                val endPos = res.points.last()
+                val headContract = unit.tasks.firstOrNull()?.motionContract ?: if (targetRange > 0.0) {
+                    MotionContract.rangeApproach(destination, targetRange, tracksRouteStall = false, enableLocalAvoidance = true)
+                } else {
+                    MotionContract.pursuitPoint(endPos)
+                }
+                unit.updateNavigation {
+                    it.bindCommandTarget(
+                        target = endPos,
+                        originMoveId = command.actionId,
+                        originAtStep = command.atStep,
+                        contract = headContract,
+                        nearTargetTime = 0.0,
+                    )
+                }
+                unit.adoptRoute(res.points, logicalRouteTarget(unit, endPos), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+            }
         }
     }
 
@@ -4085,8 +4654,7 @@ class SimulationContext internal constructor(
             target.attackCommand = null
             target.bomberApproach = null
             target.taskQueue = UnitTaskQueue()
-            target.movementRequested = false
-            target.cancelRoute()
+            target.cancelRoute(clearRequested = true)
             if (!NautilusMotion.slowDeath(target) &&
                 (target.definition.energy == null || target.definition.movement.type != MovementType.AIR)) {
                 target.speed = 0.0
@@ -4205,6 +4773,7 @@ class SimulationContext internal constructor(
                     }
                 } else emptyList()
                 val occupancy = UnitContact.routeAround(unit, blockers)
+                val blockerIds = blockers.map { it.unitId }
                 val workRange = unit.definition.builder?.range?.toDouble()?.let { base ->
                     val targetUnit = workTask.targetUnitId?.let { units[it] }
                     val bonus = if (targetUnit?.definition?.production?.exitProfile ==
@@ -4212,28 +4781,26 @@ class SimulationContext internal constructor(
                     ) 110.0 else 0.0
                     base + bonus
                 } ?: 0.0
-                val samples = pathDiagnostics
-                val path = if (samples == null) {
-                    pathPolicy.findPath(
-                        planningTerrainFor(unit, map),
-                        Transport.queryPosition(unit, map),
-                        target,
-                        routeRadius(unit),
-                        targetRange = workRange,
-                        hull = HullRoute.forUnit(unit, map),
-                        occupancy = occupancy,
-                    )
-                } else {
-                    findPathWithDiagnostics(
-                        workTask.actionId, workTask.atStep, target, unit, map, samples,
-                        PathSearchReason.ROUTE_REPAIR, step, targetRange = workRange, occupancy = occupancy,
-                    )
-                }
-                if (path != null && path != unit.pathPoints) {
+                val res = resolveBudgetedTacticalRoute(
+                    unit = unit,
+                    map = map,
+                    actionId = workTask.actionId,
+                    atStep = workTask.atStep,
+                    target = target,
+                    reason = PathSearchReason.ROUTE_REPAIR,
+                    executionStep = step,
+                    targetRange = workRange,
+                    occupancy = occupancy,
+                    occupantIds = blockerIds,
+                    isRepair = true,
+                    budgetOverride = repairBudget,
+                    unreachablePolicy = TacticalUnreachablePolicy.SILENT_IGNORE,
+                )
+                if (res is TacticalRouteResolution.Ready && res.points != unit.pathPoints) {
                     unit.adoptRoute(
-                        path, logicalRouteTarget(unit, target),
+                        res.points, logicalRouteTarget(unit, target),
                         plannedKnowledgeRevision(unit), plannedBuildingRevision(unit),
-                        blockers.map { it.unitId },
+                        blockerIds,
                     )
                 }
                 continue
@@ -4243,10 +4810,12 @@ class SimulationContext internal constructor(
                     if (fastStallEligible || (periodicRetry && unit.terrainCorrectionTime > 0.0)) {
                         val failures = unit.repairConsecutiveFailures.coerceAtMost(2)
                         val backoff = FAST_STALL_TICKS shl failures // 12 -> 24 -> 48
-                        unit.nav = unit.nav.copy(
-                            repairBackoffStep = step + backoff,
-                            repairConsecutiveFailures = (unit.repairConsecutiveFailures + 1).coerceAtMost(4),
-                        )
+                        unit.updateNavigation {
+                            it.recordRepairBackoff(
+                                backoffUntilStep = step + backoff,
+                                nextConsecutiveFailures = (unit.repairConsecutiveFailures + 1).coerceAtMost(4),
+                            )
+                        }
                     }
                     scheduleManeuverRepair(unit, target, ManeuverRepair.CONTACT)
                 }
@@ -4255,24 +4824,42 @@ class SimulationContext internal constructor(
             val actionId = move?.actionId ?: checkNotNull(unit.originMoveId)
             val atStep = if (move == null) unit.originAtStep else move.atStep
             val occupants = lazyContacts()
+            val occupantIds = occupants.map { it.unitId }
             val occupancy = UnitContact.routeAround(unit, occupants)
-            val samples = pathDiagnostics
-            val path = if (samples == null) pathPolicy.findPath(planningTerrainFor(unit, map),
-                Transport.queryPosition(unit, map), target, routeRadius(unit), hull = HullRoute.forUnit(unit, map), occupancy = occupancy)
-            else findPathWithDiagnostics(actionId, atStep, target, unit, map, samples,
-                PathSearchReason.ROUTE_REPAIR, step, occupancy = occupancy)
-            if (path == null) {
-                if (nativeDeparture) continue
-                if (stalled < ROUTE_FAILURE_TICKS) continue
-                if ((unit.groupMoveReservation?.occupiedTicks ?: 0) > 0) continue
-                if (replaceInvalidGroupDestination(unit)) continue
-                unit.taskQueue = unit.taskQueue.pop()
-                unit.cancelRoute()
-                pendingEvents += Event("movement-cancelled", unit.unitId)
-                pendingEvents += Event("path-unreachable", unit.unitId)
-            } else if (path != unit.pathPoints) {
-                unit.adoptRoute(path, logicalRouteTarget(unit, target), plannedKnowledgeRevision(unit),
-                    plannedBuildingRevision(unit), occupants.map { it.unitId })
+            val res = resolveBudgetedTacticalRoute(
+                unit = unit,
+                map = map,
+                actionId = actionId,
+                atStep = atStep,
+                target = target,
+                reason = PathSearchReason.ROUTE_REPAIR,
+                executionStep = step,
+                occupancy = occupancy,
+                occupantIds = occupantIds,
+                isRepair = true,
+                budgetOverride = repairBudget,
+                unreachablePolicy = TacticalUnreachablePolicy.STALL_MOVE_GUARDED,
+            )
+            when (res) {
+                TacticalRouteResolution.Pending -> Unit
+                is TacticalRouteResolution.Unreachable -> {
+                    if (nativeDeparture) continue
+                    if (stalled < ROUTE_FAILURE_TICKS) continue
+                    if ((unit.groupMoveReservation?.occupiedTicks ?: 0) > 0) continue
+                    if (replaceInvalidGroupDestination(unit)) continue
+                    unit.taskQueue = unit.taskQueue.pop()
+                    unit.cancelRoute()
+                    pendingEvents += Event("movement-cancelled", unit.unitId)
+                    pendingEvents += Event("path-unreachable", unit.unitId)
+                }
+                is TacticalRouteResolution.Ready -> {
+                    if (res.points != unit.pathPoints) {
+                        unit.adoptRoute(
+                            res.points, logicalRouteTarget(unit, target), plannedKnowledgeRevision(unit),
+                            plannedBuildingRevision(unit), occupantIds,
+                        )
+                    }
+                }
             }
         }
     }
@@ -4344,7 +4931,7 @@ class SimulationContext internal constructor(
                 else (hull as? RectangularDeparture)?.headingTowards(unit.position, start, unit.heading) ?: unit.heading
             if (continuationFits(terrain, start, continuation.successor, incoming, hull, routeRadius(unit),
                     routeOccupancy(unit))) {
-                unit.routeContinuation = continuation.copy(ready = true)
+                unit.updateNavigation { it.withRouteContinuation(continuation.copy(ready = true)) }
                 recordRouteContinuation(samples, stepIndex, unit, continuation, remaining, RouteContinuationStage.READY)
             }
         }
@@ -4354,7 +4941,7 @@ class SimulationContext internal constructor(
                                          samples: MutableList<RouteContinuationSample>?): RouteContinuation {
         unit.routeContinuation?.let { return it }
         val continuation = RouteContinuation(unit.pathPoints[0], unit.pathPoints[1])
-        unit.routeContinuation = continuation
+        unit.updateNavigation { it.withRouteContinuation(continuation) }
         recordRouteContinuation(samples, step, unit, continuation, estimate, RouteContinuationStage.REQUESTED)
         return continuation
     }
@@ -4376,8 +4963,17 @@ class SimulationContext internal constructor(
 
     private fun preparesRouteSuccessor(unit: MutableUnit): Boolean =
         unit.alive && unit.carriedBy == null && unit.attachment == null && unit.birthRemaining == 0f &&
-            !unit.followsManeuverRoute && unit.tasks.firstOrNull()?.kind == UnitTaskKind.MOVE && unit.pathPoints.size > 1 &&
+            !unit.followsManeuverRoute && unit.motionContract?.preparesRouteSuccessor == true && unit.pathPoints.size > 1 &&
             UnitLocomotion.movement(unit).type != MovementType.AIR
+
+    private fun onMotionArrivalCompleted(unit: MutableUnit, completedMoveId: String?) {
+        val head = unit.tasks.firstOrNull() ?: return
+        if (head.kind == UnitTaskKind.MOVE ||
+            (completedMoveId != null && head.actionId == completedMoveId && head.motionContract?.goal?.completesOnCapture == true)
+        ) {
+            unit.taskQueue = unit.taskQueue.pop()
+        }
+    }
 
     private val movementHost = object : UnitMovementHost {
         override val activeWorld: WorldHandle get() = this@SimulationContext.world
@@ -4425,6 +5021,9 @@ class SimulationContext internal constructor(
 
         override fun preparesRouteSuccessor(unit: MutableUnit): Boolean =
             this@SimulationContext.preparesRouteSuccessor(unit)
+
+        override fun onMotionArrivalCompleted(unit: MutableUnit, completedMoveId: String?) =
+            this@SimulationContext.onMotionArrivalCompleted(unit, completedMoveId)
 
         override fun requestRouteContinuation(
             unit: MutableUnit,

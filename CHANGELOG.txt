@@ -1,3 +1,11 @@
+v0.5.84 (2026-11-27 21:50)
+  架构改进: 删除 MutableUnit 32 个逐字段 var 导航写代理并将 6 个路径节点审计字段并入不可变 UnitNavigationState.NavigationRequestAudit（配反射单测守卫），引入与上层任务解耦的正交 MotionContract（Point/SharedCluster/RangeBand、isBoardingApproach 与 INDEPENDENT/COHORT_ESCORT）彻底拔除 7 个导航与避让文件对 UnitTaskKind 及任务队列长度的直接读取 / 以分步预算且支持回滚的 RangePathSearch（含 1 步无障碍直线快检、O(1) 连通预检与 KKT 闭式可容许启发式）取代无预算同步 findPathToRange 及 ThreadLocal 缓冲，将施工、攻击追击（加 O(1) 尾段接驳与目标格迟滞）、巡逻、装载 4 条场外寻路统一收口至 ADR-010 步内预算，并按 TacticalUnreachablePolicy 对齐跨步修路不可达守卫与任务队头弹出
+  修复: 修复 org.gradle.parallel=true 下 development_tests.gradle 在 :publicPreparation 的 doLast 阶段无锁解析跨项目 testRuntimeClasspath 的并发锁报错（前移至 gradle.taskGraph.whenReady），并为双根 gradle.properties 与测试子进程配置有界堆/元空间与 G1PeriodicGCInterval=5000
+  调整: 同步 maintenance-defense-chain.json 中 6 处 preciseBalances.p1 时序基线（围攻阶段主基地多存 30 步，一致偏移 +13.5）
+  技术: 新增 MotionContractAndBudgetTest（350x350 50 车追击与 30 建造者跨障施工预算与回滚、队列 >= 2 非 MOVE 契约、跨步修路不可达策略与源码静态守卫）及 UnitNavigationStateTest 38 项反射守卫；全量 :core:test、Android 测试编译、dev-ab 10 场景、public_batch --kind pr（7 套机制与全部短测）、public_batch --kind long（33 条连续长链）及双根布局检查全绿，经独立非作者代码整审与 R01 定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.83 (2026-11-27 18:08)
   修复: 将 Engine/core 的 p001.inputs.dir 公开夹具自动回退、public.fixtures.dir 与 repo.root 透传同步至 :client:test（启用可配置多 fork）与 :pc:test（保持串行），消除独立工作树直跑缺失夹具报错 / 在双根 gradle.properties 开启 org.gradle.parallel=true（不启缓存）并为 development_tests.gradle 与 workflow_gradle.init.gradle 的任务回调补齐并发锁保护消除 ConcurrentModificationException
   新增: 新增热驻无头快筛工具 SimulationTest/tools/quick_test.py 及 8 项单测并纳入公共闭包与 tooling 套件，统一在 SimulationTest 根复用热 Daemon 执行定向单测、单套件机制检查与 dev-ab，隔离系统临时目录绝对路径并支持含空格路径安全引用

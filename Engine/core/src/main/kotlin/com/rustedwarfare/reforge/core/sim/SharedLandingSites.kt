@@ -73,7 +73,7 @@ internal class LandingOccupancy(
             undo?.record { if (oldClaim == null) activeClaims.remove(unit.unitId) else activeClaims[unit.unitId] = oldClaim }
         }
 
-        unit.indexedLandingBody = IndexedBody(bySite, reservation, body, nextClaim)
+        unit.updateNavigation { it.withIndexedLandingBody(IndexedBody(bySite, reservation, body, nextClaim)) }
         val old = byUnit[unit.unitId].orEmpty()
         if (old.size == (if (reservation != null) 1 else 0) + (if (body != null && body != reservation) 1 else 0) &&
             (reservation == null || reservation in old) && (body == null || body in old)
@@ -136,7 +136,6 @@ internal data class LandingMember(
     val flankSign: Int = 0,
     val lowProgressTicks: Long = 0L,
     val bestDistToGoal: Double = Double.POSITIVE_INFINITY,
-    val stoppedOrder: UnitTask? = null,
 )
 
 /**

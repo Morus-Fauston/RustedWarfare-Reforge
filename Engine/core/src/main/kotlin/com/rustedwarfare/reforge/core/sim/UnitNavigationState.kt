@@ -3,14 +3,121 @@ package com.rustedwarfare.reforge.core.sim
 import java.util.Collections
 
 /**
+ * Immutable host-only path-acceptance and logical-request audit counters carried inside
+ * [UnitNavigationState] (ENG-P017-005).
+ *
+ * Consolidates the 6 node-count / logical-request fields plus [movementRequested] so
+ * [StepState.fork] shares them in O(1) without mutable per-unit fields on [MutableUnit].
+ */
+internal data class NavigationRequestAudit(
+    val movementRequested: Boolean = false,
+    val singleNodePathCount: Byte = 0,
+    val logicalRequestX: Float? = null,
+    val logicalRequestY: Float? = null,
+    val pendingPathNodeCounts: List<Int> = emptyList(),
+    val consumedPathNodeCounts: List<Int> = emptyList(),
+    val qBeforeDispatch: Byte = 0,
+) {
+    fun validate() {
+        require(
+            (logicalRequestX == null) == (logicalRequestY == null) &&
+                logicalRequestX?.isFinite() != false &&
+                logicalRequestY?.isFinite() != false,
+        ) {
+            "Logical movement coordinates must be a finite pair"
+        }
+        require(pendingPathNodeCounts.all { it >= 0 } && consumedPathNodeCounts.all { it >= 0 }) {
+            "Accepted path node counts must remain nonnegative"
+        }
+    }
+
+    fun beginMovementStep(): NavigationRequestAudit =
+        if (!movementRequested) this else copy(movementRequested = false)
+
+    fun snapshotDispatchWindow(): NavigationRequestAudit =
+        if (qBeforeDispatch == singleNodePathCount && consumedPathNodeCounts.isEmpty()) this
+        else copy(qBeforeDispatch = singleNodePathCount, consumedPathNodeCounts = emptyList())
+
+    fun recordLogicalTarget(target: Position, markRequested: Boolean): NavigationRequestAudit {
+        val x = target.x.toFloat()
+        val y = target.y.toFloat()
+        require(x.isFinite() && y.isFinite()) { "Logical movement target must remain finite" }
+        val sameTarget = logicalRequestX != null && logicalRequestY != null &&
+            logicalRequestX == x && logicalRequestY == y
+        val nextSingle = if (sameTarget) singleNodePathCount else 0
+        val nextPending = if (sameTarget) pendingPathNodeCounts else emptyList()
+        val nextRequested = if (markRequested) true else movementRequested
+        if (nextRequested == movementRequested &&
+            nextSingle == singleNodePathCount &&
+            logicalRequestX == x &&
+            logicalRequestY == y &&
+            nextPending === pendingPathNodeCounts
+        ) {
+            return this
+        }
+        return copy(
+            movementRequested = nextRequested,
+            singleNodePathCount = nextSingle,
+            logicalRequestX = x,
+            logicalRequestY = y,
+            pendingPathNodeCounts = nextPending,
+        )
+    }
+
+    fun recordAdoptedPath(logicalTarget: Position, nodeCount: Int): NavigationRequestAudit {
+        val base = recordLogicalTarget(logicalTarget, markRequested = false)
+        val combined = ArrayList<Int>(base.pendingPathNodeCounts.size + 1)
+        combined.addAll(base.pendingPathNodeCounts)
+        combined.add(nodeCount)
+        return base.copy(pendingPathNodeCounts = Collections.unmodifiableList(combined))
+    }
+
+    fun resetAccepted(clearRequested: Boolean = false): NavigationRequestAudit {
+        val nextReq = if (clearRequested) false else movementRequested
+        if (nextReq == movementRequested &&
+            singleNodePathCount == 0.toByte() &&
+            logicalRequestX == null &&
+            logicalRequestY == null &&
+            pendingPathNodeCounts.isEmpty() &&
+            consumedPathNodeCounts.isEmpty()
+        ) {
+            return this
+        }
+        return copy(
+            movementRequested = nextReq,
+            singleNodePathCount = 0,
+            logicalRequestX = null,
+            logicalRequestY = null,
+            pendingPathNodeCounts = emptyList(),
+            consumedPathNodeCounts = emptyList(),
+        )
+    }
+
+    fun finishMovementStep(): NavigationRequestAudit {
+        if (!movementRequested) {
+            return resetAccepted(clearRequested = false)
+        }
+        val consumed = pendingPathNodeCounts
+        var nextSingle = singleNodePathCount
+        for (count in consumed) {
+            if (count == 1) nextSingle = (nextSingle + 1).toByte()
+        }
+        return copy(
+            singleNodePathCount = nextSingle,
+            pendingPathNodeCounts = emptyList(),
+            consumedPathNodeCounts = consumed,
+        )
+    }
+
+    companion object {
+        val EMPTY = NavigationRequestAudit()
+    }
+}
+
+/**
  * Unified immutable group-reservation contract consolidating legacy slot reservations
  * ([GroupMoveReservation] / [GroupMoveRequest]) and shared landing reservations ([LandingMember])
  * into a single value object carried inside [UnitNavigationState].
- *
- * During the transition window before ENG-P016-009 removes the legacy slot system, a shared-landing
- * unit can carry both its active [landing] claim and a concrete final-bay [slot] reservation at the
- * same time; holding them in one immutable [GroupReservation] guarantees atomic clearing on cancel,
- * retarget, or arrival with zero leftover dirty state.
  */
 internal data class GroupReservation(
     val slot: GroupMoveReservation? = null,
@@ -35,13 +142,13 @@ internal data class GroupReservation(
 /**
  * Immutable navigation & movement-orchestration state for a [MutableUnit].
  *
- * Consolidates the scattered mutable movement, local-segment, route-repair, stall-counter,
- * and group-reservation fields into a single value object so [StepState.fork] shares the
- * reference in O(1) without per-unit list copying, and command transitions (adopt / pause /
- * cancel / arrive) happen atomically in one place without leftover dirty fields.
+ * Consolidates all route, maneuver, passage, group-reservation, orthogonal [MotionContract],
+ * and [NavigationRequestAudit] fields into a single immutable value object so [StepState.fork]
+ * shares the reference in O(1) and all mutations occur through semantic atomic transitions.
  */
 internal data class UnitNavigationState(
     val moveTarget: Position? = null,
+    val motionContract: MotionContract? = null,
     val nearestMoveTarget: Position? = null,
     val nearestMoveIsGroup: Boolean = false,
     val moveArrival: MoveArrival? = null,
@@ -73,16 +180,8 @@ internal data class UnitNavigationState(
     val lastAvoidHeadingDeg: Double? = null,
     val progressAnchorPos: Position? = null,
     val progressAnchorStep: Long = -1L,
+    val requestAudit: NavigationRequestAudit = NavigationRequestAudit.EMPTY,
 ) {
-    /**
-     * Atomically freezes a caller-provided waypoint list (or keeps emptyList) so external
-     * mutations to the caller's list can never alias or corrupt [UnitNavigationState].
-     */
-    fun withPathPoints(points: List<Position>): UnitNavigationState =
-        copy(pathPoints = immutableList(points))
-
-    fun withRouteOccupantIds(ids: List<String>): UnitNavigationState =
-        copy(routeOccupantIds = immutableList(ids))
     val groupMoveReservation: GroupMoveReservation?
         get() = groupReservation?.slot
 
@@ -91,6 +190,56 @@ internal data class UnitNavigationState(
 
     val landingMember: LandingMember?
         get() = groupReservation?.landing
+
+    fun withPathPoints(points: List<Position>): UnitNavigationState =
+        copy(pathPoints = immutableList(points))
+
+    fun withRouteOccupantIds(ids: List<String>): UnitNavigationState =
+        copy(routeOccupantIds = immutableList(ids))
+
+    fun withMoveTarget(
+        target: Position?,
+        contract: MotionContract? = if (target == null) null else (motionContract?.withAnchor(target) ?: MotionContract.pointMove(target)),
+    ): UnitNavigationState = copy(moveTarget = target, motionContract = contract)
+
+    fun withMotionContract(contract: MotionContract?): UnitNavigationState =
+        if (motionContract == contract) this else copy(motionContract = contract)
+
+    fun withMoveArrival(arrival: MoveArrival?): UnitNavigationState =
+        if (moveArrival == arrival) this else copy(moveArrival = arrival)
+
+    fun withOptimisticSteerTarget(target: Position?): UnitNavigationState =
+        if (optimisticSteerTarget == target) this else copy(optimisticSteerTarget = target)
+
+    fun withPassageEntry(entry: PassageEntry?): UnitNavigationState =
+        if (passageEntry == entry) this else copy(passageEntry = entry)
+
+    fun withIndexedLandingBody(indexed: LandingOccupancy.IndexedBody?): UnitNavigationState =
+        if (indexedLandingBody === indexed) this else copy(indexedLandingBody = indexed)
+
+    fun withRouteContinuation(continuation: RouteContinuation?): UnitNavigationState =
+        if (routeContinuation == continuation) this else copy(routeContinuation = continuation)
+
+    fun withNearTargetTime(time: Double): UnitNavigationState =
+        if (nearTargetTime == time) this else copy(nearTargetTime = time)
+
+    fun withStalledRouteTicks(ticks: Long): UnitNavigationState =
+        if (stalledRouteTicks == ticks) this else copy(stalledRouteTicks = ticks)
+
+    fun withHardContactLimitedTicks(ticks: Long): UnitNavigationState =
+        if (hardContactLimitedTicks == ticks) this else copy(hardContactLimitedTicks = ticks)
+
+    fun withFollowsManeuverRoute(enabled: Boolean): UnitNavigationState =
+        if (followsManeuverRoute == enabled) this else copy(followsManeuverRoute = enabled)
+
+    fun withManeuverTurnWaypoint(waypoint: Position?): UnitNavigationState =
+        if (maneuverTurnWaypoint == waypoint) this else copy(maneuverTurnWaypoint = waypoint)
+
+    fun withLastManeuverContactRepair(step: Long?): UnitNavigationState =
+        if (lastManeuverContactRepair == step) this else copy(lastManeuverContactRepair = step)
+
+    fun withTerrainHistory(correctionTime: Double, clearSteps: Int = terrainClearSteps, terrainOnly: Boolean = terrainOnlyStall): UnitNavigationState =
+        copy(terrainCorrectionTime = correctionTime, terrainClearSteps = clearSteps, terrainOnlyStall = terrainOnly)
 
     fun withGroupMoveReservation(value: GroupMoveReservation?): UnitNavigationState {
         val next = GroupReservation.of(slot = value, parkedOwner = parkedReservationOwner, landing = landingMember)
@@ -107,8 +256,34 @@ internal data class UnitNavigationState(
         return if (next == groupReservation) this else copy(groupReservation = next)
     }
 
-    /** Clears command origin, route-repair counters, and unified group reservation atomically. */
+    /** Atomically binds command origin, target, reservation state, and orthogonal [MotionContract] prior to route adoption. */
+    fun bindCommandTarget(
+        target: Position,
+        originMoveId: String? = this.originMoveId,
+        originAtStep: Long? = this.originAtStep,
+        contract: MotionContract,
+        followsManeuverRoute: Boolean = this.followsManeuverRoute,
+        nearestMoveTarget: Position? = this.nearestMoveTarget,
+        nearestMoveIsGroup: Boolean = this.nearestMoveIsGroup,
+        nearTargetTime: Double = this.nearTargetTime,
+        lastManeuverContactRepair: Long? = this.lastManeuverContactRepair,
+        groupReservation: GroupReservation? = this.groupReservation,
+    ): UnitNavigationState = copy(
+        moveTarget = target,
+        motionContract = contract,
+        originMoveId = originMoveId,
+        originAtStep = originAtStep,
+        followsManeuverRoute = followsManeuverRoute,
+        nearestMoveTarget = nearestMoveTarget,
+        nearestMoveIsGroup = nearestMoveIsGroup,
+        nearTargetTime = nearTargetTime,
+        lastManeuverContactRepair = lastManeuverContactRepair,
+        groupReservation = groupReservation,
+    )
+
+    /** Clears command origin, route-repair counters, motion contract, and unified group reservation atomically. */
     fun clearMoveOrigin(): UnitNavigationState = copy(
+        motionContract = null,
         nearestMoveTarget = null,
         nearestMoveIsGroup = false,
         originMoveId = null,
@@ -135,19 +310,24 @@ internal data class UnitNavigationState(
         progressAnchorStep = -1L,
     )
 
-    /** Pauses the physical route while keeping arrival history and terrain correction state. */
+    /** Pauses the physical route while keeping arrival history, terrain correction state, and request audit. */
     fun pauseRoute(): UnitNavigationState = clearMoveOrigin().copy(
         moveTarget = null,
         pathPoints = emptyList(),
         passageEntry = null,
     )
 
-    /** Adopts a freshly planned or repaired immutable waypoint list atomically. */
+    /** Ends the active command route and resets accepted path-node audit counters atomically. */
+    fun cancelRoute(clearRequested: Boolean = false): UnitNavigationState =
+        pauseRoute().copy(requestAudit = requestAudit.resetAccepted(clearRequested = clearRequested))
+
+    /** Adopts a freshly planned or repaired immutable waypoint list atomically (without touching requestAudit). */
     fun adoptRoute(
         points: List<Position>,
         knowledgeRevision: Long,
         buildingRevision: Long = -1L,
         occupantIds: List<String> = emptyList(),
+        repairReset: Boolean = false,
     ): UnitNavigationState = copy(
         adoptedRouteRevision = adoptedRouteRevision + 1L,
         pathPoints = immutableList(points),
@@ -161,10 +341,52 @@ internal data class UnitNavigationState(
         lastPlannedKnowledgeRevision = knowledgeRevision,
         lastPlannedBuildingRevision = buildingRevision,
         optimisticSteerTarget = null,
+        repairBackoffStep = if (repairReset) 0L else repairBackoffStep,
+        repairConsecutiveFailures = if (repairReset) 0 else repairConsecutiveFailures,
         lastAvoidHeadingDeg = null,
         progressAnchorPos = null,
         progressAnchorStep = -1L,
     )
+
+    /** Adopts a route AND records the logical acceptance in [requestAudit] in one atomic transition. */
+    fun adoptTrackedRoute(
+        points: List<Position>,
+        logicalTarget: Position,
+        knowledgeRevision: Long,
+        buildingRevision: Long = -1L,
+        occupantIds: List<String> = emptyList(),
+        repairReset: Boolean = false,
+    ): UnitNavigationState = adoptRoute(
+        points = points,
+        knowledgeRevision = knowledgeRevision,
+        buildingRevision = buildingRevision,
+        occupantIds = occupantIds,
+        repairReset = repairReset,
+    ).copy(
+        requestAudit = requestAudit.recordAdoptedPath(logicalTarget, points.size),
+    )
+
+    /**
+     * Splices the terminal waypoint in O(1) when tracking a moving target with clear line-of-sight
+     * from the preceding waypoint/unit position, without triggering a full A* replan or node-acceptance increment.
+     */
+    fun spliceTailTarget(newDestination: Position): UnitNavigationState {
+        if (pathPoints.isEmpty()) return this
+        val nextPoints = if (pathPoints.size == 1) {
+            Collections.singletonList(newDestination)
+        } else {
+            val updated = ArrayList<Position>(pathPoints.size)
+            for (i in 0 until pathPoints.lastIndex) updated.add(pathPoints[i])
+            updated.add(newDestination)
+            Collections.unmodifiableList(updated)
+        }
+        return copy(
+            moveTarget = newDestination,
+            motionContract = motionContract?.withAnchor(newDestination),
+            pathPoints = nextPoints,
+            nearTargetTime = 0.0,
+        )
+    }
 
     /** Pops the front waypoint when a leg completes or hands off. */
     fun popFrontWaypoint(
@@ -235,6 +457,12 @@ internal data class UnitNavigationState(
         groupReservation = GroupReservation.of(slot = null, parkedOwner = parkedOwner, landing = parkedLanding),
         moveArrival = arrival ?: moveArrival,
     )
+
+    fun recordRepairBackoff(backoffUntilStep: Long, nextConsecutiveFailures: Int): UnitNavigationState =
+        copy(
+            repairBackoffStep = backoffUntilStep,
+            repairConsecutiveFailures = nextConsecutiveFailures,
+        )
 
     companion object {
         val EMPTY = UnitNavigationState()
