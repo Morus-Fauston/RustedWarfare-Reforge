@@ -1,3 +1,9 @@
+v0.6.2 (2026-11-28 01:46)
+  新增: 定义强不可变对局启动契约 SkirmishLaunchConfig 与状态机 SkirmishLobbyState（支持 .tmx winCondition 自动映射胜负模式、往返主菜单及退局返厅保留配置与现有参数安全桥接） / 落地左窄右宽遭遇战大厅 SkirmishLobbyScreen（单行常驻规则、带非默认指示点的更多设置弹窗 MoreMatchSettingsModal、带玩家色出生点标记的大幅实时预览、全屏选图接入与本地 .tmx 载入） / 新增可复用 1-10 席参战席位表 MatchSlotTableView（10 色点击循环与撞色互换、队伍与出生点语义染色下拉及撞位互换、混战/双队平分、满 10 席隐藏添加行与席位缩减出生点自动收敛）及 4x4 超采样单一体实心三角下拉控件 UnifiedDropdown
+  技术: 补齐遭遇战默认内容包回退与局外呈现释放闭环，新增 UiP004SkirmishLobbyTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题共 9 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）
+
+====
+
 v0.6.1 (2026-11-28 00:48)
   新增: 新增零模拟缓慢平移的构成主义蓝图动态地图背景 DynamicMapBackdrop、二级页统一顶栏 SubPageTopBar 与面板外壳 OutGamePanelShell / 落地无外框主菜单 MainMenuScreen（含 4x4 超采样 RWRE 矢量标志、四项无框菜单、触控二次确认退出及仅暗黑主题启用的 -52 度斜拉排线橙色棱柱选中字效） / 新增共用全屏 1:1 正方形战术卡片选图器 MapPickerScreen（支持暗黑底渐变与浅色胶囊铭牌自适应、取消保原选）及覆盖 4P-10P 的 8 图内置遭遇战目录
   修复: 将主 SpriteBatch 切换为分离式 Alpha 混合，消除半透明遮罩叠加冲淡帧缓冲目标 Alpha 通道的问题

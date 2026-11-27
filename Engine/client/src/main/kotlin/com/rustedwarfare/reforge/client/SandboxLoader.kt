@@ -130,7 +130,7 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
                     is ContentResult.Failure -> null
                 }
             } else null
-            val effectivePack = checked ?: autoPack
+            val effectivePack = checked ?: autoPack ?: if (!java.nio.file.Files.isDirectory(root)) fallbackCatalogPack(root) else null
             val definitions = effectivePack?.content?.units ?: ControlledScenario.prepare(root).scenario.unitDefinitions
             val built = TmxSkirmishScenarioBuilder.build(mapPath, definitions, originalDirectory, displayName)
             val scene = built.scenario

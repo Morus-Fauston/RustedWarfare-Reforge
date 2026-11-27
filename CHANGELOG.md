@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.6.2 (2026-11-28 01:46)
+
+### 新增
+
+- **不可变遭遇战启动契约与大厅状态机（`SkirmishLaunchConfig` / `SkirmishLobbyState`）**：新增供八期后续阶段直接消费的强不可变对局配置契约 `SkirmishLaunchConfig`（内置 `List.copyOf` 席位冻结与出生点范围校验），完整表达所选地图、三档胜负模式（按原版 `.tmx` `winCondition` 自动映射初始值并对 `requiredObjectives` 给出暂未支持回退提示）、四档战争迷雾、五档初始资金、5 项低频规则及 1–10 席参战列表；往返主菜单或退出对局返厅时完整保留最近配置，并将当前已支持参数（地图、迷雾、共享视野、禁核、包配置）安全桥接至开局链路。
+- **左窄右宽遭遇战大厅与「更多设置」弹窗（`SkirmishLobbyScreen` / `MoreMatchSettingsModal`）**：实装左窄右宽双栏遭遇战大厅，左栏顶行单行紧凑平铺胜负模式、战争迷雾、初始资金与「更多设置」按钮（存在非默认低频规则时自动显示铁锈橙指示点），右栏渲染大幅实时地形与矿池预览（直接在出生点坐标绘制玩家色编号标记与空位虚线框）、共用全屏「选择地图」按钮、本地 `.tmx` 路径载入及内嵌全栏宽「开始对局」主按钮；居中模态弹窗收纳经济倍率、共享视野、出生点分配、开局单位与禁止核武 5 项低频规则，支持「恢复默认」与返回键优先关闭弹窗。
+- **可复用 1–10 席参战席位表与一体三角控件库（`MatchSlotTableView` / `OutGameControls`）**：新增供遭遇战与自由沙盒共用的紧凑席位表，支持 1–10 席动态增删（本机房主行保护、满 10 席自动隐藏添加行、缩减席位时自动收敛越界出生点）、10 色板点击循环与撞色互换、队伍与出生点语义染色下拉（撞位自动互换）、统一主文字色玩家名、AI 强度下拉占位及人类「踢出」/AI「移除」危险按钮，并提供「混战」与「双队平分」快捷分队；所有下拉框右侧展开三角均采用 4×4 超采样单一体实心倒三角形光栅绘制，彻底消除拼接裂纹，并支持 `Esc`/返回键优先收起展开菜单。
+
+### 技术
+
+- **状态机单测、三主题真 GL 实窗目视与独立双审**：更新展示版本号至 `v0.6.2`，补齐无外部输入目录时的遭遇战内容包回退与 `releasePresentation()` 局外纹理释放闭环；新增 `UiP004SkirmishLobbyTest` 并纳入 `platform-basics` 套件，客户端单测、`development_check.py --suite platform-basics` 与双根 `workspace_layout.py` 全部通过；采集 `1920×1080` 暗黑、白色、骨白三套主题下 4 席态、「更多设置」弹窗与 10 席满编态共 9 张真 GL 实窗截图，经全新上下文独立视觉审查 `APPROVED` 及独立非作者代码整审与 R02 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLaunchConfig.kt` | **新增** — 强不可变 `SkirmishLaunchConfig` 契约、`winCondition` 映射与 1–10 席 `SkirmishLobbyState` 状态机 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/OutGameControls.kt` | **新增** — 4×4 超采样单一体实心三角下拉 `UnifiedDropdown`、分段开关 `SegmentedControl`、多变体按钮与文本输入组件 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MatchSlotTableView.kt` | **新增** — 可复用 1–10 席紧凑参战席位表、10 色/出生点互换与快捷分队组件 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MoreMatchSettingsModal.kt` | **新增** — 居中「更多设置」5 项低频规则模态弹窗与默认值恢复逻辑 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLobbyScreen.kt` | **新增** — 左窄右宽遭遇战大厅页面与带玩家色出生点标记的 `TacticalBattlefieldPreviewActor` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.2` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxLoader.kt` | 为 `.tmx` 遭遇战加载补充无外部沙盒目录时的内置公开内容包回退 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 接入 `SkirmishLobbyScreen`、配置保留、下拉弹出层键盘/缩放协调与 GL 呈现释放 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SkirmishLobbyTest.kt` | **新增** — 覆盖胜负映射、1–10 席增删与互换、弹窗指示点、配置往返保留及一体三角零裂纹单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004SkirmishLobbyTest` |
+
+---
+
 ## v0.6.1 (2026-11-28 00:48)
 
 ### 新增
