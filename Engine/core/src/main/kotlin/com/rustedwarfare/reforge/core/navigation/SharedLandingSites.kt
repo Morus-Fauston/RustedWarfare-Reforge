@@ -42,7 +42,7 @@ internal data class NoParkingCorridor(
     }
 }
 
-/** The selected members and target of one ordinary group order on the unified single landing track. */
+/** The selected members and target of one ordinary or explicit cohort-escort group order. */
 class GroupMoveRequest internal constructor(
     internal val world: WorldHandle,
     internal val completedStep: Long?,
@@ -52,10 +52,16 @@ class GroupMoveRequest internal constructor(
     internal val maxRadiusByMovement: Map<MovementType, Double> = emptyMap(),
     internal val dynamicCluster: Boolean = false,
     internal val noParkingCorridor: NoParkingCorridor? = null,
+    internal val traversalMode: TraversalMode = TraversalMode.INDEPENDENT,
+    internal val sharedCorridorRadiusByMovement: Map<MovementType, Double> = emptyMap(),
+    internal val cohortEscortBiasByUnit: Map<String, Double> = emptyMap(),
+    internal val cohortStartDistances: Map<String, Double> = emptyMap(),
 ) {
     internal val trafficOrder: List<String> = members.sorted()
     internal val flowFieldEligible: Boolean
-        get() = members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE || (dynamicCluster && noParkingCorridor == null)
+        get() = members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE ||
+            (dynamicCluster && noParkingCorridor == null) ||
+            (traversalMode == TraversalMode.COHORT_ESCORT && members.size >= 2 && sharedCorridorRadiusByMovement.isNotEmpty())
 
     internal fun repairDue(step: Long): Boolean = (step - (completedStep ?: -1L) - 1L) % ROUTE_RETRY_TICKS == 0L
 }
@@ -679,6 +685,7 @@ internal object TerminalLanding {
         maxSpeed: Double,
         delta: Double,
         convergence: CohortCoordinator.ConvergenceAdvice = CohortCoordinator.ConvergenceAdvice.NONE,
+        precomputedHasTerrainLos: Boolean? = null,
     ): Decision? {
         val member = unit.landingMember ?: return null
         if (member.parked) return null
@@ -730,7 +737,8 @@ internal object TerminalLanding {
         val landingZoneR = if (member.group.dynamicCluster) max(baseZoneR, min(360.0, max(180.0, hardR * 22.0))) else baseZoneR
         val hullGrid = HullTerrainGrid.authorized(terrain)
 
-        val hasTerrainLosToGoal = hasPassableTerrainLos(terrain, hullGrid, terrainShape, unit.position, goal, unit.heading, terrainR)
+        val hasTerrainLosToGoal = precomputedHasTerrainLos
+            ?: hasPassableTerrainLos(terrain, hullGrid, terrainShape, unit.position, goal, unit.heading, terrainR)
 
         // Check whether unit physically touches an already-settled peer of the SAME group (with clear terrain LOS to that peer).
         // This enables both large open-field perimeter contagion AND Cul-de-sac Stage A cross-corner overflow settling!

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.90 (2026-11-28 07:48)
+
+### 新增
+
+- **Windows 显式 `Alt` 编队行进与群体同行协调深模块**：为 `MoveAction`、`GroupMoveRequest` 与 `MotionContract` 接通与队列追加正交的单次 `cohortEscort: Boolean` 修饰，在 Windows 客户端（`SandboxInput` / `SandboxSession`）支持按住左/右 `Alt` 下达地面编队移动指令（攻击敌军及友方装载、维修、续建交互保持原语义不变，Android 触控保持默认独立移动）。在 `core.navigation` 深化 `CohortCoordinator` 与 `ChunkedFlowFieldAdapter`：① 下单经 `AuthorizedNavigationTerrain` 校验同通行层成员在全队最严净空档位下的连通性，存在共同走廊时全员绑定同一宽走廊共享流场同行（如炮艇陪战列舰绕岛），确无共同连通域时自动降级按各自可达档位分流并剔除不可达同伴避免死锁；② 零单位 ID 白名单硬编码，仅按成员最大耐久（有武装成员存在时于武装集合内校准，无武器辅助保底后随）与有效最大射程生成一维波前纵向偏置 $\Delta \phi \ge 0$（同质编队偏置严格为 `0`），按统一流场测地距离平滑 $C^0$ 收敛领先者速率上限，让慢速重甲自然超越顶前抗伤、脆皮/远程/辅助稳定后随护航；③ 进入双侧夹缝或瓶颈门洞（含 2–3 格出口缓冲）挂起并排配速转为鱼贯过门后重聚（开阔贴墙/海岸线不误挂起）；④ 跨层空地混编按地面主力剩余行程同步配速，同伴阵亡、改令、抵岸或真堵死 `>= 90` 步即时动态脱钩；⑤ 主动陪行态（`cohortEscortYielding`）严格对敌方观察剥离，并豁免停滞重寻路与 `DiagnosticSceneProjector` 2 秒标红（真实堵死仍正常标红），同时 `LocomotionModule.kt` 保持零改动红线。
+
+### 技术
+
+- **编队标准场景、多维契约测试、实窗回执与双审闭环**：在 `ScenarioCatalog` 注册 `cohort-island-naval-escort` 与 `cohort-vanguard-escort-march` 两项标准编队基准场景及对应派生定义；新增 `CohortEscortAndAltMoveTest`（7 项核心契约覆盖海岛对照、逆序超车与真/假标红对照、空地跨层配速与阵亡/改令即时脱钩、无共同走廊降级分流、窄口鱼贯与同质零偏置、矩形主力舰绕岛及高血量无武器辅助/贴墙/敌方迷雾剥离）与 `CohortAltInputTest`（左右 `Alt` 地面编队、普通移动及敌方攻击/友方装载保留）并注册至公开套件 `content-movement-knowledge`，新增 `CohortEscortVisualEvidenceTest` 产出 4 组同源 2 秒标红对照拼图及放大图，并经 `BackgroundClientInput` 无人值守后台真 GL 实窗采集原版素材 `Alt + 右键` 运行回执与 `F3+H` 截图；`dev-ab` 全 12 场景、`public_batch.py --kind pr --test-forks 4 --scenario-workers 8`、Android Debug/Test Kotlin 编译与双根布局校验全绿，经独立全新上下文视觉审阅（9 张图像）与非作者代码整审（含 3 项必修返修与 R2 复核）双双 `APPROVE`。
+
+---
+
 ## v0.5.89 (2026-11-28 06:35)
 
 ### 修复

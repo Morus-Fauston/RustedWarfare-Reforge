@@ -581,11 +581,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun isEnergyLocked(unit: UnitObservation): Boolean =
         unit.energy?.recharging == true || unit.pointDefense?.exhausted == true
 
-    fun move(position: Position): ActionResult? {
+    fun move(position: Position, cohortEscort: Boolean = false): ActionResult? {
         val selection = selectedIds
-        val group = if (selection.size > 1) context.requestGroupMove("p1", selection, position) else null
+        val group = if (selection.size > 1) context.requestGroupMove("p1", selection, position, cohortEscort = cohortEscort) else null
         return dispatch(selection, ::canMove, group) { id ->
-            MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
+            MoveAction("click-${++actionNumber}", "p1", id, position, context.world, cohortEscort = cohortEscort)
         }
     }
     val canPatrol: Boolean get() = isOpen && observation.units.any { it.unitId in selectedIds && canMove(it) }
@@ -743,7 +743,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     /** Read-only hit identity from this player's published observation. */
     fun commandTargetAt(position: Position): String? = unitAt(position)
 
-    fun command(position: Position, append: Boolean = false): ActionResult? {
+    fun command(position: Position, append: Boolean = false, cohortEscort: Boolean = false): ActionResult? {
         val targetId = unitAt(position)
         val target = observation.units.firstOrNull { it.unitId == targetId }
         if (target != null && target.ownerPlayerId == "p1") {
@@ -762,7 +762,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             return dispatch { worker -> ResumeConstructionAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
         return if (target != null && target.ownerPlayerId != "p1")
             dispatch { actor -> AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world) }
-        else move(position)
+        else move(position, cohortEscort = cohortEscort)
     }
     /** Host-authorized sound parameters only; player truth is never read by a playback backend. */
     fun consumeSounds(listener: SoundListener): AuthorizedSoundBatch = context.consumeSounds(context.world, "p1", listener)
@@ -954,7 +954,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             (if (action is AmphibiousFlightAction) mapOf("flying" to action.flying) else emptyMap()) +
             (if (action is UnitAction) mapOf("actionName" to action.actionName, "cancelQueued" to action.cancelQueued) else emptyMap()) +
             (if (action is LoadAction) mapOf("direction" to action.direction.name) else emptyMap()) +
-            (if (action is UnloadAction) mapOf("unloading" to action.unloading) else emptyMap()) }
+            (if (action is UnloadAction) mapOf("unloading" to action.unloading) else emptyMap()) +
+            (if (action is MoveAction && action.cohortEscort) mapOf("cohortEscort" to true) else emptyMap()) }
         if (!deferPublish) capture("after-action")
         return result
     }

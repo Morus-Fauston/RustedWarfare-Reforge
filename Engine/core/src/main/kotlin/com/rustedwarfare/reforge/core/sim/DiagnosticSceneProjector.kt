@@ -395,16 +395,22 @@ object DiagnosticSceneProjector {
                 val orderKey = activeOrderIdentity(unit)
                 if (orderKey != null) {
                     arrivedUnits.remove(unit.unitId)
-                    val deque = historyByUnit.getOrPut(unit.unitId) { ArrayDeque(windowSteps + 2) }
-                    if (deque.isNotEmpty() && deque.last().orderIdentity != orderKey) {
-                        deque.clear()
-                    }
-                    if (sameStepReingest && deque.isNotEmpty() && deque.last().tickPoint == tickPoint) {
-                        deque.removeLast()
-                    }
-                    deque.addLast(HistorySample(tickPoint, unit.position, orderKey))
-                    while (deque.size > 1 && tickPoint - deque.first().tickPoint > windowSteps) {
-                        deque.removeFirst()
+                    if (unit.cohortEscortYielding) {
+                        // Active cohort escort pacing deliberately slows leading escorts to stay
+                        // alongside slower vanguard peers; exempt from false-positive 2s stall red.
+                        historyByUnit.remove(unit.unitId)
+                    } else {
+                        val deque = historyByUnit.getOrPut(unit.unitId) { ArrayDeque(windowSteps + 2) }
+                        if (deque.isNotEmpty() && deque.last().orderIdentity != orderKey) {
+                            deque.clear()
+                        }
+                        if (sameStepReingest && deque.isNotEmpty() && deque.last().tickPoint == tickPoint) {
+                            deque.removeLast()
+                        }
+                        deque.addLast(HistorySample(tickPoint, unit.position, orderKey))
+                        while (deque.size > 1 && tickPoint - deque.first().tickPoint > windowSteps) {
+                            deque.removeFirst()
+                        }
                     }
                 } else {
                     historyByUnit.remove(unit.unitId)

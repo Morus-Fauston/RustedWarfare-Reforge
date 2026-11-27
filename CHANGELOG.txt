@@ -1,3 +1,9 @@
+v0.5.90 (2026-11-28 07:48)
+  新增: 为 MoveAction、GroupMoveRequest、MotionContract 与 Windows 客户端 SandboxInput/SandboxSession 接通左右 Alt 单次显式编队行进（保持敌军攻击及友方装载/维修/续建原语义不变） / 在 CohortCoordinator 与 ChunkedFlowFieldAdapter 落地共同最严净空走廊绑定与无共同连通域自动分流脱钩、零单位 ID 硬编码的通用耐久与射程一维波前前后护航配速（同质编队零偏置、无武器高血量辅助保底后随武装前锋、统一流场测地距离基准与 C0 连续限速）、双侧夹缝/瓶颈门洞鱼贯过门与出口重聚、空地跨层同步配速及阵亡/改令/抵岸/真卡死>=90步即时动态脱钩 / 主动陪行态 cohortEscortYielding 经 PlayerObservationProjector 对敌方剥离，并豁免停滞重寻路与 DiagnosticSceneProjector 2 秒标红（真实堵死仍正常标红），同时严守 LocomotionModule 零改动红线
+  技术: 在 ScenarioCatalog 注册海岛绕岛与逆序重甲护航两项标准编队基准场景；新增 CohortEscortAndAltMoveTest（7 项核心契约）与 CohortAltInputTest 并入公开套件，新增 CohortEscortVisualEvidenceTest（4 组 2 秒标红对照拼图）及 BackgroundClientInput 无人值守后台真 GL 实窗 Alt+右键 回执与 F3+H 截图；dev-ab 全 12 场景、public_batch --kind pr 全 7 套机制与短测、Android 编译与双根布局检查全绿，经独立视觉与非作者代码 R2 双审 APPROVE（0 必修）
+
+====
+
 v0.5.89 (2026-11-28 06:35)
   修复: 在全局指引与 LocomotionModule 之间新建无状态 CohortCoordinator 汇聚成核与消旋协调底座，对零核多向汇聚盆地识别唯一领头与向心受挤状态、施加切向阻尼并抬升运动学贴靠权重（排除受限死胡同口袋并在首核落地后无缝退还控制权） / 在 TerminalLanding 禁止空核切向 probeFlank 高速滑行并修复零核盆地内被微挤即清零进度的死锁，同时将 LocomotionModule 近距 rightShift 对齐既有纯运动学 dockingFade < 0.25 衰减带（零上层命令与群身份特判），根除空地多向群移持续环绕涡旋
   技术: 新增 CohortNucleationAndAntiVortexTest 6 项核心契约并入公开套件，新增 CohortAntiVortexVisualEvidenceTest 三组 2 秒标红拼图；架构守卫、瓶颈 A/B、dev-ab 全 10 场景、public_batch --kind pr 全 7 套机制与短测、Android 编译与双根布局检查全绿，经独立视觉与非作者代码双审 APPROVE

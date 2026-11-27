@@ -500,6 +500,36 @@ internal class ChunkedFlowFieldAdapter private constructor(
     fun statsFor(key: FieldKey): ChunkedField? = fields[key]
     internal fun cachedFieldsForTest(): Collection<ChunkedField> = fields.values
 
+    /**
+     * Checks via [AuthorizedNavigationTerrain] clearance components whether all [positions] and
+     * [goalWorld] share a single connected navigable domain at the strictest clearance band for
+     * [strictestRadius] (ENG-P017-010). Returns false if any member is disconnected at that band,
+     * triggering automatic per-clearance fallback splitting with zero deadlock.
+     */
+    fun hasSharedCorridorConnection(
+        terrain: PlanningTerrain,
+        strictestRadius: Double,
+        goalWorld: Position,
+        positions: List<Position>,
+    ): Boolean {
+        if (positions.size < 2) return false
+        val band = clearanceBandFor(terrain, strictestRadius)
+        val cf = terrain.clearanceField()
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
+        val gCol = floor(goalWorld.x / terrain.tileWidth).toInt().coerceIn(0, w - 1)
+        val gRow = floor(goalWorld.y / terrain.tileHeight).toInt().coerceIn(0, h - 1)
+        val goalComp = findUnitComponent(cf, w, h, gCol, gRow, band)
+        if (goalComp == 0) return false
+        for (pos in positions) {
+            val uCol = floor(pos.x / terrain.tileWidth).toInt().coerceIn(0, w - 1)
+            val uRow = floor(pos.y / terrain.tileHeight).toInt().coerceIn(0, h - 1)
+            val uComp = findUnitComponent(cf, w, h, uCol, uRow, band)
+            if (uComp != goalComp) return false
+        }
+        return true
+    }
+
     fun resolveSourceComponent(
         terrain: PlanningTerrain,
         unitRadius: Double,
@@ -1071,14 +1101,18 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val movement = UnitLocomotion.movement(unit)
         if (movement.type == MovementType.AIR || movement.type == MovementType.NONE) return null
         val unitRadius = max(1.0, flowPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))
-        val band = clearanceBandFor(terrain, unitRadius)
+        val sharedEscortRadius = if (group.traversalMode == TraversalMode.COHORT_ESCORT) {
+            group.sharedCorridorRadiusByMovement[movement.type]
+        } else null
+        val effectiveRadius = if (sharedEscortRadius != null) max(unitRadius, sharedEscortRadius) else unitRadius
+        val band = clearanceBandFor(terrain, effectiveRadius)
         val goalCol = floor(group.click.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
         val goalRow = floor(group.click.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
-        val maxGroupR = max(unitRadius, group.maxRadiusByMovement[movement.type] ?: unitRadius)
-        val wantYieldWide = maxGroupR > unitRadius * 1.45 && band == 1
+        val maxGroupR = max(effectiveRadius, group.maxRadiusByMovement[movement.type] ?: effectiveRadius)
+        val wantYieldWide = sharedEscortRadius == null && maxGroupR > effectiveRadius * 1.45 && band == 1
         val uCol = floor(unit.position.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
         val uRow = floor(unit.position.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
-        val srcComp = resolveSourceComponent(terrain, unitRadius, goalCol, goalRow, uCol, uRow)
+        val srcComp = resolveSourceComponent(terrain, effectiveRadius, goalCol, goalRow, uCol, uRow)
         return fields[FieldKey(unit.ownerPlayerId, movement.type, band, goalCol, goalRow, wantYieldWide, srcComp)]
     }
 

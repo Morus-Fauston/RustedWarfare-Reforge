@@ -450,7 +450,12 @@ class SimulationContext internal constructor(
         return CloseResult.Closed
     }
 
-    fun requestGroupMove(actor: String, unitIds: Collection<String>, click: Position): GroupMoveRequest? {
+    fun requestGroupMove(
+        actor: String,
+        unitIds: Collection<String>,
+        click: Position,
+        cohortEscort: Boolean = false,
+    ): GroupMoveRequest? {
         val input = scenario ?: return null
         if (!click.x.isFinite() || !click.y.isFinite() ||
             input.players.none { it.playerId == actor && it.control == PlayerControl.LOCAL }) return null
@@ -462,15 +467,48 @@ class SimulationContext internal constructor(
         val gTw = mapForGroup?.tileWidth ?: 20
         val gTh = mapForGroup?.tileHeight ?: 20
         val maxRadiusByMovement = LinkedHashMap<MovementType, Double>()
+        val membersByMovement = LinkedHashMap<MovementType, MutableList<MutableUnit>>()
         for (m in members) {
             val mt = UnitLocomotion.movement(m).type
             val r = ChunkedFlowFieldAdapter.flowPassabilityRadius(m, gTw, gTh)
             val prev = maxRadiusByMovement[mt]
             if (prev == null || r > prev) maxRadiusByMovement[mt] = r
+            membersByMovement.getOrPut(mt) { mutableListOf() }.add(m)
         }
+        val traversalMode = if (cohortEscort) TraversalMode.COHORT_ESCORT else TraversalMode.INDEPENDENT
+        val sharedCorridorRadiusByMovement = if (cohortEscort && mapForGroup != null) {
+            val shared = LinkedHashMap<MovementType, Double>()
+            for ((mt, layerMembers) in membersByMovement) {
+                if (mt == MovementType.AIR || mt == MovementType.NONE || layerMembers.size < 2) continue
+                val strictestR = maxRadiusByMovement[mt] ?: continue
+                val terrain = planningTerrainFor(layerMembers.first(), mapForGroup, mt)
+                val connected = steps.current.flowFields.hasSharedCorridorConnection(
+                    terrain = terrain,
+                    strictestRadius = strictestR,
+                    goalWorld = click,
+                    positions = layerMembers.map { it.position },
+                )
+                if (connected) {
+                    shared[mt] = strictestR
+                }
+            }
+            shared
+        } else emptyMap()
+        val cohortEscortBiasByUnit = if (cohortEscort) CohortCoordinator.computeEscortBiases(members) else emptyMap()
+        val cohortStartDistances = if (cohortEscort) {
+            members.associate { it.unitId to kotlin.math.hypot(click.x - it.position.x, click.y - it.position.y) }
+        } else emptyMap()
         return GroupMoveRequest(
-            world, stepIndex.takeIf { hasAdvanced }, actor, click,
-            members.mapTo(hashSetOf()) { it.unitId }, maxRadiusByMovement,
+            world = world,
+            completedStep = stepIndex.takeIf { hasAdvanced },
+            actor = actor,
+            click = click,
+            members = members.mapTo(hashSetOf()) { it.unitId },
+            maxRadiusByMovement = maxRadiusByMovement,
+            traversalMode = traversalMode,
+            sharedCorridorRadiusByMovement = sharedCorridorRadiusByMovement,
+            cohortEscortBiasByUnit = cohortEscortBiasByUnit,
+            cohortStartDistances = cohortStartDistances,
         )
     }
 
@@ -635,7 +673,7 @@ class SimulationContext internal constructor(
             if (landing != null && lostRoute && (repair == ManeuverRepair.KNOWLEDGE ||
                     (repair == ManeuverRepair.CONTACT && unit.stalledRouteTicks >= ROUTE_FAILURE_TICKS))) {
                 val click = landing.group.click
-                val releasedContract = task.motionContract ?: MotionContract.sharedCluster(click)
+                val releasedContract = task.motionContract ?: MotionContract.sharedCluster(click, traversalMode = landing.group.traversalMode)
                 unit.updateNavigation {
                     it.withLandingMember(LandingMember(landing.group)).bindCommandTarget(
                         target = click,
@@ -646,7 +684,8 @@ class SimulationContext internal constructor(
                 unit.adoptRoute(emptyList(), click, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
                 steps.current.landingOccupancy.update(unit)
                 steps.current.movePlanning.enqueue(
-                    MoveAction(task.actionId, unit.ownerPlayerId, unit.unitId, click, world, task.atStep),
+                    MoveAction(task.actionId, unit.ownerPlayerId, unit.unitId, click, world, task.atStep,
+                        cohortEscort = landing.group.traversalMode == TraversalMode.COHORT_ESCORT),
                     selectionSize = landing.group.members.size,
                 )
                 pendingEvents += Event("group-destination-released", unit.unitId)
@@ -661,13 +700,16 @@ class SimulationContext internal constructor(
                 if (planned.nearest) {
                     val nextNearestTarget = unit.nearestMoveTarget ?: unit.landingMember?.group?.click ?: action.target
                     val nextNearestGroup = unit.nearestMoveIsGroup || unit.landingMember != null
+                    val nextMode = unit.landingMember?.group?.traversalMode
+                        ?: if (action.cohortEscort) TraversalMode.COHORT_ESCORT else TraversalMode.INDEPENDENT
                     val nextContract = task.motionContract?.withAnchor(route.position) ?: if (unit.landingMember != null) {
-                        MotionContract.sharedCluster(route.position)
+                        MotionContract.sharedCluster(route.position, traversalMode = nextMode)
                     } else {
                         MotionContract.pointMove(
                             target = route.position,
                             allowShortReverse = !task.factoryExit,
                             gatheringTarget = if (task.factoryExit) null else route.position,
+                            traversalMode = nextMode,
                         )
                     }
                     unit.taskQueue = unit.taskQueue.replaceHead(task.copy(target = route.position))
@@ -721,13 +763,18 @@ class SimulationContext internal constructor(
         }
         val nextLanding = if (planned.nearest && !keepSharedLandingOnNearest) null else unit.landingMember
         val nextManeuver = (planned.nearest || (member.hull as? RectangularDeparture)?.maneuver == true) && !member.hasBirthDelay
-        val publishedContract = task.motionContract?.withAnchor(route.position) ?: if (nextLanding != null) {
-            MotionContract.sharedCluster(nextLanding.group.click)
+        val publishedMode = nextLanding?.group?.traversalMode
+            ?: if (action.cohortEscort) TraversalMode.COHORT_ESCORT else TraversalMode.INDEPENDENT
+        val publishedContract = task.motionContract?.withAnchor(route.position) ?: if (nextLanding != null &&
+            UnitLocomotion.movement(unit).type != MovementType.AIR
+        ) {
+            MotionContract.sharedCluster(nextLanding.group.click, traversalMode = publishedMode)
         } else {
             MotionContract.pointMove(
                 target = route.position,
                 allowShortReverse = !task.factoryExit,
                 gatheringTarget = if (task.factoryExit) null else route.position,
+                traversalMode = publishedMode,
             )
         }
         unit.updateNavigation {
@@ -1740,15 +1787,24 @@ class SimulationContext internal constructor(
                     }
                 }
                 steps.current.pendingFlowStart.remove(unit.unitId)
+                val effectiveMode = when {
+                    group != null && group.traversalMode == TraversalMode.COHORT_ESCORT -> TraversalMode.COHORT_ESCORT
+                    action.cohortEscort -> TraversalMode.COHORT_ESCORT
+                    else -> TraversalMode.INDEPENDENT
+                }
                 val flowDirectEligible = trafficSeparationEnabled &&
                     group != null &&
-                    group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                    group.flowFieldEligible &&
                     unit.birthRemaining <= 0f &&
                     optMovement.type != MovementType.AIR &&
                     optMovement.type != MovementType.NONE
                 if (flowDirectEligible) {
                     val mType = optMovement.type
-                    val terrainR = maxOf(1.0, ChunkedFlowFieldAdapter.flowPassabilityRadius(unit, currentScenario.map.tileWidth, currentScenario.map.tileHeight))
+                    val ownTerrainR = maxOf(1.0, ChunkedFlowFieldAdapter.flowPassabilityRadius(unit, currentScenario.map.tileWidth, currentScenario.map.tileHeight))
+                    val sharedEscortR = if (effectiveMode == TraversalMode.COHORT_ESCORT) {
+                        group.sharedCorridorRadiusByMovement[mType]
+                    } else null
+                    val terrainR = if (sharedEscortR != null) maxOf(ownTerrainR, sharedEscortR) else ownTerrainR
                     val maxGroupR = maxOf(
                         terrainR,
                         group.maxRadiusByMovement[mType] ?: terrainR,
@@ -1785,7 +1841,7 @@ class SimulationContext internal constructor(
                     }
                     unit.updateNavigation {
                         it.withLandingMember(LandingMember(group))
-                            .withMotionContract(MotionContract.sharedCluster(group.click))
+                            .withMotionContract(MotionContract.sharedCluster(group.click, traversalMode = effectiveMode))
                     }
                     val goalBlocked = terrain.isBlocked(gCol, gRow)
                     val immobilePocket = srcComp != 0 &&
@@ -1799,11 +1855,17 @@ class SimulationContext internal constructor(
                 } else if (group != null && unit.birthRemaining <= 0f && optMovement.type != MovementType.AIR) {
                     unit.updateNavigation {
                         it.withLandingMember(LandingMember(group))
-                            .withMotionContract(MotionContract.sharedCluster(group.click))
+                            .withMotionContract(MotionContract.sharedCluster(group.click, traversalMode = effectiveMode))
                     }
                     steps.current.movePlanning.enqueue(action, selectionSize = group.members.size)
+                } else if (group != null && effectiveMode == TraversalMode.COHORT_ESCORT && unit.birthRemaining <= 0f && optMovement.type == MovementType.AIR) {
+                    unit.updateNavigation {
+                        it.withLandingMember(LandingMember(group))
+                            .withMotionContract(MotionContract.pointMove(action.target, traversalMode = TraversalMode.COHORT_ESCORT))
+                    }
+                    steps.current.movePlanning.enqueue(action, selectionSize = 1)
                 } else {
-                    unit.updateNavigation { it.withMotionContract(MotionContract.pointMove(action.target)) }
+                    unit.updateNavigation { it.withMotionContract(MotionContract.pointMove(action.target, traversalMode = effectiveMode)) }
                     steps.current.movePlanning.enqueue(action, selectionSize = 1)
                 }
                 ActionResult.Accepted(action.actionId)
@@ -2434,7 +2496,8 @@ class SimulationContext internal constructor(
                     if (field == null) {
                         candidate.state.pendingFlowStart.remove(uid)
                         candidate.state.movePlanning.enqueue(
-                            MoveAction(headTask.actionId, u.ownerPlayerId, u.unitId, lm.group.click, world, headTask.atStep),
+                            MoveAction(headTask.actionId, u.ownerPlayerId, u.unitId, lm.group.click, world, headTask.atStep,
+                                cohortEscort = lm.group.traversalMode == TraversalMode.COHORT_ESCORT),
                             selectionSize = lm.group.members.size,
                         )
                     } else if (candidate.state.flowFields.hasValidGuidanceFor(u, uTerrain)) {
@@ -2443,7 +2506,7 @@ class SimulationContext internal constructor(
                         if (field.goalWasNearestFallback && headTask.target != effectiveTarget) {
                             u.taskQueue = u.taskQueue.replaceHead(headTask.copy(target = effectiveTarget))
                         }
-                        val flowContract = headTask.motionContract ?: MotionContract.sharedCluster(lm.group.click)
+                        val flowContract = headTask.motionContract ?: MotionContract.sharedCluster(lm.group.click, traversalMode = lm.group.traversalMode)
                         u.updateNavigation {
                             it.bindCommandTarget(
                                 target = effectiveTarget,
@@ -2468,7 +2531,8 @@ class SimulationContext internal constructor(
                     } else if (candidate.state.flowFields.isUnreachableInCompletedField(u, uTerrain)) {
                         candidate.state.pendingFlowStart.remove(uid)
                         candidate.state.movePlanning.enqueue(
-                            MoveAction(headTask.actionId, u.ownerPlayerId, u.unitId, lm.group.click, world, headTask.atStep),
+                            MoveAction(headTask.actionId, u.ownerPlayerId, u.unitId, lm.group.click, world, headTask.atStep,
+                                cohortEscort = lm.group.traversalMode == TraversalMode.COHORT_ESCORT),
                             selectionSize = lm.group.members.size,
                         )
                     }
@@ -4666,6 +4730,7 @@ class SimulationContext internal constructor(
             // ENG-P016-009B: early-exit idle/inactive units before touching spatialIndex.
             val target = unit.moveTarget ?: continue
             if (!unit.alive || unit.carriedBy != null || unit.unitId in passageWaiting || unit.unitId in seaDepartureWaiting) continue
+            if (unit.cohortEscortYielding) continue
             val stalled = unit.stalledRouteTicks
             val movingContact = unit.hardContactLimitedTicks
             val waitingForRoute = unit.landingMember?.claimed != null && unit.pathPoints.isEmpty()
@@ -5195,6 +5260,7 @@ class SimulationContext internal constructor(
                     pointDefense = unit.pointDefense?.let { PointDefenseObservation(it.energy, it.exhausted) },
                     tasks = unit.tasks,
                     moveArrival = unit.moveArrival,
+                    cohortEscortYielding = unit.cohortEscortYielding,
                     constructionProgress = unit.constructionProgress,
                     mechPose = MechMotion.pose(unit),
                     waterPose = if (unit.definition.movement.type == MovementType.WATER && unit.definition.fixedUnderwaterTarget == null)

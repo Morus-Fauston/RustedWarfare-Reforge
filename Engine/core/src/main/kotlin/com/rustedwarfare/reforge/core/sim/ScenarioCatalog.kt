@@ -407,6 +407,90 @@ object ScenarioCatalog {
                 errs
             },
         ),
+        ScenarioCatalogEntry(
+            id = "cohort-island-naval-escort",
+            displayName = "Cohort Island Naval Escort (Alt North Channel)",
+            category = ScenarioCategory.BENCHMARK_P016,
+            family = "cohort-escort",
+            group = "B",
+            seed = DEFAULT_WORLD_SEED,
+            description = "1 slow battleship + 6 fast gunboats on an island map (2-tile south strait vs 8-tile north channel) executing explicit Alt cohort escort through the shared wide north channel.",
+            defaultSteps = 2800,
+            playerCount = 2,
+            startingUnitCount = 7,
+            gates = listOf(
+                DiagnosticGateLine("north-wide-channel", axisX = true, entryThreshold = 520.0, exitThreshold = 580.0, minOrtho = 20.0, maxOrtho = 220.0, positiveDirection = true),
+                DiagnosticGateLine("south-narrow-strait", axisX = true, entryThreshold = 520.0, exitThreshold = 580.0, minOrtho = 560.0, maxOrtho = 620.0, positiveDirection = true),
+            ),
+            buildMap = ::buildCohortIslandNavalMap,
+            buildScenario = { defs -> buildCohortIslandNavalScenario("cohort-island-naval-escort", defs) },
+            issueOrders = { ctx ->
+                val ids = listOf("bs-0") + (0 until 6).map { "gb-$it" }
+                val click = Position(960.0, 480.0)
+                val group = checkNotNull(ctx.requestGroupMove("p1", ids, click, cohortEscort = true))
+                for (id in ids) {
+                    check(ctx.submitGroupMove(MoveAction("escort-nav-$id", "p1", id, click, ctx.world, cohortEscort = true), group) is ActionResult.Accepted)
+                }
+            },
+            assertOutcome = { seq ->
+                val errs = mutableListOf<String>()
+                val last = seq.frames.last()
+                if (last.arrivedCount != 7) errs += "Expected 7/7 ships arrived in cohort-island-naval-escort, got ${last.arrivedCount}/7"
+                val northExits = seq.gateSummaries.firstOrNull { it.gateId == "north-wide-channel" }?.sternExitedCount ?: 0
+                val southExits = seq.gateSummaries.firstOrNull { it.gateId == "south-narrow-strait" }?.sternExitedCount ?: 0
+                if (northExits != 7) errs += "Expected all 7 ships to transit north-wide-channel together under Alt escort, got $northExits"
+                if (southExits != 0) errs += "Expected 0 ships shortcutting south-narrow-strait under Alt escort, got $southExits"
+                val maxStalled = seq.frames.maxOfOrNull { it.stalledCount } ?: 0
+                if (maxStalled > 0) errs += "Expected 0 false-positive 2s stalled highlights during escort, got maxStalled=$maxStalled"
+                errs
+            },
+        ),
+        ScenarioCatalogEntry(
+            id = "cohort-vanguard-escort-march",
+            displayName = "Cohort Vanguard Escort March (Heavy Overtake)",
+            category = ScenarioCategory.BENCHMARK_P016,
+            family = "cohort-escort",
+            group = "B",
+            seed = DEFAULT_WORLD_SEED,
+            description = "5 fast fragile light units start ahead of 5 slow heavy vanguards under explicit Alt escort; heavy units overtake to the front while light units pace behind without false stalls.",
+            defaultSteps = 2200,
+            playerCount = 2,
+            startingUnitCount = 10,
+            gates = listOf(
+                DiagnosticGateLine("march-midline-x640", axisX = true, entryThreshold = 620.0, exitThreshold = 660.0, minOrtho = 40.0, maxOrtho = 440.0, positiveDirection = true),
+            ),
+            buildMap = ::buildCohortVanguardMap,
+            buildScenario = { defs -> buildCohortVanguardScenario("cohort-vanguard-escort-march", defs) },
+            issueOrders = { ctx ->
+                val ids = (0 until 5).map { "light-$it" } + (0 until 5).map { "heavy-$it" }
+                val click = Position(1120.0, 240.0)
+                val group = checkNotNull(ctx.requestGroupMove("p1", ids, click, cohortEscort = true))
+                for (id in ids) {
+                    check(ctx.submitGroupMove(MoveAction("escort-van-$id", "p1", id, click, ctx.world, cohortEscort = true), group) is ActionResult.Accepted)
+                }
+            },
+            assertOutcome = { seq ->
+                val errs = mutableListOf<String>()
+                val last = seq.frames.last()
+                if (last.arrivedCount != 10) errs += "Expected 10/10 units arrived in cohort-vanguard-escort-march, got ${last.arrivedCount}/10"
+                val maxStalled = seq.frames.maxOfOrNull { it.stalledCount } ?: 0
+                if (maxStalled > 0) errs += "Expected 0 false-positive 2s stalled highlights during vanguard escort, got maxStalled=$maxStalled"
+                val midFrame = seq.frames.firstOrNull { frame ->
+                    val heavies = frame.units.filter { it.unitId.startsWith("heavy-") }
+                    heavies.isNotEmpty() && heavies.map { it.center.x }.average() >= 660.0
+                }
+                if (midFrame == null) {
+                    errs += "Heavy vanguard never reached midline x=660"
+                } else {
+                    val avgHeavyX = midFrame.units.filter { it.unitId.startsWith("heavy-") }.map { it.center.x }.average()
+                    val avgLightX = midFrame.units.filter { it.unitId.startsWith("light-") }.map { it.center.x }.average()
+                    if (avgHeavyX <= avgLightX + 20.0) {
+                        errs += "Expected heavy vanguard ahead of light escorts at midline (heavyX=$avgHeavyX, lightX=$avgLightX)"
+                    }
+                }
+                errs
+            },
+        ),
     )
 
     private val byIdMap: Map<String, ScenarioCatalogEntry> = entriesList.associateBy { it.id }
@@ -488,12 +572,67 @@ object ScenarioCatalog {
                 rotor = RotorDefinition(loadedTank.imagePath, 18.0),
                 movementCollision = MovementCollisionShape.Circle(9.0), mass = 1200.0,
             )
+        val escortGunboat = UnitDefinition(
+            id = "escort_gunboat", className = loadedTank.className, radius = 7.0, displayRadius = 7.0,
+            totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
+            movement = loadedTank.movement.copy(type = MovementType.WATER, moveSpeed = 1.65, maxTurnSpeed = 6.5, turnAcceleration = 0.8),
+            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+            combat = loadedTank.combat?.copy(maxHp = 140.0), durability = DurabilityProfile(140.0, null), build = loadedTank.build,
+            movementCollision = MovementCollisionShape.Circle(7.0), mass = 2400.0,
+        )
+        val escortBattleship = UnitDefinition(
+            id = "escort_battleship", className = loadedTank.className, radius = 18.0, displayRadius = 18.0,
+            totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
+            movement = loadedTank.movement.copy(type = MovementType.WATER, moveSpeed = 0.62, maxTurnSpeed = 2.4, turnAcceleration = 0.25),
+            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+            combat = loadedTank.combat?.copy(maxHp = 2200.0), durability = DurabilityProfile(2200.0, null), build = loadedTank.build,
+            movementCollision = MovementCollisionShape.Circle(18.0), mass = 42000.0,
+        )
+        val fastRangedLight = UnitDefinition(
+            id = "fast_ranged_light", className = loadedTank.className, radius = 6.0, displayRadius = 6.0,
+            totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
+            movement = loadedTank.movement.copy(moveSpeed = 1.65, maxTurnSpeed = 7.5, turnAcceleration = 1.0),
+            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+            combat = loadedTank.combat?.copy(maxHp = 95.0, attackRange = 210.0), durability = DurabilityProfile(95.0, null), build = loadedTank.build,
+            movementCollision = MovementCollisionShape.Circle(6.0), mass = 2200.0,
+        )
+        val heavyVanguard = UnitDefinition(
+            id = "heavy_vanguard", className = loadedTank.className, radius = 14.0, displayRadius = 14.0,
+            totalFrames = loadedTank.totalFrames, imagePath = loadedTank.imagePath, imageScale = loadedTank.imageScale,
+            movement = loadedTank.movement.copy(moveSpeed = 0.60, maxTurnSpeed = 2.4, turnAcceleration = 0.25),
+            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+            combat = loadedTank.combat?.copy(maxHp = 1800.0, attackRange = 110.0), durability = DurabilityProfile(1800.0, null), build = loadedTank.build,
+            movementCollision = MovementCollisionShape.Circle(14.0), mass = 36000.0,
+        )
         return LinkedHashMap(baseDefs).apply {
             put("c_tank", smallTank)
             put("fast_scout", fastScout)
             put("slow_heavy", slowHeavy)
             put("helicopter", airChopper)
+            put("escort_gunboat", escortGunboat)
+            put("escort_battleship", escortBattleship)
+            put("fast_ranged_light", fastRangedLight)
+            put("heavy_vanguard", heavyVanguard)
         }
+    }
+
+    fun proceduralWaterMap(w: Int, h: Int, waterBlocked: BooleanArray, tileWidth: Int = 20, tileHeight: Int = 20): MapDefinition {
+        require(w > 0 && h > 0 && tileWidth > 0 && tileHeight > 0) { "Map dimensions must be positive: ${w}x${h}@${tileWidth}x${tileHeight}" }
+        val ground = IntArray(w * h) { idx -> if (waterBlocked[idx]) 2 else 1 }
+        val grid = BlockingGrid(w, h, waterBlocked)
+        val waterCells = BooleanArray(w * h) { !waterBlocked[it] }
+        return MapDefinition(
+            widthTiles = w,
+            heightTiles = h,
+            tileWidth = tileWidth,
+            tileHeight = tileHeight,
+            tileSets = emptyList(),
+            groundGids = ground,
+            blocking = grid,
+            waterBlockingOverride = grid,
+            waterCellsOverride = waterCells,
+            nativeLiquidCellsOverride = waterCells,
+        )
     }
 
     fun proceduralMap(w: Int, h: Int, blocked: BooleanArray, tileWidth: Int = 20, tileHeight: Int = 20): MapDefinition {
@@ -669,6 +808,58 @@ object ScenarioCatalog {
         val map = buildCulDeSacMap()
         val units = (0 until 100).map { i ->
             UnitSpawn(String.format("cds-%02d", i), "p1", "c_tank", Position(420.0 - (i / 10) * 24.0, 160.0 + (i % 10) * 22.0), 90.0)
+        }
+        return baseScenario(id, map, definitions, units)
+    }
+
+    fun buildCohortIslandNavalMap(): MapDefinition {
+        val w = 56
+        val h = 32
+        val blocked = BooleanArray(w * h) { idx ->
+            val x = idx % w
+            val y = idx / w
+            if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
+            // Central island leaving a 2-tile narrow south strait (y=29..30, clearanceRings=1 only)
+            // and an 8-tile wide north channel (y=1..8, clearanceRings>=3 for large ships).
+            else x in 20..35 && y in 9..28
+        }
+        return proceduralWaterMap(w, h, blocked)
+    }
+
+    private fun buildCohortIslandNavalScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
+        val map = buildCohortIslandNavalMap()
+        val units = buildList {
+            add(UnitSpawn("bs-0", "p1", "escort_battleship", Position(180.0, 480.0), 90.0))
+            for (i in 0 until 6) {
+                val col = i / 3
+                val row = i % 3
+                add(UnitSpawn("gb-$i", "p1", "escort_gunboat", Position(255.0 + col * 24.0, 456.0 + row * 24.0), 90.0))
+            }
+        }
+        return baseScenario(id, map, definitions, units)
+    }
+
+    fun buildCohortVanguardMap(): MapDefinition {
+        val w = 64
+        val h = 24
+        val blocked = BooleanArray(w * h) { idx ->
+            val x = idx % w
+            val y = idx / w
+            x == 0 || x == w - 1 || y == 0 || y == h - 1
+        }
+        return proceduralMap(w, h, blocked)
+    }
+
+    private fun buildCohortVanguardScenario(id: String, definitions: Map<String, UnitDefinition>): Scenario {
+        val map = buildCohortVanguardMap()
+        val units = buildList {
+            // 5 fast fragile light units intentionally start 130px ahead of 5 slow durable heavy units.
+            for (i in 0 until 5) {
+                add(UnitSpawn("light-$i", "p1", "fast_ranged_light", Position(310.0, 176.0 + i * 32.0), 90.0))
+            }
+            for (i in 0 until 5) {
+                add(UnitSpawn("heavy-$i", "p1", "heavy_vanguard", Position(165.0, 140.0 + i * 50.0), 90.0))
+            }
         }
         return baseScenario(id, map, definitions, units)
     }

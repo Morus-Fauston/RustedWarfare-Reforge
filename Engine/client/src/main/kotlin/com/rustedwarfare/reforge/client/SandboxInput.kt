@@ -29,7 +29,7 @@ class SandboxInput(
     private data class PatrolPress(val members: Set<String>, val append: Boolean)
     private var patrolPress: PatrolPress? = null
     private data class CommandPress(val session: SandboxSession, val revision: Long, val members: Set<String>,
-        val modeRevision: Long, val targetId: String?, val append: Boolean)
+        val modeRevision: Long, val targetId: String?, val append: Boolean, val cohortEscort: Boolean = false)
     private var commandPress: CommandPress? = null
     private var pHeld = false
     private var upgradeHeld = false
@@ -254,7 +254,7 @@ class SandboxInput(
             changed(); return true
         }
         if (kind == MapButton.COMMAND) commandPress = CommandPress(current, current.selectionRevision,
-            current.selectedIds.toSet(), modeRevision, current.commandTargetAt(world), append)
+            current.selectedIds.toSet(), modeRevision, current.commandTargetAt(world), append, cohortEscort = alt())
         gesture = MapGesture(map).also { check(it.begin(ui.x, ui.y, kind, mode(), current.selectedIds)) }
         ownerButton = button
         changed()
@@ -376,7 +376,7 @@ class SandboxInput(
                 if (canTargetAt(screenX, screenY) && current === press.session && current.isOpen &&
                     current.selectionRevision == press.revision && current.selectedIds == press.members &&
                     modeRevision == press.modeRevision && current.commandTargetAt(intent.position) == press.targetId)
-                    current.command(intent.position, press.append)
+                    current.command(intent.position, press.append, press.cohortEscort)
             }
             null -> Unit
         }

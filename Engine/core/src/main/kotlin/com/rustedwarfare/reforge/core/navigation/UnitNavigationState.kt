@@ -156,6 +156,7 @@ internal data class UnitNavigationState(
     val terrainClearSteps: Int = 0,
     val terrainOnlyStall: Boolean = false,
     val optimisticSteerTarget: Position? = null,
+    val cohortEscortYielding: Boolean = false,
     val repairBackoffStep: Long = 0L,
     val repairConsecutiveFailures: Int = 0,
     val lastAvoidHeadingDeg: Double? = null,
@@ -263,6 +264,7 @@ internal data class UnitNavigationState(
         localProgressTime = 0.0,
         terrainOnlyStall = false,
         optimisticSteerTarget = null,
+        cohortEscortYielding = false,
         repairBackoffStep = 0L,
         repairConsecutiveFailures = 0,
         lastAvoidHeadingDeg = null,
@@ -422,6 +424,9 @@ internal data class UnitNavigationState(
             repairBackoffStep = backoffUntilStep,
             repairConsecutiveFailures = nextConsecutiveFailures,
         )
+
+    fun withCohortEscortYielding(yielding: Boolean): UnitNavigationState =
+        if (cohortEscortYielding == yielding) this else copy(cohortEscortYielding = yielding)
 
     companion object {
         val EMPTY = UnitNavigationState()

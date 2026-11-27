@@ -179,6 +179,7 @@ data class UnitObservation(
     val attachmentOverview: AttachmentOverview? = null,
     val factoryRally: Position? = null,
     val moveArrival: MoveArrival? = null,
+    val cohortEscortYielding: Boolean = false,
 )
 
 data class AttachedUnitObservation(val parentUnitId: String, val slot: Int, val empty: Boolean)
@@ -543,6 +544,7 @@ internal data class MutableUnit(
     val terrainClearSteps: Int get() = nav.terrainClearSteps
     val terrainOnlyStall: Boolean get() = nav.terrainOnlyStall
     val optimisticSteerTarget: Position? get() = nav.optimisticSteerTarget
+    val cohortEscortYielding: Boolean get() = nav.cohortEscortYielding
     val repairBackoffStep: Long get() = nav.repairBackoffStep
     val repairConsecutiveFailures: Int get() = nav.repairConsecutiveFailures
     val movementRequested: Boolean get() = nav.requestAudit.movementRequested
