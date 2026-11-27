@@ -38,8 +38,8 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
             stopped.set()
 
     try:
-        if workers not in (1, 2, 4):
-            raise ValueError('Scenario workers must be 1, 2 or 4')
+        if workers not in (1, 2, 4, 8):
+            raise ValueError('Scenario workers must be 1, 2, 4 or 8')
         names = []
         for case in cases:
             name = case['id']

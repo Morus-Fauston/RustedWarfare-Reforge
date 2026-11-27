@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.5.86 (2026-11-28 01:55)
+
+### 性能优化
+
+- **消除公共机制测试 `methods.json` $O(N^2)$ 写盘与全局锁瓶颈**：改造 `SimulationTest/ci/development_tests.gradle`，移除 `beforeTest`/`afterTest` 每次在全局 `synchronized (methods)` 锁内线性扫描与全量序列化覆写 `methods.json` 的磁盘 I/O，改为按 `className#name` 映射 `ArrayDeque` 的内存 $O(1)$ 记录并在顶层 `afterSuite`（`descriptor.parent == null`）一次性落盘结构完全一致的 `methods.json`，保持 FIFO 语义、字段完整性与 `collect_tests` 校验零削弱。
+- **高核并发白名单扩展与只读 Python 机制并发执行**：将 `public_check.py`、`public_scenarios.py`、`public_batch.py`、`development_check.py`、`development_tests.gradle` 与 `quick_test.py` 的 `--test-forks` / `--scenario-workers` 白名单统一扩展至 `{1, 2, 4, 8}`（全程严格保持 `:pc:test` 的 `maxParallelForks == 1` 与云端工作流既有配置不变）；在 `development_check.py` 将 41 项只读 Python 机制测试改为按 `min(forks, len(items))` 线程池并发执行，结果按注册顺序确定性排序落入 `python-0..N` 与 `pythonCoverage`，并将逐脚本 82 次全仓 SHA-256 `admit()` 收敛为批次前后两次与终态 `identities(repo) == initial` 校验。
+
+### 技术
+
+- **单测补齐、同口径提速基准与独立整审**：扩充 `test_development_check.py`（新增并发 Python 机制重叠执行、确定性排序、批前后 `admit()` 边界与失败保留单测，及 `1/2/4/8` 与非法值 `9` 断言）、`test_public_check.py` 与 `test_quick_test.py`；实跑 `SimulationTest/ci` 全部 74 项与 `test_quick_test.py` 全部 9 项单测全绿，`development_check.py --suite content-movement-knowledge --test-forks 8` 一次通过（`66.0s`），同口径 `public_batch.py --kind pr --test-forks 2 --scenario-workers 8` 全绿并将整批墙钟由 `1971.1s` 压降至 `1365.0s`（`-30.7%`，其中 `mechanisms` `1455.2s -> 940.3s`、`-35.4%`，`group-0` `947.2s -> 751.5s`，41 项 Python 机制与扫盘阶段 `456.6s -> 147.9s`、`-67.6%`），双根布局检查通过，经独立全新上下文非作者代码整审 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.85 (2026-11-28 00:39)
 
 ### 架构改进

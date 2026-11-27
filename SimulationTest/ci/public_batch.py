@@ -195,8 +195,8 @@ def main():
     parser.add_argument('--output', type=Path, help='New immutable batch directory')
     parser.add_argument('--list', action='store_true', help='List fixed complete layer without execution')
     parser.add_argument('--isolated', action='store_true', help='Copy only authored public source closure')
-    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2 or 4; PC stays serial')
-    parser.add_argument('--scenario-workers', type=scenario_workers, default=None, help='Bound independent headless scenarios after tests: 1, 2 or 4')
+    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2, 4 or 8; PC stays serial')
+    parser.add_argument('--scenario-workers', type=scenario_workers, default=None, help='Bound independent headless scenarios after tests: 1, 2, 4 or 8')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Per-command seconds forwarded to every suite and shared build; at most 3600')
     args = parser.parse_args()

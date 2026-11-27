@@ -39,6 +39,28 @@ class QuickTestRunnerTest(unittest.TestCase):
         self.assertEqual(2, quick_test.default_test_forks(6))
         self.assertEqual(4, quick_test.default_test_forks(8))
         self.assertEqual(4, quick_test.default_test_forks(16))
+        for allowed in (1, 2, 4, 8):
+            self.assertEqual(allowed, quick_test.parse_test_forks(str(allowed)))
+        with self.assertRaises(quick_test.argparse.ArgumentTypeError):
+            quick_test.parse_test_forks('9')
+
+    def test_high_core_eight_forks_propagates_to_core_and_suites_while_keeping_pc_serial(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.make_repo(Path(tmp) / 'wt')
+            plan = quick_test.build_plan(
+                repo,
+                core=['OpenGroundPlanningTest'],
+                pc=['WindowsLaunchOptionsTest'],
+                suites=['tooling'],
+                forks=8,
+                is_windows=True,
+            )
+            self.assertEqual(8, plan['testForks'])
+            argv = plan['steps'][0]['argv']
+            self.assertIn('-Pcore.test.maxParallelForks=8', argv)
+            self.assertNotIn('-Ppc.test.maxParallelForks=8', argv)
+            suite_argv = plan['steps'][1]['argv']
+            self.assertEqual('8', suite_argv[suite_argv.index('--test-forks') + 1])
 
     def test_targeted_client_and_core_plan_uses_warm_simulation_root_and_public_fixture(self):
         with tempfile.TemporaryDirectory() as tmp:

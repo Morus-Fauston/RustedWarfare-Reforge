@@ -40,8 +40,8 @@ def default_test_forks(cpu_count=None):
 
 
 def parse_test_forks(value):
-    if str(value) not in ('1', '2', '4'):
-        raise argparse.ArgumentTypeError('Test forks must be 1, 2 or 4')
+    if str(value) not in ('1', '2', '4', '8'):
+        raise argparse.ArgumentTypeError('Test forks must be 1, 2, 4 or 8')
     return int(value)
 
 

@@ -1,3 +1,9 @@
+v0.5.86 (2026-11-28 01:55)
+  性能优化: 改造 SimulationTest/ci/development_tests.gradle，消除 beforeTest/afterTest 在全局锁内每次线性查找并全量序列化覆写 methods.json 的 O(N²) 磁盘瓶颈，改为内存 O(1) ArrayDeque 记录并在顶层 afterSuite 单次落盘结构完全一致的 methods.json / 将 public_check.py、public_scenarios.py、public_batch.py、development_check.py、development_tests.gradle 与 quick_test.py 的 --test-forks 与 --scenario-workers 白名单扩展至 {1, 2, 4, 8}（严格保持 :pc:test 串行 maxParallelForks == 1 与云端配置不变），并将 development_check.py 的 41 项只读 Python 机制测试改为线程池并发、确定性顺序落盘及批前后全仓 SHA-256 校验（消除 80 次冗余扫盘）
+  技术: 补齐 test_development_check.py（并发重叠、确定性排序、admit 边界与失败保全及 8-fork 断言）、test_public_check.py 与 test_quick_test.py 覆盖；74 项 CI 单测与 9 项 quick_test 单测全绿，实跑 --test-forks 8 机制验证一次通过（66.0s），同口径 public_batch --kind pr --test-forks 2 --scenario-workers 8 全绿并将整批墙钟由 1971.1s 降至 1365.0s（-30.7%，mechanisms -35.4%，Python 机制段 -67.6%），双根布局通过，经独立非作者代码整审 APPROVE（0 必修）
+
+====
+
 v0.5.85 (2026-11-28 00:39)
   架构改进: 在 :Engine:core 建立独立包域 core.navigation 物理收拢原 core.path 与 core.sim 共 36 个寻路/流场/避让/空间索引/落位/接触文件（删除 src/main 与 src/test 旧 core/path 目录），收敛为 LocomotionDescriptor & VerticalPoseController、AuthorizedNavigationTerrain、NavigationSubsystem 三道窄接口与 DynamicBuildingGrid/窄化 UnitMovementHost，彻底切断业务类、StepState/CandidateStep、UnitTaskKind 与具体单位 ID 逆向依赖 / 新增 WaterLandSpeedProfile、SubmersibleMotionProfile、CustomVerticalPoseProfile、shortReverseDistance、sinksInWaterOnDeath 纯数据契约（配 Float/平方溢出与多垂向控制器互斥校验），拔除 SimulationContext.validate 的 radius>=20、离散倒车比、slidingMode/ignoringBody 与 FOUR_LEGGED 介质锁，将 UnitLocomotion、*Motion、WaterBody 与 BuildingOverlapEscape 运行期全面参数化清零单位 ID 白名单并贯通 OVER_CLIFF_WATER 全链路
   文档: 按授权同步主仓库 AGENTS.md 治理索引微调与 CONTEXT.md 命令队列/编队行进/出厂散开/连片停稳领域术语增量

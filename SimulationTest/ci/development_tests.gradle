@@ -38,7 +38,7 @@ def expectedMethods = { task, classes ->
 
 def plan = new JsonSlurper().parse(new File(System.getProperty('development.selection')))
 def output = new File(plan.output)
-if (!(plan.testForks in [1, 2, 4]) || gradle.startParameter.maxWorkerCount != plan.testForks)
+if (!(plan.testForks in [1, 2, 4, 8]) || gradle.startParameter.maxWorkerCount != plan.testForks)
     throw new GradleException('Test forks must match the bounded Gradle worker budget')
 def preparedClasspathRoots = []
 gradle.projectsEvaluated {
@@ -83,24 +83,36 @@ gradle.projectsEvaluated {
                     new File(leaf, 'started.json').text = JsonOutput.toJson([task:task.path, millis:System.currentTimeMillis()])
                 }
                 def methods = []
+                def activeMethods = [:]
                 beforeTest { descriptor ->
                     synchronized (methods) {
-                        methods.add([className:descriptor.className, name:descriptor.name, started:System.currentTimeMillis()])
-                        new File(leaf, 'methods.json').text = JsonOutput.toJson(methods)
+                        def key = descriptor.className + '#' + descriptor.name
+                        def record = [className:descriptor.className, name:descriptor.name, started:System.currentTimeMillis()]
+                        methods.add(record)
+                        def queue = activeMethods[key]
+                        if (queue == null) {
+                            queue = new ArrayDeque()
+                            activeMethods[key] = queue
+                        }
+                        queue.addLast(record)
                     }
                 }
                 afterTest { descriptor, result ->
                     synchronized (methods) {
-                        def record = methods.find { it.className == descriptor.className && it.name == descriptor.name && !it.completed }
+                        def key = descriptor.className + '#' + descriptor.name
+                        def queue = activeMethods[key]
+                        def record = queue?.pollFirst()
                         if (record == null) throw new GradleException('Test completed without starting')
                         record.completed = System.currentTimeMillis()
                         record.result = result.resultType.toString()
-                        new File(leaf, 'methods.json').text = JsonOutput.toJson(methods)
                     }
                 }
                 afterSuite { descriptor, result ->
                     if (descriptor.parent == null) {
                         leaf.mkdirs()
+                        synchronized (methods) {
+                            new File(leaf, 'methods.json').text = JsonOutput.toJson(methods)
+                        }
                         new File(leaf, 'completed.json').text = JsonOutput.toJson([task:task.path,
                             tests:result.testCount, failures:result.failedTestCount, skipped:result.skippedTestCount])
                     }

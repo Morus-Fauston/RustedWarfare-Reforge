@@ -130,8 +130,8 @@ MODULES = {'tools': (':test', 'build/test-results/test'),
 
 
 def test_forks(value):
-    if str(value) not in ('1', '2', '4'):
-        raise argparse.ArgumentTypeError('Test forks must be 1, 2 or 4')
+    if str(value) not in ('1', '2', '4', '8'):
+        raise argparse.ArgumentTypeError('Test forks must be 1, 2, 4 or 8')
     return int(value)
 
 
@@ -144,8 +144,8 @@ def test_concurrency(tests, forks):
 
 
 def scenario_workers(value):
-    if str(value) not in ('1', '2', '4'):
-        raise argparse.ArgumentTypeError('Scenario workers must be 1, 2 or 4')
+    if str(value) not in ('1', '2', '4', '8'):
+        raise argparse.ArgumentTypeError('Scenario workers must be 1, 2, 4 or 8')
     return int(value)
 
 
@@ -453,8 +453,8 @@ def main():
     parser.add_argument('--suite', default='pr-first-loop', help='Named registry under public/suites')
     parser.add_argument('--kind', choices=['mechanism', 'short', 'long', 'pr', 'all'], default='pr')
     parser.add_argument('--list', action='store_true', help='Print fixed plan without building or creating evidence')
-    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2 or 4; PC stays serial')
-    parser.add_argument('--scenario-workers', type=scenario_workers, default=2, help='Bound independent headless scenarios after tests: 1, 2 or 4')
+    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2, 4 or 8; PC stays serial')
+    parser.add_argument('--scenario-workers', type=scenario_workers, default=2, help='Bound independent headless scenarios after tests: 1, 2, 4 or 8')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Explicit per-command seconds, at most 3600; default 600. Selection is unchanged.')
     parser.add_argument('--distribution-receipt', type=Path, help='Same-batch fixed public PR preparation or long package receipt')

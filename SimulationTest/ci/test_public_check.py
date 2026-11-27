@@ -393,7 +393,7 @@ class PublicSelectionTest(unittest.TestCase):
                 default=subprocess.run([sys.executable,'-B',str(entry),*scope,'--list'],capture_output=True,text=True)
                 self.assertEqual(0,default.returncode,default.stderr)
                 self.assertEqual(2,json.loads(default.stdout)['scenarioConcurrency']['requested'])
-                for workers in (1,2,4):
+                for workers in (1,2,4,8):
                     result=subprocess.run([sys.executable,'-B',str(entry),*scope,'--list',
                         '--output',str(output),'--scenario-workers',str(workers)],capture_output=True,text=True)
                     self.assertEqual(0,result.returncode,result.stderr)
@@ -401,7 +401,7 @@ class PublicSelectionTest(unittest.TestCase):
                     self.assertEqual(workers,plan['scenarioConcurrency']['requested'])
                     self.assertEqual('after-build-and-tests',plan['scenarioConcurrency']['phase'])
                     self.assertEqual(1,plan['testConcurrency']['requested'])
-                for invalid in ('0','3','5','-1','two'):
+                for invalid in ('0','3','5','9','-1','two'):
                     result=subprocess.run([sys.executable,'-B',str(entry),*scope,'--output',str(output),
                         '--scenario-workers',invalid],capture_output=True)
                     self.assertEqual(2,result.returncode)
