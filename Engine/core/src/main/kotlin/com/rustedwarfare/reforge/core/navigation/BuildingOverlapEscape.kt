@@ -126,6 +126,49 @@ internal object BuildingOverlapEscape {
         return released ?: emptySet()
     }
 
+    /**
+     * Static geometric overlap test between [unit]'s authoritative collision hull at its current
+     * `(position, heading)` and [producer]'s building footprint (both circles and rotated rectangles).
+     * Unlike [departingSeaFactoryCells], this does NOT require a non-zero separation vector `next`.
+     */
+    fun overlapsProducerFootprint(
+        map: MapDefinition,
+        buildingTerrain: DynamicBuildingGrid?,
+        unit: MutableUnit,
+        producer: MutableUnit?,
+    ): Boolean {
+        if (producer?.alive != true) return false
+        val building = producer.definition.building ?: return false
+        val producerCells = buildingTerrain?.footprintCells(map, producer.position, building.footprint, building.anchor)
+            ?: pureFootprintCells(map, producer.position, building.footprint, building.anchor)
+        if (producerCells.isEmpty()) return false
+        val north = producerCells.minOf { it.second }.toDouble() * map.tileHeight
+        val west = producerCells.minOf { it.first }.toDouble() * map.tileWidth
+        val east = (producerCells.maxOf { it.first } + 1.0) * map.tileWidth
+        val south = (producerCells.maxOf { it.second } + 1.0) * map.tileHeight
+        val pos = unit.position
+        return when (val shape = unit.definition.movementCollision) {
+            is MovementCollisionShape.Circle -> {
+                val r = shape.radius
+                if (r <= 0.0) {
+                    pos.x in west..east && pos.y in north..south
+                } else {
+                    val ox = pos.x - pos.x.coerceIn(west, east)
+                    val oy = pos.y - pos.y.coerceIn(north, south)
+                    (ox == 0.0 && oy == 0.0) || (ox * ox + oy * oy < r * r)
+                }
+            }
+            is MovementCollisionShape.Rectangle -> UnitContact.posesOverlap(
+                shape,
+                pos,
+                unit.heading,
+                MovementCollisionShape.Rectangle(south - north, east - west),
+                Position((west + east) / 2.0, (north + south) / 2.0),
+                0.0,
+            )
+        }
+    }
+
     fun departingSeaFactoryCells(
         map: MapDefinition,
         unit: MutableUnit,

@@ -27,6 +27,7 @@ sealed interface MotionGoalGeometry {
         override val completesOnCapture: Boolean = true,
         val allowAirRallyRing: Boolean = true,
         val allowShortReverse: Boolean = true,
+        val brakesAtAnchor: Boolean = true,
     ) : MotionGoalGeometry
 
     /** Shared terminal landing cluster (e.g. multi-unit Move, Attack-Move / Cohort destination). */
@@ -80,9 +81,21 @@ data class MotionContract(
             hasQueuedExitTask: Boolean,
             hasRally: Boolean,
         ): MotionContract = if (hasQueuedExitTask) {
-            pointMove(
-                target = target,
-                allowShortReverse = false,
+            MotionContract(
+                goal = MotionGoalGeometry.Point(
+                    anchor = target,
+                    completesOnCapture = true,
+                    allowAirRallyRing = true,
+                    allowShortReverse = false,
+                    brakesAtAnchor = !hasRally,
+                ),
+                allowPassageYield = true,
+                traversalMode = TraversalMode.INDEPENDENT,
+                enableLocalAvoidance = true,
+                allowsManeuverFollow = true,
+                preparesRouteSuccessor = true,
+                tracksRouteStall = true,
+                tracksHardContactLimit = true,
                 gatheringTarget = if (hasRally) null else target,
             )
         } else {
@@ -90,8 +103,9 @@ data class MotionContract(
                 goal = MotionGoalGeometry.Point(
                     anchor = target,
                     completesOnCapture = true,
-                    allowAirRallyRing = false,
+                    allowAirRallyRing = true,
                     allowShortReverse = false,
+                    brakesAtAnchor = true,
                 ),
                 allowPassageYield = false,
                 enableLocalAvoidance = true,

@@ -1272,7 +1272,7 @@ class SimulationContext internal constructor(
             val target = unit.moveTarget ?: continue
             val lmFlow = unit.landingMember
             if (trafficSeparationEnabled && lmFlow != null && lmFlow.claimed == null &&
-                lmFlow.group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                lmFlow.group.flowFieldEligible &&
                 steps.current.flowFields.activeFieldCount() > 0 &&
                 steps.current.flowFields.hasValidGuidanceFor(unit, planningTerrainFor(unit, map))
             ) continue
@@ -1396,7 +1396,7 @@ class SimulationContext internal constructor(
             val target = unit.moveTarget ?: continue
             val lmFlow = unit.landingMember
             if (trafficSeparationEnabled && lmFlow != null && lmFlow.claimed == null &&
-                lmFlow.group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                lmFlow.group.flowFieldEligible &&
                 steps.current.flowFields.activeFieldCount() > 0 &&
                 steps.current.flowFields.hasValidGuidanceFor(unit, planningTerrainFor(unit, map))
             ) continue
@@ -1969,7 +1969,7 @@ class SimulationContext internal constructor(
         }
         productionLedger = tick.ledger
         tick.completed?.let { completed ->
-            UnitRegistration.produced(steps.current, input, factory, completed, map)
+            UnitRegistration.produced(steps.current, input, factory, completed, map, world)
         }
     }
 
@@ -2643,33 +2643,53 @@ class SimulationContext internal constructor(
                 }
                 val fourLegged = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
                 val head = unit.tasks.firstOrNull()
-                if (unit.moveTarget == null && head?.factoryExit == true && unit.birthRemaining == 0f)
+                val nextTask = unit.tasks.getOrNull(1)
+                if (head?.factoryExit == true &&
+                    nextTask != null && nextTask.kind == UnitTaskKind.MOVE && nextTask.startsAfterFactoryExit &&
+                    unit.definition.movement.type != MovementType.NONE &&
+                    unit.birthRemaining == 0f &&
+                    hasClearedProducerFootprint(unit, currentScenario.map)
+                ) {
                     unit.taskQueue = unit.taskQueue.pop()
-                val queuedMove = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
-                if (queuedMove != null && (queuedMove.startsAfterFactoryExit && unit.birthRemaining == 0f ||
-                        unit.definition.groundHeight != null || com.rustedwarfare.reforge.core.content.NautilusRules.supports(unit.definition)) &&
-                    unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null &&
-                    !candidate.state.movePlanning.pending(unit.unitId) &&
-                    unit.unitId !in candidate.state.pendingFlowStart) {
-                    val qTarget = checkNotNull(queuedMove.target)
-                    val qContract = queuedMove.motionContract ?: MotionContract.pointMove(
-                        target = qTarget,
-                        allowShortReverse = !queuedMove.factoryExit,
-                        gatheringTarget = if (queuedMove.factoryExit) null else qTarget,
-                    )
-                    unit.updateNavigation {
-                        it.bindCommandTarget(
-                            target = qTarget,
-                            originMoveId = queuedMove.actionId,
-                            originAtStep = queuedMove.atStep,
-                            contract = qContract,
-                        )
-                    }
                     val planT0 = if (prof != null) System.nanoTime() else 0L
-                    resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                    startFactoryRallyHandoff(unit, nextTask, currentScenario.map, step.stepIndex, candidate)
                     if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
-                    if (unit.moveTarget == null && !candidate.state.movePlanning.hasPendingTactical(unit.unitId) && queuedMove.startsAfterFactoryExit) {
+                    if (unit.moveTarget == null && !candidate.state.movePlanning.hasPendingTactical(unit.unitId)) {
                         unit.taskQueue = unit.taskQueue.pop()
+                    }
+                } else {
+                    if (unit.moveTarget == null && head?.factoryExit == true && unit.birthRemaining == 0f)
+                        unit.taskQueue = unit.taskQueue.pop()
+                    val queuedMove = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
+                    if (queuedMove != null && (queuedMove.startsAfterFactoryExit && unit.birthRemaining == 0f ||
+                            unit.definition.groundHeight != null || com.rustedwarfare.reforge.core.content.NautilusRules.supports(unit.definition)) &&
+                        unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null &&
+                        !candidate.state.movePlanning.pending(unit.unitId) &&
+                        unit.unitId !in candidate.state.pendingFlowStart) {
+                        val planT0 = if (prof != null) System.nanoTime() else 0L
+                        if (queuedMove.startsAfterFactoryExit) {
+                            startFactoryRallyHandoff(unit, queuedMove, currentScenario.map, step.stepIndex, candidate)
+                        } else {
+                            val qTarget = checkNotNull(queuedMove.target)
+                            val qContract = queuedMove.motionContract ?: MotionContract.pointMove(
+                                target = qTarget,
+                                allowShortReverse = !queuedMove.factoryExit,
+                                gatheringTarget = if (queuedMove.factoryExit) null else qTarget,
+                            )
+                            unit.updateNavigation {
+                                it.bindCommandTarget(
+                                    target = qTarget,
+                                    originMoveId = queuedMove.actionId,
+                                    originAtStep = queuedMove.atStep,
+                                    contract = qContract,
+                                )
+                            }
+                            resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                        }
+                        if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
+                        if (unit.moveTarget == null && !candidate.state.movePlanning.hasPendingTactical(unit.unitId) && queuedMove.startsAfterFactoryExit) {
+                            unit.taskQueue = unit.taskQueue.pop()
+                        }
                     }
                 }
                 val trackAvoid = prof != null && unit.definition.movement.type != MovementType.NONE &&
@@ -3473,6 +3493,145 @@ class SimulationContext internal constructor(
     private fun invalidateObservation() {
         revision += 1
         latestObservation = null
+    }
+
+    private fun hasClearedProducerFootprint(unit: MutableUnit, map: MapDefinition): Boolean {
+        if (unit.definition.movement.type == MovementType.AIR) return true
+        val producerId = unit.productionOrigin?.producerId ?: return true
+        val producer = units[producerId] ?: return true
+        if (!producer.alive) return true
+        return !BuildingOverlapEscape.overlapsProducerFootprint(map, buildingTerrain, unit, producer)
+    }
+
+    private fun factoryRallyGroupFor(
+        state: StepState,
+        producerKey: String,
+        ownerPlayerId: String,
+        rally: Position,
+        movementType: MovementType,
+        radius: Double,
+    ): GroupMoveRequest {
+        val existing = state.factoryRallyGroups[producerKey]
+        if (existing != null && existing.actor == ownerPlayerId && existing.click == rally) {
+            return existing
+        }
+        val maxRadii = mutableMapOf(movementType to radius)
+        state.units[producerKey]?.definition?.production?.unitTypeIds?.forEach { typeId ->
+            val def = scenario?.unitDefinitions?.get(typeId) ?: return@forEach
+            val mt = def.movement.type
+            val r = def.movementCollision.boundingRadius
+            val prev = maxRadii[mt]
+            if (prev == null || r > prev) maxRadii[mt] = r
+        }
+        val created = GroupMoveRequest(
+            world = world,
+            completedStep = state.stepIndex,
+            actor = ownerPlayerId,
+            click = rally,
+            members = emptySet(),
+            maxRadiusByMovement = maxRadii,
+            dynamicCluster = true,
+            noParkingCorridor = null,
+        )
+        state.factoryRallyGroups[producerKey] = created
+        return created
+    }
+
+    private fun startFactoryRallyHandoff(
+        unit: MutableUnit,
+        rallyTask: UnitTask,
+        map: MapDefinition,
+        executionStep: Long,
+        candidate: CandidateStep,
+    ) {
+        val rally = checkNotNull(rallyTask.target)
+        val movement = UnitLocomotion.movement(unit)
+        if (movement.type == MovementType.NONE) return
+        if (movement.type == MovementType.AIR) {
+            val airContract = MotionContract.pointMove(
+                target = rally,
+                allowShortReverse = false,
+                allowAirRallyRing = true,
+            )
+            unit.updateNavigation {
+                it.bindCommandTarget(
+                    target = rally,
+                    originMoveId = rallyTask.actionId,
+                    originAtStep = rallyTask.atStep,
+                    contract = airContract,
+                    landingMember = null,
+                )
+            }
+            unit.adoptRoute(listOf(rally), logicalRouteTarget(unit, rally), plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+            return
+        }
+        val producerKey = unit.productionOrigin?.producerId ?: "${unit.ownerPlayerId}:rally"
+        val terrainR = maxOf(1.0, ChunkedFlowFieldAdapter.flowPassabilityRadius(unit, map.tileWidth, map.tileHeight))
+        val rallyGroup = factoryRallyGroupFor(
+            state = candidate.state,
+            producerKey = producerKey,
+            ownerPlayerId = unit.ownerPlayerId,
+            rally = rally,
+            movementType = movement.type,
+            radius = terrainR,
+        )
+        val terrain = planningTerrainFor(unit, map, movement.type)
+        val uCol = MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles)
+        val uRow = MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles)
+        val gCol = MapBounds.cell(rally.x, map.tileWidth, map.widthTiles)
+        val gRow = MapBounds.cell(rally.y, map.tileHeight, map.heightTiles)
+        val isRectUnit = unit.definition.movementCollision is MovementCollisionShape.Rectangle
+        val rectInOpenWater = !isRectUnit ||
+            terrain.clearanceField().clearanceRings(uCol, uRow) >= ChunkedFlowFieldAdapter.clearanceBandFor(terrain, terrainR)
+        val srcComp = candidate.state.flowFields.resolveSourceComponent(terrain, terrainR, gCol, gRow, uCol, uRow)
+        val maxGroupR = maxOf(terrainR, rallyGroup.maxRadiusByMovement[movement.type] ?: terrainR)
+        val flowField = if (trafficSeparationEnabled && rectInOpenWater) {
+            candidate.state.flowFields.ensureFieldForGroup(
+                ownerId = unit.ownerPlayerId,
+                movementType = movement.type,
+                unitRadius = terrainR,
+                maxGroupRadius = maxGroupR,
+                terrain = terrain,
+                goalWorld = rally,
+                stepIndex = executionStep,
+                sourceComponentId = srcComp,
+            )
+        } else null
+        val goalBlocked = terrain.isBlocked(gCol, gRow)
+        val immobilePocket = srcComp != 0 &&
+            candidate.state.flowFields.isSingleCellImmobilePocket(terrain, terrainR, uCol, uRow)
+        val rallyContract = MotionContract.sharedCluster(rally)
+        if (flowField != null && !goalBlocked && srcComp == 0 && !immobilePocket) {
+            val effectiveTarget = flowField.effectiveGoalWorld
+            unit.updateNavigation {
+                it.bindCommandTarget(
+                    target = effectiveTarget,
+                    originMoveId = rallyTask.actionId,
+                    originAtStep = rallyTask.atStep,
+                    contract = rallyContract,
+                    landingMember = LandingMember(rallyGroup),
+                )
+            }
+            unit.adoptRoute(
+                listOf(effectiveTarget),
+                logicalRouteTarget(unit, rally),
+                plannedKnowledgeRevision(unit),
+                plannedBuildingRevision(unit),
+            )
+            candidate.state.landingOccupancy.update(unit)
+            return
+        }
+        unit.updateNavigation {
+            it.bindCommandTarget(
+                target = rally,
+                originMoveId = rallyTask.actionId,
+                originAtStep = rallyTask.atStep,
+                contract = rallyContract,
+                landingMember = LandingMember(rallyGroup),
+            )
+        }
+        resumeProductionRoute(unit, map, executionStep)
+        candidate.state.landingOccupancy.update(unit)
     }
 
     private fun resumeProductionRoute(unit: MutableUnit, map: MapDefinition, executionStep: Long) {
@@ -4533,7 +4692,7 @@ class SimulationContext internal constructor(
             if (!retry && !checkWall) continue
             val lmFlow = unit.landingMember
             if (trafficSeparationEnabled && lmFlow != null && lmFlow.claimed == null &&
-                lmFlow.group.members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE &&
+                lmFlow.group.flowFieldEligible &&
                 steps.current.flowFields.activeFieldCount() > 0 &&
                 steps.current.flowFields.hasValidGuidanceFor(unit, planningTerrainFor(unit, map))
             ) continue

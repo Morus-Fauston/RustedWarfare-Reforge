@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.5.88 (2026-11-28 05:41)
+
+### 体验优化
+
+- **全产线无集结点厂前扇形散开与禁停走廊**：为陆厂、机甲厂与移动生产母体等圆体产线引入可渗透前向半圆扇形出厂分配（槽距保留 `> 2R` 通道，首车或空门口严格沿用原 `birth.target`）与厂前 `NoParkingCorridor` 禁停走廊，按 `(factory.unitId, owner)` 稳定复用动态厂前落位簇并预聚合完整产线半径；消除连续产兵在厂门口挤成单点死停的问题，同时保持矩形海厂与空厂出厂契约兼容。
+- **有集结点脱离母厂当步不断速直连**：新增静态占地重叠加判定 `BuildingOverlapEscape.overlapsProducerFootprint`，在 `MotionContract.factoryExit(hasRally = true)` 关闭旧 `y + 90` 锚点刹车曲线，待产物轮廓清出母厂后当步无缝切换至同厂共享的 `factoryRallyGroup` 与流场直连；对 `MovementType.NONE`、不可达集结点队头清理与北向绕厂场景均做好安全守卫。
+- **二维受压成片推挤与共线侧向屈曲**：升级 `UnitContact` 链式推挤以沿圆体硬接触真实外法线传递位移分量（软接触与 1 对 1 严格共线保持纯轴向），并在共线多体受压且侧翼有合法净空时触发前侧向 `50°` / 纯侧向 `90°` 欧拉屈曲分流（优先偏向空闲侧并以确定性奇偶破平），严格恪守单步位移上限与零硬侵入，将推挤队列摊开为二维面状车群而非一字长蛇。
+
+### 调整
+
+- **自有测试场景坐标同步**：同步更新 `phase-five-{ini,json,hjson,mixed}.json` 中 `select-combat-mech` 与 `select-combat-heavy` 两处选点坐标，以匹配全产线出厂扇形散开后零碰撞的新停稳位置。
+
+### 技术
+
+- **契约单测、全量门禁与独立双审**：新增 `FactoryFanOutAndSheetPushTest`（8 项核心行为契约覆盖单/双厂连产、集结不断速直连、共线屈曲、不可达集结、北向集结、机甲厂交替出口与海厂矩形船）与 `FactoryFanOutVisualEvidenceTest`（三组 2 秒标红拼图与形态放大图）；实跑 `dev-ab` 10 场景全绿、`public_batch.py --kind pr --test-forks 4 --scenario-workers 8`（7 套机制与全部公开短测全绿）、Android Debug/Test Kotlin 编译与双根布局检查全绿，经独立全新上下文视觉审阅与非作者代码整审双双 `APPROVE`。
+
+---
+
 ## v0.5.87 (2026-11-28 03:13)
 
 ### 架构改进

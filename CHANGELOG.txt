@@ -1,3 +1,10 @@
+v0.5.88 (2026-11-28 05:41)
+  体验优化: 引入可渗透前向半圆扇形出厂分配与厂前 NoParkingCorridor 禁停走廊（按工厂与阵营稳定复用动态落位簇，首车沿用原出口、矩形海厂与空厂保持兼容），消除无集结点连续出厂堵门 / 新增静态母厂占地脱离检测 overlapsProducerFootprint 并关闭有集结出厂锚点刹车，实现清出母厂当步不断速直连共享集结流场 / 升级 UnitContact 为圆体硬接触外法线传递及共线多体受压侧向屈曲分流，严守单步位移上限与零硬侵入并将受推车群摊开为二维片状
+  调整: 同步更新 phase-five-{ini,json,hjson,mixed}.json 中机甲产线两处选点坐标以对齐扇形散开后的零碰撞停稳位置
+  技术: 新增 FactoryFanOutAndSheetPushTest 8 项核心契约与 FactoryFanOutVisualEvidenceTest 视觉证据测；dev-ab 10 场景、public_batch --kind pr 全 7 套机制与短测、Android 编译及双根布局检查全绿，经独立视觉与非作者代码双审 APPROVE
+
+====
+
 v0.5.87 (2026-11-28 03:13)
   架构改进: 移除 SimulationContext.requestGroupMove 的 mixedThreshold=4/8 等双轨分叉并将全介质圆单位与 2-7 矩形舰队统一收口至 LandingMember + MotionContract.sharedCluster 单一终点落位体系（补齐矩形编队收敛礼让与雾图编组最近可达重规划），物理删除 GroupMoveDestinations.kt 及 GroupMoveSlot、GroupReservation/groupMoveReservation/parkedReservationOwner、ManeuverRepair.GROUP_SLOT、refreshGroupDestinations、groupStopClearsSlots 与 MovePlanning.byGroup，统一按确定性 group.trafficOrder 迭代
   体验优化: 基于 AuthorizedNavigationTerrain.clearanceRings、双体通宽跨度（覆盖 1 格、窄 2 格与 45 度对角瓶颈）及流场测地距离 sampleGeodesicDistance 升级瓶颈喉道防堵门 / 落地死胡同阶段 A 三项确定性机制（R<=24 局部有界 BFS PocketTopology 多地形缓存、O(1) 同型同组原子匿名槽位交换 tryAnonymousSlotSwap 与结合流场切向/测地进度的过角传染式外溢停稳），解除 culdesac-overflow-100 已知限制并达成 100/100 到达停稳（袋内 63 辆、袋外 37 辆、lastArrivalStep=718、零硬重叠与零停滞）

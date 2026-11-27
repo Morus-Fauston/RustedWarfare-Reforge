@@ -281,9 +281,107 @@ internal object UnitContact {
             if (pressureTravel == 0.0) return Translation(clipped)
 
             val drift = subtract(target, unit.position)
+            val driftLen = hypot(drift.x, drift.y)
+            if (driftLen <= 1e-12) return Translation(clipped)
+            val rootDirX = drift.x / driftLen
+            val rootDirY = drift.y / driftLen
+
+            fun pairwiseNormalDrift(pusher: MutableUnit, pushed: MutableUnit, incomingDrift: Position): Position {
+                if (softContact != null ||
+                    pusher.definition.movementCollision !is MovementCollisionShape.Circle ||
+                    pushed.definition.movementCollision !is MovementCollisionShape.Circle
+                ) {
+                    return incomingDrift
+                }
+                val inLen = hypot(incomingDrift.x, incomingDrift.y)
+                if (inLen <= 1e-12) return incomingDrift
+                val rx = pushed.position.x - pusher.position.x
+                val ry = pushed.position.y - pusher.position.y
+                val rLen = hypot(rx, ry)
+                if (rLen <= 1e-6) return incomingDrift
+                val nx = rx / rLen
+                val ny = ry / rLen
+                val proj = incomingDrift.x * nx + incomingDrift.y * ny
+                if (proj <= inLen * 0.05) return incomingDrift
+                val cross = abs(incomingDrift.x * ny - incomingDrift.y * nx)
+                // Strictly collinear 1-on-1 stays bit-identical to incomingDrift
+                if (cross <= inLen * 1e-6) return incomingDrift
+                return Position(nx * proj, ny * proj)
+            }
+
+            fun hasRearCompressedPeer(pusher: MutableUnit, pushed: MutableUnit, dirX: Double, dirY: Double): Boolean {
+                val layer = layer(pushed) ?: return false
+                val r = boundingRadius(pushed.definition.movementCollision)
+                val queryR = r * 4.5
+                var found = false
+                spatialIndex.forEachInBoundsUnordered(
+                    SpatialLayer.fromContact(layer),
+                    pushed.position.x - queryR, pushed.position.x + queryR,
+                    pushed.position.y - queryR, pushed.position.y + queryR,
+                ) { other ->
+                    if (other === pusher || other === pushed || other === unit || !other.alive) return@forEachInBoundsUnordered false
+                    if (layer(other) != layer) return@forEachInBoundsUnordered false
+                    val dx = other.position.x - pushed.position.x
+                    val dy = other.position.y - pushed.position.y
+                    val along = dx * dirX + dy * dirY
+                    val across = abs(dx * (-dirY) + dy * dirX)
+                    val reach = r + boundingRadius(other.definition.movementCollision) + r * 1.5
+                    if (along > r * 0.4 && along <= reach && across <= reach * 0.85) {
+                        found = true
+                        return@forEachInBoundsUnordered true
+                    }
+                    false
+                }
+                return found
+            }
+
+            fun chooseBuckleSign(pushed: MutableUnit, dirX: Double, dirY: Double, depth: Int): Int {
+                val layer = layer(pushed)
+                val r = maxOf(1.0, boundingRadius(pushed.definition.movementCollision))
+                var leftDensity = 0.0
+                var rightDensity = 0.0
+                if (layer != null) {
+                    val queryR = r * 5.5
+                    val nearby = spatialIndex.queryBounds(
+                        SpatialLayer.fromContact(layer),
+                        pushed.position.x - queryR, pushed.position.x + queryR,
+                        pushed.position.y - queryR, pushed.position.y + queryR,
+                    )
+                    for (i in 0 until nearby.size) {
+                        val other = nearby[i]
+                        if (other === unit || other === pushed || !other.alive) continue
+                        // Only count stationary/idle neighborhood crowding in the lateral/forward hemisphere
+                        // so trailing active pushers never bias both wings to the same side.
+                        if (other.moveTarget != null) continue
+                        val dx = other.position.x - pushed.position.x
+                        val dy = other.position.y - pushed.position.y
+                        val along = dx * dirX + dy * dirY
+                        if (along < -r * 1.5) continue
+                        val dist = hypot(dx, dy)
+                        if (dist > queryR) continue
+                        val lat = dx * (-dirY) + dy * dirX
+                        val weight = 1.0 / (dist + r)
+                        if (lat < -1e-2) leftDensity += weight
+                        else if (lat > 1e-2) rightDensity += weight
+                    }
+                }
+                return when {
+                    leftDensity + 0.04 < rightDensity -> -1
+                    rightDensity + 0.04 < leftDensity -> +1
+                    ((pushed.updateKey.hashCode() xor depth) and 1) == 0 -> +1
+                    else -> -1
+                }
+            }
+
+            fun rotateDrift(base: Position, sign: Int, cosA: Double, sinMag: Double): Position {
+                val sinA = sinMag * sign
+                return Position(base.x * cosA - base.y * sinA, base.x * sinA + base.y * cosA)
+            }
+
             val members = contacts.mapTo(mutableListOf()) { contact ->
                 val ratio = transferRatio(unit, contact.blocker) ?: return Translation(clipped)
-                ChainLink(contact.blocker, 0.0, 1, ratio)
+                val linkDrift = pairwiseNormalDrift(unit, contact.blocker, drift)
+                ChainLink(contact.blocker, 0.0, 1, ratio, linkDrift)
             }
             val connected = members.mapTo(mutableSetOf(unit.unitId)) { it.unit.unitId }
             var freeShare = Double.POSITIVE_INFINITY
@@ -296,7 +394,7 @@ internal object UnitContact {
                 for (member in members) {
                     val wanted = share - member.contactOffset
                     if (wanted <= 0.0) continue
-                    val endpoint = offsetAlong(member.unit.position, drift, wanted)
+                    val endpoint = offsetAlong(member.unit.position, member.pushDrift, wanted)
                     val nextContacts = translationContacts(member.unit, endpoint, spatialIndex, ignoredIds = connected, simultaneous = true)
                     for (next in nextContacts) {
                         val offset = member.contactOffset + wanted * next.fraction
@@ -309,7 +407,8 @@ internal object UnitContact {
                             }
                             continue
                         }
-                        val link = ChainLink(next.blocker, offset, member.depth + 1, ratio)
+                        val nextDrift = pairwiseNormalDrift(member.unit, next.blocker, member.pushDrift)
+                        val link = ChainLink(next.blocker, offset, member.depth + 1, ratio, nextDrift)
                         val previous = nextRound[next.blocker.unitId]
                         if (previous == null || offset < previous.contactOffset) nextRound[next.blocker.unitId] = link
                     }
@@ -321,8 +420,28 @@ internal object UnitContact {
                     members += link
                 }
             }
+
+            // Rule 2 (ENG-P017-008): Collinear multi-body compression lateral buckling (2D sheet expansion).
+            // Triggered when circular pusher presses idle circular units in a >= 2-body compressed stack
+            // near-collinearly; strictly bypassed for isolated 1-on-1 pairs to preserve exact mass-transfer contracts.
+            val allIdleCircles = softContact == null &&
+                contacts.size == 1 &&
+                unit.definition.movementCollision is MovementCollisionShape.Circle &&
+                members.all { link ->
+                    link.unit.definition.movementCollision is MovementCollisionShape.Circle &&
+                        link.unit.moveTarget == null && !movePending(link.unit.unitId)
+                }
+            val firstLink = members.first()
+            val firstCross = abs(rootDirX * firstLink.pushDrift.y - rootDirY * firstLink.pushDrift.x)
+            val crossLimit = if (members.size >= 2) driftLen * 0.58 else driftLen * 0.38
             val pressureShare = shareForPressure(pressureTravel, members)
             val requestedShare = minOf(freeShare, pressureShare)
+            val axiallyPinnedColumn = allIdleCircles && members.size >= 2 && requestedShare < pressureShare * 0.15
+            val collinearCompressed = allIdleCircles && (
+                axiallyPinnedColumn ||
+                    (unit.hardContactLimitedTicks >= 1 && firstCross < crossLimit &&
+                        (members.size >= 2 || hasRearCompressedPeer(unit, firstLink.unit, rootDirX, rootDirY)))
+                )
 
             val producerId = unit.productionOrigin?.producerId
             val chain = members.map {
@@ -338,49 +457,168 @@ internal object UnitContact {
                         rootBody.overlaps(member.body, subtract(unit.position, other.position))
                 }
             } else emptyList()
+
+            val rootTerrain = UnitLocomotion.movement(unit).type.let {
+                if (it != MovementType.AIR) it else if (unit.flightLandedInWater) MovementType.WATER else MovementType.LAND
+            }
+            var cachedRootGrid: HullTerrainGrid? = null
+            fun rootTerrainGrid(): HullTerrainGrid =
+                cachedRootGrid ?: HullTerrainGrid.authoritative(map, rootTerrain).also { cachedRootGrid = it }
+
+            fun solveSubChain(
+                subChain: List<ConstrainedLink>,
+                subConnected: Set<String>,
+                rootMoveDrift: Position,
+                linkDrifts: List<Position>,
+                maxShare: Double,
+            ): Pair<Double, List<Adjustment>> {
+                fun moverEndAt(share: Double): Position = when {
+                    separatingBirth.isNotEmpty() -> clipped
+                    softContact == null -> offsetAlong(clipped, rootMoveDrift, share)
+                    else -> offsetAlong(target, drift, -subChain.sumOf { it.link.massRatio * it.link.travel(share) })
+                }
+                fun clearAt(share: Double): Boolean {
+                    val end = moverEndAt(share)
+                    val moverTravel = distance(origin, end)
+                    if (softContact == null && end != unit.position) {
+                        if (ownLimit != null && moverTravel > ownLimit + positionRoundoff(origin, end)) return false
+                        if (distance(unit.position, end) > driftLen + positionRoundoff(unit.position, end)) return false
+                    }
+                    val destinations = subChain.indices.map { i ->
+                        val member = subChain[i]
+                        offsetAlong(member.link.unit.position, linkDrifts[i], member.link.travel(share))
+                    }
+                    if (end != unit.position && softContact == null) {
+                        val rootGrid = rootTerrainGrid()
+                        if (!containsAdjustedSlots(unit, map, end) ||
+                            !clearsTerrain(unit, unit.definition.movementCollision, rootBody, end, map, rootTerrain, rootGrid, ground, unitsById)
+                        ) return false
+                    }
+                    if (translationContact(unit, end, spatialIndex, ignoredIds = subConnected) != null) return false
+                    for ((i, member) in subChain.withIndex()) {
+                        val moved = member.link.unit
+                        val destination = destinations[i]
+                        if (destination != moved.position) {
+                            val limit = maxOf(member.maxTravel, moverTravel)
+                            if (distance(member.start, destination) > limit + positionRoundoff(member.start, destination) ||
+                                !containsAdjustedSlots(moved, map, destination) ||
+                                !clearsTerrain(moved, moved.definition.movementCollision, member.body, destination, map, member.terrain, member.grid, ground, unitsById) ||
+                                translationContact(moved, destination, spatialIndex, ignoredIds = subConnected) != null) return false
+                        }
+                        if (!clearRelative(rootBody, unit.position, end, member.body, moved.position, destination,
+                                requireClearEnd = unit.nearestMoveTarget != null && unit.definition.movementCollision is MovementCollisionShape.Rectangle,
+                                allowExistingOverlap = member in separatingBirth))
+                            return false
+                        for (j in 0 until i) {
+                            val earlier = subChain[j]
+                            if (!clearRelative(earlier.body, earlier.link.unit.position, destinations[j], member.body, moved.position, destination))
+                                return false
+                        }
+                    }
+                    return true
+                }
+                val actualShare = lastLegalFraction(maxShare, ::clearAt)
+                val adjustments = subChain.indices.mapNotNull { i ->
+                    val member = subChain[i]
+                    val moved = member.link.unit
+                    val destination = offsetAlong(moved.position, linkDrifts[i], member.link.travel(actualShare))
+                    if (distance(moved.position, destination) <= positionRoundoff(moved.position, destination)) null
+                    else Adjustment(moved, destination)
+                }
+                return actualShare to adjustments
+            }
+
+            fun solveChain(
+                rootMoveDrift: Position,
+                linkDrifts: List<Position>,
+                maxShare: Double = requestedShare,
+            ): Pair<Double, List<Adjustment>> = solveSubChain(chain, connected, rootMoveDrift, linkDrifts, maxShare)
+
+            var chosenRootDrift = drift
+            var chosenShare = 0.0
+            var axialAdjustments: List<Adjustment> = emptyList()
+            var buckledApplied = false
+            if (collinearCompressed && separatingBirth.isEmpty() && pressureShare > 0.0) {
+                val relFirstX = firstLink.unit.position.x - unit.position.x
+                val relFirstY = firstLink.unit.position.y - unit.position.y
+                val firstLat = relFirstX * (-rootDirY) + relFirstY * rootDirX
+                val prefSign = if (abs(firstLat) > 0.35) {
+                    if (firstLat > 0.0) +1 else -1
+                } else {
+                    chooseBuckleSign(firstLink.unit, rootDirX, rootDirY, depth = 1)
+                }
+                val headChain = listOf(chain.first())
+                val headConnected = setOf(unit.unitId, firstLink.unit.unitId)
+                val headPressureShare = shareForPressure(pressureTravel, listOf(firstLink))
+                // 1) Try full compressed chain; 2) try front pair (splits depth-1 & depth-2 to opposite wings!);
+                // 3) fall back to compressed head pair so long columns never deadlock behind MAX_PUSH_DEPTH.
+                val subChains = buildList {
+                    add(Triple(chain, connected, pressureShare))
+                    if (chain.size > 2) {
+                        val pair = chain.take(2)
+                        val pairConn = setOf(unit.unitId, pair[0].link.unit.unitId, pair[1].link.unit.unitId)
+                        val pairShare = shareForPressure(pressureTravel, pair.map { it.link })
+                        add(Triple(pair, pairConn, pairShare))
+                    }
+                    if (chain.size > 1) {
+                        add(Triple(headChain, headConnected, headPressureShare))
+                    }
+                }
+                val angles = arrayOf(
+                    0.6427876096865393 to 0.766044443118978, // 50 deg forward-lateral
+                    0.0 to 1.0,                               // 90 deg pure lateral Euler pop-out
+                )
+                outer@ for ((targetChain, targetConnected, targetMaxShare) in subChains) {
+                    for ((cosA, sinMag) in angles) {
+                        for (sign in intArrayOf(prefSign, -prefSign)) {
+                            val candLinks = targetChain.map { m ->
+                                val linkSign = if ((m.link.depth and 1) == 1) sign else -sign
+                                rotateDrift(drift, linkSign, cosA, sinMag)
+                            }
+                            val rootCandidates = if (abs(firstLat) > 0.35) {
+                                arrayOf(drift, rotateDrift(drift, -sign, cosA, sinMag))
+                            } else {
+                                arrayOf(rotateDrift(drift, -sign, cosA, sinMag), drift)
+                            }
+                            for (candRoot in rootCandidates) {
+                                val (bShare, bAdj) = solveSubChain(targetChain, targetConnected, candRoot, candLinks, targetMaxShare)
+                                if (bAdj.isNotEmpty() && bShare >= targetMaxShare * 0.15) {
+                                    chosenRootDrift = candRoot
+                                    chosenShare = bShare
+                                    axialAdjustments = bAdj
+                                    buckledApplied = true
+                                    break@outer
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (!buckledApplied) {
+                val normalLinks = chain.map { it.link.pushDrift }
+                val (nShare, nAdj) = solveChain(drift, normalLinks)
+                val anyNonAxial = chain.any { it.link.pushDrift != drift }
+                if (anyNonAxial && nShare < requestedShare * 0.25) {
+                    val (aShare, aAdj) = solveChain(drift, List(chain.size) { drift })
+                    if (aShare > nShare + 1e-9) {
+                        chosenShare = aShare
+                        axialAdjustments = aAdj
+                    } else {
+                        chosenShare = nShare
+                        axialAdjustments = nAdj
+                    }
+                } else {
+                    chosenShare = nShare
+                    axialAdjustments = nAdj
+                }
+            }
+
             fun moverEnd(share: Double): Position = when {
                 separatingBirth.isNotEmpty() -> clipped
-                softContact == null -> offsetAlong(clipped, drift, share)
+                softContact == null -> offsetAlong(clipped, chosenRootDrift, share)
                 else -> offsetAlong(target, drift, -members.sumOf { it.massRatio * it.travel(share) })
             }
-
-            fun clearAt(share: Double): Boolean {
-                val end = moverEnd(share)
-                val moverTravel = distance(origin, end)
-                val destinations = chain.map { member ->
-                    offsetAlong(member.link.unit.position, drift, member.link.travel(share))
-                }
-                if (translationContact(unit, end, spatialIndex, ignoredIds = connected) != null) return false
-                for ((i, member) in chain.withIndex()) {
-                    val moved = member.link.unit
-                    val destination = destinations[i]
-                    if (destination != moved.position) {
-                        val limit = maxOf(member.maxTravel, moverTravel)
-                        if (distance(member.start, destination) > limit + positionRoundoff(member.start, destination) ||
-                            !containsAdjustedSlots(moved, map, destination) ||
-                            !clearsTerrain(moved, moved.definition.movementCollision, member.body, destination, map, member.terrain, member.grid, ground, unitsById) ||
-                            translationContact(moved, destination, spatialIndex, ignoredIds = connected) != null) return false
-                    }
-                    if (!clearRelative(rootBody, unit.position, end, member.body, moved.position, destination,
-                            requireClearEnd = unit.nearestMoveTarget != null && unit.definition.movementCollision is MovementCollisionShape.Rectangle,
-                            allowExistingOverlap = member in separatingBirth))
-                        return false
-                    for (j in 0 until i) {
-                        val earlier = chain[j]
-                        if (!clearRelative(earlier.body, earlier.link.unit.position, destinations[j], member.body, moved.position, destination))
-                            return false
-                    }
-                }
-                return true
-            }
-
-            val actualShare = lastLegalFraction(requestedShare, ::clearAt)
-            val axialAdjustments = chain.mapNotNull { member ->
-                val moved = member.link.unit
-                val destination = offsetAlong(moved.position, drift, member.link.travel(actualShare))
-                if (distance(moved.position, destination) <= positionRoundoff(moved.position, destination)) null
-                else Adjustment(moved, destination)
-            }
+            val actualShare = chosenShare
             // Sliding under forward pressure can clear a grazing hull where an axial push cannot.
             val sideRelease = if (freeBlockedTurn && chain.size == 1 && pressureShare > 0.0)
                 slide(unit, target, clipped, origin, drift, pressureShare, chain.single(),
@@ -633,7 +871,13 @@ internal object UnitContact {
         return result
     }
 
-    private data class ChainLink(val unit: MutableUnit, val contactOffset: Double, val depth: Int, val massRatio: Double) {
+    private data class ChainLink(
+        val unit: MutableUnit,
+        val contactOffset: Double,
+        val depth: Int,
+        val massRatio: Double,
+        val pushDrift: Position,
+    ) {
         fun travel(share: Double): Double = (share - contactOffset).coerceAtLeast(0.0)
     }
     private data class ConstrainedLink(val link: ChainLink, val start: Position, val maxTravel: Double, val body: Body,

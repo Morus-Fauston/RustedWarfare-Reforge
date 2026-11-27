@@ -1067,7 +1067,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
      */
     internal fun fieldForUnit(unit: MutableUnit, terrain: PlanningTerrain): ChunkedField? {
         val group = unit.landingMember?.group ?: return null
-        if (group.members.size < MIN_GROUP_SIZE) return null
+        if (!group.flowFieldEligible) return null
         val movement = UnitLocomotion.movement(unit)
         if (movement.type == MovementType.AIR || movement.type == MovementType.NONE) return null
         val unitRadius = max(1.0, flowPassabilityRadius(unit, terrain.tileWidth, terrain.tileHeight))

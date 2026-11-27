@@ -17,6 +17,31 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
+/**
+ * Rectangular front no-parking corridor in front of a factory exit doorway (ENG-P017-008).
+ * Prevents newly produced units from parking inside the exit throat and triggers active
+ * tangential fan-out left/right around the staging anchor.
+ */
+internal data class NoParkingCorridor(
+    val originX: Double,
+    val originY: Double,
+    val dirX: Double,
+    val dirY: Double,
+    val clearDist: Double,
+    val halfWidth: Double,
+    val minSettleAlong: Double = 0.0,
+) {
+    fun contains(point: Position, radius: Double): Boolean {
+        val dx = point.x - originX
+        val dy = point.y - originY
+        val along = dx * dirX + dy * dirY
+        if (minSettleAlong > 0.0 && along < minSettleAlong) return true
+        if (along < -radius || along > clearDist) return false
+        val across = abs(dx * (-dirY) + dy * dirX)
+        return across <= halfWidth + radius
+    }
+}
+
 /** The selected members and target of one ordinary group order on the unified single landing track. */
 class GroupMoveRequest internal constructor(
     internal val world: WorldHandle,
@@ -25,8 +50,12 @@ class GroupMoveRequest internal constructor(
     internal val click: Position,
     internal val members: Set<String>,
     internal val maxRadiusByMovement: Map<MovementType, Double> = emptyMap(),
+    internal val dynamicCluster: Boolean = false,
+    internal val noParkingCorridor: NoParkingCorridor? = null,
 ) {
     internal val trafficOrder: List<String> = members.sorted()
+    internal val flowFieldEligible: Boolean
+        get() = members.size >= ChunkedFlowFieldAdapter.MIN_GROUP_SIZE || (dynamicCluster && noParkingCorridor == null)
 
     internal fun repairDue(step: Long): Boolean = (step - (completedStep ?: -1L) - 1L) % ROUTE_RETRY_TICKS == 0L
 }
@@ -42,7 +71,8 @@ internal fun sharedWallRepairDue(units: Collection<MutableUnit>, step: Long): Bo
 
 /** Arrival receipts carry the click for display. Live unified landings carry the order identity. */
 internal fun GroupMoveRequest.hasParkedMember(unit: MutableUnit): Boolean {
-    if (unit.ownerPlayerId != actor || unit.moveTarget != null || unit.unitId !in members) return false
+    if (unit.ownerPlayerId != actor || unit.moveTarget != null) return false
+    if (!dynamicCluster && unit.unitId !in members) return false
     return unit.landingMember?.let { it.parked && it.group === this } == true
 }
 
@@ -694,7 +724,8 @@ internal object TerminalLanding {
         val mapW = map.widthTiles.toDouble() * map.tileWidth
         val mapH = map.heightTiles.toDouble() * map.tileHeight
         val maxGroupR = max(hardR, member.group.maxRadiusByMovement[UnitLocomotion.movement(unit).type] ?: hardR)
-        val landingZoneR = min(340.0, max(58.0, sqrt(member.group.members.size.toDouble()) * max(max(hardR * 2.4, maxGroupR * 2.2), 20.0) + 40.0))
+        val baseZoneR = min(340.0, max(58.0, sqrt(member.group.members.size.toDouble()) * max(max(hardR * 2.4, maxGroupR * 2.2), 20.0) + 40.0))
+        val landingZoneR = if (member.group.dynamicCluster) max(baseZoneR, min(360.0, max(180.0, hardR * 22.0))) else baseZoneR
         val hullGrid = HullTerrainGrid.authorized(terrain)
 
         val hasTerrainLosToGoal = hasPassableTerrainLos(terrain, hullGrid, terrainShape, unit.position, goal, unit.heading, terrainR)
@@ -752,7 +783,17 @@ internal object TerminalLanding {
         )
         val pocketMouthBlocked = topology != null && topology.hasPocket &&
             isPluggingFillingPocketMouth(host, unit, topology, member.group, hardR, spatialLayer)
-        val inThroat = throatBlocked || pocketMouthBlocked
+        val isFactoryFan = member.group.noParkingCorridor != null
+        val inNoParkingCorridor = isCircle && member.group.noParkingCorridor?.contains(unit.position, hardR) == true
+        // For no-rally factory fan units still clear of their own outer fan slot, do not hijack steering
+        // while they are actively moving toward their assigned fan slot; only engage settling once inside
+        // their own slot neighborhood or genuinely slowed/stalled outside the factory doorway.
+        if (isFactoryFan && isCircle && !inNoParkingCorridor && distToGoal > max(28.0, hardR * 4.5) &&
+            abs(unit.speed) > max(0.25, 0.35 * maxSpeed)
+        ) {
+            return Decision(flankAim = null, settleNow = false, inClusterZone = false, updatedMember = member)
+        }
+        val inThroat = throatBlocked || pocketMouthBlocked || inNoParkingCorridor
 
         // Advance direction: use direct goal vector when straight LOS exists; use geodesic flow direction around corners!
         val flowDir = if (!hasTerrainLosToGoal) host.navigationGuidance.sampleFlowDirection(host, unit, terrain, goal) else null
@@ -799,7 +840,8 @@ internal object TerminalLanding {
             useBufferRadius = false,
         )
 
-        var connectedToSettledCore = hasTerrainLosToGoal && distToGoal <= max(6.5, hardR * 1.15)
+        var connectedToSettledCore = hasTerrainLosToGoal && isCircle &&
+            member.group.noParkingCorridor == null && distToGoal <= max(6.5, hardR * 1.15)
         var frontBlockedByStationary = false
         var anySettledNearby = false
         var touchingCoreSeed = false
@@ -820,13 +862,15 @@ internal object TerminalLanding {
             if (terrainShape != null && !hasPassableTerrainLos(terrain, hullGrid, terrainShape, unit.position, other.position, unit.heading, terrainR)) {
                 continue
             }
-            if (isSettledPeer || (isStationary && otherDistToGoal < distToGoal - 0.5)) {
+            val countsAsCore = if (isFactoryFan) isSettledPeer else (isSettledPeer || (isStationary && otherDistToGoal < distToGoal - 0.5))
+            if (countsAsCore) {
                 connectedToSettledCore = true
                 if (hasTerrainLosToGoal && otherDistToGoal <= otherR + 6.0 && dist <= hardR + otherR + max(8.0, hardR * 0.75)) {
                     touchingCoreSeed = true
                 }
             }
-            if (isStationary && dist > 1e-5) {
+            val countsAsBlocker = if (isFactoryFan) isSettledPeer else isStationary
+            if (countsAsBlocker && dist > 1e-5) {
                 val fwd = (ox * gdx + oy * gdy) / dist
                 val lat = abs(ox * gdy - oy * gdx)
                 if (fwd >= 0.25 && lat <= hardR + otherR + 4.0) {
@@ -860,10 +904,10 @@ internal object TerminalLanding {
         if (!isCircle) {
             val updated = progressed.copy(flankSign = 0)
             val lowSpdRect = abs(unit.speed) <= 0.30 * maxSpeed
-            val throatFallback = inThroat && lowSpdRect && updated.lowProgressTicks >= THROAT_DEADLOCK_SETTLE_TICKS
+            val throatFallback = !inNoParkingCorridor && inThroat && lowSpdRect && updated.lowProgressTicks >= THROAT_DEADLOCK_SETTLE_TICKS
             val blockedOrStalled = (frontBlockedByStationary && (lowSpdRect || updated.lowProgressTicks >= SETTLE_STALL_TICKS)) ||
                 (lowSpdRect && updated.lowProgressTicks >= SETTLE_STALL_TICKS)
-            val canSettle = connectedToSettledCore && poseLegalNow && (!inThroat || throatFallback) && blockedOrStalled
+            val canSettle = !inNoParkingCorridor && connectedToSettledCore && poseLegalNow && (!inThroat || throatFallback) && blockedOrStalled
             return Decision(flankAim = null, settleNow = canSettle, inClusterZone = true, updatedMember = updated)
         }
 
@@ -872,14 +916,39 @@ internal object TerminalLanding {
         var chosenAim: Position? = null
         val inExteriorOverflow = overflowCrossCorner ||
             (topology != null && topology.hasPocket && !topology.isInteriorAt(unit.position) && connectedToSettledCore)
-        if (!touchingCoreSeed || inThroat) {
+        val fanOutMode = isFactoryFan && inNoParkingCorridor
+        if (!touchingCoreSeed || inThroat || fanOutMode) {
             val probeStep = max(hardR * 1.4, 9.5)
             val flankDistAllowance = when {
+                inNoParkingCorridor -> Double.POSITIVE_INFINITY
+                isFactoryFan -> max(20.0, hardR * 3.2)
                 inThroat -> max(16.0, hardR * 2.8)
                 inExteriorOverflow -> max(14.0, hardR * 2.0)
                 else -> -1.0
             }
             val leftFlank = when {
+                inNoParkingCorridor -> probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = -1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.50,
+                ) ?: probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = -1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.22,
+                ) ?: probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = -1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.0,
+                )
+                isFactoryFan -> probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = -1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.28,
+                ) ?: probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = -1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.05,
+                )
                 inThroat -> probeFlank(
                     host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
                     spatialLayer, goal, distToGoal, gdx, gdy, sign = -1, probeStep = probeStep,
@@ -907,6 +976,28 @@ internal object TerminalLanding {
                 } else null
             }
             val rightFlank = when {
+                inNoParkingCorridor -> probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = +1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.50,
+                ) ?: probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = +1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.22,
+                ) ?: probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = +1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.0,
+                )
+                isFactoryFan -> probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = +1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.28,
+                ) ?: probeFlank(
+                    host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
+                    spatialLayer, goal, distToGoal, gdx, gdy, sign = +1, probeStep = probeStep,
+                    distDeltaCap = flankDistAllowance, inwardWeight = 0.05,
+                )
                 inThroat -> probeFlank(
                     host, unit, terrain, hullGrid, mapW, mapH, boundR, terrainShape, terrainR, hardR,
                     spatialLayer, goal, distToGoal, gdx, gdy, sign = +1, probeStep = probeStep,
@@ -938,6 +1029,7 @@ internal object TerminalLanding {
                     chosenSign = when {
                         member.flankSign == -1 -> -1
                         member.flankSign == +1 -> +1
+                        isFactoryFan -> if ((unit.updateKey.hashCode() and 1) == 0) +1 else -1
                         inExteriorOverflow -> if ((unit.unitId.hashCode() and 1) == 0) +1 else -1
                         leftFlank.second + 0.5 < rightFlank.second -> -1
                         rightFlank.second + 0.5 < leftFlank.second -> +1
@@ -972,7 +1064,7 @@ internal object TerminalLanding {
 
         // 5. Anti-throat-plugging contagious settling & Cul-de-sac Stage A Saturation Overflow Cascade:
         val lowSpeed = abs(unit.speed) <= max(0.22, 0.35 * maxSpeed)
-        val throatSaturatedExit = inThroat && chosenAim == null &&
+        val throatSaturatedExit = !inNoParkingCorridor && inThroat && chosenAim == null &&
             (lowSpeed || frontBlockedByStationary) && updated.lowProgressTicks >= THROAT_DEADLOCK_SETTLE_TICKS
         val overflowCascadeReady = overflowCrossCorner && !inThroat && (
             (frontBlockedByStationary && (lowSpeed || updated.lowProgressTicks >= 8L)) ||
@@ -983,7 +1075,7 @@ internal object TerminalLanding {
                 ((lowSpeed || frontBlockedByStationary) && updated.lowProgressTicks >= SETTLE_STALL_TICKS) ||
                 updated.lowProgressTicks >= HIGH_SPEED_STALL_TICKS
             )
-        val readyToSettle = connectedToSettledCore && poseLegalNow &&
+        val readyToSettle = !inNoParkingCorridor && connectedToSettledCore && poseLegalNow &&
             (openSettleReady || overflowCascadeReady || throatSaturatedExit)
         return Decision(
             flankAim = if (readyToSettle) null else chosenAim,

@@ -423,8 +423,12 @@ internal object UnitMovementOrchestrator {
             }
         }
 
-        // ENG-P016-009B / ENG-P017-007: Unified single terminal landing evaluation driven orthogonally by MotionContract.
-        val terminalDecision = if (target != null && !air &&
+        // ENG-P016-009B / ENG-P017-007 / ENG-P017-008: Unified single terminal landing evaluation driven orthogonally by MotionContract.
+        // Skip terminal landing flank steering while a departing hull still physically overlaps its producer footprint.
+        val stillInsideProducerDock = unit.productionOrigin?.let { origin ->
+            BuildingOverlapEscape.overlapsProducerFootprint(map, host.buildingTerrain, unit, host.units[origin.producerId])
+        } == true
+        val terminalDecision = if (target != null && !air && !stillInsideProducerDock &&
             (motionContract == null || motionContract.isSharedCluster) &&
             unit.birthRemaining == 0f && unit.landingMember != null && !unit.landingMember!!.parked
         ) {
@@ -734,6 +738,7 @@ internal object UnitMovementOrchestrator {
             // Compute pure distance-based speed ceiling (heading diff = 0.0).
             // Only apply final-stop braking when genuinely approaching a final stop (not sliding along a flank).
             val applyFinalStopCurve = terminalDecision?.flankAim == null && (closingAnchor || (finalPoint &&
+                (pointGoal?.brakesAtAnchor != false) &&
                 (unit.landingMember == null || unit.landingMember?.claimed != null || terminalDecision?.inClusterZone == true)))
             val distanceOnlyFraction = if (terminalDecision?.flankAim != null) {
                 0.85
