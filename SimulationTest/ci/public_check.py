@@ -67,7 +67,8 @@ def source_files(repo):
                'workflow_reuse.py', 'perf_report.py', 'platform_perf.py', 'test_workflow.py',
                'test_workflow_device.py', 'test_workflow_windows.py', 'test_workflow_reuse.py', 'test_perf_analysis.py',
                'specialist_check.py', 'test_specialist_check.py',
-               'live_hotspot_stress.py', 'test_live_hotspot_stress.py']]
+               'live_hotspot_stress.py', 'test_live_hotspot_stress.py',
+               'quick_test.py', 'test_quick_test.py']]
     paths += list((repo / 'Decompile/tools/p003').glob('*.py'))
     paths += [repo / 'Decompile/tools' / name for name in ['verify_dec_evidence.py', 'test_verify_dec_evidence.py']]
     return sorted(paths)

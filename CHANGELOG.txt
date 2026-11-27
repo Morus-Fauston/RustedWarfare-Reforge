@@ -1,3 +1,11 @@
+v0.5.83 (2026-11-27 18:08)
+  修复: 将 Engine/core 的 p001.inputs.dir 公开夹具自动回退、public.fixtures.dir 与 repo.root 透传同步至 :client:test（启用可配置多 fork）与 :pc:test（保持串行），消除独立工作树直跑缺失夹具报错 / 在双根 gradle.properties 开启 org.gradle.parallel=true（不启缓存）并为 development_tests.gradle 与 workflow_gradle.init.gradle 的任务回调补齐并发锁保护消除 ConcurrentModificationException
+  新增: 新增热驻无头快筛工具 SimulationTest/tools/quick_test.py 及 8 项单测并纳入公共闭包与 tooling 套件，统一在 SimulationTest 根复用热 Daemon 执行定向单测、单套件机制检查与 dev-ab，隔离系统临时目录绝对路径并支持含空格路径安全引用
+  文档: 在 AGENTS.md 补充排障纪律、由轻到重分层验证、热 Daemon 复用与独立工作树夹具规范入口
+  技术: 独立工作树零参数直跑 client/pc 测试、quick_test 热驻实测（单类热复测 7s、build-economy 套件与 dev-ab）、7 套 CI 与工具 Python 契约单测及双根布局检查全绿，经独立非作者整审与 R01 定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.82 (2026-11-27 15:06)
   修复: 修复 PlayerTerrainKnowledge 空变更递增并拆分 terrainRevision 根除迷雾对局规划地形缓存伪失效，收敛带净空半径的解析网格线段扫掠原语消除宽体单位贴边揭雾漏重规划 / 统一五处重叠母厂与新建建筑脱离规则至 BuildingOverlapEscape（补齐切向轴滑移防子格接缝卡滞）并引入有界增量缓存消除全图数组重复克隆
   架构改进: 提炼玩家知识隔离的只读 AuthorizedNavigationTerrain 深模块（统一净空环、多档连通分量与门洞掩码） / 端到端接通 WaypointRouteAdapter 连续视线前视跟随，移除 ReferencePropulsion 非终点死区与全部伪造距离修正，物理删除 PathPlanner、LocalMotionSegment、LocalMotionMaintenance、重复中心线类及 9 个单实现假策略接口
