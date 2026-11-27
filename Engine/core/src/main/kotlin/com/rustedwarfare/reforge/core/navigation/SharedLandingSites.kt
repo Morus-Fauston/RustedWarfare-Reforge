@@ -665,6 +665,7 @@ internal object TerminalLanding {
     private const val HIGH_SPEED_STALL_TICKS = 32L
     private const val THROAT_DEADLOCK_SETTLE_TICKS = 48L
     private const val OVERFLOW_STALL_TICKS = 20L
+    private const val ZERO_SEED_NUCLEATION_TICKS = 8L
     private const val RADIAL_PROGRESS_EPS = 1.25
 
     fun evaluate(
@@ -677,6 +678,7 @@ internal object TerminalLanding {
         desiredDirY: Double,
         maxSpeed: Double,
         delta: Double,
+        convergence: CohortCoordinator.ConvergenceAdvice = CohortCoordinator.ConvergenceAdvice.NONE,
     ): Decision? {
         val member = unit.landingMember ?: return null
         if (member.parked) return null
@@ -840,6 +842,7 @@ internal object TerminalLanding {
             useBufferRadius = false,
         )
 
+        var hasRealSettledCore = false
         var connectedToSettledCore = hasTerrainLosToGoal && isCircle &&
             member.group.noParkingCorridor == null && distToGoal <= max(6.5, hardR * 1.15)
         var frontBlockedByStationary = false
@@ -864,6 +867,7 @@ internal object TerminalLanding {
             }
             val countsAsCore = if (isFactoryFan) isSettledPeer else (isSettledPeer || (isStationary && otherDistToGoal < distToGoal - 0.5))
             if (countsAsCore) {
+                hasRealSettledCore = true
                 connectedToSettledCore = true
                 if (hasTerrainLosToGoal && otherDistToGoal <= otherR + 6.0 && dist <= hardR + otherR + max(8.0, hardR * 0.75)) {
                     touchingCoreSeed = true
@@ -887,6 +891,35 @@ internal object TerminalLanding {
 
         val inClusterZone = connectedToSettledCore || anySettledNearby || (hasTerrainLosToGoal && distToGoal <= max(28.0, hardR * 2.8))
         val progressMetric = if (hasTerrainLosToGoal) distToGoal else geoDistToGoal
+
+        // ENG-P017-009: Zero-seed convergence nucleation inside the basin.
+        // Never reset `lowProgressTicks` when nudged past 6.5px by moving teammates, and never launch
+        // high-speed tangential `probeFlank` around an empty core (settledCount == 0).
+        val inZeroSeedBasin = !hasRealSettledCore && !isFactoryFan && isCircle && hasTerrainLosToGoal &&
+            convergence.inConvergenceBasin && !convergence.hasSettledSeed
+        if (inZeroSeedBasin && !frontBlockedByStationary) {
+            val holdR = max(hardR * 4.5, 52.0)
+            val coreNucleationR = max(hardR * 2.4, 26.0)
+            if (distToGoal <= holdR) {
+                val progressed = updateRadialProgressTicks(member, progressMetric, delta).copy(flankSign = 0)
+                val lowSpd = abs(unit.speed) <= max(0.22, 0.35 * maxSpeed)
+                val leaderArchLocked = convergence.isNucleationLeader && convergence.inwardSqueezed &&
+                    progressed.lowProgressTicks >= ZERO_SEED_NUCLEATION_TICKS
+                val canNucleateHere = poseLegalNow && !inThroat && convergence.inwardSqueezed && (
+                    leaderArchLocked || (distToGoal <= coreNucleationR && (
+                        (convergence.isNucleationLeader && (lowSpd && progressed.lowProgressTicks >= 4L || progressed.lowProgressTicks >= ZERO_SEED_NUCLEATION_TICKS)) ||
+                            progressed.lowProgressTicks >= ZERO_SEED_NUCLEATION_TICKS ||
+                            (distToGoal <= max(6.5, hardR * 1.15) && progressed.lowProgressTicks >= 4L && lowSpd)
+                        ))
+                    )
+                return Decision(
+                    flankAim = null,
+                    settleNow = canNucleateHere,
+                    inClusterZone = inClusterZone || distToGoal <= max(hardR * 3.5, 38.0),
+                    updatedMember = progressed,
+                )
+            }
+        }
 
         // Not blocked by any stationary core yet: keep driving straight toward goal!
         if (!connectedToSettledCore && !frontBlockedByStationary) {
@@ -912,12 +945,13 @@ internal object TerminalLanding {
         }
 
         // 4. Continuous tangential flank sliding check (for circular units):
+        // Never trigger empty-core tangential flanking when no settled/stationary core body exists yet!
         var chosenSign = 0
         var chosenAim: Position? = null
         val inExteriorOverflow = overflowCrossCorner ||
             (topology != null && topology.hasPocket && !topology.isInteriorAt(unit.position) && connectedToSettledCore)
         val fanOutMode = isFactoryFan && inNoParkingCorridor
-        if (!touchingCoreSeed || inThroat || fanOutMode) {
+        if ((hasRealSettledCore || inThroat || fanOutMode) && (!touchingCoreSeed || inThroat || fanOutMode)) {
             val probeStep = max(hardR * 1.4, 9.5)
             val flankDistAllowance = when {
                 inNoParkingCorridor -> Double.POSITIVE_INFINITY

@@ -1,3 +1,9 @@
+v0.5.89 (2026-11-28 06:35)
+  修复: 在全局指引与 LocomotionModule 之间新建无状态 CohortCoordinator 汇聚成核与消旋协调底座，对零核多向汇聚盆地识别唯一领头与向心受挤状态、施加切向阻尼并抬升运动学贴靠权重（排除受限死胡同口袋并在首核落地后无缝退还控制权） / 在 TerminalLanding 禁止空核切向 probeFlank 高速滑行并修复零核盆地内被微挤即清零进度的死锁，同时将 LocomotionModule 近距 rightShift 对齐既有纯运动学 dockingFade < 0.25 衰减带（零上层命令与群身份特判），根除空地多向群移持续环绕涡旋
+  技术: 新增 CohortNucleationAndAntiVortexTest 6 项核心契约并入公开套件，新增 CohortAntiVortexVisualEvidenceTest 三组 2 秒标红拼图；架构守卫、瓶颈 A/B、dev-ab 全 10 场景、public_batch --kind pr 全 7 套机制与短测、Android 编译与双根布局检查全绿，经独立视觉与非作者代码双审 APPROVE
+
+====
+
 v0.5.88 (2026-11-28 05:41)
   体验优化: 引入可渗透前向半圆扇形出厂分配与厂前 NoParkingCorridor 禁停走廊（按工厂与阵营稳定复用动态落位簇，首车沿用原出口、矩形海厂与空厂保持兼容），消除无集结点连续出厂堵门 / 新增静态母厂占地脱离检测 overlapsProducerFootprint 并关闭有集结出厂锚点刹车，实现清出母厂当步不断速直连共享集结流场 / 升级 UnitContact 为圆体硬接触外法线传递及共线多体受压侧向屈曲分流，严守单步位移上限与零硬侵入并将受推车群摊开为二维片状
   调整: 同步更新 phase-five-{ini,json,hjson,mixed}.json 中机甲产线两处选点坐标以对齐扇形散开后的零碰撞停稳位置

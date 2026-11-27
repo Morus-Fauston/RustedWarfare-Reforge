@@ -39,6 +39,7 @@
       "com.rustedwarfare.reforge.core.sim.AdaptiveLocalMotionTest",
       "com.rustedwarfare.reforge.core.sim.AutomaticArrivalBudgetTest",
       "com.rustedwarfare.reforge.core.sim.CenterTerrainMovementTest",
+      "com.rustedwarfare.reforge.core.sim.CohortNucleationAndAntiVortexTest",
       "com.rustedwarfare.reforge.core.sim.CommandTimelineTest",
       "com.rustedwarfare.reforge.core.sim.CornerCaptureTest",
       "com.rustedwarfare.reforge.core.sim.GeometryAndFailureTest",

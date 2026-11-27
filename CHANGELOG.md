@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.5.89 (2026-11-28 06:35)
+
+### 修复
+
+- **空地多向群移无静止种子成核死锁与逆时针环绕涡旋**：现象为多方向汇聚开阔空地目标点且尚无已停稳核心种子（`settledCount == 0`）时，先头车辆在核心区被移动同伴微挤出即清零径向进度并触发空核切向 `probeFlank` 高速甩飞，同时近距迎面右偏 `rightShift` 持续注入同向角动量导致整队绕目标持续旋转。在全局指引与 `LocomotionModule` 之间建立无状态 `CohortCoordinator` 汇聚协调底座，对零核多向汇聚或切向环流盆地输出唯一领头判定、向心受挤判定、平滑速度阻尼及深度贴靠权重下限（受限死胡同口袋与已成核后无缝退回既有策略）；同步在 `TerminalLanding` 禁止空核切向滑行并消除零核盆地内进展清零死锁，在 `LocomotionModule` 将近距 `rightShift` 对齐至既有的纯运动学 `dockingFade < 0.25` 深度贴靠衰减带（零上层命令/群身份特判，常规行进与外围绕行保持原行为）。实测切向双环 16 坦最大绕圈扫角由 `10.56 rad` 压降至 `0.25 rad`（成核 `223 -> 58` 步），同心 `open-50` 由 `2.12 rad` 降至 `0.38 rad`，实机 `step 36307` 19 坦全停且保持静止 `>= 600` 步零漂移。
+
+### 技术
+
+- **汇聚成核契约、视觉证据与双审全绿**：新增 `CohortNucleationAndAntiVortexTest`（6 项核心契约覆盖实机 `step 36307`/`36600` 19 坦、两向 24 坦、四向 40 坦、同心 50 坦与切向 16 坦）并注册至 `content-movement-knowledge` 公开套件，新增 `CohortAntiVortexVisualEvidenceTest` 产出三组 2 秒标红拼图与放大图；`NavigationModuleArchitectureGuardTest`、`BottleneckContractABTest`、`dev-ab` 全 10 场景（双百石阵与死胡同全部 `100/100`）、`public_batch.py --kind pr`（全 7 套机制与短测）、Android Debug/Test Kotlin 编译与双根布局检查全绿，经独立全新上下文视觉审阅与非作者代码整审双双 `APPROVE`。
+
+---
+
 ## v0.5.88 (2026-11-28 05:41)
 
 ### 体验优化

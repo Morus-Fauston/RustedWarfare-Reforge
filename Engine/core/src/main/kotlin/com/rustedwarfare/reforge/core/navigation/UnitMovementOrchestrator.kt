@@ -423,23 +423,53 @@ internal object UnitMovementOrchestrator {
             }
         }
 
-        // ENG-P016-009B / ENG-P017-007 / ENG-P017-008: Unified single terminal landing evaluation driven orthogonally by MotionContract.
+        // ENG-P016-009B / ENG-P017-007 / ENG-P017-008 / ENG-P017-009:
+        // Cohort convergence coordination + unified single terminal landing evaluation.
         // Skip terminal landing flank steering while a departing hull still physically overlaps its producer footprint.
         val stillInsideProducerDock = unit.productionOrigin?.let { origin ->
             BuildingOverlapEscape.overlapsProducerFootprint(map, host.buildingTerrain, unit, host.units[origin.producerId])
         } == true
+        var convergenceAdvice = CohortCoordinator.ConvergenceAdvice.NONE
         val terminalDecision = if (target != null && !air && !stillInsideProducerDock &&
             (motionContract == null || motionContract.isSharedCluster) &&
             unit.birthRemaining == 0f && unit.landingMember != null && !unit.landingMember!!.parked
         ) {
             val tTerrain = host.planningTerrainFor(unit, map)
+            val tHardR = maxOf(1.0, unit.definition.movementCollision.boundingRadius)
+            val tTerrainShape = UnitLocomotion.terrainHull(unit, map)
+            val tTerrainR = UnitLocomotion.terrainPassabilityRadius(unit, map.tileWidth, map.tileHeight)
+            val tHullGrid = HullTerrainGrid.authorized(tTerrain)
+            val tHasLos = PlanningSegmentClearance.allowsHull(
+                terrain = tTerrain,
+                hullGrid = tHullGrid,
+                terrainHull = tTerrainShape,
+                from = unit.position,
+                to = target,
+                heading = unit.heading,
+                boundaryRadius = tTerrainR,
+                terrainRadius = tTerrainR,
+            )
+            val tPool = host.landingSitesFor(unit.landingMember!!.group, map)
+            val tInPocket = tPool?.pocketTopology(tTerrain)?.hasPocket == true
+            convergenceAdvice = CohortCoordinator.evaluateConvergence(
+                host = host,
+                unit = unit,
+                terrain = tTerrain,
+                goal = target,
+                hardR = tHardR,
+                maxSpeed = maximumSpeed,
+                hasTerrainLosToGoal = tHasLos,
+                inConfinedPocket = tInPocket,
+            )
             val flowDir = host.navigationGuidance.sampleFlowDirection(host, unit, tTerrain, target)
             val gdx = target.x - unit.position.x
             val gdy = target.y - unit.position.y
             val gd = hypot(gdx, gdy)
             val dirX = flowDir?.first ?: if (gd > 1e-5) gdx / gd else ScreenPlane.displacement(unit.heading, 1.0).x
             val dirY = flowDir?.second ?: if (gd > 1e-5) gdy / gd else ScreenPlane.displacement(unit.heading, 1.0).y
-            val td = TerminalLanding.evaluate(host, unit, map, tTerrain, target, dirX, dirY, maximumSpeed, delta)
+            val td = TerminalLanding.evaluate(
+                host, unit, map, tTerrain, target, dirX, dirY, maximumSpeed, delta, convergenceAdvice,
+            )
             if (td != null) {
                 if (td.updatedMember != unit.landingMember) {
                     unit.updateNavigation { it.withLandingMember(td.updatedMember) }
@@ -575,6 +605,7 @@ internal object UnitMovementOrchestrator {
                     ((3.2 * hardRadius - sqrt(distSqToLeg)) / maxOf(1.0, 1.85 * hardRadius)).coerceIn(0.0, 1.0)
                 } else 0.0,
                 if (terminalDecision?.inClusterZone == true && terminalDecision.flankAim == null) 0.72 else 0.0,
+                if (terminalDecision?.flankAim == null) convergenceAdvice.dockingWeightFloor else 0.0,
             )
             val ignoredTargetId = unit.attackCommand?.targetUnitId ?: unit.primaryCombatTargetId
             val maneuverDesired = terminalDecision?.flankAim ?: leg.target
@@ -586,8 +617,8 @@ internal object UnitMovementOrchestrator {
                     terrain = host.planningTerrainFor(unit, map),
                     movement = movement,
                     desiredTarget = maneuverDesired,
-                    baseSpeedTarget = if (terminalDecision?.flankAim != null) maximumSpeed * 0.85
-                        else leg.approachSpeed(maximumSpeed, movement.moveDecelerationSpeed * maximumSpeed, finalForSample),
+                    baseSpeedTarget = (if (terminalDecision?.flankAim != null) maximumSpeed * 0.85
+                        else leg.approachSpeed(maximumSpeed, movement.moveDecelerationSpeed * maximumSpeed, finalForSample)) * convergenceAdvice.speedScale,
                     maximumSpeed = maximumSpeed,
                     finalPoint = finalForSample && terminalDecision?.flankAim == null,
                     delta = delta,
@@ -717,6 +748,7 @@ internal object UnitMovementOrchestrator {
                     ((3.2 * hardR - sqrt(d2)) / maxOf(1.0, 1.85 * hardR)).coerceIn(0.0, 1.0)
                 } else 0.0,
                 if (terminalDecision?.inClusterZone == true && terminalDecision.flankAim == null) 0.72 else 0.0,
+                if (terminalDecision?.flankAim == null) convergenceAdvice.dockingWeightFloor else 0.0,
             )
             val departingProducer = unit.productionOrigin?.let { origin ->
                 val producer = host.units[origin.producerId]
@@ -761,7 +793,7 @@ internal object UnitMovementOrchestrator {
                     terrain = terrainForAvoid,
                     movement = movement,
                     desiredTarget = avoidanceTarget,
-                    baseSpeedTarget = maximumSpeed * distanceOnlyFraction,
+                    baseSpeedTarget = maximumSpeed * distanceOnlyFraction * convergenceAdvice.speedScale,
                     maximumSpeed = maximumSpeed,
                     finalPoint = applyFinalStopCurve,
                     delta = delta,
@@ -853,7 +885,7 @@ internal object UnitMovementOrchestrator {
                 ) {
                     rectangularPeerYieldFactor(host, unit, target)
                 } else 1.0
-                requestedFraction = (if (unit.reversing) -fraction * movement.reverseSpeedPercentage else fraction) * rectYield
+                requestedFraction = (if (unit.reversing) -fraction * movement.reverseSpeedPercentage else fraction) * rectYield * convergenceAdvice.speedScale
                 speedTarget = maximumSpeed * requestedFraction
             }
             if (preciseSlide && delta > 0.0) {

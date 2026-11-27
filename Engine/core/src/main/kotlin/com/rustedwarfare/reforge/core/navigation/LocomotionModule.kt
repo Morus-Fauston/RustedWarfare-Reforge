@@ -547,7 +547,11 @@ internal object LocomotionModule {
             }
 
             // --- Preemptive right-hand bias for head-on / opposing traffic ---
-            if (peerMoving && !isAdmittedSingleLane) {
+            // Matches the kinematic `dockingFade < 0.25` deep-docking band used by `opposingCount` and
+            // `overtakeShift`: preserves full right-hand lane shift during en-route crossings and outer
+            // cluster gliding (`dockingFade >= 0.25`), while smoothly damping swirl to 0 under deep docking.
+            val rightShiftFade = if (dockingFade < 0.25) clamp(dockingFade / 0.25, 0.0, 1.0) else 1.0
+            if (peerMoving && !isAdmittedSingleLane && rightShiftFade > 0.05) {
                 val peerSpeed = peerVel.length()
                 if (peerSpeed > 0.10 * maximumSpeed) {
                     val peerDir = Vec2(peerVel.x / peerSpeed, peerVel.y / peerSpeed)
@@ -561,7 +565,7 @@ internal object LocomotionModule {
                             val sideBoost = if (latSigned >= -combinedHard * 0.6) 1.35 else {
                                 clamp(1.0 - (-latSigned) / laneMargin, 0.20, 1.0)
                             }
-                            rightShift += (0.75 + 0.65 * pairOpenness) * urgency * alignment * sideBoost * maximumSpeed
+                            rightShift += (0.75 + 0.65 * pairOpenness) * urgency * alignment * sideBoost * maximumSpeed * rightShiftFade
                         }
                     }
                 }
