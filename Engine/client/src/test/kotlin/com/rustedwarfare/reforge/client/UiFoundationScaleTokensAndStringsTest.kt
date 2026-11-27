@@ -174,10 +174,11 @@ class UiFoundationScaleTokensAndStringsTest {
         assertEquals(UiLanguage.ZH, UiLanguage.fromLocale(Locale.SIMPLIFIED_CHINESE))
         assertEquals(UiLanguage.ZH, UiLanguage.fromLocale(Locale.TRADITIONAL_CHINESE))
         assertEquals(UiLanguage.EN, UiLanguage.fromLocale(Locale.US))
-        assertEquals(UiLanguage.fromLocale(Locale.getDefault()), UiStrings.currentLanguage)
+        assertEquals(UiLanguage.ZH, UiStrings.currentLanguage)
 
-        // Unmapped key returns verbatim
-        assertEquals("unmapped.future.key", UiStrings.get("unmapped.future.key", UiLanguage.ZH))
+        // Unmapped key returns localized generic fallback rather than leaking raw key
+        assertEquals("未知内容", UiStrings.get("unmapped.future.key", UiLanguage.ZH))
+        assertEquals("Unknown", UiStrings.get("unmapped.future.key", UiLanguage.EN))
 
         // Fixed UI chrome switches with language, while content-pack unit name stays verbatim!
         val contentUnitName = "重型双足机甲 Mark-IV"
@@ -196,7 +197,8 @@ class UiFoundationScaleTokensAndStringsTest {
         assertEquals("储备已满", UiStrings.rejectionReason("ammo-queue-limit", UiLanguage.ZH))
         assertEquals("充能中", UiStrings.rejectionReason("unit-action-locked", UiLanguage.ZH))
         assertEquals("暂未支持：守卫", UiStrings.rejectionReason("guard-unsupported", UiLanguage.ZH))
-        assertEquals("CUSTOM_FUTURE_REASON", UiStrings.rejectionReason("CUSTOM_FUTURE_REASON", UiLanguage.ZH))
+        assertEquals("未知原因", UiStrings.rejectionReason("CUSTOM_FUTURE_REASON", UiLanguage.ZH, showRawCode = false))
+        assertEquals("CUSTOM_FUTURE_REASON", UiStrings.rejectionReason("CUSTOM_FUTURE_REASON", UiLanguage.ZH, showRawCode = true))
 
         // Preload characters include CJK UI strings and extra content names
         val preload = UiStrings.preloadCharacters(listOf("核弹发射井", "反核井"))

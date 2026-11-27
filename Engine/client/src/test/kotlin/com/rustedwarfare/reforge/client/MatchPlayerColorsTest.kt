@@ -11,7 +11,7 @@ import java.nio.file.Path
 class MatchPlayerColorsTest {
 
     @Test
-    fun eight_player_palette_and_neutral_mapping_follow_spec() {
+    fun ten_player_palette_and_neutral_mapping_follow_spec() {
         val expected = listOf(
             "p1" to 0x2ECC40,
             "p2" to 0xE0463E,
@@ -21,19 +21,23 @@ class MatchPlayerColorsTest {
             "p6" to 0xA855F7,
             "p7" to 0xF97316,
             "p8" to 0xEC4899,
+            "p9" to 0x6366F1,
+            "p10" to 0xE2E8F0,
         )
         for ((pid, rgb) in expected) {
             assertEquals(rgb, MatchPlayerColors.rgbForPlayer(pid), "Mismatch for $pid")
         }
-        // Wrap around after 8 slots
-        assertEquals(0x2ECC40, MatchPlayerColors.rgbForPlayer("p9"))
-        assertEquals(0xE0463E, MatchPlayerColors.rgbForPlayer("p10"))
+        // Wrap around after 10 slots
+        assertEquals(0x2ECC40, MatchPlayerColors.rgbForPlayer("p11"))
+        assertEquals(0xE0463E, MatchPlayerColors.rgbForPlayer("p12"))
 
-        // Neutral variants
+        // Neutral variants stay distinct from all 10 player colors (including P10 silver white)
         assertEquals(0x9AA3A8, MatchPlayerColors.rgbForPlayer("neutral"))
         assertEquals(0x9AA3A8, MatchPlayerColors.rgbForPlayer("neutral-a"))
         assertEquals(0x9AA3A8, MatchPlayerColors.rgbForPlayer("none"))
         assertEquals(0x9AA3A8, MatchPlayerColors.rgbForPlayer("-1"))
+        assertFalse(MatchPlayerColors.PALETTE_RGB.contains(MatchPlayerColors.NEUTRAL_RGB))
+        assertEquals(10, MatchPlayerColors.TEAM_PALETTE_RGB.size)
 
         // Ordered fallback for non-p<N> player IDs
         val order = listOf("neutral", "alpha", "bravo", "charlie")

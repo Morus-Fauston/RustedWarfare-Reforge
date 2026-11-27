@@ -40,7 +40,7 @@ class DemoStartupScreen(private val evidence: ClientEvidence, private val settin
             stage.addActor(Label("RustedWarfare-Reforge / Field Demo", skin).apply {
                 setBounds(150f, 589f, 700f, 32f); setFontScale(1.25f)
             })
-            panel = VisualAssetSettingsPanel(state, skin, settings::createUiFont) {
+            panel = VisualAssetSettingsPanel(state, skin) {
                 evidence.recordVisualAssetMenu(state); error = null; refresh()
             }.also {
                 it.setBounds(150f, 135f, 660f, 440f); stage.addActor(it)

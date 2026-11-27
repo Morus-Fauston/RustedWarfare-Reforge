@@ -24,8 +24,11 @@ class AndroidLauncher : AndroidApplication() {
                 "abis" to android.os.Build.SUPPORTED_ABIS.toList(), "content" to content.absolutePath,
                 "restoredActivity" to (savedInstanceState != null), "lifecyclePolicy" to "pause-no-catchup-destroy-new-match",
                 "development" to development))
+            val userSettingsStore = com.rustedwarfare.reforge.client.UserSettingsStore(
+                File(filesDir.canonicalFile, "settings.json").toPath(),
+            )
             val screen = BootstrapScreen(File(content, "TestLab/local/P002-知识沙盒输入").toPath(), run, touchControls = true,
-                development = development)
+                development = development, userSettingsStore = userSettingsStore)
             sandbox = screen
             initialize(screen,
                 AndroidApplicationConfiguration().apply { disableAudio = true; useImmersiveMode = true })

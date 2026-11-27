@@ -4,5 +4,7 @@
   "id": "reforge:base",
   "name": "Public placeholder pack",
   "description": "Repository-authored placeholder pictures and sounds.",
+  "displayText_zh": "内置基础资源包",
+  "description_zh": "reforge:base · 兜底表现资源",
   "icon": "reforge:units/c_tank/body"
 }

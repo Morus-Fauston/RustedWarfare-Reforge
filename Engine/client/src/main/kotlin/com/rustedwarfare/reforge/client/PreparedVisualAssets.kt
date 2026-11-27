@@ -18,10 +18,11 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
     val resolvedImages: ResolvedResourceImages?, val resolvedSounds: ResolvedResourceSounds?,
     private val boundContent: ContentPackChoice? = null,
     val uiTheme: UiTheme = UiTheme.DEFAULT,
-    val uiThemeAssetResolver: UiThemeAssetResolver = UiThemeAssetResolver()) {
+    val uiThemeAssetResolver: UiThemeAssetResolver = UiThemeAssetResolver(),
+    val uiThemePatches: List<UiThemePatch> = emptyList()) {
     constructor(selection: VisualAssetSelection, profileId: String, identity: String,
         units: Map<String, VisualUnitImages>, terrain: Map<String, Path>, validate: () -> Unit = {}) :
-        this(selection, profileId, identity, units, terrain, validate, null, null, null, UiTheme.DEFAULT, UiThemeAssetResolver())
+        this(selection, profileId, identity, units, terrain, validate, null, null, null, UiTheme.DEFAULT, UiThemeAssetResolver(), emptyList())
 
     val resourcePack: PreparedResourcePack = PreparedResourcePack.fromBindings(BuiltInResourcePacks.forSource(selection.source), units, terrain)
     val units: Map<String, VisualUnitImages> = Collections.unmodifiableMap(resourcePack.unitBindings.mapValues { (_, binding) ->
@@ -35,20 +36,25 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
     fun verifyForPublication() { verify(); resolvedImages?.layers?.forEach { it.verifyInputs() } }
 
     fun withConfiguration(selection: VisualAssetSelection, profileId: String = this.profileId, identity: String = this.identity) =
-        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolvedSounds, boundContent, uiTheme, uiThemeAssetResolver)
+        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolvedSounds, boundContent, uiTheme, uiThemeAssetResolver, uiThemePatches)
 
     fun withResourceSounds(resolved: ResolvedResourceSounds) =
-        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolved, boundContent, uiTheme, uiThemeAssetResolver)
+        PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolved, boundContent, uiTheme, uiThemeAssetResolver, uiThemePatches)
 
     internal fun isBoundTo(choice: ContentPackChoice): Boolean = boundContent?.unitId == choice.unitId &&
         boundContent.content.sources == choice.content.sources
 
     internal fun withContentBinding(choice: ContentPackChoice) = PreparedVisualAssets(selection, profileId, identity,
-        units, terrain, validate, resolvedImages, resolvedSounds, choice, uiTheme, uiThemeAssetResolver)
+        units, terrain, validate, resolvedImages, resolvedSounds, choice, uiTheme, uiThemeAssetResolver, uiThemePatches)
 
-    fun withUiTheme(theme: UiTheme, assetResolver: UiThemeAssetResolver = this.uiThemeAssetResolver) =
+    fun withUiTheme(theme: UiTheme, assetResolver: UiThemeAssetResolver = this.uiThemeAssetResolver, patches: List<UiThemePatch> = this.uiThemePatches) =
         PreparedVisualAssets(selection, profileId, identity, units, terrain, validate, resolvedImages, resolvedSounds,
-            boundContent, theme, assetResolver)
+            boundContent, theme, assetResolver, patches)
+
+    /** Re-composes resource-pack theme patches on top of any built-in base theme (DARK / WHITE / BONE). */
+    fun composeUiTheme(base: UiTheme): UiTheme =
+        if (uiThemePatches.isEmpty() && base == UiTheme.DEFAULT) uiTheme
+        else UiThemeComposer.compose(base = base, overridesHighToLow = uiThemePatches)
 
     /** Pure binding of an already checked combination; fixed-generation checks remain explicit. */
     fun withResourceImages(resolved: ResolvedResourceImages, verifyAdditional: () -> Unit = {}): PreparedVisualAssets {
@@ -64,7 +70,7 @@ class PreparedVisualAssets private constructor(val selection: VisualAssetSelecti
         val tiles = resourcePack.terrainBindings.mapValues { (_, id) -> image(id).path }
         return PreparedVisualAssets(selection, profileId, identity, mapped, tiles,
             { this.verify(); verifyAdditional() }, resolved, resolvedSounds?.let { ResourceSoundComposer.compose(resolved) },
-            boundContent, uiTheme, uiThemeAssetResolver)
+            boundContent, uiTheme, uiThemeAssetResolver, uiThemePatches)
     }
 }
 

@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.6.0 (2026-11-27 23:09)
+
+### 新增
+
+- **轻量局外页面栈外壳（`AppShell`）**：建立独立于局内模拟宿主的局外路由栈与模态层管理器，统一管理主菜单、遭遇战大厅、测试与沙盒、设置、全屏选图器与加载页的压栈、祖先截断弹栈、同级叶子页替换及进出局来源页恢复，支持弹窗优先拦截与移动端主菜单二次确认退出，并以最小侵入方式接入 `BootstrapScreen`。
+- **跨平台用户设置持久化与命令行覆写隔离（`UserSettingsStore`）**：新增落位于平台私有目录（Windows `%LOCALAPPDATA%\RustedWarfare-Reforge\settings.json`、Android 应用私有目录）的原子 JSON 设置存储，覆盖语言、主音量与音效音量、静音、UI 手动缩放倍率、触控摇杆、镜头灵敏度、边缘滚屏、界面主题及资源包/内容包优先级栈（自动将基础包固定于栈底）；损坏或不兼容配置安全回退默认值，桌面启动参数新增 `--lang` 与 `--theme` 临时覆写且绝不回写污染落盘文件。
+- **默认简体中文双语基建与包元数据本地化（`UiStrings` / `LocalizedMetadata`）**：首次启动默认语言改为简体中文（不随系统区域浮动），扩充完备的中英双语键值表并对未映射键提供本地化通用兜底文案，正式运行隐藏未映射原始拒绝码（仅开发模式或 `F3` 调试层开启时附带）；支持资源包 `pack.json`、内容包 `mod-info.txt` / `pack-i18n.json` 及内置综合试玩包的 `displayText_zh` 与 `description_zh` 优先读取及原文回退。
+- **三套内置界面样式主题与 10 色对局色板（`UiTheme` / `MatchPlayerColors`）**：扩展 `ADR-014` 局外语义配色、色板与特性开关，正式提供 **暗黑**（默认，含主菜单斜拉排线立体字效开关）、**白色**、**骨白**（去黄暖石白 `#F2F1EC` / `#E5E4DF`）三套内置主题并支持在任意内置基底上叠加表现资源包局部覆写；对局玩家与队伍色板同步扩展至 10 色（新增 `P9` 靛蓝 `#6366F1`、`P10` 银白 `#E2E8F0`）并与中立灰 `#9AA3A8` 严格区分。
+
+### 架构改进
+
+- **清理旧同步 AWT 字体桥接与历史提取配置**：移除 `VisualAssetSettings` 及局外旧面板对 `PcVisualAssetFont` 的同步 AWT 像素字体构造依赖，统一由 FreeType `UiFontSet` 承担多语言矢量字形渲染；物理删除 `Engine/pc/src/main/resources/visuals/` 下 14 份不再使用的 `v1..v5` 历史提取配置 JSON 与对应旧版读取分支。
+
+### 技术
+
+- **单测、字形覆盖校验与独立代码整审**：新增 `UiP004ShellSettingsThemeTest`（含 `NotoSansSC` Regular/Bold OpenType `cmap` 全字符零缺字校验、路由往返同步、设置损坏恢复、CLI 防污染与三主题局部覆写合成），同步更新 `platform-basics` 套件注册并通过客户端/PC 单测、`development_check.py --suite platform-basics`、`test_public_check.py` 与双根 `workspace_layout.py` 检查；经全新上下文独立非作者代码整审及 R01 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/AppShell.kt` | **新增** — 局外路由栈、模态栈拦截、加载取消回退与主菜单二次确认退出状态机 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UserSettingsStore.kt` | **新增** — 跨平台私有目录 `settings.json` 原子读写、损坏回退、基础包置底与 CLI 只读覆写视图 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/LocalizedMetadata.kt` | **新增** — 资源包与内容包 `displayText_zh` / `description_zh` 多源解析与原文回退 |
+| `Engine/client/src/main/resources/ui/themes/white.json` | **新增** — 内置「白色」（`reforge:polar-white`）主题令牌定义 |
+| `Engine/client/src/main/resources/ui/themes/bone.json` | **新增** — 内置「骨白」（`reforge:constructivist-bone`）去黄暖石白主题令牌定义 |
+| `Engine/client/src/main/resources/ui/theme.json` | 扩展默认「暗黑」主题局外语义令牌、10 色玩家/队伍色板与特性开关 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiTheme.kt` | 扩展 `outGame`、`palettes`、`features` 解析与任意内置基底上的局部覆写合成 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 切换默认简体中文、补齐局外全页双语文案、通用兜底与拒绝码开发态门控 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MatchPlayerColors.kt` | 扩展固定对局玩家色板与队伍色板至 10 色 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiScale.kt` | 支持叠加用户手动 UI 缩放倍率（`0.75..1.50`） |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/PreparedVisualAssets.kt` | 保留表现资源包主题补丁以支持切换内置基底主题时动态重合成 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ResourcePackMetadata.kt` | 支持读取可选双语名称与描述元数据字段 |
+| `Engine/client/src/main/resources/resource-packs/*/pack.json` | 为内置基础包与原版提取包补充简体中文名称与描述 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 薄委托局外路由至 `AppShell` 并接入 `UserSettingsStore`、主题/语言/缩放热切与拒绝码门控 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/WindowsLaunchOptions.kt` | 新增 `--lang` 与 `--theme` 命令行参数解析与校验 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/WindowsLauncher.kt` | 注入桌面端 `UserSettingsStore` 与命令行临时覆写 |
+| `Engine/android/src/main/kotlin/com/rustedwarfare/reforge/android/AndroidLauncher.kt` | 注入 Android 私有目录 `UserSettingsStore` |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcVisualAssetFont.kt` | **删除** — 移除旧同步 AWT 像素字体构造器及关联面板钩子 |
+| `Engine/pc/src/main/resources/visuals/*-v1..v5.json` | **删除** — 清理 14 份不再使用的历史提取配置 JSON 及旧版读取分支 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004ShellSettingsThemeTest.kt` | **新增** — 覆盖壳层路由、设置持久化、双语元数据、三套主题与 OpenType `cmap` 零缺字单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 同步移除 `VisualAssetFontTest` 并纳入 `UiP004ShellSettingsThemeTest` |
+
+---
+
 ## v0.5.78 (2026-11-26 21:36)
 
 ### 修复

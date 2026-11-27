@@ -145,5 +145,34 @@ class WindowsLaunchOptionsTest {
             repository.toFile().deleteRecursively()
         }
     }
+
+    @Test fun cli_lang_and_theme_flags_parse_valid_codes_and_reject_nasa_duplicates_or_demo_mode() {
+        val repository = Files.createTempDirectory("lang-theme-cli-")
+        try {
+            val parsed = WindowsLaunchOptions.parse(arrayOf("--lang", "en", "--theme", "bone"), repository)
+            assertEquals(com.rustedwarfare.reforge.client.UiLanguage.EN, parsed.cliLanguage)
+            assertEquals(com.rustedwarfare.reforge.client.BuiltInUiThemeId.BONE, parsed.cliThemeId)
+
+            val white = WindowsLaunchOptions.parse(arrayOf("--lang", "zh", "--theme", "white"), repository)
+            assertEquals(com.rustedwarfare.reforge.client.UiLanguage.ZH, white.cliLanguage)
+            assertEquals(com.rustedwarfare.reforge.client.BuiltInUiThemeId.WHITE, white.cliThemeId)
+
+            for (bad in listOf(
+                arrayOf("--theme", "nasa"),
+                arrayOf("--theme", "unknown"),
+                arrayOf("--lang", "fr"),
+                arrayOf("--theme", "dark", "--theme", "white"),
+                arrayOf("--lang", "zh", "--lang", "en"),
+                arrayOf("--mode", "demo", "--theme", "dark"),
+                arrayOf("--mode", "demo", "--lang", "zh"),
+            )) {
+                assertFailsWith<IllegalArgumentException> {
+                    WindowsLaunchOptions.parse(bad, repository)
+                }
+            }
+        } finally {
+            repository.toFile().deleteRecursively()
+        }
+    }
 }
 

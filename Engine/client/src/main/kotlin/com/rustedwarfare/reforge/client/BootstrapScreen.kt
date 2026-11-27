@@ -47,6 +47,7 @@ class BootstrapScreen(
     private val initialSkirmishMap: Path? = null,
     private val initialUiThemePacks: List<Path> = emptyList(),
     private val initialCatalogSceneId: String? = null,
+    val userSettingsStore: UserSettingsStore? = null,
 ) : ApplicationAdapter() {
     private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT, MAPS }
     private data class ContentCandidate(val root: Path, val content: ContentPackChoice?)
@@ -61,9 +62,13 @@ class BootstrapScreen(
     private lateinit var hudGroupBar: HudControlGroupBar
     private lateinit var hudDebugOverlay: HudDebugOverlay
     private lateinit var hudConsole: HudSandboxConsole
-    private var activeUiTheme: UiTheme = if (initialUiThemePacks.isEmpty()) UiTheme.DEFAULT else UiThemeComposer.composeFromPackDirectories(initialUiThemePacks)
+    private var activeBuiltInThemeId: BuiltInUiThemeId = userSettingsStore?.effective?.themeId ?: BuiltInUiThemeId.DARK
+    private var userScaleMultiplier: Float = userSettingsStore?.effective?.uiScaleMultiplier ?: 1.0f
+    private var activeUiTheme: UiTheme = composeUiThemeForBuiltIn(activeBuiltInThemeId, null)
     private var activeThemeAssetResolver: UiThemeAssetResolver = UiThemeAssetResolver(initialUiThemePacks)
     private val uiThemeProvider: UiThemeProvider = UiThemeProvider { activeUiTheme }
+    val currentBuiltInThemeId: BuiltInUiThemeId get() = activeBuiltInThemeId
+    val currentUserScaleMultiplier: Float get() = userScaleMultiplier
     private var commandIcons: HudCommandIconAtlas? = null
     private val hudEvents = HudEventStream()
     private var hudMenuOpen = false
@@ -72,7 +77,7 @@ class BootstrapScreen(
     private var lastArrivalNoticeKey: String? = null
     private var lastHudSnapshot: HudSnapshot? = null
     private val viewport = ScreenViewport()
-    private var uiMetrics: UiMetrics = UiScale.metrics(960, 640, touchControls)
+    private var uiMetrics: UiMetrics = UiScale.metrics(960, 640, touchControls, userScaleMultiplier = userScaleMultiplier)
     private var fontSet: UiFontSet? = null
     private var fallbackFont: BitmapFont? = null
     private val fontDebouncer = FontRebuildDebouncer()
@@ -196,6 +201,20 @@ class BootstrapScreen(
     private lateinit var mapPreview: Actor
     private var startupPage = if (openSetup) StartupPage.SETUP else StartupPage.HOME
     private var settingsBack = startupPage
+    private var activeSettingsPage: StartupPage = StartupPage.RESOURCES
+    private var syncingShellRoute = false
+    internal val currentStartupPageNameForTest: String get() = startupPage.name
+    val appShell: AppShell = AppShell(
+        initialRoute = if (openSetup) OutGameRoute.SKIRMISH_LOBBY else OutGameRoute.MAIN_MENU,
+        onRouteChanged = { route -> syncStartupPageFromShell(route) },
+        onCancelLoading = { if (loading) leaveMatch() },
+        onRequestExitApp = { Gdx.app?.exit() },
+    )
+    init {
+        userSettingsStore?.effective?.let { effective ->
+            UiStrings.currentLanguage = effective.language
+        }
+    }
     private val qualification = SandboxLoader()
     private var contentInput: String? = null
     private var contentCandidate: ContentCandidate? = null
@@ -265,7 +284,7 @@ class BootstrapScreen(
         val initH = Gdx.graphics?.height?.takeIf { it > 0 } ?: 640
         val initPpc = Gdx.graphics?.ppcY?.takeIf { it > 0f } ?: 0f
         val initPpi = Gdx.graphics?.ppiY?.takeIf { it > 0f } ?: 0f
-        uiMetrics = UiScale.metricsFromDensity(initW, initH, touchControls, initPpc, initPpi)
+        uiMetrics = UiScale.metricsFromDensity(initW, initH, touchControls, initPpc, initPpi, userScaleMultiplier)
         viewport.unitsPerPixel = 1f / uiMetrics.scale
         viewport.update(initW, initH, true)
         battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
@@ -583,16 +602,16 @@ class BootstrapScreen(
         }.apply { height = 34f }
         setupButton = button("Skirmish", 346f, 359f, 268f) { showStartupPage(StartupPage.SETUP) }
         menuBackButton = button("Back", 146f, 76f, 136f) {
-            showStartupPage(if (startupPage == StartupPage.SETUP) StartupPage.HOME else settingsBack)
+            appShell.handleBackKey(requireMainMenuExitConfirm = false)
         }
         quitButton = button("Quit", 346f, 187f, 268f) { Gdx.app.exit() }
         startButton = button("Start", 752f, 96f, 176f) { requestLoad() }
-        visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont },
+        visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin,
             contentChoice = { testScenes.choice?.content ?: packState.choice() }) {
             evidence.recordVisualAssetMenu(state)
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) } }
-        packPanel = ContentPackPanel(packState, skin, visualSettings?.let { it::createUiFont }) {
+        packPanel = ContentPackPanel(packState, skin) {
             if (visualState?.busy == true) visualState.cancel()
             evidence.recordWhenEnabled("content-pack-menu") { mapOf("busy" to packState.busy,
                 "enabled" to packState.enabled, "canEnable" to packState.canEnable, "canStart" to packState.canStart,
@@ -671,8 +690,7 @@ class BootstrapScreen(
                 }
             }
         }
-        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, cameraStartSeed, skin,
-            visualSettings?.let { it::createUiFont }) {
+        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, cameraStartSeed, skin) {
             if (visualState?.busy == true) visualState.cancel()
             if (testScenes.selected) {
                 skirmishMapState.clear()
@@ -1112,11 +1130,8 @@ class BootstrapScreen(
                 if (!commandConsoleOpen) {
                     if (keycode == Input.Keys.ESCAPE || touchControls && keycode == Input.Keys.BACK) {
                         if (session == null) {
-                            if (loading) leaveMatch()
-                            else if (startupPage == StartupPage.SETUP) showStartupPage(StartupPage.HOME)
-                            else if (startupPage != StartupPage.HOME) showStartupPage(settingsBack)
-                            else return false
-                            return true
+                            val action = appShell.handleBackKey(requireMainMenuExitConfirm = touchControls)
+                            return action != BackKeyAction.NONE
                         }
                         if (hudMenuOpen) {
                             hudMenuOpen = false
@@ -1190,8 +1205,11 @@ class BootstrapScreen(
         }, stage, object : InputAdapter() {
             override fun keyDown(keycode: Int): Boolean {
                 if (!touchControls || keycode != Input.Keys.BACK) return false
-                if (session != null) leaveMatch() else Gdx.app.exit()
-                return true
+                if (session != null) {
+                    leaveMatch()
+                    return true
+                }
+                return appShell.handleBackKey(requireMainMenuExitConfirm = true) != BackKeyAction.NONE
             }
         }, mapInput)
         if (touchControls) Gdx.input.setCatchKey(Input.Keys.BACK, true)
@@ -1203,6 +1221,47 @@ class BootstrapScreen(
                 try { cleanup() } catch (error: Exception) { failure.addSuppressed(error) }
             }
             throw failure
+        }
+    }
+
+    private fun composeUiThemeForBuiltIn(themeId: BuiltInUiThemeId, visuals: PreparedVisualAssets? = activeVisuals): UiTheme {
+        val base = UiTheme.builtIn(themeId)
+        return when {
+            initialUiThemePacks.isNotEmpty() -> UiThemeComposer.composeFromPackDirectories(initialUiThemePacks, base = base)
+            visuals != null -> visuals.composeUiTheme(base)
+            else -> base
+        }
+    }
+
+    fun setBuiltInTheme(themeId: BuiltInUiThemeId, persist: Boolean = true) {
+        activeBuiltInThemeId = themeId
+        if (persist) {
+            userSettingsStore?.update { it.copy(themeId = themeId) }
+        }
+        val resolver = if (initialUiThemePacks.isNotEmpty()) UiThemeAssetResolver(initialUiThemePacks)
+            else activeVisuals?.uiThemeAssetResolver ?: activeThemeAssetResolver
+        applyLoadedUiTheme(composeUiThemeForBuiltIn(themeId), resolver)
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    fun setLanguage(language: UiLanguage, persist: Boolean = true) {
+        UiStrings.currentLanguage = language
+        if (persist) {
+            userSettingsStore?.update { it.copy(language = language) }
+        }
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    fun setUserScaleMultiplier(multiplier: Float, persist: Boolean = true) {
+        val clamped = multiplier.coerceIn(UserSettings.MIN_UI_SCALE_MULTIPLIER, UserSettings.MAX_UI_SCALE_MULTIPLIER)
+        userScaleMultiplier = clamped
+        if (persist) {
+            userSettingsStore?.update { it.copy(uiScaleMultiplier = clamped) }
+        }
+        if (presentationReady && Gdx.graphics != null) {
+            resize(Gdx.graphics.width, Gdx.graphics.height)
         }
     }
 
@@ -1407,15 +1466,71 @@ class BootstrapScreen(
             stage.addActor(button)
         }
 
+    private fun syncStartupPageFromShell(route: OutGameRoute) {
+        if (syncingShellRoute) return
+        val mapped = when (route) {
+            OutGameRoute.MAIN_MENU -> StartupPage.HOME
+            OutGameRoute.SKIRMISH_LOBBY -> StartupPage.SETUP
+            OutGameRoute.TEST_AND_SANDBOX -> if (development && testScenarioSeed != null) StartupPage.DEVELOPMENT else StartupPage.SETUP
+            OutGameRoute.SETTINGS -> activeSettingsPage
+            OutGameRoute.MAP_PICKER -> StartupPage.MAPS
+            OutGameRoute.LOADING -> startupPage
+        }
+        startupPage = mapped
+        if (mapped == StartupPage.HOME || mapped == StartupPage.SETUP || mapped == StartupPage.DEVELOPMENT) {
+            settingsBack = mapped
+        }
+        if (presentationReady && ::stage.isInitialized) {
+            if (::modeBox.isInitialized) modeBox.hideList()
+            packPanel?.closeLists()
+            stage.cancelTouchFocus()
+            stage.unfocusAll()
+            lastHudState = null
+            updateHud()
+        }
+    }
+
+    internal fun navigateStartupPageForTest(pageName: String) {
+        showStartupPage(StartupPage.valueOf(pageName))
+    }
+
+    internal fun cancelOrLeaveMatchForTest() {
+        leaveMatch()
+    }
+
     private fun showStartupPage(value: StartupPage) {
         if (loading || session != null) return
-        modeBox.hideList()
+        if (::modeBox.isInitialized) modeBox.hideList()
         packPanel?.closeLists()
+        if (value == StartupPage.CONTENT || value == StartupPage.RESOURCES) {
+            activeSettingsPage = value
+        }
+        val targetRoute = when (value) {
+            StartupPage.HOME -> OutGameRoute.MAIN_MENU
+            StartupPage.SETUP -> OutGameRoute.SKIRMISH_LOBBY
+            StartupPage.DEVELOPMENT -> OutGameRoute.TEST_AND_SANDBOX
+            StartupPage.MAPS -> OutGameRoute.MAP_PICKER
+            StartupPage.CONTENT, StartupPage.RESOURCES -> OutGameRoute.SETTINGS
+        }
+        val isLeafSubpage = targetRoute == OutGameRoute.SETTINGS || targetRoute == OutGameRoute.MAP_PICKER
+        val currentIsLeafSubpage = appShell.currentRoute == OutGameRoute.SETTINGS || appShell.currentRoute == OutGameRoute.MAP_PICKER
         startupPage = value
-        stage.cancelTouchFocus()
-        stage.unfocusAll()
-        lastHudState = null
-        updateHud()
+        syncingShellRoute = true
+        try {
+            when {
+                targetRoute == OutGameRoute.MAIN_MENU -> appShell.resetTo(OutGameRoute.MAIN_MENU)
+                isLeafSubpage && currentIsLeafSubpage -> appShell.replace(targetRoute)
+                else -> appShell.popToOrPush(targetRoute)
+            }
+        } finally {
+            syncingShellRoute = false
+        }
+        if (presentationReady && ::stage.isInitialized) {
+            stage.cancelTouchFocus()
+            stage.unfocusAll()
+            lastHudState = null
+            updateHud()
+        }
     }
 
     private fun openSettingsPage(value: StartupPage) {
@@ -1495,6 +1610,7 @@ class BootstrapScreen(
             loading = true
             loadingDrawn = false
             loadError = null
+            appShell.beginLoading()
             evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString(),
                 "acceptedNanos" to acceptedNanos, "menuEpoch" to menuEpoch,
                 "mode" to request.configuration.options.mode.name,
@@ -1532,8 +1648,8 @@ class BootstrapScreen(
         launch.configure(launch.configuration.copy(options = launch.configuration.options.copy(deploymentEnabled = false)))
         if (::deploymentBox.isInitialized) deploymentBox.isChecked = false
         if (visualState?.busy == true) visualState.cancel()
-        startupPage = StartupPage.SETUP
-        settingsBack = StartupPage.SETUP
+        if (cancelled) appShell.cancelLoading() else appShell.returnToLobby()
+        syncStartupPageFromShell(appShell.currentRoute)
         lastHudState = null
         menuDrawn = false
         if (presentationReady) { stage.unfocusAll(); updateHud() }
@@ -1583,7 +1699,8 @@ class BootstrapScreen(
         pendingLoad = null
         loading = false
         resetContentQualification()
-        startupPage = StartupPage.SETUP
+        appShell.cancelLoading()
+        syncStartupPageFromShell(appShell.currentRoute)
         loadError = failure.message ?: failure.toString()
         preserveFailure(failure) {
             evidence.recordWhenEnabled("load-error") { mapOf("generation" to generation, "message" to loadError) }
@@ -1608,7 +1725,8 @@ class BootstrapScreen(
                     "visualsPreparedNanos" to timing.visualsPreparedNanos, "completedNanos" to timing.completedNanos,
                     "observedNanos" to System.nanoTime())) }
                 val graphicsStartedNanos = System.nanoTime()
-                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = true, uiTheme = if (initialUiThemePacks.isEmpty()) loaded.visuals?.uiTheme ?: activeUiTheme else activeUiTheme)
+                val resolvedMatchTheme = composeUiThemeForBuiltIn(activeBuiltInThemeId, loaded.visuals)
+                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = true, uiTheme = resolvedMatchTheme)
                 pendingGraphics.projection.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
                 evidence.record("load-graphics-ready", mapOf("generation" to generation,
                     "startedNanos" to graphicsStartedNanos, "completedNanos" to System.nanoTime(),
@@ -1662,10 +1780,11 @@ class BootstrapScreen(
                 activeVisuals = loaded.visuals
                 if (initialUiThemePacks.isEmpty()) {
                     loaded.visuals?.let { visuals ->
-                        applyLoadedUiTheme(visuals.uiTheme, visuals.uiThemeAssetResolver)
+                        applyLoadedUiTheme(composeUiThemeForBuiltIn(activeBuiltInThemeId, visuals), visuals.uiThemeAssetResolver)
                     }
                 }
                 session = pendingSession
+                appShell.enterMatch()
                 scriptedCamera = camera
                 if (touchControls) recordCameraJoystick("opened", null)
                 sounds = pendingSounds
@@ -2030,7 +2149,7 @@ class BootstrapScreen(
                 if (result is com.rustedwarfare.reforge.core.sim.ActionResult.Rejected) {
                     val key = "${result.actionId}:${result.error.code}"
                     if (lastObservedActionResultIds.add(key)) {
-                        hudEvents.pushRejectionCode(result.error.code)
+                        hudEvents.pushRejectionCode(result.error.code, showRawCode = development || debugLayerState.enabled)
                     }
                 }
             }
@@ -2837,7 +2956,7 @@ class BootstrapScreen(
         if (width > 0 && height > 0) {
             val ppc = Gdx.graphics?.ppcY?.takeIf { it > 0f } ?: 0f
             val ppi = Gdx.graphics?.ppiY?.takeIf { it > 0f } ?: 0f
-            uiMetrics = UiScale.metricsFromDensity(width, height, touchControls, ppc, ppi)
+            uiMetrics = UiScale.metricsFromDensity(width, height, touchControls, ppc, ppi, userScaleMultiplier)
             viewport.unitsPerPixel = 1f / uiMetrics.scale
             viewport.update(width, height, true)
             battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
@@ -3055,9 +3174,9 @@ class BootstrapScreen(
     override fun dispose() {
         if (disposed) return
         disposed = true
-        Gdx.input.inputProcessor = null
+        Gdx.input?.inputProcessor = null
         listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { qualification.close() }, { visualState?.close() }, { packState.close() }, { releasePresentation() }).forEach { cleanup ->
-            try { cleanup() } catch (failure: Exception) { Gdx.app.error("p001-dispose", "Cleanup failed", failure) }
+            try { cleanup() } catch (failure: Exception) { Gdx.app?.error("p001-dispose", "Cleanup failed", failure) }
         }
         evidence.record("application-disposed", emptyMap())
     }

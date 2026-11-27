@@ -86,6 +86,10 @@ internal class PcAcceptedResourceStore(cache: Path,
         val metadata = pack.metadata
         val meta = JsonObject().add("formatVersion", 1).add("requiresResourceFormat", 4)
             .add("id", metadata.id.value).add("name", metadata.name).add("description", metadata.description).add("icon", metadata.icon.value)
+        metadata.displayTextZh?.let { meta.add("displayText_zh", it) }
+        metadata.descriptionZh?.let { meta.add("description_zh", it) }
+        metadata.displayTextEn?.let { meta.add("displayText_en", it) }
+        metadata.descriptionEn?.let { meta.add("description_en", it) }
         val receipt = JsonObject().add("rules", RULES).add("metadata", meta)
         if (original != null) {
             val contracts = JsonObject()

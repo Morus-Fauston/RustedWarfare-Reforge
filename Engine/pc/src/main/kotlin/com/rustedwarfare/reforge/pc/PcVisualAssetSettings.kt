@@ -238,7 +238,7 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                     verifyUnmanagedThemes()
                 }
                 .withResourceSounds(sounds)
-                .withUiTheme(composedTheme, themeAssetResolver)
+                .withUiTheme(composedTheme, themeAssetResolver, themePatches)
                 .also { it.verifyForPublication() }
             if (key != null && inputs != null && trustedOutputs.identity != null) {
                 val records = users.mapNotNull { pack ->
@@ -392,6 +392,4 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
         return saved.copy(originalDirectory = saved.originalDirectory ?: applicationRoot.resolve("Rusted Warfare").toAbsolutePath().normalize(),
             temporary = options.hasVisualOverride)
     }
-
-    override fun createUiFont(characters: String) = PcVisualAssetFont.create(characters)
 }

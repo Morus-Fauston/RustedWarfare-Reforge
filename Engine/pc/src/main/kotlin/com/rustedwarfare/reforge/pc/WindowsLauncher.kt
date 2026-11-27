@@ -5,6 +5,8 @@ import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
 import com.rustedwarfare.reforge.client.BootstrapScreen
 import com.rustedwarfare.reforge.client.ClientEvidence
 import com.rustedwarfare.reforge.client.DemoStartupScreen
+import com.rustedwarfare.reforge.client.UserSettingsCliOverrides
+import com.rustedwarfare.reforge.client.UserSettingsStore
 import java.nio.file.Path
 
 fun main(args: Array<String>) {
@@ -61,18 +63,27 @@ fun main(args: Array<String>) {
             "output" to output.toString(), "presentationStepsPerSecond" to 60, "coreDelta" to 1.0,
             "deltaUnit" to "sim-tick", "pacingIsOriginalGameFact" to false))
         try {
+            val userSettingsStore = UserSettingsStore(
+                file = UserSettingsStore.desktopDefaultFile(System.getenv("LOCALAPPDATA"), System.getProperty("user.home")),
+                cliOverrides = UserSettingsCliOverrides(
+                    language = options.cliLanguage,
+                    themeId = options.cliThemeId,
+                ),
+            )
+            val directSetup = options.development || args.contains("--inputs") || options.skirmishMap != null || options.catalogSceneId != null
             val screen = BootstrapScreen(inputs, evidence,
                 visualSettings = visualSettings, soundFactory = PcPlaybackSoundFactory(),
                 testScenarioSeed = if (options.development) options.testScenarioSeed ?: sceneRoot.resolve("dual-ship-production.json") else null,
                 selectDefaultTestScenario = options.testScenarioSeed != null,
                 alternateStartSeed = options.testScenarioSeed?.resolveSibling("phase-six-a-spider-json.json"),
-                development = options.development, initialContent = options.development || args.contains("--inputs"),
-                openSetup = options.development || args.contains("--inputs"),
+                development = options.development, initialContent = directSetup,
+                openSetup = directSetup,
                 cameraStartSeed = sceneRoot.resolve("phase-seven-camera.json").takeIf { options.development },
                 touchControls = options.touchSimulation,
                 initialSkirmishMap = options.skirmishMap,
                 initialUiThemePacks = listOfNotNull(options.themePackDir),
-                initialCatalogSceneId = options.catalogSceneId)
+                initialCatalogSceneId = options.catalogSceneId,
+                userSettingsStore = userSettingsStore)
             val client = if (sink == null) screen else WindowPerfSampling(screen, sink)
             val application = if (options.backgroundInput)
                 BackgroundClientInput(client, output, runId, checkNotNull(sink), { screen.inputGeneration },

@@ -3,7 +3,6 @@ package com.rustedwarfare.reforge.client
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.Texture
-import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Group
@@ -16,7 +15,6 @@ import java.nio.file.Path
 
 /** Shared pre-match controls. Sources are checked on the worker; GL sees frozen icon paths only. */
 class VisualAssetSettingsPanel(private val state: VisualAssetSettingsSession, private val skin: Skin,
-    private val fontFactory: ((String) -> BitmapFont?)? = null,
     private val contentChoice: (() -> ContentPackChoice?)? = null, private val changed: () -> Unit) : Group(), AutoCloseable {
     private val list = Table()
     private val detail = Table()
@@ -40,8 +38,6 @@ class VisualAssetSettingsPanel(private val state: VisualAssetSettingsSession, pr
     private var updating = false
     private var status: String? = null
     private var previousMessage: String? = null
-    private var platformFont: BitmapFont? = null
-    private var fontCharacters = emptySet<Char>()
     private var seenRevision = -1L
     private var preview: Texture? = null
     private var previewKey: PreparedResourceImage? = null
@@ -148,7 +144,6 @@ class VisualAssetSettingsPanel(private val state: VisualAssetSettingsSession, pr
             val text = "${row.metadata?.name ?: row.id}\n$marker" + if (row.error != null) " / needs attention" else ""
             val style = TextButton.TextButtonStyle(skin.get(TextButton.TextButtonStyle::class.java)).apply {
                 checked = skin.newDrawable("white", Color(.32f, .43f, .35f, 1f))
-                platformFont?.let { font = it }
             }
             val button = TextButton(text, style).apply {
                 label.setWrap(true); label.setAlignment(Align.left)
@@ -165,7 +160,6 @@ class VisualAssetSettingsPanel(private val state: VisualAssetSettingsSession, pr
         updatePreview(row?.icon)
         fun information(text: String) = Label(text, skin).also {
             it.setWrap(true); it.setAlignment(Align.topLeft)
-            platformFont?.let { font -> it.style = Label.LabelStyle(it.style).apply { this.font = font } }
             detailLabels += it
         }
         if (row != null) {
@@ -218,17 +212,6 @@ class VisualAssetSettingsPanel(private val state: VisualAssetSettingsSession, pr
             else if (state.hasUnsavedCatalog) "Imported list is not saved. Save and apply to remember it." else null).joinToString("\n")
         notice.setText(message)
         notice.color = if (state.error != null) Color(1f, .65f, .58f, 1f) else Color(.82f, .88f, .83f, 1f)
-        val texts = listOf(directory.text, importPath.text, message) + rowButtons.map { it.text.toString() } + detailLabels.map { it.text.toString() }
-        val characters = fontCharacters + texts.flatMap { it.toList() }
-        if (fontFactory != null && (platformFont == null || characters != fontCharacters)) {
-            fontFactory.invoke(characters.joinToString(""))?.let { next ->
-                val previous = platformFont
-                for (field in listOf(directory, importPath)) field.style = TextField.TextFieldStyle(field.style).apply { font = next }
-                for (label in detailLabels + notice) label.style = Label.LabelStyle(label.style).apply { font = next }
-                for (button in rowButtons) button.style = TextButton.TextButtonStyle(button.style).apply { font = next }
-                platformFont = next; fontCharacters = characters; previous?.dispose()
-            }
-        }
         if (message != previousMessage) { messages.scrollY = 0f; previousMessage = message }
     }
 
@@ -242,7 +225,7 @@ class VisualAssetSettingsPanel(private val state: VisualAssetSettingsSession, pr
         super.act(delta)
     }
 
-    override fun close() { releasePreview(); platformFont?.dispose(); platformFont = null }
+    override fun close() { releasePreview() }
 
     companion object {
         private fun styles(skin: Skin) {

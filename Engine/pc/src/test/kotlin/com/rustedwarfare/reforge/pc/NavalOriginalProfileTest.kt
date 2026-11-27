@@ -3,20 +3,15 @@ package com.rustedwarfare.reforge.pc
 import kotlin.test.*
 
 class NavalOriginalProfileTest {
-    @Test fun frozen_resource_versions_load_from_their_bundled_qualification_chain() {
-        val profiles = listOf(PcOriginalResourceProfile.versionOne(), PcOriginalResourceProfile.versionTwo(),
-            PcOriginalResourceProfile.versionThree(), PcOriginalResourceProfile.versionFour(),
-            PcOriginalResourceProfile.versionFive())
-        assertEquals((1..5).map { "rw.pc.steam.9902063.resources.v$it" }, profiles.map { it.id })
-    }
-
-    @Test fun previous_v4_qualification_keeps_its_exact_published_metadata_bytes() {
-        for ((file, hash) in mapOf(
-            "original-profile-v4.json" to "c21f3e42c418a0645853ca24a269b7a90a4379a8c3dcb90fbe6ffd37bcae0758",
-            "pc-original-images-profile-v4.json" to "3325d4bfc17cc1bbe9df49f99a6543ba2c7776a39826a3610e4fc04e7853c1d5",
-            "pc-original-resources-profile-v4.json" to "0527c0a87918c71f8ef852900e2dfa023a8b9e3557850b709da478b8721d7275")) {
-            val bytes = assertNotNull(javaClass.getResourceAsStream("/visuals/$file")).use { it.readBytes() }
-            assertEquals(hash, visualHash(bytes))
+    @Test fun current_resource_version_loads_from_bundled_qualification_chain() {
+        assertEquals(listOf(8), PcOriginalProfileVersions.supportedVersions)
+        assertEquals("rw.pc.steam.9902063.resources.v8", PcOriginalResourceProfile.bundled().id)
+        for (legacy in 1..5) {
+            assertNull(javaClass.getResourceAsStream("/visuals/pc-original-images-profile-v$legacy.json"))
+            assertNull(javaClass.getResourceAsStream("/visuals/pc-original-resources-profile-v$legacy.json"))
+        }
+        for (legacy in 1..4) {
+            assertNull(javaClass.getResourceAsStream("/visuals/original-profile-v$legacy.json"))
         }
     }
 

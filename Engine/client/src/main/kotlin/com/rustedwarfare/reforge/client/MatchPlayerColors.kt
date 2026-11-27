@@ -6,7 +6,7 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * 固定 8 色对局玩家色板与纯绿通道对局玩家着色规则（UI-P002 补充规格 §4.1–§4.2）。
+ * 固定 10 色对局玩家色板与纯绿通道对局玩家着色规则（UI-P002 补充规格 §4.1–§4.2 & 八期规格 §6.1）。
  *
  * - 统一供战场单位纯绿通道着色、小地图单位点与敌方选中卡左侧 4px 色条读取。
  * - 严格按对局玩家槽位序映射，中立玩家统一使用 `#9AA3A8`。
@@ -16,7 +16,7 @@ object MatchPlayerColors {
     /** 中立对局玩家灰 `#9AA3A8`。 */
     const val NEUTRAL_RGB: Int = 0x9AA3A8
 
-    /** 固定 8 色对局玩家色板（槽位 0..7 对应 P1..P8）。 */
+    /** 固定 10 色对局玩家色板（槽位 0..9 对应 P1..P10，八期规格 §6.1）。 */
     val PALETTE_RGB: List<Int> = listOf(
         0x2ECC40, // P1 绿（原版经典己方绿）
         0xE0463E, // P2 红
@@ -26,6 +26,22 @@ object MatchPlayerColors {
         0xA855F7, // P6 紫
         0xF97316, // P7 橙
         0xEC4899, // P8 粉
+        0x6366F1, // P9 靛蓝
+        0xE2E8F0, // P10 亮银白
+    )
+
+    /** 固定 10 支队伍语义色板（Team A..J，供遭遇战大厅与沙盒队伍底色使用）。 */
+    val TEAM_PALETTE_RGB: List<Int> = listOf(
+        0x2ECC40, // A
+        0xE0463E, // B
+        0x3B82F6, // C
+        0xEAB308, // D
+        0x06B6D4, // E
+        0xA855F7, // F
+        0xF97316, // G
+        0xEC4899, // H
+        0x6366F1, // I
+        0x94A3B8, // J
     )
 
     /** 敌方单层选中圈色（沿用 UiTokens.FOE `#E0564A`）。 */

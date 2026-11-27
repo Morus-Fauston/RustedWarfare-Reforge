@@ -15,32 +15,19 @@ internal class PcOriginalResourceProfile(val id: String, val images: PcOriginalI
     val events: Map<String, String> = Collections.unmodifiableMap(LinkedHashMap(events))
 
     companion object {
-        fun bundled(): PcOriginalResourceProfile = readBundled(PcOriginalProfileVersions.CURRENT_VERSION)
-        fun versionOne(): PcOriginalResourceProfile = readBundled(1)
-        fun versionTwo(): PcOriginalResourceProfile = readBundled(2)
-        fun versionThree(): PcOriginalResourceProfile = readBundled(3)
-        fun versionFour(): PcOriginalResourceProfile = readBundled(4)
-        fun versionFive(): PcOriginalResourceProfile = readBundled(5)
+        fun bundled(): PcOriginalResourceProfile = readBundled()
         fun forPackage(pack: PreparedImagePack): PcOriginalResourceProfile = PcOriginalProfileVersions.resources(pack.manifest, null)
 
-        private fun readBundled(version: Int): PcOriginalResourceProfile {
+        private fun readBundled(): PcOriginalResourceProfile {
             fun resource(name: String) = requireNotNull(PcOriginalResourceProfile::class.java.getResourceAsStream("/visuals/$name")) {
                 "Missing bundled PC resource qualification"
             }.use { it.readNBytes(PcmAudioDecoder.MAX_BYTES + 1) }.also { require(it.size <= PcmAudioDecoder.MAX_BYTES) }
-            val suffix = if (version == PcOriginalProfileVersions.CURRENT_VERSION) "" else "-v$version"
-            val root = JsonReader().parse(resource("pc-original-resources-profile$suffix.json").toString(Charsets.UTF_8))
+            val root = JsonReader().parse(resource("pc-original-resources-profile.json").toString(Charsets.UTF_8))
             require(root.getInt("schemaVersion") == 1)
-            require(root.getString("imageQualificationSha256") == visualHash(resource("pc-original-images-profile$suffix.json"))) {
+            require(root.getString("imageQualificationSha256") == visualHash(resource("pc-original-images-profile.json"))) {
                 "Reviewed PC image qualification changed; complete resource qualification must be updated"
             }
-            val image = when (version) {
-                1 -> PcOriginalImageProfile.versionOne()
-                2 -> PcOriginalImageProfile.versionTwo()
-                3 -> PcOriginalImageProfile.versionThree()
-                4 -> PcOriginalImageProfile.versionFour()
-                5 -> PcOriginalImageProfile.versionFive()
-                else -> PcOriginalImageProfile.bundled()
-            }
+            val image = PcOriginalImageProfile.bundled()
             require(image.id == root.getString("imageProfileId") && image.jarBytes == root.get("identity").getInt("bytes") &&
                 image.jarSha256 == root.get("identity").getString("sha256"))
             val sounds = root.get("sounds").map { row -> PcOriginalSoundSource(row.getString("path"), row.getInt("bytes"),

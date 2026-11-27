@@ -99,24 +99,40 @@ object UiScale {
         return computeScaleFromPxPerMm(widthPixels, heightPixels, touch, pxPerMm)
     }
 
-    /** Builds [UiMetrics] preferring `ppcY / 10` per HUD Spec §2.2, falling back to `ppiY / 25.4`. */
-    fun metricsFromDensity(widthPixels: Int, heightPixels: Int, touch: Boolean = false, ppcY: Float = 0f, ppiY: Float = 0f): UiMetrics {
+    /** Builds [UiMetrics] preferring `ppcY / 10` per HUD Spec §2.2, falling back to `ppiY / 25.4`, with optional user multiplier. */
+    fun metricsFromDensity(
+        widthPixels: Int,
+        heightPixels: Int,
+        touch: Boolean = false,
+        ppcY: Float = 0f,
+        ppiY: Float = 0f,
+        userScaleMultiplier: Float = 1.0f,
+    ): UiMetrics {
         val pxPerMm = when {
             ppcY > 0f -> ppcY / 10f
             ppiY > 0f -> ppiY / 25.4f
             else -> 0f
         }
+        val safeMultiplier = userScaleMultiplier.takeIf(Float::isFinite)?.coerceIn(0.75f, 1.50f) ?: 1.0f
+        val effectiveScale = (computeScaleFromPxPerMm(widthPixels, heightPixels, touch, pxPerMm) * safeMultiplier)
+            .coerceAtLeast(MIN_SCALE_FLOOR)
         return UiMetrics(
             pixelWidth = widthPixels.coerceAtLeast(1),
             pixelHeight = heightPixels.coerceAtLeast(1),
-            scale = computeScaleFromPxPerMm(widthPixels, heightPixels, touch, pxPerMm),
+            scale = effectiveScale,
             touch = touch,
             pxPerMm = pxPerMm,
         )
     }
 
-    fun metrics(widthPixels: Int, heightPixels: Int, touch: Boolean = false, ppi: Float = 0f): UiMetrics =
-        metricsFromDensity(widthPixels, heightPixels, touch, ppcY = 0f, ppiY = ppi)
+    fun metrics(
+        widthPixels: Int,
+        heightPixels: Int,
+        touch: Boolean = false,
+        ppi: Float = 0f,
+        userScaleMultiplier: Float = 1.0f,
+    ): UiMetrics =
+        metricsFromDensity(widthPixels, heightPixels, touch, ppcY = 0f, ppiY = ppi, userScaleMultiplier = userScaleMultiplier)
 
     /** True when the scale delta warrants regenerating pixel-crisp FreeType glyph atlases. */
     fun needsFontRebuild(oldScale: Float, newScale: Float): Boolean =
