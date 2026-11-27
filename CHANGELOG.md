@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.6.4 (2026-11-28 03:52)
+
+### 新增
+
+- **7 分类构成主义双栏设置页与局内只读双包锁定（`SettingsScreen`）**：新增顶栏对齐的对称双栏设置页，左侧提供「常规 / 音频 / 画面 / 操作 / 资源包 / 内容包 / 关于」7 项分类导航（仅用左缘铁锈橙竖向指示条与底色区分选中态，无冗余第三栏摘要或行下解释小字，修改即时写入 `UserSettingsStore` 生效）；接通简体中文/English 双语即时切换、主音量/音效音量/静音滑块与 `SoundPlayback` 实时乘算（含前后台 `resume()` 重建持久绑定）、内置「暗黑 / 白色 / 骨白」三套主题切换、触控摇杆与镜头操作偏好持久化，以及含开源许可证、第三方声明查看弹窗与非官方项目声明的关于页；同时接入局内 `≡ 菜单 → 设置` 覆盖层，自动启用 `inMatchMode` 双重锁定资源包与内容包不可修改，并完整拦截底层战场热键、控制台与滚轮缩放穿透。
+- **类 Minecraft 左右双栏包管理器（`DualColumnPackManagerView`）**：新增供资源包与内容包共用的左「已启用」（自上而下覆盖）/ 右「未启用」双栏管理组件，配备 `44×44` `1:1` 正方形图标缩略图、`displayText_zh` 中文优先名称回退、超采样单一体实心几何矢量四向三角按钮（`▲ / ▼ / ◀ / ▶`）、双列独立滚轮滚动与按需展开目录路径导入入口；强制将 `内置基础资源包`（`reforge:base`）与基础玩法内容包锁定在左栏最底部（`基础常驻`），按 `ADR-014` 层级将外部表现资源包置于内置主题包之上，并在内容包启用栈变更及启动恢复时自动同步现行主包入口。
+- **UI 缩放全屏模态 10 秒自动还原弹窗（`UiScaleConfirmModal`）**：切换 UI 缩放倍率后立即实时预览新倍率并弹出最高模态全屏警示层（含动态 10 秒倒计时与铁锈橙进度条），在超时归零、点击「还原」或按下局内外 `Esc`/返回键时自动回滚原安全倍率且不污染落盘配置，点击「保留」方持久化生效。
+
+### 技术
+
+- **双栏包管理与模态回滚单测、三主题真 GL 实窗目视与独立双审**：更新展示版本号至 `v0.6.4`，新增 `UiP004SettingsAndPacksTest`（含双语键集合 100% 对等、局内外模态返回键优先级、`ADR-014` 层级门控与配置持久化校验）并纳入 `platform-basics` 套件，机制套件与双根 `workspace_layout.py` 全部通过；采集 `1920×1080` 暗黑、白色、骨白三套主题共 15 张真 GL 实窗截图，经全新上下文独立视觉审查 `APPROVED` 及独立非作者代码整审与 R02 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SettingsScreen.kt` | **新增** — 7 分类构成主义双栏设置页、`OutGameSlider`、关于声明查看弹窗与局内遮罩 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DualColumnPackManagerView.kt` | **新增** — 类 MC 左右双栏资源包/内容包管理器、四向矢量三角、双列滚轮滚动与底层常驻锁定 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiScaleConfirmModal.kt` | **新增** — UI 缩放全屏模态 10 秒倒计时自动还原确认弹窗 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/AppShell.kt` | 将活跃模态层拦截提至 `inMatch` 判定之前，统一保障局内外弹窗返回键最优先闭合 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 接入局内外 `SettingsScreen`、局内输入穿透屏蔽、音量倍率持久绑定、`ADR-014` 顺序与内容包主入口同步 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SoundPlayback.kt` | 新增 `volumeMultiplierProvider` 动态音量乘算钩子以联动主音量、音效音量与静音设置 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 补充开源许可证、第三方声明正文与包目录路径提示的中英双语文案键 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.4` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SettingsAndPacksTest.kt` | **新增** — 覆盖 7 分类即时持久化、双栏锁定与排序、局内外 10s 缩放回滚及零硬编码/双语对等单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004SettingsAndPacksTest` |
+
+---
+
 ## v0.6.3 (2026-11-28 02:50)
 
 ### 新增

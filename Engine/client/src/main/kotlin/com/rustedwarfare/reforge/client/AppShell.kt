@@ -241,11 +241,11 @@ class AppShell(
      *    when [requireMainMenuExitConfirm] is false returns `NONE`.
      */
     fun handleBackKey(requireMainMenuExitConfirm: Boolean = true): BackKeyAction {
-        if (inMatch) return BackKeyAction.NONE
         if (modalStack.isNotEmpty()) {
             closeModal()
             return BackKeyAction.CLOSED_MODAL
         }
+        if (inMatch) return BackKeyAction.NONE
         if (currentRoute == OutGameRoute.LOADING) {
             cancelLoading()
             onCancelLoading()

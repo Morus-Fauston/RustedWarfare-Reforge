@@ -213,9 +213,12 @@ object UiStrings {
         "settings.scaleModal.keep" to "保留",
         "settings.about.version" to "当前版本",
         "settings.about.license" to "开源许可证",
+        "settings.about.licenseBody" to "本项目自有源码与工具遵循仓库根目录 LICENSE 声明的开源许可条款；原版游戏安装目录内的受版权保护内容不在本仓库再分发范围内。",
         "settings.about.thirdParty" to "第三方开源组件与素材声明",
+        "settings.about.thirdPartyBody" to "客户端运行基于 LibGDX / LWJGL3（Apache-2.0）与 Hjson（MIT）；界面字体采用思源黑体 Noto Sans SC 与 JetBrains Mono（SIL Open Font License 1.1）；内置占位贴图与合成音效均为项目自有生成资产。",
         "settings.about.unofficialTitle" to "非官方项目声明",
         "settings.about.unofficialBody" to "RustedWarfare-Reforge 是《铁锈战争》（Rusted Warfare）的社区独立重写项目，与原作者 Corroding Games 无官方隶属或授权关系。",
+        "settings.packs.dirPathFormat" to "目录：{PATH}",
 
         // Existing in-game HUD chrome keys (100% preserved)
         "menu" to "≡ 菜单",
@@ -504,9 +507,12 @@ object UiStrings {
         "settings.scaleModal.keep" to "Keep",
         "settings.about.version" to "Current Version",
         "settings.about.license" to "Open-Source License",
+        "settings.about.licenseBody" to "Self-owned source code and tools in this repository are distributed under the root LICENSE terms; copyrighted assets from original game installations are never redistributed.",
         "settings.about.thirdParty" to "Third-Party Notices",
+        "settings.about.thirdPartyBody" to "Powered by LibGDX / LWJGL3 (Apache-2.0) and Hjson (MIT). UI typography uses Noto Sans SC and JetBrains Mono (SIL Open Font License 1.1). Built-in placeholder sprites and synthesized WAVs are 100% self-owned.",
         "settings.about.unofficialTitle" to "Unofficial Project Notice",
         "settings.about.unofficialBody" to "RustedWarfare-Reforge is an independent community rewrite inspired by Rusted Warfare, with no official affiliation or endorsement from Corroding Games.",
+        "settings.packs.dirPathFormat" to "Folder: {PATH}",
 
         // Existing in-game HUD chrome keys (100% preserved)
         "menu" to "≡ Menu",

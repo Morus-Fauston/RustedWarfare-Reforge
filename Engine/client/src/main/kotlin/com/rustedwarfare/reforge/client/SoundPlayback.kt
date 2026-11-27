@@ -17,8 +17,10 @@ fun MapProjection.soundListener() = SoundListener(camera.center, (mapArea.width 
 /** One accepted world and one set of fixed sound objects, owned by the presentation thread. */
 class SoundPlayback internal constructor(initial: AuthorizedSoundBatch, private val resources: ResolvedResourceSounds,
     factory: PlaybackSoundFactory, private val evidence: ClientEvidence, private val drawTicket: (Long) -> Long) : AutoCloseable {
+    var volumeMultiplierProvider: () -> Float = { 1f }
     constructor(initial: AuthorizedSoundBatch, resources: ResolvedResourceSounds, factory: PlaybackSoundFactory,
-        evidence: ClientEvidence = ClientEvidence.NONE) : this(initial, resources, factory, evidence, { Random.Default.nextLong(it) })
+        evidence: ClientEvidence = ClientEvidence.NONE) :
+        this(initial, resources, factory, evidence, { Random.Default.nextLong(it) })
     private val world = initial.world
     private var serial = initial.serial
     private var step = initial.stepIndex
@@ -56,7 +58,8 @@ class SoundPlayback internal constructor(initial: AuthorizedSoundBatch, private 
                 "volume" to request.volume, "pitch" to request.pitch, "pan" to 0f,
                 "step" to batch.stepIndex, "serial" to batch.serial, "frame" to frame)
             try {
-                val voice = sounds.getValue(prepared.path).play(request.volume, request.pitch)
+                val gain = volumeMultiplierProvider().takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 1f
+                val voice = sounds.getValue(prepared.path).play((request.volume * gain).coerceIn(0f, 1f), request.pitch)
                 check(voice >= 0) { "Audio backend rejected the playback request" }
                 evidence.record("sound-play-requested", fields + ("voice" to voice))
             } catch (failure: Exception) {

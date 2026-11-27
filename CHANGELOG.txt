@@ -1,3 +1,9 @@
+v0.6.4 (2026-11-28 03:52)
+  新增: 落地 7 分类构成主义双栏设置页 SettingsScreen（常规双语切换、音频滑块与静音实时联动 SoundPlayback 含前后台恢复、画面缩放与暗黑/白色/骨白三主题切换、操作偏好即时落盘、关于声明弹窗，以及局内菜单打开时的双包只读锁定与底层热键滚轮穿透屏蔽） / 新增类 MC 左右双栏包管理器 DualColumnPackManagerView（1:1 缩略图、displayText_zh 优先回退、四向超采样实心三角按钮、双列滚轮滚动、基础包底层常驻锁定、ADR-014 层级对齐及内容包启用栈同步驱动主包入口） / 新增 UI 缩放全屏模态 10 秒倒计时自动还原弹窗 UiScaleConfirmModal 并统一局内外模态返回键最优先回滚
+  技术: 新增 UiP004SettingsAndPacksTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题共 15 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）
+
+====
+
 v0.6.3 (2026-11-28 02:50)
   新增: 复用双栏骨架落地测试与沙盒页 TestAndSandboxScreen（非开发态隐藏模式开关并提供带待机靶机的 1-10 席自由沙盒，开发态支持镜头切换、锁定场景阵型预览并完整兼容 TestScenarioPanel 自动化动作 ID） / 新增构成主义加载画面 MatchLoadingScreen（顶底刻度尺、带玩家色出生点编号的 1:1 缩略图、01-05 对局摘要、中英文混排自然折行 TIPS、字母本体零位移的加粗 LOADING... 及安全取消回退）
   修复: 将 DrawnActionLayout 输出矩形按视口逻辑宽高归一化至 960x640 契约空间以消除高分辨率窗口越界与点击偏移 / 保护开发态已选锁定测试种子的干净 NO_FOG 契约与 CLI --inputs 受控输入不被默认 .tmx 覆写，并补齐主菜单 .tmx 开局对 package/pack.json 的自动回退
