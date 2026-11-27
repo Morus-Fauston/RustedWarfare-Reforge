@@ -1,3 +1,10 @@
+v0.6.1 (2026-11-28 00:48)
+  新增: 新增零模拟缓慢平移的构成主义蓝图动态地图背景 DynamicMapBackdrop、二级页统一顶栏 SubPageTopBar 与面板外壳 OutGamePanelShell / 落地无外框主菜单 MainMenuScreen（含 4x4 超采样 RWRE 矢量标志、四项无框菜单、触控二次确认退出及仅暗黑主题启用的 -52 度斜拉排线橙色棱柱选中字效） / 新增共用全屏 1:1 正方形战术卡片选图器 MapPickerScreen（支持暗黑底渐变与浅色胶囊铭牌自适应、取消保原选）及覆盖 4P-10P 的 8 图内置遭遇战目录
+  修复: 将主 SpriteBatch 切换为分离式 Alpha 混合，消除半透明遮罩叠加冲淡帧缓冲目标 Alpha 通道的问题
+  技术: 扩展 UiFontSet 局外字阶与地图双语文案，新增 UiP004MainMenuAndMapPickerTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审复核 APPROVE（0 必修）
+
+====
+
 v0.6.0 (2026-11-27 23:09)
   新增: 抽离轻量局外路由栈与模态协调器 AppShell（含加载取消/退局来源页还原与移动端二次确认退出）并薄委托接入 BootstrapScreen / 新增平台私有目录原子 JSON 设置存储 UserSettingsStore（基础包强制置底、损坏回退默认，支持 --lang 与 --theme 命令行优先覆写且不污染落盘配置） / 默认语言切为简体中文，补齐局外全页双语文案、缺省兜底、开发态拒绝码门控及资源包/内容包 displayText_zh 多源回退 / 扩展 ADR-014 实装暗黑、白色、骨白三套内置主题（支持叠加表现资源包局部覆写）并将对局玩家与队伍色板扩至 10 色
   架构改进: 移除旧同步 AWT 字体 PcVisualAssetFont 桥接并物理清理 14 份 v1..v5 历史提取配置 JSON 及旧版读取分支

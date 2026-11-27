@@ -22,6 +22,12 @@ class UiFontSet private constructor(
     val body: BitmapFont,
     /** Title bold (16 ref) */
     val title: BitmapFont,
+    /** Sub-page top bar centered bold title (22 ref) */
+    val subPageTitle: BitmapFont,
+    /** Section / modal heading bold (18 ref) */
+    val sectionTitle: BitmapFont,
+    /** Main menu item large bold (34 ref) */
+    val menuItem: BitmapFont,
     /** Tooltip title bold (15 ref) */
     val tooltipTitle: BitmapFont,
     /** Command key / medium bold (13 ref) */
@@ -30,6 +36,10 @@ class UiFontSet private constructor(
     val keyBold: BitmapFont,
     /** Small label regular (12 ref) */
     val small: BitmapFont,
+    /** Hero mono title / LOADING word (34 ref) */
+    val heroMono: BitmapFont,
+    /** Sub-hero mono version / percentage (14 ref) */
+    val subHeroMono: BitmapFont,
     /** Credits mono (19 ref) */
     val creditsMono: BitmapFont,
     /** Queue/cargo/reserve count mono (13 ref) */
@@ -45,8 +55,8 @@ class UiFontSet private constructor(
 
     /** All owned fonts for bulk cleanup or diagnostic inspection. */
     val allFonts: List<BitmapFont> = listOf(
-        body, title, tooltipTitle, command, keyBold, small,
-        creditsMono, countMono, smallMono, captionMono,
+        body, title, subPageTitle, sectionTitle, menuItem, tooltipTitle, command, keyBold, small,
+        heroMono, subHeroMono, creditsMono, countMono, smallMono, captionMono,
     )
 
     override fun close() {
@@ -155,10 +165,15 @@ class UiFontSet private constructor(
             return try {
                 val body = genFont(regularGen, UiTokens.FONT_BODY, preloadChars)
                 val title = genFont(boldGen, UiTokens.FONT_TITLE, preloadChars)
+                val subPageTitle = genFont(boldGen, 22, preloadChars)
+                val sectionTitle = genFont(boldGen, 18, preloadChars)
+                val menuItem = genFont(boldGen, 34, preloadChars)
                 val tooltipTitle = genFont(boldGen, UiTokens.FONT_TOOLTIP_TITLE, preloadChars)
                 val command = genFont(boldGen, UiTokens.FONT_COMMAND, preloadChars)
                 val keyBold = genFont(boldGen, UiTokens.FONT_SMALL, preloadChars)
                 val small = genFont(regularGen, UiTokens.FONT_SMALL, preloadChars)
+                val heroMono = genFont(monoGen, 34, monoChars)
+                val subHeroMono = genFont(monoGen, 14, monoChars)
                 val creditsMono = genFont(monoGen, UiTokens.FONT_CREDITS, monoChars)
                 val countMono = genFont(monoGen, UiTokens.FONT_COMMAND, monoChars)
                 val smallMono = genFont(monoGen, UiTokens.FONT_SMALL, monoChars)
@@ -167,10 +182,15 @@ class UiFontSet private constructor(
                     scale = safeScale,
                     body = body,
                     title = title,
+                    subPageTitle = subPageTitle,
+                    sectionTitle = sectionTitle,
+                    menuItem = menuItem,
                     tooltipTitle = tooltipTitle,
                     command = command,
                     keyBold = keyBold,
                     small = small,
+                    heroMono = heroMono,
+                    subHeroMono = subHeroMono,
                     creditsMono = creditsMono,
                     countMono = countMono,
                     smallMono = smallMono,

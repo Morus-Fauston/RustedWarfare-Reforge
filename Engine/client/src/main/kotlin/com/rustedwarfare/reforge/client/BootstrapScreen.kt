@@ -199,6 +199,11 @@ class BootstrapScreen(
     private lateinit var startupNotice: ScrollPane
     private lateinit var startupFrame: Image
     private lateinit var mapPreview: Actor
+    private lateinit var dynamicMapBackdrop: DynamicMapBackdrop
+    lateinit var mainMenuScreen: MainMenuScreen
+        private set
+    lateinit var mapPickerScreen: MapPickerScreen
+        private set
     private var startupPage = if (openSetup) StartupPage.SETUP else StartupPage.HOME
     private var settingsBack = startupPage
     private var activeSettingsPage: StartupPage = StartupPage.RESOURCES
@@ -288,7 +293,15 @@ class BootstrapScreen(
         viewport.unitsPerPixel = 1f / uiMetrics.scale
         viewport.update(initW, initH, true)
         battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
-        batch = SpriteBatch().also { created += { it.dispose() } }
+        batch = SpriteBatch().also {
+            it.setBlendFunctionSeparate(
+                GL20.GL_SRC_ALPHA,
+                GL20.GL_ONE_MINUS_SRC_ALPHA,
+                GL20.GL_ONE,
+                GL20.GL_ONE_MINUS_SRC_ALPHA,
+            )
+            created += { it.dispose() }
+        }
         shapes = ShapeRenderer().also { created += { it.dispose() } }
         val createdFonts = createSafeFontSet(uiMetrics.scale, collectFontPreloadStrings())
         fontSet = createdFonts
@@ -547,6 +560,67 @@ class BootstrapScreen(
             stage.addActor(it)
             it.zIndex = 0
         }
+        dynamicMapBackdrop = DynamicMapBackdrop(
+            skin = skin,
+            themeProvider = uiThemeProvider,
+            activeMapProvider = {
+                val selectedTmx = skirmishMapState.selected
+                val selectedCat = skirmishMapState.selectedCatalog
+                when {
+                    selectedTmx != null -> selectedTmx.path.toString() to selectedTmx.map
+                    selectedCat != null -> selectedCat.entry.id to selectedCat.map
+                    else -> null
+                }
+            },
+            deepScrimProvider = {
+                appShell.currentRoute != OutGameRoute.MAIN_MENU && appShell.currentRoute != OutGameRoute.LOADING
+            },
+        ).also {
+            stage.addActor(it)
+            it.zIndex = 0
+            created += { it.close() }
+        }
+        mainMenuScreen = MainMenuScreen(
+            skin = skin,
+            appShell = appShell,
+            themeProvider = uiThemeProvider,
+            assetResolverProvider = { activeThemeAssetResolver },
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            scaleProvider = { uiMetrics.scale },
+            touchControls = touchControls,
+            onSelectSkirmish = { showStartupPage(StartupPage.SETUP) },
+            onSelectSandbox = {
+                showStartupPage(if (development && testScenarioSeed != null) StartupPage.DEVELOPMENT else StartupPage.SETUP)
+            },
+            onSelectSettings = { openSettingsPage(StartupPage.RESOURCES) },
+            onSelectQuit = {
+                if (touchControls) {
+                    appShell.handleBackKey(requireMainMenuExitConfirm = true)
+                    mainMenuScreen.syncModalInteractiveState()
+                    lastHudState = null
+                    if (presentationReady) updateHud()
+                } else {
+                    Gdx.app?.exit()
+                }
+            },
+        ).also {
+            stage.addActor(it)
+            created += { it.close() }
+        }
+        mapPickerScreen = MapPickerScreen(
+            skin = skin,
+            themeProvider = uiThemeProvider,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            onNavigateOpen = { showStartupPage(StartupPage.MAPS) },
+            onNavigateClose = {
+                appShell.handleBackKey(requireMainMenuExitConfirm = false)
+            },
+        ).also {
+            stage.addActor(it)
+            created += { it.close() }
+        }
         startupTitle = label("", 130f, 616f, 700f, 52f).apply { setAlignment(Align.center); setFontScale(1.9f) }
         previewHeading = label("", 178f, 449f, 256f, 52f).apply { setAlignment(Align.topLeft) }
         mapPreview = object : Actor() {
@@ -637,7 +711,34 @@ class BootstrapScreen(
             openSettingsPage(StartupPage.DEVELOPMENT)
         }
         skirmishMapTab = button("Maps & Scenes", 424f, 568f, 128f) {
-            openSettingsPage(StartupPage.MAPS)
+            openMapPicker(
+                currentMapId = skirmishMapState.selected?.path?.fileName?.toString()?.removeSuffix(".tmx")
+                    ?: OutGameMapCatalog.defaultEntry().id,
+                filter = MapPickerFilter.SKIRMISH,
+            ) { chosen ->
+                val tmx = chosen.tmxPath
+                if (tmx != null) {
+                    skirmishMapState.select(
+                        tmx,
+                        visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory,
+                        chosen.localizedTitle(),
+                    )
+                    if (skirmishMapState.hasSelection && testScenes.selected) {
+                        testScenes.useCustomContent()
+                        rootField.text = customRootText
+                    }
+                    evidence.record("skirmish-map-choice", mapOf(
+                        "selected" to skirmishMapState.hasSelection,
+                        "path" to skirmishMapState.selected?.path?.toString(),
+                        "catalogSceneId" to skirmishMapState.selectedCatalog?.entry?.id,
+                        "displayName" to skirmishMapState.activeDisplayName,
+                        "error" to skirmishMapState.error,
+                    ))
+                    loadError = null
+                    lastHudState = null
+                    updateHud()
+                }
+            }
         }
         val discoveredSandboxSeeds = buildList {
             testScenarioSeed?.let { add("Command Center" to it) }
@@ -1131,6 +1232,10 @@ class BootstrapScreen(
                     if (keycode == Input.Keys.ESCAPE || touchControls && keycode == Input.Keys.BACK) {
                         if (session == null) {
                             val action = appShell.handleBackKey(requireMainMenuExitConfirm = touchControls)
+                            if (presentationReady) {
+                                lastHudState = null
+                                updateHud()
+                            }
                             return action != BackKeyAction.NONE
                         }
                         if (hudMenuOpen) {
@@ -1152,6 +1257,13 @@ class BootstrapScreen(
                         if (!hasActiveTargetMode) {
                             hudMenuOpen = true
                             cancelInput()
+                            lastHudState = null
+                            updateHud()
+                            return true
+                        }
+                    }
+                    if (session == null && !loading && ::mainMenuScreen.isInitialized && mainMenuScreen.isVisible) {
+                        if (mainMenuScreen.handleKeyDown(keycode)) {
                             lastHudState = null
                             updateHud()
                             return true
@@ -1467,6 +1579,9 @@ class BootstrapScreen(
         }
 
     private fun syncStartupPageFromShell(route: OutGameRoute) {
+        if (route != OutGameRoute.MAP_PICKER && ::mapPickerScreen.isInitialized) {
+            mapPickerScreen.clearPendingSelectionCallback()
+        }
         if (syncingShellRoute) return
         val mapped = when (route) {
             OutGameRoute.MAIN_MENU -> StartupPage.HOME
@@ -1514,6 +1629,9 @@ class BootstrapScreen(
         }
         val isLeafSubpage = targetRoute == OutGameRoute.SETTINGS || targetRoute == OutGameRoute.MAP_PICKER
         val currentIsLeafSubpage = appShell.currentRoute == OutGameRoute.SETTINGS || appShell.currentRoute == OutGameRoute.MAP_PICKER
+        if (value != StartupPage.MAPS && ::mapPickerScreen.isInitialized) {
+            mapPickerScreen.clearPendingSelectionCallback()
+        }
         startupPage = value
         syncingShellRoute = true
         try {
@@ -1531,6 +1649,18 @@ class BootstrapScreen(
             lastHudState = null
             updateHud()
         }
+    }
+
+    fun openMapPicker(
+        currentMapId: String?,
+        filter: MapPickerFilter = MapPickerFilter.SKIRMISH,
+        onMapSelected: (MapPickerEntry) -> Unit,
+    ) {
+        val extraCustom = skirmishMapState.selected?.let { sel ->
+            val known = OutGameMapCatalog.findByIdOrPath(sel.path.toString())
+            if (known == null) listOf(OutGameMapCatalog.entryFromCustomTmx(sel.path, sel.displayName, sel.map)) else emptyList()
+        }.orEmpty()
+        mapPickerScreen.open(currentMapId, filter, extraCustom, onMapSelected)
     }
 
     private fun openSettingsPage(value: StartupPage) {
@@ -1978,7 +2108,16 @@ class BootstrapScreen(
         }
         if (::hudOverlay.isInitialized && current != null) entries += hudOverlay.drawnActions()
         if (current == null) { button("start-match", startButton); button("exit-match", exitButton) }
-        button("skirmish-setup", setupButton); button("startup-back", menuBackButton)
+        if (current == null && ::mainMenuScreen.isInitialized && mainMenuScreen.isVisible) {
+            entries += mainMenuScreen.drawnActions()
+        } else {
+            button("skirmish-setup", setupButton)
+        }
+        if (current == null && ::mapPickerScreen.isInitialized && mapPickerScreen.isVisible) {
+            entries += mapPickerScreen.drawnActions()
+        } else {
+            button("startup-back", menuBackButton)
+        }
         button("check-start-content", retryContentButton)
         button("skirmish-maps", skirmishMapTab)
         if (current == null) {
@@ -2641,7 +2780,8 @@ class BootstrapScreen(
         selectedLabel.isVisible = current != null
         val setup = current == null && !loading && startupPage == StartupPage.SETUP
         val home = current == null && !loading && startupPage == StartupPage.HOME
-        val managing = current == null && !loading && !setup && !home
+        val mapPicking = current == null && !loading && startupPage == StartupPage.MAPS
+        val managing = current == null && !loading && !setup && !home && !mapPicking
         titleLabel.isVisible = current != null
         statusLabel.isVisible = current != null
         groupButtons.forEachIndexed { index, actor ->
@@ -2650,10 +2790,25 @@ class BootstrapScreen(
         val editable = launch.canEdit && !loading
         val sxOff = ((viewport.worldWidth - 960f) * 0.5f).coerceAtLeast(0f)
         val syOff = ((viewport.worldHeight - 640f) * 0.5f).coerceAtLeast(0f)
-        startupFrame.isVisible = current == null
-        if (home) startupFrame.setBounds(sxOff + 286f, syOff + 159f, 388f, 280f)
-        else startupFrame.setBounds(sxOff + 124f, syOff + 60f, 712f, 493f)
-        startupTitle.isVisible = current == null
+        dynamicMapBackdrop.isVisible = current == null
+        dynamicMapBackdrop.setBounds(0f, 0f, viewport.worldWidth, viewport.worldHeight)
+        dynamicMapBackdrop.zIndex = 0
+        mainMenuScreen.isVisible = home
+        if (home) {
+            mainMenuScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
+            mainMenuScreen.toFront()
+        }
+        mapPickerScreen.isVisible = mapPicking
+        if (mapPicking) {
+            mapPickerScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
+            mapPickerScreen.toFront()
+        }
+        startupFrame.isVisible = current == null && !home && !mapPicking
+        if (startupFrame.isVisible) {
+            startupFrame.setBounds(sxOff + 124f, syOff + 60f, 712f, 493f)
+            startupFrame.zIndex = 1
+        }
+        startupTitle.isVisible = current == null && !home && !mapPicking
         startupTitle.setBounds(sxOff + 130f, syOff + 564f, 700f, 52f)
         previewHeading.setBounds(sxOff + 178f, syOff + 397f, 256f, 52f)
         mapPreview.setBounds(sxOff + 178f, syOff + 213f, 256f, 174f)
@@ -2668,15 +2823,13 @@ class BootstrapScreen(
         testScenePanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
         startupTitle.setText(when {
             loading -> "Loading match"
-            home -> "RustedWarfare-Reforge"
             setup -> "Skirmish setup"
             startupPage == StartupPage.DEVELOPMENT -> "Development"
-            startupPage == StartupPage.MAPS -> "Maps & Scenarios"
             else -> "RustedWarfare-Reforge"
         })
-        setupButton.isVisible = home
+        setupButton.isVisible = false
         retryContentButton.isVisible = setup && !testScenes.selected && !skirmishMapState.hasSelection && qualifiedContent?.isFailure == true
-        quitButton.isVisible = home
+        quitButton.isVisible = false
         menuBackButton.isVisible = setup || managing
         previewHeading.isVisible = setup
         mapPreview.isVisible = setup
@@ -2738,17 +2891,16 @@ class BootstrapScreen(
         exitButton.isVisible = loading || current != null
         exitButton.setText(if (loading) "Cancel" else "Return")
         if (loading) exitButton.setBounds(sxOff + 406f, syOff + 76f, 148f, 40f)
-        packTab.isVisible = setup || home
-        packTab.setBounds(sxOff + (if (home) 346f else 290f), syOff + (if (home) 305f else 76f), if (home) 268f else 108f, 40f)
-        visualsTab.isVisible = (setup || home) && visualPanel != null
-        visualsTab.setBounds(sxOff + (if (home) 346f else 404f), syOff + (if (home) 251f else 76f), if (home) 268f else 108f, 40f)
+        packTab.isVisible = setup
+        packTab.setBounds(sxOff + 290f, syOff + 76f, 108f, 40f)
+        visualsTab.isVisible = setup && visualPanel != null
+        visualsTab.setBounds(sxOff + 404f, syOff + 76f, 108f, 40f)
         skirmishMapTab.isVisible = setup
         skirmishMapTab.setBounds(sxOff + (if (retryContentButton.isVisible) 326f else 178f), syOff + 174f, 128f, 34f)
-        testSceneTab.isVisible = (setup || home) && development && testScenarioSeed != null && !touchControls
-        testSceneTab.setBounds(sxOff + (if (home) 346f else 520f), syOff + (if (home) 132f else 76f), if (home) 268f else 118f, 40f)
+        testSceneTab.isVisible = setup && development && testScenarioSeed != null && !touchControls
+        testSceneTab.setBounds(sxOff + 520f, syOff + 76f, 118f, 40f)
         skirmishMapPanel?.let {
-            it.isVisible = managing && startupPage == StartupPage.MAPS
-            if (it.isVisible) it.refresh()
+            it.isVisible = false
         }
         testScenePanel?.let {
             it.isVisible = managing && startupPage == StartupPage.DEVELOPMENT
@@ -3132,7 +3284,19 @@ class BootstrapScreen(
         val closingCommandIcons = commandIcons; commandIcons = null
         val closingFonts = fontSet; fontSet = null
         val closingFallback = fallbackFont; fallbackFont = null
-        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { closingCommandIcons?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { skirmishMapPanel?.close() }, { stage.dispose() }, {
+        listOf<() -> Unit>(
+            { releaseSounds() },
+            { closingGraphics?.close() },
+            { closingCommandIcons?.close() },
+            { if (::dynamicMapBackdrop.isInitialized) dynamicMapBackdrop.close() },
+            { if (::mainMenuScreen.isInitialized) mainMenuScreen.close() },
+            { if (::mapPickerScreen.isInitialized) mapPickerScreen.close() },
+            { visualPanel?.close() },
+            { packPanel?.close() },
+            { testScenePanel?.close() },
+            { skirmishMapPanel?.close() },
+            { stage.dispose() },
+            {
             if (::skin.isInitialized && skin.has("default-font", BitmapFont::class.java)) {
                 skin.remove("default-font", BitmapFont::class.java)
             }

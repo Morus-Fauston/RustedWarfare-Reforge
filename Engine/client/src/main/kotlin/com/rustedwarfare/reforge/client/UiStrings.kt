@@ -119,6 +119,14 @@ object UiStrings {
         // Shared fullscreen MapPicker (UI Supplement §4.3)
         "mapPicker.title" to "选择地图",
         "mapPicker.empty" to "未找到可用地图",
+        "map.river_crossing" to "河流渡口",
+        "map.volcanic_archipelago" to "火山群岛",
+        "map.ring_atoll" to "十人环礁",
+        "map.twin_bridge_canyon" to "双桥峡谷",
+        "map.desert_oasis" to "荒漠绿洲",
+        "map.polar_outpost" to "极地前哨",
+        "map.shattered_highland" to "破碎高地",
+        "map.rusted_bay" to "铁锈海湾",
 
         // Test & Sandbox (UI Supplement §5)
         "sandbox.title" to "测试与沙盒",
@@ -392,6 +400,14 @@ object UiStrings {
         // Shared fullscreen MapPicker (UI Supplement §4.3)
         "mapPicker.title" to "Select Map",
         "mapPicker.empty" to "No maps available",
+        "map.river_crossing" to "River Crossing",
+        "map.volcanic_archipelago" to "Volcanic Archipelago",
+        "map.ring_atoll" to "Ten-Player Atoll",
+        "map.twin_bridge_canyon" to "Twin Bridge Canyon",
+        "map.desert_oasis" to "Desert Oasis",
+        "map.polar_outpost" to "Polar Outpost",
+        "map.shattered_highland" to "Shattered Highland",
+        "map.rusted_bay" to "Rusted Bay",
 
         // Test & Sandbox (UI Supplement §5)
         "sandbox.title" to "Test & Sandbox",

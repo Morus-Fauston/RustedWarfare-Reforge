@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.6.1 (2026-11-28 00:48)
+
+### 新增
+
+- **构成主义动态地图背景与局外二级页通用外壳（`DynamicMapBackdrop` / `OutGameChrome`）**：新增不运行任何核心模拟的 `DynamicMapBackdrop`，基于当前选中或默认示范 `.tmx` 地图实时生成受 `UiTheme` 令牌驱动的 `1600×900` 构成主义蓝图地形与四点矿池标记，按路由自动切换主菜单/加载页浅压暗层（`mapScrim`）与二级页深压暗层（`mapScrimDeep`）并以 200 秒往复周期缓慢平移；同步确立二级页统一顶栏 `SubPageTopBar`（左上固定 `← 返回` 与正中标题）及主面板外壳 `OutGamePanelShell`。
+- **主菜单、`RWRE` 军械蓝图矢量标志与暗黑专属立体排线字效（`MainMenuScreen` / `RwreLogoDrawable` / `ReforgeVersion`）**：实装无外框悬浮主菜单，左中偏上渲染 4×4 超采样定制矢量标志 `RWRE`（左竖识别带、四角准星、平行断桥模具字与底边刻度线均经 `UiTheme` 取色），左下角提供细线分隔的「遭遇战 / 测试与沙盒 / 设置 / 退出」四项菜单并支持键盘方向键导航与触控二次确认退出模态框，右上角悬浮项目标题与版本号（`v0.6.1`）、右下角悬浮版权署名；仅默认暗黑主题（`features.mainMenuExtrudeText`）对当前选中项文字叠加右下 `-52°` 斜拉排线橙色棱柱立体字效，白色与骨白主题保持平面简洁样式。
+- **共用全屏正方形卡片选图器与 8 图遭遇战目录（`MapPickerScreen` / `OutGameMapCatalog`）**：新增暴露统一回调契约 `open(currentMapId, filter, extraEntries, onMapSelected)` 的全屏选图页，对称宽留白可滚动网格平铺 `1:1` 正方形战术地图缩略图卡片（绘制水岸等高线、矿池与玩家色出生点标记，暗黑主题采用底部平滑暗渐变托底、浅色主题采用描边胶囊铭牌，选中卡叠加 `2px` 铁锈橙高亮框），点击返回或按 `Esc` 取消时严格保留原选地图；内置目录在 2 张随包 `.tmx` 地图基础上补充含 10 人环礁（`ring_atoll`）在内的 6 张程序化标准 `.tmx` 地图（覆盖 `4P–10P`）。
+
+### 修复
+
+- **半透明遮罩叠加冲淡帧缓冲目标 Alpha 通道**：此前主 `SpriteBatch` 使用默认混合函数绘制半透明遮罩时会降低帧缓冲目标 Alpha 值，导致截帧 PNG 出现半透明灰雾；现切换为分离式 Alpha 混合（`GL_ONE, GL_ONE_MINUS_SRC_ALPHA`），在保持 RGB 混合完全一致的前提下确保输出帧缓冲完全不透明。
+
+### 技术
+
+- **无头单测、三主题真 GL 实窗目视与独立双审**：扩展 `UiFontSet` 局外大字号字阶与 `UiStrings` 地图双语键，新增 `UiP004MainMenuAndMapPickerTest` 并纳入 `platform-basics` 套件，客户端单测、`development_check.py --suite platform-basics` 与双根 `workspace_layout.py` 全部通过；采集 `1920×1080` 暗黑、白色、骨白三套主题主菜单与选图器共 6 张真 GL 实窗截图，经全新上下文独立视觉审查（含 R01 复核）`APPROVED` 及独立非作者代码整审（含 R02 定向复核）`APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/OutGameChrome.kt` | **新增** — 局外二级页统一顶栏 `SubPageTopBar`、面板外壳 `OutGamePanelShell` 与刻度尺绘制辅助 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/RwreLogoDrawable.kt` | **新增** — 4×4 超采样军械喷涂蓝图 `RWRE` 矢量标志光栅化与 `UiTheme` 令牌着色组件 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DynamicMapBackdrop.kt` | **新增** — 零模拟构成主义动态地图背景、纯缓冲区战术缩略图渲染器与 8 图 `OutGameMapCatalog` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MainMenuScreen.kt` | **新增** — 无外框主菜单、触控二次退出确认弹窗与暗黑专属 `-52°` 斜拉排线立体字效渲染器 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MapPickerScreen.kt` | **新增** — 共用全屏 `1:1` 正方形卡片选图器 `open(...)` 接口与深浅主题标签自适应 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | **新增** — 局外项目标题、展示版本号（`v0.6.1`）与版权署名常量 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiFontSet.kt` | 扩展主菜单、二级页标题与英雄等宽大字号原生 FreeType 字阶 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 补充内置 8 张遭遇战地图的中英双语名称键并统一 LF 换行 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 薄委托接入 `DynamicMapBackdrop`、`MainMenuScreen`、`MapPickerScreen` 与分离式 Alpha 混合 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004MainMenuAndMapPickerTest.kt` | **新增** — 覆盖主菜单路由、触控二次退出、立体字效门控、动态背景零模拟与选图器往返单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004MainMenuAndMapPickerTest` |
+
+---
+
 ## v0.6.0 (2026-11-27 23:09)
 
 ### 新增

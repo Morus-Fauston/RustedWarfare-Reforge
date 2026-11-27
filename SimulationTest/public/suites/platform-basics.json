@@ -51,7 +51,8 @@
       "com.rustedwarfare.reforge.client.NamedTurretAppearanceTest",
       "com.rustedwarfare.reforge.client.ShieldPresentationTest",
       "com.rustedwarfare.reforge.client.ShieldResourceBindingTest",
-      "com.rustedwarfare.reforge.client.UiP004ShellSettingsThemeTest"
+      "com.rustedwarfare.reforge.client.UiP004ShellSettingsThemeTest",
+      "com.rustedwarfare.reforge.client.UiP004MainMenuAndMapPickerTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",
