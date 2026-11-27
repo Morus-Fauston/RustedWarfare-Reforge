@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.6.5 (2026-11-28 04:21)
+
+### 架构改进
+
+- **核心 `Action` 移动诊断与追踪开放默认分支（`MotionDiagnosticCapture` / `MotionV2CoreTraceJson`）**：在完整保留 `MoveAction / StopAction / SelectAction` 精确映射与全部既有非移动 `Action` 子类诊断报错文案的前提下，引入开放默认分支并在提交模拟前补齐不支持动作前置拦截守卫，消除后续新增 `AttackMoveAction`、`GuardAction` 等核心指令引发的测试工程穷举编译中断。
+- **`TraceComparator` `UnitTask` 9 必需键与开放枚举兼容校验**：将硬编码的固定 9 键集合相等与 6 枚举锁死重构为核心 9 必需键强校验 + 大写枚举标识符（`^[A-Z][A-Z0-9_]*$`）与有限数值小驼峰扩展键开放准入，同时严格保持自动维修仅限 `CONSTRUCT`、额外作业射程、`target` 二维坐标及双边全键值漂移的精确判错。
+- **`PlatformSessionRunner` `unit-action` 数据驱动开放校验**：以规范动作名标识符配合实时客户端菜单 `groundTargeted` 元数据（无选中菜单时回退核心静态集合）替代硬编码动作名白名单，使后续新增单位技能可直接接入无头会话验证，并完整保留对空/非法动作名、缺失 `waitSteps`/`coreActionId`、未知额外字段、非布尔取消标志及缺失/多余目标坐标的严格拒绝。
+
+### 技术
+
+- **开放校验正反例单测、全套工具与公开短测验证及非作者整审**：新增 `TestUi004OpenValidationTest` 覆盖三处解耦点的正向兼容与负向拦截；`tooling` 机制套件（含 JUnit 与全部 Python 工具测试）、`public_batch.py --kind short`（6/6 公开短测）与双根 `workspace_layout.py` 全绿，经全新上下文独立非作者代码整审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/cross/MotionDiagnosticCapture.kt` | 解耦 `Action` 无 `else` 穷举并补齐 `submitAndRecord` 提交前动作类型拦截守卫 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/cross/MotionV2CoreTraceJson.kt` | 解耦 `Action` 无 `else` 穷举并保留全部既有移动诊断错误文案 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceComparator.kt` | 将 `UnitTask` 固定键数/6 枚举校验升级为 9 核心必需键 + 开放大写枚举与有限扩展键校验 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/PlatformSessionRunner.kt` | 将 `unit-action` 硬编码白名单重构为结合实时菜单元数据的数据驱动开放校验 |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/TestUi004OpenValidationTest.kt` | **新增** — 覆盖三处开放校验正向扩展准入与负向错误拦截的单测 |
+
+---
+
 ## v0.6.4 (2026-11-28 03:52)
 
 ### 新增

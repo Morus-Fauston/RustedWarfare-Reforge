@@ -8,18 +8,25 @@ import kotlinx.serialization.json.*
 internal object MotionV2CoreTraceJson {
     fun error(e:Exception?):JsonElement=e?.let { obj("type" to s(it.javaClass.name),"message" to it.message?.let(::s),
         "suppressed" to array(it.suppressed.map { x->obj("type" to s(x.javaClass.name),"message" to x.message?.let(::s)) })) } ?: JsonNull
-    private fun action(a:Action?):JsonElement=a?.let { obj("actionId" to s(it.actionId),"actorPlayerId" to s(it.actorPlayerId),
+    internal fun traceActionKindForType(a:Any):String=when(a) {
+        is MoveAction->"move"
+        is StopAction->"stop"
+        is SelectAction->"select"
+        is SubmarineDepthAction->error("Movement v2 trace does not support SubmarineDepthAction")
+        is AmphibiousFlightAction->error("Movement v2 trace does not support AmphibiousFlightAction")
+        is UnitAction->error("Movement v2 trace does not support UnitAction")
+        is LoadAction,is UnloadAction->error("Movement v2 trace does not support transport actions")
+        is AttackAction->error("Movement v2 trace does not support AttackAction")
+        is PatrolAction->error("Movement v2 trace does not support PatrolAction")
+        is BuildAction,is ResumeConstructionAction,is CancelConstructionAction,is RepairUnitAction,is ReclaimUnitAction->
+            error("Movement v2 trace does not support construction actions")
+        is ProduceAction,is CancelProductionAction,is UpgradeAction,is CancelUpgradeAction->
+            error("Movement v2 trace does not support economy actions")
+        else->error("Movement v2 trace does not support ${a.javaClass.simpleName}")
+    }
+    internal fun action(a:Action?):JsonElement=a?.let { obj("actionId" to s(it.actionId),"actorPlayerId" to s(it.actorPlayerId),
         "unitId" to s(it.unitId),"worldId" to s(it.world.id),"atStep" to it.atStep?.let(::n),
-        "kind" to s(when(it) { is MoveAction->"move";is StopAction->"stop";is SelectAction->"select"
-            is SubmarineDepthAction->error("Movement v2 trace does not support SubmarineDepthAction")
-            is AmphibiousFlightAction->error("Movement v2 trace does not support AmphibiousFlightAction")
-            is UnitAction->error("Movement v2 trace does not support UnitAction")
-            is LoadAction,is UnloadAction->error("Movement v2 trace does not support transport actions")
-            is AttackAction->error("Movement v2 trace does not support AttackAction")
-            is PatrolAction->error("Movement v2 trace does not support PatrolAction")
-            is BuildAction,is ResumeConstructionAction,is CancelConstructionAction,is RepairUnitAction,is ReclaimUnitAction->
-                error("Movement v2 trace does not support construction actions")
-            is ProduceAction,is CancelProductionAction,is UpgradeAction,is CancelUpgradeAction->error("Movement v2 trace does not support economy actions") }),
+        "kind" to s(traceActionKindForType(it)),
         "target" to (it as? MoveAction)?.target?.json()) } ?: JsonNull
     fun motion(m:MotionStepSample):JsonObject=with(m) { obj(
         "worldId" to s(worldId),"stepIndex" to n(stepIndex),"unitId" to s(unitId),"ownerPlayerId" to s(ownerPlayerId),"typeId" to s(typeId),

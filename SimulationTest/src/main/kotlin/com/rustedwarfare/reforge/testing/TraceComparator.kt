@@ -711,22 +711,7 @@ object TraceComparator {
             val tasks = unit.arrayAt("tasks").map { it.jsonObject }
             if (tasks.size > 29 || tasks.map { it.id("actionId") }.distinct().size != tasks.size)
                 throw Incomplete("maintenance-tasks", "Invalid worker task queue")
-            tasks.forEach { task ->
-                if (task.keys != setOf("kind", "actionId", "target", "targetUnitId", "atStep", "buildingTypeId", "buildingNonce",
-                        "automaticRepair", "extraWorkRange") ||
-                    task.text("kind") !in setOf("MOVE", "ATTACK", "PATROL", "BUILD", "CONSTRUCT", "RECLAIM"))
-                    throw Incomplete("maintenance-tasks", "Missing or invalid task fields")
-                task.id("actionId")
-                booleanField(task, "automaticRepair")
-                if (task.number("extraWorkRange") != 0.0 ||
-                    task.required("automaticRepair").jsonPrimitive.boolean && task.text("kind") != "CONSTRUCT")
-                    throw Incomplete("maintenance-tasks", "Invalid automatic repair task")
-                task.required("target").let { if (it != JsonNull) point(it.jsonObject) }
-                task.required("atStep").let { if (it != JsonNull) task.integer("atStep") }
-                listOf("targetUnitId", "buildingTypeId", "buildingNonce").forEach { field ->
-                    task.required(field).let { if (it != JsonNull) task.id(field) }
-                }
-            }
+            tasks.forEach(::validateUnitTaskSample)
         }
         if (unit.text("movementState") !in setOf("IDLE", "MOVING", "DECELERATING", "BLOCKED")) throw Incomplete("invalid-field", "Unknown movement state")
         if (scenario.containsKey("combatContract") || scenario.containsKey("economyContract")) {
@@ -1197,6 +1182,48 @@ object TraceComparator {
             leg.number("height"); leg.number("heading")
             if (leg.text("phase") !in setOf("PLANTED", "WARMING_UP", "LIFTING", "SWINGING", "LOWERING"))
                 throw Incomplete("mech-pose", "Unknown mech leg phase")
+        }
+    }
+
+    private val REQUIRED_UNIT_TASK_KEYS = setOf(
+        "kind", "actionId", "target", "targetUnitId", "atStep",
+        "buildingTypeId", "buildingNonce", "automaticRepair", "extraWorkRange",
+    )
+    private val OPEN_UNIT_TASK_KIND_REGEX = Regex("^[A-Z][A-Z0-9_]*$")
+    private val TASK_EXTENSION_KEY_REGEX = Regex("^[a-z][A-Za-z0-9_]*$")
+
+    internal fun validateUnitTaskSample(task: JsonObject) {
+        if (!task.keys.containsAll(REQUIRED_UNIT_TASK_KEYS)) {
+            throw Incomplete("maintenance-tasks", "Missing or invalid task fields")
+        }
+        val kindPrim = task["kind"] as? JsonPrimitive
+        val kind = if (kindPrim != null && kindPrim.isString) kindPrim.content else ""
+        if (!OPEN_UNIT_TASK_KIND_REGEX.matches(kind)) {
+            throw Incomplete("maintenance-tasks", "Missing or invalid task fields")
+        }
+        for (extKey in task.keys - REQUIRED_UNIT_TASK_KEYS) {
+            if (!TASK_EXTENSION_KEY_REGEX.matches(extKey)) {
+                throw Incomplete("maintenance-tasks", "Invalid task extension field: $extKey")
+            }
+            finite(task.getValue(extKey))
+        }
+        task.id("actionId")
+        booleanField(task, "automaticRepair")
+        if (task.number("extraWorkRange") != 0.0 ||
+            task.required("automaticRepair").jsonPrimitive.boolean && kind != "CONSTRUCT"
+        ) {
+            throw Incomplete("maintenance-tasks", "Invalid automatic repair task")
+        }
+        task.required("target").let {
+            if (it != JsonNull) {
+                val pt = it as? JsonObject ?: throw Incomplete("maintenance-tasks", "Invalid task target")
+                if (pt.keys != setOf("x", "y")) throw Incomplete("maintenance-tasks", "Invalid task target")
+                point(pt)
+            }
+        }
+        task.required("atStep").let { if (it != JsonNull) task.integer("atStep") }
+        listOf("targetUnitId", "buildingTypeId", "buildingNonce").forEach { field ->
+            task.required(field).let { if (it != JsonNull) task.id(field) }
         }
     }
 

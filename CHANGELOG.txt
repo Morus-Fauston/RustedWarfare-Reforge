@@ -1,3 +1,9 @@
+v0.6.5 (2026-11-28 04:21)
+  架构改进: 为 MotionDiagnosticCapture 与 MotionV2CoreTraceJson 补充核心 Action 开放默认分支与提交前拦截守卫以消除新增指令穷举编译耦合 / 将 TraceComparator 的 UnitTask 锁死 9 键与 6 枚举升级为核心必需键 + 大写枚举与有限扩展键开放校验且保持双边全键精确判错 / 将 PlatformSessionRunner 的 unit-action 硬编码动作白名单重构为结合实时菜单 groundTargeted 元数据的数据驱动开放校验并保留全部非法参数拒绝
+  技术: 新增 TestUi004OpenValidationTest 正反例单测，tooling 全套机制测试、公开短测 6/6 与双根布局检查全绿，经独立非作者代码整审 APPROVE（0 必修）
+
+====
+
 v0.6.4 (2026-11-28 03:52)
   新增: 落地 7 分类构成主义双栏设置页 SettingsScreen（常规双语切换、音频滑块与静音实时联动 SoundPlayback 含前后台恢复、画面缩放与暗黑/白色/骨白三主题切换、操作偏好即时落盘、关于声明弹窗，以及局内菜单打开时的双包只读锁定与底层热键滚轮穿透屏蔽） / 新增类 MC 左右双栏包管理器 DualColumnPackManagerView（1:1 缩略图、displayText_zh 优先回退、四向超采样实心三角按钮、双列滚轮滚动、基础包底层常驻锁定、ADR-014 层级对齐及内容包启用栈同步驱动主包入口） / 新增 UI 缩放全屏模态 10 秒倒计时自动还原弹窗 UiScaleConfirmModal 并统一局内外模态返回键最优先回滚
   技术: 新增 UiP004SettingsAndPacksTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题共 15 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）
