@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.6.7 (2026-11-28 06:33)
+
+### 修复
+
+- **局内设置覆盖层浅色主题顶栏可读性与底层 HUD 叠影（`SettingsScreen` / `BootstrapScreen`）**：此前对局内打开设置时，覆盖层固定铺设深暗色 `modalScrim` 且底层局内系统条与小地图保持显示，导致「白色」与「骨白」浅色主题下深色顶栏标题「设置」叠在暗底上对比度过低，同时小屏下左上 `← 返回` 与底层 `≡ 菜单 | 暂停` 系统条发生双层叠影；现将局内设置背景切换为与主题同极性的雾面遮罩 `mapScrimDeep`，并在局内设置开启期间隐藏底层 HUD 悬浮层（关闭设置后即刻完整恢复），同步固定内置基础资源包（`reforge:base`）在局内外统一呈现构成主义专属徽章。
+- **紧凑视口（`960×640`）右栏长副标题防碰撞与双行规则栏间距（`OutGameChrome` / `TestAndSandboxScreen` / `SkirmishLobbyScreen`）**：新增基于真实字宽二分收敛的中间省略工具 `OutGameDraw.ellipsizeMiddle`（自动适配 `…` 与 `...` 字形回退，保留前缀标识与末尾 `60×40` 地图尺寸），消除 `960×640` 窄右栏下「场景预览 / 战场地图」标题与长场景副标题的横向碰撞，并拉大紧凑双行回退时上下两行规则标签的纵向呼吸间距。
+
+### 技术
+
+- **八期首阶段整期多分辨率三主题终审、全套 PR 门禁与 Android 构建校验**：更新展示版本号至 `v0.6.7` 并补充中间省略单测；在最终固定候选上完成 `960×640 / 1920×1080 / 2560×1440` × `暗黑 / 白色 / 骨白` 全流程 12 态共 108 张真 GL 实窗截图与 9 张总览拼图重采、全套公开机制与短测门禁（`public_batch.py --kind pr`，含 7 套机制测试与 `6/6` 套共 163 条公开短场景全绿）、`:pc:installDist`、Android 四架构 Debug APK 构建与 `verify_apk.py`、`:android:verifySandboxHostChecks` 及 `android_host_check.py` 宿主校验、双根 `workspace_layout.py` 检查；经全新上下文独立视觉终审 R02 `APPROVED` 与整期代码及收据终审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/OutGameChrome.kt` | 新增保留首尾关键信息的字宽二分中间省略工具 `OutGameDraw.ellipsizeMiddle` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SettingsScreen.kt` | 将局内设置全屏遮罩切换为与主题同极性的 `mapScrimDeep` 以保障浅色主题顶栏高对比度 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 局内打开设置期间隐藏底层 HUD 悬浮层并在返回时恢复，统一 `reforge:base` 局内外构成主义徽章 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/TestAndSandboxScreen.kt` | 右栏顶行副标题接入 `ellipsizeMiddle` 防小屏碰撞并优化双行回退纵向间距 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLobbyScreen.kt` | 右栏地图摘要接入 `ellipsizeMiddle` 防超长名称碰撞并优化双行回退纵向间距 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.7` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SandboxAndLoadingTest.kt` | 新增 `960×640` 右栏副标题中间省略宽度与首尾保留单测 |
+
+---
+
 ## v0.6.6 (2026-11-28 04:36)
 
 ### 新增

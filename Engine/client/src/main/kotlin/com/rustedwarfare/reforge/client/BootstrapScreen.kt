@@ -2083,7 +2083,6 @@ class BootstrapScreen(
             canDisable = false,
             canEnable = false,
             badgeStyle = PackIconBadgeStyle.BASE_RESOURCE,
-            customIconPath = baseRow?.icon?.path,
         )
 
         // Available (`未启用`) column: inactive built-in UI themes (never `nasa`!) + disabled resource packs
@@ -3025,11 +3024,13 @@ class BootstrapScreen(
             } finally { ScissorStack.popScissors() }
             batch.projectionMatrix = viewport.camera.combined
             shapes.projectionMatrix = viewport.camera.combined
-            graphics.drawMinimap(shapes, current.frame, batch)
-            if (cameraJoystickActive()) drawCameraJoystick()
+            if (!inMatchSettingsOpen) {
+                graphics.drawMinimap(shapes, current.frame, batch)
+                if (cameraJoystickActive()) drawCameraJoystick()
+            }
         }
         stage.act(Gdx.graphics.deltaTime); stage.draw()
-        if (current != null && ::hudOverlay.isInitialized && (hudMenuOpen || stepClock.isPaused)) {
+        if (current != null && !inMatchSettingsOpen && ::hudOverlay.isInitialized && (hudMenuOpen || stepClock.isPaused)) {
             batch.projectionMatrix = viewport.camera.combined
             batch.begin()
             hudOverlay.drawModalLayer(batch, 1f)
@@ -3969,15 +3970,16 @@ class BootstrapScreen(
             nativePanel -> if (matchStartupNotices.isNotEmpty() && (current.playerFeedback.isBlank() || current.playerFeedback == "Ready")) "! " + matchStartupNotices.joinToString(" | ") else current.playerFeedback
             else -> "${current.feedback}\nStep ${current.observation.stepIndex}"
         })
-        minimapActor.isVisible = current != null
-        val hudSnap = current?.let {
+        val hudChromeVisible = current != null && !inMatchSettingsOpen
+        minimapActor.isVisible = hudChromeVisible
+        val hudSnap = if (hudChromeVisible) {
             HudSidebarProjection.project(
-                session = it,
+                session = current,
                 menuOpen = hudMenuOpen,
                 simPaused = stepClock.isPaused,
                 activeRate = stepClock.rate,
             )
-        }
+        } else null
         lastHudSnapshot = hudSnap
         val worldW = graphics?.projection?.worldWidth ?: 1000.0
         val worldH = graphics?.projection?.worldHeight ?: 1000.0
@@ -3996,7 +3998,7 @@ class BootstrapScreen(
         val railLayout = hudOverlay.layout
         // Keep legacy BattleActionList empty/hidden now that HudActionPanel owns the action list
         battleActions.update(null, null, emptyList())
-        val actionListSnap = if (current != null && !paused) {
+        val actionListSnap = if (hudChromeVisible && !paused) {
             HudActionProjection.projectActionList(
                 session = current,
                 activeConstructionTypeId = mapInput.constructionTypeId,
@@ -4007,7 +4009,7 @@ class BootstrapScreen(
                 touchControls = touchControls,
             )
         } else null
-        val targetModeCard = if (current != null && !paused && !hudMenuOpen && !stepClock.isPaused) {
+        val targetModeCard = if (hudChromeVisible && !paused && !hudMenuOpen && !stepClock.isPaused) {
             HudActionProjection.projectTargetModeCard(
                 session = current,
                 constructionTypeId = mapInput.constructionTypeId,
@@ -4036,13 +4038,13 @@ class BootstrapScreen(
             language = UiStrings.currentLanguage,
         )
         hudGroupBar.update(
-            visible = current != null && !paused && !hudMenuOpen && !stepClock.isPaused,
-            joystickVisible = cameraJoystickActive(),
+            visible = hudChromeVisible && !paused && !hudMenuOpen && !stepClock.isPaused,
+            joystickVisible = !inMatchSettingsOpen && cameraJoystickActive(),
             countOf = { idx -> current?.groupCount(idx) ?: 0 },
             lang = UiStrings.currentLanguage,
         )
-        val showTouchDebugBtn = development && touchControls && current != null
-        val debugOpen = development && debugLayerState.enabled && current != null
+        val showTouchDebugBtn = development && touchControls && hudChromeVisible
+        val debugOpen = development && debugLayerState.enabled && hudChromeVisible
         // Update debug overlay first so we know its leftColumnBottomY for notice shift
         refreshDebugOverlay(current)
         val noticesBelowY = if (debugOpen && ::hudDebugOverlay.isInitialized) hudDebugOverlay.leftColumnBottomY else null

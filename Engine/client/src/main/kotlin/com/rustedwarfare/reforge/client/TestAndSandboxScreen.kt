@@ -496,6 +496,8 @@ class TestAndSandboxScreen(
                 UiStrings.get("lobby.battlefieldMap")
             }
             val prevSecR = secFont.color.cpy()
+            glyphLayout.setText(secFont, rightTitle)
+            val rightTitleW = glyphLayout.width
             secFont.setColor(strong.r, strong.g, strong.b, strong.a * parentAlpha)
             secFont.draw(batch, rightTitle, ox + rightPadX, oy + rightHeaderBaselineY)
             secFont.color = prevSecR
@@ -519,11 +521,12 @@ class TestAndSandboxScreen(
                 )
             }
             val infoFont = fontsProvider()?.keyBold ?: fontsProvider()?.command ?: fallbackFontProvider()
-            glyphLayout.setText(infoFont, rightInfo)
+            val fittedRightInfo = OutGameDraw.ellipsizeMiddle(infoFont, rightInfo, (rightInnerW - rightTitleW - 14f).coerceAtLeast(48f), glyphLayout)
+            glyphLayout.setText(infoFont, fittedRightInfo)
             val prevInfo = infoFont.color.cpy()
             val infoCol = if (currentMode == TestSandboxMode.TEST_SCENES && testScenes.choice == null) dim else theme.colors.value
             infoFont.setColor(infoCol.r, infoCol.g, infoCol.b, infoCol.a * parentAlpha)
-            infoFont.draw(batch, rightInfo, ox + rightPadX + rightInnerW - glyphLayout.width, oy + rightHeaderBaselineY)
+            infoFont.draw(batch, fittedRightInfo, ox + rightPadX + rightInnerW - glyphLayout.width, oy + rightHeaderBaselineY)
             infoFont.color = prevInfo
 
             if (currentMode == TestSandboxMode.FREE_SANDBOX) {
@@ -874,9 +877,9 @@ class TestAndSandboxScreen(
                 fastLabelY = row1LblY
                 fastBuildSegmented.setBounds(fastX, row1CtrlY, fastW, ctrlH)
 
-                val row2CtrlY = row1CtrlY - 18f - ctrlH
+                val row2CtrlY = row1CtrlY - 24f - ctrlH
                 fogLabelX = leftPad
-                fogLabelY = row2CtrlY + ctrlH + 13f
+                fogLabelY = row2CtrlY + ctrlH + 14f
                 fogModeSegmented.setBounds(leftPad, row2CtrlY, fogW.coerceAtMost(leftInnerW), ctrlH)
                 rulesDividerY = row2CtrlY - 12f
             }

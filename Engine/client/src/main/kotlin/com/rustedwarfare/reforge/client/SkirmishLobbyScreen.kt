@@ -371,8 +371,11 @@ class SkirmishLobbyScreen(
             val secFont = fontsProvider()?.sectionTitle ?: fontsProvider()?.title ?: fallbackFontProvider()
             val prevSec = secFont.color.cpy()
             val strong = theme.outGame.textStrong
+            val mapHeaderTitle = UiStrings.get("lobby.battlefieldMap")
+            glyphLayout.setText(secFont, mapHeaderTitle)
+            val mapTitleW = glyphLayout.width
             secFont.setColor(strong.r, strong.g, strong.b, strong.a * parentAlpha)
-            secFont.draw(batch, UiStrings.get("lobby.battlefieldMap"), ox + rightPadX, oy + rightHeaderBaselineY)
+            secFont.draw(batch, mapHeaderTitle, ox + rightPadX, oy + rightHeaderBaselineY)
             secFont.color = prevSec
 
             val infoFont = fontsProvider()?.keyBold ?: fontsProvider()?.command ?: fallbackFontProvider()
@@ -381,10 +384,11 @@ class SkirmishLobbyScreen(
                 "NAME" to lobbyState.selectedMap.localizedTitle(),
                 "N" to lobbyState.availableSpawnCount,
             )
-            glyphLayout.setText(infoFont, mapSummary)
+            val fittedSummary = OutGameDraw.ellipsizeMiddle(infoFont, mapSummary, (rightInnerW - mapTitleW - 14f).coerceAtLeast(48f), glyphLayout)
+            glyphLayout.setText(infoFont, fittedSummary)
             val prevInfo = infoFont.color.cpy()
             infoFont.setColor(strong.r, strong.g, strong.b, strong.a * parentAlpha)
-            infoFont.draw(batch, mapSummary, ox + rightPadX + rightInnerW - glyphLayout.width, oy + rightHeaderBaselineY)
+            infoFont.draw(batch, fittedSummary, ox + rightPadX + rightInnerW - glyphLayout.width, oy + rightHeaderBaselineY)
             infoFont.color = prevInfo
 
             // Optional fallback/error banner (`requiredObjectives` fallback or invalid `.tmx` path)
@@ -529,9 +533,9 @@ class SkirmishLobbyScreen(
             startingCreditsDropdown.setBounds(fundsLabelX, row1CtrlY, fundsW, ctrlH)
             moreSettingsButton.setBounds(leftPad + leftInnerW - moreW, row1CtrlY, moreW, ctrlH)
 
-            val row2CtrlY = row1CtrlY - 18f - ctrlH
+            val row2CtrlY = row1CtrlY - 24f - ctrlH
             fogLabelX = leftPad
-            fogLabelY = row2CtrlY + ctrlH + 13f
+            fogLabelY = row2CtrlY + ctrlH + 14f
             fogModeSegmented.setBounds(leftPad, row2CtrlY, fogW.coerceAtMost(leftInnerW), ctrlH)
             rulesDividerY = row2CtrlY - 12f
         }

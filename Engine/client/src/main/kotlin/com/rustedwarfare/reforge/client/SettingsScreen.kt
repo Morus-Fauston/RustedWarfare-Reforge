@@ -553,7 +553,7 @@ class SettingsScreen(
             val saved = batch.packedColor
             val theme = themeProvider.currentTheme()
             val white = skin.getRegion("white")
-            OutGameDraw.fillRect(batch, white, 0f, 0f, width, height, theme.outGame.modalScrim, parentAlpha)
+            OutGameDraw.fillRect(batch, white, 0f, 0f, width, height, theme.outGame.mapScrimDeep, parentAlpha)
             batch.packedColor = saved
         }
     }

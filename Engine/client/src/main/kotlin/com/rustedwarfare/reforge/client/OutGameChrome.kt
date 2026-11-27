@@ -137,6 +137,41 @@ internal object OutGameDraw {
         return out
     }
 
+    /**
+     * Middle-truncates [text] with `…` so its rendered width fits within [maxWidth], preserving both
+     * leading identifier context and trailing dimensions/metadata (e.g. `public.phase…v1 · 60×40`).
+     */
+    fun ellipsizeMiddle(font: BitmapFont, text: String, maxWidth: Float, scratch: GlyphLayout = GlyphLayout()): String {
+        if (text.isEmpty()) return text
+        val limit = maxWidth.coerceAtLeast(24f)
+        scratch.setText(font, text)
+        if (scratch.width <= limit) return text
+        val ellipsis = if (font.data.getGlyph('…') != null) "…" else "..."
+        scratch.setText(font, ellipsis)
+        if (scratch.width >= limit) return ellipsis
+        var lo = 1
+        var hi = text.length - 1
+        var best = ellipsis
+        while (lo <= hi) {
+            val keep = (lo + hi) ushr 1
+            val tailLen = (keep / 2).coerceAtLeast(1)
+            val headLen = (keep - tailLen).coerceAtLeast(1)
+            if (headLen + tailLen >= text.length) {
+                hi = keep - 1
+                continue
+            }
+            val candidate = text.substring(0, headLen).trimEnd() + ellipsis + text.substring(text.length - tailLen).trimStart()
+            scratch.setText(font, candidate)
+            if (scratch.width <= limit) {
+                best = candidate
+                lo = keep + 1
+            } else {
+                hi = keep - 1
+            }
+        }
+        return best
+    }
+
     private fun tokenizeMixedCjk(line: String): List<String> {
         val tokens = ArrayList<String>(line.length)
         var i = 0

@@ -429,4 +429,32 @@ class UiP004SandboxAndLoadingTest {
             assertFalse(awtRegex.containsMatchIn(content), "Forbidden java.awt/javax.swing import in $name")
         }
     }
+
+    @Test
+    fun `OutGameDraw ellipsizeMiddle prevents 960x640 right header subtitle collision while preserving dimensions`() {
+        val raw = "public.phase-six-a-command-json.v1 · 60×40"
+        val measuredFont = BitmapFont(BitmapFont.BitmapFontData().apply { lineHeight = 16f }, Array.with(TextureRegion()), true)
+        for (ch in (raw + "…. ")) {
+            if (measuredFont.data.getGlyph(ch) == null) {
+                measuredFont.data.setGlyph(ch.code, BitmapFont.Glyph().apply {
+                    id = ch.code
+                    width = 7
+                    height = 12
+                    xadvance = 8
+                })
+            }
+        }
+        val scratch = com.badlogic.gdx.graphics.g2d.GlyphLayout()
+        scratch.setText(measuredFont, raw)
+        val fullW = scratch.width
+        assertTrue(fullW > 180f)
+
+        val fitted = OutGameDraw.ellipsizeMiddle(measuredFont, raw, 180f, scratch)
+        scratch.setText(measuredFont, fitted)
+        assertTrue(scratch.width <= 180f, "Expected fitted width <= 180f, got ${scratch.width}")
+        assertTrue("…" in fitted, "Expected middle ellipsis in '$fitted'")
+        assertTrue(fitted.startsWith("public."), "Expected leading prefix preserved in '$fitted'")
+        assertTrue(fitted.endsWith("60×40"), "Expected trailing tile dimensions preserved in '$fitted'")
+        assertEquals(raw, OutGameDraw.ellipsizeMiddle(measuredFont, raw, fullW + 10f, scratch))
+    }
 }
