@@ -77,9 +77,11 @@ gradle.taskGraph.whenReady { graph ->
 }
 def executions = []
 gradle.taskGraph.afterTask { task, state ->
-    executions.add([task:task.path, executed:state.executed, skipped:state.skipped,
-        skipMessage:state.skipMessage, upToDate:state.upToDate, noSource:state.noSource,
-        failure:state.failure == null ? null : state.failure.toString()])
-    runDir.mkdirs()
-    new File(runDir,'task-executions.json').text = JsonOutput.toJson(executions)
+    synchronized (executions) {
+        executions.add([task:task.path, executed:state.executed, skipped:state.skipped,
+            skipMessage:state.skipMessage, upToDate:state.upToDate, noSource:state.noSource,
+            failure:state.failure == null ? null : state.failure.toString()])
+        runDir.mkdirs()
+        new File(runDir,'task-executions.json').text = JsonOutput.toJson(executions)
+    }
 }

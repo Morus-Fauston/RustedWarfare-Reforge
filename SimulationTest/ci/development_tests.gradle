@@ -144,11 +144,19 @@ gradle.taskGraph.whenReady { graph ->
 }
 def executions = []
 def taskStarted = [:]
-gradle.taskGraph.beforeTask { task -> taskStarted[task.path] = System.nanoTime() }
+gradle.taskGraph.beforeTask { task ->
+    synchronized (executions) {
+        taskStarted[task.path] = System.nanoTime()
+    }
+}
 gradle.taskGraph.afterTask { task, state ->
-    executions.add([task:task.path, skipped:state.skipped, upToDate:state.upToDate,
-        noSource:state.noSource, skipMessage:state.skipMessage,
-        didWork:state.didWork, elapsedSeconds:(System.nanoTime()-taskStarted[task.path])/1_000_000_000.0,
-        failure:state.failure == null ? null : state.failure.toString()])
-    new File(output, 'task-executions.json').text = JsonOutput.toJson(executions)
+    synchronized (executions) {
+        def startedAt = taskStarted[task.path]
+        def elapsed = startedAt == null ? 0.0 : (System.nanoTime() - startedAt) / 1_000_000_000.0
+        executions.add([task:task.path, skipped:state.skipped, upToDate:state.upToDate,
+            noSource:state.noSource, skipMessage:state.skipMessage,
+            didWork:state.didWork, elapsedSeconds:elapsed,
+            failure:state.failure == null ? null : state.failure.toString()])
+        new File(output, 'task-executions.json').text = JsonOutput.toJson(executions)
+    }
 }

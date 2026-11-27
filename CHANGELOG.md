@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5.83 (2026-11-27 18:08)
+
+### 修复
+
+- **独立工作树 `:client:test` 与 `:pc:test` 夹具回退及 `-D` 透传**：针对独立 `git worktree` 缺少私有 `TestLab/` 与 `.scratch/` 导致直接运行 `:client:test` 或 `:pc:test` 报大量 `NoSuchFileException`，以及命令行 `-Dpublic.fixtures.dir` 仅作用于 Gradle Daemon 而未透传给测试子 JVM 的问题，将 `Engine/core/build.gradle.kts` 的 `p001.inputs.dir`（私有目录缺失时自动回退公开夹具）、`public.fixtures.dir`、`repo.root` 默认值与 `System.getProperty` 透传同步至 `Engine/client/build.gradle.kts` 和 `Engine/pc/build.gradle.kts`，同时为 `:client:test` 启用可配置多 fork 并行（`:pc:test` 保持串行 `1`）。
+- **Gradle 并行任务日志钩子竞态修复**：在 `Engine/gradle.properties` 与 `SimulationTest/gradle.properties` 启用 `org.gradle.parallel=true`（不启用构建缓存）并实测发现并行子项目任务在 `afterTask` 回调中同时修改共享列表触发 `ConcurrentModificationException`，为 `SimulationTest/ci/development_tests.gradle` 与 `SimulationTest/tools/workflow_gradle.init.gradle` 的任务执行记录补充 `synchronized` 锁保护，消除并发竞态且保持既有收据契约不变。
+
+### 新增
+
+- **热驻无头本地快筛入口 `quick_test.py`**：新增 `SimulationTest/tools/quick_test.py` 及对应单元测试并纳入公共源码闭包与 `tooling` 套件，统一在 `SimulationTest` Gradle 根下以热 Daemon 复用增量编译承接定向单测（`--core`/`--client`/`--pc`/`--tools`）、热编译公开机制套件（`--suite`）与同根 `dev-ab` 微基准，支持系统临时目录绝对路径隔离、跨平台安全参数引用及 `--dry-run`/`--list` 预览，不触发 `--stop`、`public-long` 或全量 `public_batch --kind pr`。
+
+### 文档
+
+- **排障纪律与分层验证效率硬约束入口**：在 `AGENTS.md` 补充排障先读签名/快径、由轻到重漏斗式验证、热 Daemon 复用与独立工作树夹具注入的规则指向。
+
+### 技术
+
+- **独立工作树直跑、热驻实测与独立整审**：在不含私有目录的独立工作树零参数直跑 `Engine` `:client:test`（`ConstructionQTest`）与 `:pc:test`（`WindowsLaunchOptionsTest`）全绿，实测 `quick_test.py` 热复测单类 7s、完整 `build-economy` 机制套件与 `dev-ab` 全绿，7 套 Python 契约与单测及双根 `workspace_layout.py` 全绿，经全新上下文独立非作者代码整审及 R01 定向复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.82 (2026-11-27 15:06)
 
 ### 修复
