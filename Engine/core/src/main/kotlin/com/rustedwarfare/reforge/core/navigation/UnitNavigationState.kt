@@ -120,36 +120,12 @@ internal data class NavigationRequestAudit(
 }
 
 /**
- * Unified immutable group-reservation contract consolidating legacy slot reservations
- * ([GroupMoveReservation] / [GroupMoveRequest]) and shared landing reservations ([LandingMember])
- * into a single value object carried inside [UnitNavigationState].
- */
-internal data class GroupReservation(
-    val slot: GroupMoveReservation? = null,
-    val parkedOwner: GroupMoveRequest? = null,
-    val landing: LandingMember? = null,
-) {
-    val active: Boolean get() = slot != null || parkedOwner != null || landing != null
-
-    val group: GroupMoveRequest? get() = landing?.group ?: slot?.plan ?: parkedOwner
-
-    companion object {
-        fun of(
-            slot: GroupMoveReservation? = null,
-            parkedOwner: GroupMoveRequest? = null,
-            landing: LandingMember? = null,
-        ): GroupReservation? =
-            if (slot == null && parkedOwner == null && landing == null) null
-            else GroupReservation(slot, parkedOwner, landing)
-    }
-}
-
-/**
  * Immutable navigation & movement-orchestration state for a [MutableUnit].
  *
- * Consolidates all route, maneuver, passage, group-reservation, orthogonal [MotionContract],
- * and [NavigationRequestAudit] fields into a single immutable value object so [StepState.fork]
- * shares the reference in O(1) and all mutations occur through semantic atomic transitions.
+ * Consolidates all route, maneuver, passage, unified terminal landing ([LandingMember]),
+ * orthogonal [MotionContract], and [NavigationRequestAudit] fields into a single immutable
+ * value object so [StepState.fork] shares the reference in O(1) and all mutations occur
+ * through semantic atomic transitions.
  */
 internal data class UnitNavigationState(
     val moveTarget: Position? = null,
@@ -172,7 +148,7 @@ internal data class UnitNavigationState(
     val lastManeuverContactRepair: Long? = null,
     val routeOccupantIds: List<String> = emptyList(),
     val passageEntry: PassageEntry? = null,
-    val groupReservation: GroupReservation? = null,
+    val landingMember: LandingMember? = null,
     val indexedLandingBody: LandingOccupancy.IndexedBody? = null,
     val adoptedRouteRevision: Long = 0L,
     val localProgressTime: Double = 0.0,
@@ -187,15 +163,6 @@ internal data class UnitNavigationState(
     val progressAnchorStep: Long = -1L,
     val requestAudit: NavigationRequestAudit = NavigationRequestAudit.EMPTY,
 ) {
-    val groupMoveReservation: GroupMoveReservation?
-        get() = groupReservation?.slot
-
-    val parkedReservationOwner: GroupMoveRequest?
-        get() = groupReservation?.parkedOwner
-
-    val landingMember: LandingMember?
-        get() = groupReservation?.landing
-
     fun withPathPoints(points: List<Position>): UnitNavigationState =
         copy(pathPoints = immutableList(points))
 
@@ -246,22 +213,10 @@ internal data class UnitNavigationState(
     fun withTerrainHistory(correctionTime: Double, clearSteps: Int = terrainClearSteps, terrainOnly: Boolean = terrainOnlyStall): UnitNavigationState =
         copy(terrainCorrectionTime = correctionTime, terrainClearSteps = clearSteps, terrainOnlyStall = terrainOnly)
 
-    fun withGroupMoveReservation(value: GroupMoveReservation?): UnitNavigationState {
-        val next = GroupReservation.of(slot = value, parkedOwner = parkedReservationOwner, landing = landingMember)
-        return if (next == groupReservation) this else copy(groupReservation = next)
-    }
+    fun withLandingMember(value: LandingMember?): UnitNavigationState =
+        if (landingMember == value) this else copy(landingMember = value)
 
-    fun withParkedReservationOwner(value: GroupMoveRequest?): UnitNavigationState {
-        val next = GroupReservation.of(slot = groupMoveReservation, parkedOwner = value, landing = landingMember)
-        return if (next == groupReservation) this else copy(groupReservation = next)
-    }
-
-    fun withLandingMember(value: LandingMember?): UnitNavigationState {
-        val next = GroupReservation.of(slot = groupMoveReservation, parkedOwner = parkedReservationOwner, landing = value)
-        return if (next == groupReservation) this else copy(groupReservation = next)
-    }
-
-    /** Atomically binds command origin, target, reservation state, and orthogonal [MotionContract] prior to route adoption. */
+    /** Atomically binds command origin, target, unified landing membership, and orthogonal [MotionContract] prior to route adoption. */
     fun bindCommandTarget(
         target: Position,
         originMoveId: String? = this.originMoveId,
@@ -272,7 +227,7 @@ internal data class UnitNavigationState(
         nearestMoveIsGroup: Boolean = this.nearestMoveIsGroup,
         nearTargetTime: Double = this.nearTargetTime,
         lastManeuverContactRepair: Long? = this.lastManeuverContactRepair,
-        groupReservation: GroupReservation? = this.groupReservation,
+        landingMember: LandingMember? = this.landingMember,
     ): UnitNavigationState = copy(
         moveTarget = target,
         motionContract = contract,
@@ -283,17 +238,17 @@ internal data class UnitNavigationState(
         nearestMoveIsGroup = nearestMoveIsGroup,
         nearTargetTime = nearTargetTime,
         lastManeuverContactRepair = lastManeuverContactRepair,
-        groupReservation = groupReservation,
+        landingMember = landingMember,
     )
 
-    /** Clears command origin, route-repair counters, motion contract, and unified group reservation atomically. */
+    /** Clears command origin, route-repair counters, motion contract, and unified landing membership atomically. */
     fun clearMoveOrigin(): UnitNavigationState = copy(
         motionContract = null,
         nearestMoveTarget = null,
         nearestMoveIsGroup = false,
         originMoveId = null,
         originAtStep = null,
-        groupReservation = null,
+        landingMember = null,
         lastPlannedKnowledgeRevision = -1L,
         lastPlannedBuildingRevision = -1L,
         nearTargetTime = 0.0,
@@ -456,10 +411,9 @@ internal data class UnitNavigationState(
     /** Transitions atomically to an arrived/parked state while preserving arrival metadata. */
     fun markArrived(
         parkedLanding: LandingMember?,
-        parkedOwner: GroupMoveRequest?,
         arrival: MoveArrival?,
     ): UnitNavigationState = pauseRoute().copy(
-        groupReservation = GroupReservation.of(slot = null, parkedOwner = parkedOwner, landing = parkedLanding),
+        landingMember = parkedLanding,
         moveArrival = arrival ?: moveArrival,
     )
 

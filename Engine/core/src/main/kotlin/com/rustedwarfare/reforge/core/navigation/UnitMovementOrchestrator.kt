@@ -64,7 +64,7 @@ internal interface UnitMovementHost {
         occupancy: RouteOccupancy? = null,
     ): Boolean
     fun scheduleManeuverRepair(unit: MutableUnit, target: Position, reason: ManeuverRepair)
-    fun groupStopClearsSlots(unit: MutableUnit): Boolean
+    fun landingSitesFor(group: GroupMoveRequest, map: MapDefinition): SharedLandingSites?
     fun preparesRouteSuccessor(unit: MutableUnit): Boolean
     fun onMotionArrivalCompleted(unit: MutableUnit, completedMoveId: String?)
     fun requestRouteContinuation(
@@ -219,9 +219,7 @@ internal object UnitMovementOrchestrator {
         }
         val nativeDeparture = host.isNativeSeaDeparture(unit)
         val passageTarget = unit.moveTarget
-        val publicationWaiting = movePlanning.replacingDestination(unit.unitId)
-        if (passageTarget != null && (publicationWaiting || unit.followsManeuverRoute && movePlanning.holdsManeuverRoute(unit.unitId))) {
-            if (publicationWaiting) translations.recordPlanningWait(unit)
+        if (passageTarget != null && unit.followsManeuverRoute && movePlanning.holdsManeuverRoute(unit.unitId)) {
             motionSamples?.add(
                 MotionStepSample(
                     host.activeWorld.id, unit.unitId, unit.ownerPlayerId, unit.typeId,
@@ -297,9 +295,9 @@ internal object UnitMovementOrchestrator {
             } == true
         val approachingRangeBand = rangeGoal != null &&
             ScreenPlane.distanceSquared(unit.position, rangeGoal.anchor) > rangeGoal.range * rangeGoal.range
-        val reportsStop = unit.nearestMoveTarget != null || unit.groupMoveReservation != null || unit.landingMember?.claimed != null
+        val reportsStop = unit.nearestMoveTarget != null || unit.landingMember?.claimed != null
         val followsManeuver = (unit.followsManeuverRoute ||
-            (unit.groupMoveReservation != null || unit.landingMember?.claimed != null) && unit.pathPoints.size == 1) &&
+            unit.landingMember?.claimed != null && unit.pathPoints.size == 1) &&
             motionContract?.allowsManeuverFollow == true && !air && !sliding
 
         fun maneuverAim(): Position {
@@ -394,17 +392,14 @@ internal object UnitMovementOrchestrator {
                 unit.birthRemaining == 0f && LocomotionModule.isAirRallyRingArrived(host, unit, target)
             val captured = (unit.landingMember == null || unit.landingMember?.claimed != null) &&
                 (StrictCapture.inside(commandDistanceSquared, completionRadius) || airRallyCaptured)
-            val clearsSlots = captured && host.groupStopClearsSlots(unit)
-            val capturedGroupPose = unit.groupMoveReservation != null && clearsSlots
-            if (!approachingBuilding && !approachingRangeBand && (!unit.routeTranslationClipped || capturedGroupPose) &&
+            if (!approachingBuilding && !approachingRangeBand && !unit.routeTranslationClipped &&
                 (!followsManeuver || unit.pathPoints.size == 1) &&
-                clearsSlots
+                captured
             ) {
                 val completedMoveId = unit.originMoveId
-                val originalTarget = unit.nearestMoveTarget ?: unit.landingMember?.group?.click ?: unit.groupMoveReservation?.plan?.click
-                val wasGroup = unit.nearestMoveIsGroup || unit.landingMember != null || unit.groupMoveReservation != null
+                val originalTarget = unit.nearestMoveTarget ?: unit.landingMember?.group?.click
+                val wasGroup = unit.nearestMoveIsGroup || unit.landingMember != null
                 val parked = unit.landingMember?.copy(parked = true)
-                val parkedOwner = if (parked == null) unit.groupMoveReservation?.plan else null
                 val arrival = originalTarget?.let {
                     MoveArrival(
                         it, unit.position,
@@ -413,7 +408,7 @@ internal object UnitMovementOrchestrator {
                     )
                 }
                 unit.cancelRoute()
-                unit.nav = unit.nav.markArrived(parked, parkedOwner, arrival)
+                unit.nav = unit.nav.markArrived(parked, arrival)
                 host.onMotionArrivalCompleted(unit, completedMoveId)
                 host.pendingEvents += Event("movement-arrived", unit.unitId)
                 unit.speed = 0.0
@@ -428,17 +423,18 @@ internal object UnitMovementOrchestrator {
             }
         }
 
-        // ENG-P016-009B / ENG-P017-005: Unified single terminal landing evaluation driven orthogonally by MotionContract.
+        // ENG-P016-009B / ENG-P017-007: Unified single terminal landing evaluation driven orthogonally by MotionContract.
         val terminalDecision = if (target != null && !air &&
             (motionContract == null || motionContract.isSharedCluster) &&
             unit.birthRemaining == 0f && unit.landingMember != null && !unit.landingMember!!.parked
         ) {
             val tTerrain = host.planningTerrainFor(unit, map)
+            val flowDir = host.navigationGuidance.sampleFlowDirection(host, unit, tTerrain, target)
             val gdx = target.x - unit.position.x
             val gdy = target.y - unit.position.y
             val gd = hypot(gdx, gdy)
-            val dirX = if (gd > 1e-5) gdx / gd else ScreenPlane.displacement(unit.heading, 1.0).x
-            val dirY = if (gd > 1e-5) gdy / gd else ScreenPlane.displacement(unit.heading, 1.0).y
+            val dirX = flowDir?.first ?: if (gd > 1e-5) gdx / gd else ScreenPlane.displacement(unit.heading, 1.0).x
+            val dirY = flowDir?.second ?: if (gd > 1e-5) gdy / gd else ScreenPlane.displacement(unit.heading, 1.0).y
             val td = TerminalLanding.evaluate(host, unit, map, tTerrain, target, dirX, dirY, maximumSpeed, delta)
             if (td != null) {
                 if (td.updatedMember != unit.landingMember) {
@@ -566,7 +562,6 @@ internal object UnitMovementOrchestrator {
             val hardRadius = maxOf(1.0, unit.definition.movementCollision.boundingRadius)
             val distSqToLeg = ScreenPlane.distanceSquared(unit.position, leg.target)
             val isExactManeuverGoal = unit.nearestMoveTarget != null ||
-                unit.groupMoveReservation != null ||
                 unit.landingMember?.claimed != null
             val preciseCircleApproach = (unit.landingMember?.claimed != null && !finalForSample) ||
                 (finalForSample && isExactManeuverGoal && distSqToLeg <= (hardRadius * 2.2).let { it * it }) ||
@@ -635,7 +630,12 @@ internal object UnitMovementOrchestrator {
                     )
                     speedTarget = leg.approachSpeed(maximumSpeed, movement.moveDecelerationSpeed * maximumSpeed, finalForSample) * requestedFraction
                 } else if (wasAligned) {
-                    speedTarget = leg.approachSpeed(maximumSpeed, movement.moveDecelerationSpeed * maximumSpeed, finalForSample)
+                    val rectYield = if (unit.definition.movementCollision is MovementCollisionShape.Rectangle &&
+                        unit.landingMember != null
+                    ) {
+                        rectangularPeerYieldFactor(host, unit, target)
+                    } else 1.0
+                    speedTarget = leg.approachSpeed(maximumSpeed, movement.moveDecelerationSpeed * maximumSpeed, finalForSample) * rectYield
                     if (maximumSpeed > 0.0) requestedFraction = speedTarget / maximumSpeed
                 }
             }
@@ -703,12 +703,10 @@ internal object UnitMovementOrchestrator {
             val effectiveStopRadius = if (zeroStopGate) 0.0 else contract.targetRadius
             val hardR = maxOf(1.0, unit.definition.movementCollision.boundingRadius)
             val isExactDockingGoal = unit.nearestMoveTarget != null ||
-                unit.groupMoveReservation != null ||
                 unit.landingMember?.claimed != null
             val closeExactSnap = terminalDecision?.flankAim == null && (
                 (unit.nearestMoveTarget != null && finalPoint && d2 <= (hardR * 2.5).let { r -> r * r }) ||
-                (isExactDockingGoal && unit.landingMember?.claimed != null && finalPoint && d2 <= (hardR * 2.2).let { r -> r * r }) ||
-                (unit.groupMoveReservation != null && unit.landingMember == null && finalPoint && d2 <= (hardR * 2.2).let { r -> r * r })
+                (isExactDockingGoal && unit.landingMember?.claimed != null && finalPoint && d2 <= (hardR * 2.2).let { r -> r * r })
             )
             val terminalDockingWeight = maxOf(
                 if (finalPoint && isExactDockingGoal) {
@@ -845,7 +843,12 @@ internal object UnitMovementOrchestrator {
                 aimForSample = effectiveAim
                 finalForSample = fallbackFinal
                 differenceForSample = diff
-                requestedFraction = if (unit.reversing) -fraction * movement.reverseSpeedPercentage else fraction
+                val rectYield = if (unit.definition.movementCollision is MovementCollisionShape.Rectangle &&
+                    unit.landingMember != null
+                ) {
+                    rectangularPeerYieldFactor(host, unit, target)
+                } else 1.0
+                requestedFraction = (if (unit.reversing) -fraction * movement.reverseSpeedPercentage else fraction) * rectYield
                 speedTarget = maximumSpeed * requestedFraction
             }
             if (preciseSlide && delta > 0.0) {
@@ -924,7 +927,7 @@ internal object UnitMovementOrchestrator {
             )
         }
         unit.cancelRoute()
-        unit.nav = unit.nav.markArrived(parked, null, arrival)
+        unit.nav = unit.nav.markArrived(parked, arrival)
         host.landingOccupancy.update(unit)
         host.onMotionArrivalCompleted(unit, completedMoveId)
         host.pendingEvents += Event("movement-arrived", unit.unitId)
@@ -1310,5 +1313,50 @@ internal object UnitMovementOrchestrator {
             if (terrainCorrected) MotionTerrainDisposition.CORRECTED else MotionTerrainDisposition.DIRECT,
             unitContactLimited,
         )
+    }
+
+    /**
+     * Geometric right-of-way yielding for non-circular (rectangular) group hulls converging on a
+     * shared landing goal: prevents equal-speed parallel hulls from wedging bows together before
+     * any hull reaches the target core.
+     */
+    private fun rectangularPeerYieldFactor(
+        host: UnitMovementHost,
+        unit: MutableUnit,
+        goal: Position,
+    ): Double {
+        val group = unit.landingMember?.group ?: return 1.0
+        val layer = UnitContact.layer(unit) ?: return 1.0
+        val ownR = maxOf(1.0, unit.definition.movementCollision.boundingRadius)
+        val ownDistSq = ScreenPlane.distanceSquared(unit.position, goal)
+        val fwd = ScreenPlane.displacement(unit.heading, 1.0)
+        val queryR = ownR * 2.8
+        val nearby = host.spatialIndex.queryBounds(
+            SpatialLayer.fromContact(layer),
+            unit.position.x - queryR, unit.position.x + queryR,
+            unit.position.y - queryR, unit.position.y + queryR,
+            useBufferRadius = false,
+        )
+        var yieldFactor = 1.0
+        for (i in 0 until nearby.size) {
+            val other = nearby[i]
+            if (other === unit || !other.alive || other.moveTarget == null) continue
+            val ol = other.landingMember ?: continue
+            if (ol.group !== group || ol.parked) continue
+            val otherR = maxOf(1.0, other.definition.movementCollision.boundingRadius)
+            val dx = other.position.x - unit.position.x
+            val dy = other.position.y - unit.position.y
+            val dist = hypot(dx, dy)
+            val touchR = ownR + otherR
+            if (dist > touchR + 8.0) continue
+            val ahead = dx * fwd.x + dy * fwd.y
+            if (ahead < -ownR * 0.35) continue
+            val otherDistSq = ScreenPlane.distanceSquared(other.position, goal)
+            val otherHasPriority = otherDistSq < ownDistSq - 4.0 ||
+                (abs(otherDistSq - ownDistSq) <= 4.0 && other.unitId < unit.unitId)
+            if (!otherHasPriority) continue
+            yieldFactor = minOf(yieldFactor, if (dist <= touchR + 1.5) 0.0 else 0.15)
+        }
+        return yieldFactor
     }
 }

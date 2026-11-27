@@ -26,7 +26,8 @@ data class SandboxCommandReceipt(val sequence: Long, val generation: Long, val w
 
 /** Local host capability, fixed before the match; ordinary player Actions never grant deployment. */
 class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false, val generation: Long = 1L,
-    cameraCues: List<OfflineCameraCue> = emptyList()) : AutoCloseable {
+    cameraCues: List<OfflineCameraCue> = emptyList(),
+    movePlanningBudgetPerStep: Int? = null) : AutoCloseable {
     private data class SeenRequest(val identity: Any, val receipt: SandboxCommandReceipt)
 
     init {
@@ -47,7 +48,11 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
         }
     }
 
-    val context: SimulationContext = when (val initialized = SimulationContext.initialize(input)) {
+    val context: SimulationContext = when (val initialized = if (movePlanningBudgetPerStep != null) {
+        SimulationContext(movePlanningBudgetPerStep = movePlanningBudgetPerStep).initialize(input)
+    } else {
+        SimulationContext.initialize(input)
+    }) {
         is InitResult.Accepted -> initialized.context
         is InitResult.Rejected -> error("${initialized.error.code}: ${initialized.error.message}")
     }

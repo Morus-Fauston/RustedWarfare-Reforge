@@ -43,16 +43,16 @@ class OpenGroundPlanningTest {
                 it.body!!.updateNavigation { nav -> nav.withLandingMember(LandingMember(group)) }
             }
             val other = mover.body!!.copy(unitId = "newcomer", position = at, nav = UnitNavigationState.EMPTY)
-            val occ = MovePlanningOccupant(other, mover.pose.copy(position = at), null, idle = true, obstructsRoute = true)
+            val occ = MovePlanningOccupant(other, mover.pose.copy(position = at), idle = true, obstructsRoute = true)
             val current = input.copy(members = listOf(mover), occupants = emptyList(), segmentPeers = listOf(occ))
             val planning = MovePlanning()
-            planning.enqueue(mover.action, null, selectionSize = input.members.size)
+            planning.enqueue(mover.action, selectionSize = input.members.size)
             var published = 0
             val samples = mutableListOf<PlanningWorkSlice>()
             for (tick in 0..40) {
                 planning.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(16),
-                    { _, _, _ -> current },
-                    { _, _, _, _, result -> assertNotNull(result.slot); published++ }, samples)
+                    { _, _ -> current },
+                    { _, _, _, result -> assertNotNull(result.route); published++ }, samples)
                 if (samples.any { it.restarted } || published != 0) break
             }
             return samples.any { it.restarted } to published
@@ -66,7 +66,7 @@ class OpenGroundPlanningTest {
         val member = input.members.first()
         val far = Position(900.0, 520.0)
         val holders = (0 until 384).map { i -> MovePlanningOccupant(member.body!!.copy(unitId = "far$i", position = far),
-            member.pose.copy(position = far), null, idle = true) }
+            member.pose.copy(position = far), idle = true) }
         var reads = 0
         val counted = object : AbstractList<MovePlanningOccupant>() {
             override val size get() = holders.size
@@ -75,15 +75,15 @@ class OpenGroundPlanningTest {
         val planning = MovePlanning()
         for (m in input.members) {
             m.body!!.updateNavigation { it.withLandingMember(LandingMember(group)) }
-            planning.enqueue(m.action, null, selectionSize = input.members.size)
+            planning.enqueue(m.action, selectionSize = input.members.size)
         }
         val byId = input.members.associateBy { it.action.unitId }
         var published = 0
         for (tick in 0..4000) {
-            planning.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(128), { actions, _, _ ->
-                val m = byId.getValue(actions.single().unitId)
+            planning.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(128), { action, _ ->
+                val m = byId.getValue(action.unitId)
                 input.copy(members = listOf(m), occupants = emptyList(), segmentPeers = counted)
-            }, { _, _, _, _, result -> assertNotNull(result.slot); published++ })
+            }, { _, _, _, result -> assertNotNull(result.route); published++ })
             if (published == input.members.size) break
         }
         assertEquals(input.members.size, published)

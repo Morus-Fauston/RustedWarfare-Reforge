@@ -373,16 +373,16 @@ object ScenarioCatalog {
         ),
         ScenarioCatalogEntry(
             id = "culdesac-overflow-100",
-            displayName = "Cul-de-sac Overflow 100 [Known Limitation]",
+            displayName = "Cul-de-sac Overflow 100",
             category = ScenarioCategory.BENCHMARK_P016,
             family = "terminal-landing",
             group = "B",
             seed = DEFAULT_WORLD_SEED,
-            description = "100 tanks ordered deep into an undersized single-mouth cul-de-sac pocket. Retained for selection and replay under known-limitation tracking.",
+            description = "100 tanks ordered deep into an undersized single-mouth cul-de-sac pocket; interior fills deepest-first and overflow fans and settles cleanly outside the mouth.",
             defaultSteps = 2200,
             playerCount = 2,
             startingUnitCount = 100,
-            knownLimitation = "Known limitation (2026-11-23 maintainer decision): extreme 100-unit single-mouth cul-de-sac overflow is tracked separately without blocking normal gameplay.",
+            knownLimitation = null,
             gates = listOf(
                 DiagnosticGateLine("pocket-mouth-x560", axisX = true, entryThreshold = 520.0, exitThreshold = 560.0, minOrtho = 215.0, maxOrtho = 305.0, positiveDirection = true),
             ),
@@ -394,7 +394,18 @@ object ScenarioCatalog {
                 val group = checkNotNull(ctx.requestGroupMove("p1", ids, click))
                 for (id in ids) check(ctx.submitGroupMove(MoveAction("cds100-$id", "p1", id, click, ctx.world), group) is ActionResult.Accepted)
             },
-            assertOutcome = { emptyList() },
+            assertOutcome = { seq ->
+                val errs = mutableListOf<String>()
+                val last = seq.frames.last()
+                if (last.arrivedCount != 100) errs += "Expected 100/100 arrived in culdesac-overflow-100, got ${last.arrivedCount}/100"
+                if (last.activeMoveCount != 0) errs += "Expected 0 active movers at end of culdesac-overflow-100, got ${last.activeMoveCount}"
+                if (last.stalledCount != 0) errs += "Expected 0 stalled units at end of culdesac-overflow-100, got ${last.stalledCount}"
+                val mouthExited = seq.gateSummaries.firstOrNull { it.gateId == "pocket-mouth-x560" }?.sternExitedCount ?: 0
+                if (mouthExited < 50) {
+                    errs += "Expected >= 50 units settled inside cul-de-sac pocket, got $mouthExited"
+                }
+                errs
+            },
         ),
     )
 

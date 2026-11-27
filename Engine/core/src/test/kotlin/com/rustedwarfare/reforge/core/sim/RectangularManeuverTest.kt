@@ -49,26 +49,26 @@ class RectangularManeuverTest {
         assertTrue(!queue.holdsManeuverRoute("w0"), "An optional rejoin must not suspend the active leg")
         val withFreshMove = queue.fork(PathSearchRollback())
         val fresh = members[0].action.copy(actionId = "fresh", unitId = "scout")
-        withFreshMove.enqueue(fresh, null)
+        withFreshMove.enqueue(fresh)
         val served = mutableListOf<String>()
-        withFreshMove.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(8), { actions, _, reason ->
-            served += actions.single().unitId
+        withFreshMove.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(8), { action, reason ->
+            served += action.unitId
             MovePlanningInput(map, emptyList(), emptyList(), false, reason)
-        }, { _, _, _, _, _ -> })
+        }, { _, _, _, _ -> })
         assertEquals("scout", served.first(), "Optional backlog held up a later player command")
         fun slice(q: MovePlanning, entered: Boolean = false): Pair<List<String>, Int> {
             val budget = PathWorkBudget(24)
             val samples = mutableListOf<com.rustedwarfare.reforge.core.navigation.PlanningWorkSlice>()
             val releases = mutableListOf<String>()
-            q.advance(ClearanceAStarPolicy.DEFAULT, budget, { actions, _, reason ->
+            q.advance(ClearanceAStarPolicy.DEFAULT, budget, { action, reason ->
                 assertTrue(!budget.exhausted, "Live occupancy was sampled after exhausting the budget")
-                val m = members.single { it.action == actions.single() }
+                val m = members.single { it.action == action }
                 if (entered && m === members.first()) error("Materialized a live snapshot too large for the step")
                 MovePlanningInput(map, listOf(m), members.filter { it !== m }.map {
-                    MovePlanningOccupant(checkNotNull(it.body), it.pose, null, idle = true, obstructsRoute = true)
+                    MovePlanningOccupant(checkNotNull(it.body), it.pose, idle = true, obstructsRoute = true)
                 }, false, reason)
-            }, { member, _, _, _, planned ->
-                assertEquals(member.body!!.pathPoints[1], assertNotNull(planned.slot).position)
+            }, { member, _, _, planned ->
+                assertEquals(member.body!!.pathPoints[1], assertNotNull(planned.route).position)
                 releases += member.action.unitId
             }, samples, liveUnitCount = { if (entered) 30 else members.size })
             assertEquals(budget.used, samples.sumOf { it.workUnits })
@@ -391,10 +391,9 @@ class RectangularManeuverTest {
                     context.submitGroupMove(MoveAction("maneuver-$id", "p1", id, target, context.world), request))
                 val publication = context.advanceToMoveOutcome(0L, "a")
                 val shipA = publication.units.single { it.unitId == "a" }
-                val originalSlot = assertNotNull(shipA.moveTarget)
+                val originalTarget = assertNotNull(shipA.moveTarget)
+                assertEquals(target, originalTarget)
                 val shoreCell = VisibleTerrainCell(30, 10, true, 1)
-                val oldSlotOwner = publication.units.single { it.moveTarget == target }.unitId
-                assertEquals("a", oldSlotOwner)
                 context.drainPathDiagnostics(context.world)
                 assertIs<ActionResult.Accepted>(context.submit(StopAction("hold-z", "p1", "z", context.world)))
                 assertIs<ActionResult.Accepted>(context.submit(PatrolAction("submarine-transit", "p1", "sub",
@@ -405,7 +404,7 @@ class RectangularManeuverTest {
                 val coast = (15..16).flatMap { r -> (27..34).map { c -> VisibleTerrainCell(c, r, false, 1) } }
                 context.acceptVisibleTerrain(context.world, "p1", listOf(shoreCell) + coast)
                 val queued = context.advance(Step(publication.stepIndex + 1, 1.0, "sim-tick"))
-                assertEquals(originalSlot, queued.units.single { it.unitId == "a" }.moveTarget)
+                assertEquals(originalTarget, queued.units.single { it.unitId == "a" }.moveTarget)
                 assertIs<ActionResult.Accepted>(context.submit(MoveAction("scout-after-repair", "p1", "scout",
                     Position(300.0, 280.0), context.world)))
                 var repairStep: Long? = null
@@ -414,15 +413,13 @@ class RectangularManeuverTest {
                     val observation = context.advance(Step(tick, 1.0, "sim-tick"))
                     assertTrue(Event("movement-started", "a") !in observation.events)
                     assertTrue(Event("movement-cancelled", "a") !in observation.events, "Lost the original order at $tick")
-                    if (Event("group-destination-reassigned", "a") in observation.events) {
-                        assertEquals(null, repairStep)
+                    val moved = observation.units.single { it.unitId == "a" }
+                    if (repairStep == null && moved.moveTarget != null && moved.moveTarget != originalTarget) {
                         repairStep = tick
-                        val moved = observation.units.single { it.unitId == "a" }
                         val sample = context.drainPathDiagnostics(context.world).last { it.unitId == "a" }
                         assertEquals("maneuver-a", sample.actionId)
-                        assertEquals(PathSearchReason.ROUTE_REPAIR, sample.reason)
+                        assertEquals(PathSearchReason.KNOWLEDGE_REPLAN, sample.reason)
                         assertEquals(moved.moveTarget, sample.searchTarget)
-                        assertTrue(moved.moveTarget != originalSlot)
                         assertTrue(moved.speed >= 0.0)
                     }
                     if (Event("movement-started", "scout") in observation.events) followingStep = tick
@@ -430,17 +427,16 @@ class RectangularManeuverTest {
                     if (reissuedAt != null && followingStep != null) {
                         val sub = observation.units.single { it.unitId == "sub" }
                         val shorePatrol = observation.units.single { it.unitId == "vehicle" }
-                        assertTrue(reissuedAt - queued.stepIndex >= 2, "The alternate slot must require multiple planning steps")
+                        assertTrue(reissuedAt - queued.stepIndex >= 2, "The alternate shore target must require multiple planning steps")
                         assertTrue(sub.height < -4.0 && sub.position != submarineStart && sub.moveTarget != null)
                         assertTrue(shorePatrol.position != vehicleStart && shorePatrol.moveTarget != null)
                         assertTrue(vehicle.hasContactLayerAt(shorePatrol.height))
                         val slotSearchReach = hull.boundingRadius + 60.0 + vehicle.movementCollision.boundingRadius
                         assertTrue(ScreenPlane.distanceSquared(shorePatrol.position, target) < slotSearchReach * slotSearchReach)
-                        println("Alternate slot published at $reissuedAt and the following Move at $followingStep while the submarine and shore vehicle were moving")
                         return@withSubmarinePackage
                     }
                 }
-                error("Rectangular slot repair at $repairStep, following Move at $followingStep")
+                error("Rectangular shore repair at $repairStep, following Move at $followingStep")
             } finally {
                 context.close()
             }

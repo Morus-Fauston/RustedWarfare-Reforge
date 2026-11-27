@@ -535,8 +535,6 @@ internal data class MutableUnit(
     val lastManeuverContactRepair: Long? get() = nav.lastManeuverContactRepair
     val routeOccupantIds: List<String> get() = nav.routeOccupantIds
     val passageEntry: PassageEntry? get() = nav.passageEntry
-    val groupMoveReservation: GroupMoveReservation? get() = nav.groupMoveReservation
-    val parkedReservationOwner: GroupMoveRequest? get() = nav.parkedReservationOwner
     val indexedLandingBody: LandingOccupancy.IndexedBody? get() = nav.indexedLandingBody
     val landingMember: LandingMember? get() = nav.landingMember
     val adoptedRouteRevision: Long get() = nav.adoptedRouteRevision

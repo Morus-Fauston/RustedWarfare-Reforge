@@ -388,9 +388,9 @@ class MovementRegression012Test {
         val ctx = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {
             val smallNaval = assertNotNull(ctx.requestGroupMove("p1", listOf("b-0", "b-1", "b-2", "b-3"), Position(380.0, 280.0)))
-            assertTrue(!smallNaval.sharedLanding, "Small (<8) pure-water rectangular naval squad must preserve exact HullRoute planning")
+            assertEquals(setOf("b-0", "b-1", "b-2", "b-3"), smallNaval.members)
             val mixedArmy = assertNotNull(ctx.requestGroupMove("p1", spawns.map { it.unitId }, Position(380.0, 200.0)))
-            assertTrue(mixedArmy.sharedLanding, "Large mixed Land+Sea+Air selection must enable shared flowfield dispatch")
+            assertEquals(spawns.map { it.unitId }.toSet(), mixedArmy.members)
         } finally {
             ctx.close()
         }

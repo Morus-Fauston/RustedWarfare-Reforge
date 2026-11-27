@@ -49,16 +49,16 @@ class RouteContinuationTest {
             val terrain = PlanningTerrain.fromNoFog(map, MovementType.WATER)
             val member = MovePlanningMember(action, follower, pose(follower), start, definition.radius,
                 terrain, HullRoute.forUnit(follower, maneuver = true), false, 0L)
-            fun blocker() = MovePlanningOccupant(leader.copy(), pose(leader), null, idle = false, obstructsRoute = true)
+            fun blocker() = MovePlanningOccupant(leader.copy(), pose(leader), idle = false, obstructsRoute = true)
             val policy = ClearanceAStarPolicy.DEFAULT
             fun repair(occupants: List<MovePlanningOccupant>): PlannedMove {
                 val queue = MovePlanning()
                 var result: PlannedMove? = null
                 queue.repair(action, ManeuverRepair.CONTACT)
                 repeat(40) {
-                    queue.advance(policy, PathWorkBudget(512), { _, _, reason ->
+                    queue.advance(policy, PathWorkBudget(512), { _, reason ->
                         MovePlanningInput(map, listOf(member), occupants, false, reason)
-                    }, { _, _, _, _, planned -> result = planned })
+                    }, { _, _, _, planned -> result = planned })
                     result?.let { return it }
                 }
                 error("Contact repair never finished")
@@ -67,14 +67,14 @@ class RouteContinuationTest {
             val opposingGoal = Position(10.0, 110.0)
             commandLeader("lead", clearGoal)
             val waiting = repair(listOf(blocker()))
-            assertEquals(null, waiting.slot)
+            assertEquals(null, waiting.route)
             assertTrue(!waiting.nearest)
-            assertEquals(target, assertNotNull(repair(emptyList()).slot).position)
+            assertEquals(target, assertNotNull(repair(emptyList()).route).position)
 
             commandLeader("opposing", opposingGoal)
             val opposed = repair(listOf(blocker()))
             assertTrue(opposed.nearest)
-            assertEquals(start, assertNotNull(opposed.slot).position)
+            assertEquals(start, assertNotNull(opposed.route).position)
 
             val delayed = ClearanceAStarPolicy(exactSearchWrapper = { search, _ ->
                 object : ExactPathSearch by search {
@@ -91,9 +91,9 @@ class RouteContinuationTest {
             val publications = mutableListOf<PlannedMove>()
             val work = mutableListOf<PlanningWorkSlice>()
             queue.repair(action, ManeuverRepair.CONTACT)
-            fun tick() = queue.advance(delayed, PathWorkBudget(512), { _, _, reason ->
+            fun tick() = queue.advance(delayed, PathWorkBudget(512), { _, reason ->
                 MovePlanningInput(map, listOf(member), listOf(blocker()), false, reason)
-            }, { _, _, _, _, result -> publications += result }, work)
+            }, { _, _, _, result -> publications += result }, work)
             tick()
             assertTrue(publications.isEmpty())
             commandLeader("clear", clearGoal)

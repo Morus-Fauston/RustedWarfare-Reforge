@@ -18,34 +18,19 @@ class UnitNavigationStateTest {
     }
 
     @Test
-    fun group_reservation_unifies_legacy_slot_and_landing_and_clears_atomically() {
+    fun unified_landing_member_clears_atomically_on_pause_route() {
         val world = WorldHandle("nav-test")
-        val group = GroupMoveRequest(world, 1L, "p1", Position(200.0, 200.0), setOf("u1"), sharedLanding = true)
-        val slot = GroupMoveReservation(
-            group,
-            GroupMoveSlot(Position(200.0, 200.0), 90.0, listOf(Position(200.0, 200.0))),
-        )
+        val group = GroupMoveRequest(world, 1L, "p1", Position(200.0, 200.0), setOf("u1"))
         val landing = LandingMember(group)
 
         var state = UnitNavigationState.EMPTY
-        assertNull(state.groupReservation)
-        assertNull(state.groupMoveReservation)
         assertNull(state.landingMember)
-        assertNull(state.parkedReservationOwner)
 
         state = state.withLandingMember(landing)
         assertSame(landing, state.landingMember)
-        assertSame(group, state.groupReservation?.group)
-        assertTrue(state.groupReservation?.active == true)
+        assertSame(group, state.landingMember?.group)
 
-        state = state.withGroupMoveReservation(slot)
-        assertSame(slot, state.groupMoveReservation)
-        assertSame(landing, state.landingMember)
-
-        state = state.withParkedReservationOwner(group)
-        assertSame(group, state.parkedReservationOwner)
-
-        // Clearing via pauseRoute wipes every reservation & dirty route field atomically.
+        // Clearing via pauseRoute wipes landing membership & dirty route fields atomically.
         val dirty = state.copy(
             moveTarget = Position(200.0, 200.0),
             nearestMoveTarget = Position(190.0, 200.0),
@@ -68,10 +53,7 @@ class UnitNavigationStateTest {
         assertNull(paused.moveTarget)
         assertTrue(paused.pathPoints.isEmpty())
         assertNull(paused.passageEntry)
-        assertNull(paused.groupReservation)
-        assertNull(paused.groupMoveReservation)
         assertNull(paused.landingMember)
-        assertNull(paused.parkedReservationOwner)
         assertNull(paused.nearestMoveTarget)
         assertFalse(paused.nearestMoveIsGroup)
         assertNull(paused.originMoveId)
@@ -124,9 +106,9 @@ class UnitNavigationStateTest {
     }
 
     @Test
-    fun mark_arrived_clears_route_and_preserves_parked_reservation_and_arrival_metadata() {
+    fun mark_arrived_clears_route_and_preserves_parked_landing_and_arrival_metadata() {
         val world = WorldHandle("arrive-test")
-        val group = GroupMoveRequest(world, 2L, "p1", Position(220.0, 100.0), setOf("u1"), sharedLanding = true)
+        val group = GroupMoveRequest(world, 2L, "p1", Position(220.0, 100.0), setOf("u1"))
         val parked = LandingMember(group, parked = true)
         val arrival = MoveArrival(
             originalTarget = Position(220.0, 100.0),
@@ -140,14 +122,12 @@ class UnitNavigationStateTest {
             stalledRouteTicks = 5L,
             routeTranslationClipped = true,
         )
-        val arrived = moving.markArrived(parkedLanding = parked, parkedOwner = group, arrival = arrival)
+        val arrived = moving.markArrived(parkedLanding = parked, arrival = arrival)
         assertNull(arrived.moveTarget)
         assertTrue(arrived.pathPoints.isEmpty())
         assertEquals(0L, arrived.stalledRouteTicks)
         assertFalse(arrived.routeTranslationClipped)
         assertSame(parked, arrived.landingMember)
-        assertSame(group, arrived.parkedReservationOwner)
-        assertNull(arrived.groupMoveReservation)
         assertEquals(arrival, arrived.moveArrival)
     }
 
@@ -219,9 +199,10 @@ class UnitNavigationStateTest {
     }
 
     @Test
-    fun mark_arrived_with_parked_owner_only_and_null_arrival_preserves_prior_arrival() {
+    fun mark_arrived_with_null_arrival_preserves_prior_arrival() {
         val world = WorldHandle("arrive-owner-test")
-        val group = GroupMoveRequest(world, 3L, "p1", Position(240.0, 100.0), setOf("u1"), sharedLanding = false)
+        val group = GroupMoveRequest(world, 3L, "p1", Position(240.0, 100.0), setOf("u1"))
+        val parked = LandingMember(group, parked = true)
         val prior = MoveArrival(
             originalTarget = Position(200.0, 100.0),
             stoppedAt = Position(199.0, 100.0),
@@ -233,10 +214,8 @@ class UnitNavigationStateTest {
             moveTarget = Position(240.0, 100.0),
             moveArrival = prior,
         )
-        val arrived = moving.markArrived(parkedLanding = null, parkedOwner = group, arrival = null)
-        assertNull(arrived.landingMember)
-        assertSame(group, arrived.parkedReservationOwner)
-        assertSame(group, arrived.groupReservation?.group)
+        val arrived = moving.markArrived(parkedLanding = parked, arrival = null)
+        assertSame(parked, arrived.landingMember)
         assertEquals(prior, arrived.moveArrival)
     }
 }

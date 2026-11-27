@@ -49,6 +49,29 @@ internal interface NavigationGuidance {
         finalPoint: Boolean,
         executionStep: Long = 0L,
     ): Sample
+
+    /**
+     * O(1) geodesic distance estimate from [at] to [goal] for [unit] on [terrain].
+     * Uses the live flow-field Eikonal potential when available; falls back to Euclidean distance.
+     */
+    fun sampleGeodesicDistance(
+        host: UnitMovementHost,
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        at: Position,
+        goal: Position,
+    ): Double = hypot(goal.x - at.x, goal.y - at.y)
+
+    /**
+     * O(1) unit-length flow-field travel direction `(dirX, dirY)` at [unit]'s position when a live
+     * flow field exists for [unit]; returns null when falling back to direct/waypoint guidance.
+     */
+    fun sampleFlowDirection(
+        host: UnitMovementHost,
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        goal: Position,
+    ): Pair<Double, Double>? = null
 }
 
 /**
@@ -1279,6 +1302,47 @@ internal class ChunkedFlowFieldAdapter private constructor(
             finalApproach = directGoalClear && goalDist <= minTile,
             fromFlowField = true,
         )
+    }
+
+    override fun sampleGeodesicDistance(
+        host: UnitMovementHost,
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        at: Position,
+        goal: Position,
+    ): Double {
+        val field = fieldForUnit(unit, terrain) ?: return hypot(goal.x - at.x, goal.y - at.y)
+        if (!field.liveValid || field.terrain !== terrain) return hypot(goal.x - at.x, goal.y - at.y)
+        val w = field.width
+        val h = field.height
+        val col = floor(at.x / field.tileWidth).toInt().coerceIn(0, w - 1)
+        val row = floor(at.y / field.tileHeight).toInt().coerceIn(0, h - 1)
+        val c = field.cost[row * w + col]
+        if (c >= INF_COST_F) return hypot(goal.x - at.x, goal.y - at.y)
+        val minTile = min(field.tileWidth, field.tileHeight).toDouble()
+        return (c.toDouble() / BASE_STEP_COST.toDouble()) * minTile
+    }
+
+    override fun sampleFlowDirection(
+        host: UnitMovementHost,
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        goal: Position,
+    ): Pair<Double, Double>? {
+        val field = fieldForUnit(unit, terrain) ?: return null
+        if (!field.liveValid || field.terrain !== terrain) return null
+        val w = field.width
+        val h = field.height
+        val col = floor(unit.position.x / field.tileWidth).toInt().coerceIn(0, w - 1)
+        val row = floor(unit.position.y / field.tileHeight).toInt().coerceIn(0, h - 1)
+        val idx = row * w + col
+        val cf = terrain.clearanceField()
+        val bilinear = sampleBilinearGradient(field, cf, field.requiredRings, unit.position.x, unit.position.y)
+        if (bilinear != null) return bilinear.x to bilinear.y
+        val fx = field.dirX[idx].toDouble()
+        val fy = field.dirY[idx].toDouble()
+        val mag = hypot(fx, fy)
+        return if (mag > 1e-4) (fx / mag) to (fy / mag) else null
     }
 
     /**

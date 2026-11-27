@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.87 (2026-11-28 03:13)
+
+### 架构改进
+
+- **单一终点落位单轨收口与旧双轨静态槽位物理清退**：移除 `SimulationContext.requestGroupMove` 中按人数/介质分流的 `mixedThreshold = 4/8`、`allLandShared`/`allSameWater`/`hasRectWater`/`largeMixedGroup` 双轨分叉，将全介质任意规模圆单位与 2–7 艘矩形舰队统一接入 `LandingMember` + `MotionContract.sharedCluster` 单一落位体系（并补齐矩形编队收敛礼让 `rectangularPeerYieldFactor` 及雾图揭墙 `replanForKnowledge` 对编组单位的最近可达重规划支持）；物理删除 `GroupMoveDestinations.kt` 及 `GroupMoveSlot`、`GroupReservation`/`groupMoveReservation`/`parkedReservationOwner`、`ManeuverRepair.GROUP_SLOT`、`refreshGroupDestinations`、`groupStopClearsSlots`、`MovePlanning.byGroup` 与 `PlanningClock.java` 对应旧根，全面使用确定性 `group.trafficOrder` 消除无序 `HashSet` 浮点求和风险。
+
+### 体验优化
+
+- **瓶颈喉道宽度/测地防堵升级与死胡同阶段 A（`100/100`）销账**：将 `TerminalLanding.isPluggingBottleneckThroat` 升级为基于 `AuthorizedNavigationTerrain.clearanceRings`、双体通宽跨度（覆盖 1 格窄缝、窄 2 格双车不可并排门洞与 45° 对角瓶颈）及 `NavigationGuidance.sampleGeodesicDistance` 流场测地距离判定；落地死胡同阶段 A 三项确定性机制：① 局部有界反向 BFS `PocketTopology`（`R <= 24`，按多地形不可变列表 `cachedTopologies` 首次计算并零分配复用）标定袋内深度、物理填充容量与袋口禁堵保护；② 同型同组浅车阻挡深车时 $O(1)$ 匿名槽位原子交换 `tryAnonymousSlotSwap`（同步更新 `landingOccupancy`）；③ 结合流场方向 `sampleFlowDirection` 与测地进度的过角传染式外溢扇开与级联停稳，严守零硬重叠 `canSettleAtPose` 底线。正式解除 `culdesac-overflow-100` 已知限制并升级为严格 `100/100` 断言，实测 `100/100` 到达停稳（袋内最深处紧密落位 `63` 辆、袋外 `37` 辆紧凑扇开、`lastArrivalStep = 718`、零残留活跃与停滞单位）。
+
+### 技术
+
+- **黑盒行为契约测试重写、全量回归与双审闭环**：重写 `GroupMoveDestinationsTest` 为 6 项黑盒行为契约单测（2–3 窄岸水面/气垫、2–7 矩形舰队开阔/岸边、临时与持久占点者、雾图揭墙重规划、混合气垫陆地与死胡同 `100/100`），在 `GroupMoveExpansionTest` 补齐 `PocketTopology` / `tryAnonymousSlotSwap` / 2 格窄门单测，保留 `SharedLandingClaimsTest` 竞争落点黑盒回归并适配 `StepMovePlanningTest` / `PriorityPlanningSchedulerTest` / `AmphibiousJetRecoveryTest` 与其余 8 个核心单测；实跑 `dev-ab` 全 10 场景全绿（`culdesac-overflow-100` / `rocks-small-100` / `rocks-mixed-100` 全部 `100/100`，`open-50` `maxStalled2s = 0`）、`public_batch.py --kind pr --test-forks 4 --scenario-workers 8`（`1032.0s`，全部 `:core`/`:client`/`:pc`/`:test`、41 项 Python 机制与公开短测）、Android Debug/Test Kotlin 编译与双根布局检查全绿，经独立全新上下文视觉审阅（逐张目视拼图与放大图）与非作者代码整审（含 3 项必修返修与补充复核）双双 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.86 (2026-11-28 01:55)
 
 ### 性能优化

@@ -61,7 +61,7 @@ class MixedLandingTest {
             MutableUnit(spawn.unitId, "p1", spawn.typeId, scene.unitDefinitions.getValue(spawn.typeId),
                 spawn.position, 90.0)
         }
-        val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"), true)
+        val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"))
         val pool = SharedLandingSites.forGroup(scene.map, group, cars)
         val terrain = com.rustedwarfare.reforge.core.navigation.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
         val survey = assertNotNull(pool.mixedBays)
@@ -88,7 +88,7 @@ class MixedLandingTest {
                 car.lastPlannedBuildingRevision, listOf("parked"))
             car.updateNavigation {
                 it.withFollowsManeuverRoute(true)
-                    .withLandingMember(LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked"), true)))
+                    .withLandingMember(LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked"))))
             }
             val first = state.stepIndex + 1
             for (tick in first until first + 600) {
@@ -230,8 +230,8 @@ class MixedLandingTest {
             smallDef.imagePath, smallDef.imageScale, smallDef.movement, emptySet(),
             movementCollision = MovementCollisionShape.Rectangle(60.0, 16.0),
         )
-        val groupA = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("big", "escort"), true)
-        val groupB = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("small"), true)
+        val groupA = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("big", "escort"))
+        val groupB = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("small"))
         val big = MutableUnit("big", "p1", "rect", rectDef, Position(220.0, 260.0), 0.0).apply {
             updateNavigation {
                 it.withMoveTarget(Position(420.0, 260.0), MotionContract.sharedCluster(Position(420.0, 260.0)))

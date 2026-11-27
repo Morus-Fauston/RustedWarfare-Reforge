@@ -153,7 +153,7 @@ class PriorityPlanningSchedulerTest {
             val repairAction = MoveAction("rep-1", "p1", "u-rep", Position(700.0, 500.0), origin.world)
             val playerAction = MoveAction("ply-1", "p1", "u-ply", Position(300.0, 100.0), origin.world)
             planning.repair(repairAction, ManeuverRepair.CONTACT)
-            planning.enqueue(playerAction, null, selectionSize = 1)
+            planning.enqueue(playerAction, selectionSize = 1)
 
             val orderLog = mutableListOf<String>()
             val policy = ClearanceAStarPolicy.DEFAULT
@@ -161,8 +161,7 @@ class PriorityPlanningSchedulerTest {
             planning.advance(
                 pathPolicy = policy,
                 budget = budget,
-                snapshot = { actions, _, repair ->
-                    val act = actions.single()
+                snapshot = { act, repair ->
                     val pos = if (act.unitId == "u-ply") Position(100.0, 100.0) else Position(100.0, 500.0)
                     MovePlanningInput(
                         map,
@@ -177,7 +176,7 @@ class PriorityPlanningSchedulerTest {
                         repair,
                     )
                 },
-                publish = { member, _, repair, _, _ ->
+                publish = { member, repair, _, _ ->
                     orderLog += "${repair?.name ?: "P0"}:${member.action.unitId}"
                 },
                 p1FlowWork = { b ->
@@ -203,7 +202,7 @@ class PriorityPlanningSchedulerTest {
         try {
             val planning = MovePlanning()
             val action = MoveAction("nudge-move", "p1", "u1", Position(550.0, 70.0), origin.world)
-            planning.enqueue(action, null, selectionSize = 1)
+            planning.enqueue(action, selectionSize = 1)
             val policy = ClearanceAStarPolicy.DEFAULT
             val originalStart = Position(50.0, 70.0)
             // After initial step binds snapshot at originalStart, unit gets nudged by 8px (< 1.5 tiles = 30px)
@@ -219,8 +218,7 @@ class PriorityPlanningSchedulerTest {
                 planning.advance(
                     pathPolicy = policy,
                     budget = budget,
-                    snapshot = { actions, _, _ ->
-                        val act = actions.single()
+                    snapshot = { act, _ ->
                         MovePlanningInput(
                             map,
                             listOf(
@@ -234,7 +232,7 @@ class PriorityPlanningSchedulerTest {
                             true,
                         )
                     },
-                    publish = { _, _, _, _, planned -> published = planned },
+                    publish = { _, _, _, planned -> published = planned },
                     samples = slices,
                 )
                 restarts += slices.count { it.restarted }
@@ -242,9 +240,9 @@ class PriorityPlanningSchedulerTest {
             }
             val result = assertNotNull(published, "Nudged multi-step search must publish via splice")
             assertEquals(0, restarts, "Micro-nudge within clear 1.5-tile radius must splice without restarting")
-            val slot = assertNotNull(result.slot)
-            assertTrue(slot.path.isNotEmpty())
-            assertEquals(Position(550.0, 70.0), slot.path.last())
+            val route = assertNotNull(result.route)
+            assertTrue(route.path.isNotEmpty())
+            assertEquals(Position(550.0, 70.0), route.path.last())
         } finally {
             origin.close()
         }
@@ -507,8 +505,7 @@ class PriorityPlanningSchedulerTest {
                 val p2Used = queue.advance(
                     pathPolicy = ClearanceAStarPolicy.DEFAULT,
                     budget = budget,
-                    snapshot = { actions, _, repair ->
-                        val act = actions.single()
+                    snapshot = { act, repair ->
                         val pos = when (act.unitId) {
                             "u-a" -> Position(60.0, 100.0)
                             else -> Position(60.0, 140.0)
@@ -527,7 +524,7 @@ class PriorityPlanningSchedulerTest {
                             repair,
                         )
                     },
-                    publish = { member, _, repair, _, _ ->
+                    publish = { member, repair, _, _ ->
                         events += "${repair?.name}:${member.action.unitId}"
                     },
                     liveUnitCount = { 2 },
@@ -549,8 +546,7 @@ class PriorityPlanningSchedulerTest {
             val extraP2 = planning.advance(
                 pathPolicy = ClearanceAStarPolicy.DEFAULT,
                 budget = budgetPass2,
-                snapshot = { actions, _, repair ->
-                    val act = actions.single()
+                snapshot = { act, repair ->
                     val pos = Position(60.0, 100.0)
                     MovePlanningInput(
                         map,
@@ -566,7 +562,7 @@ class PriorityPlanningSchedulerTest {
                         repair,
                     )
                 },
-                publish = { _, _, _, _, _ -> },
+                publish = { _, _, _, _ -> },
                 liveUnitCount = { 2 },
                 p1FlowWork = { _ -> },
                 rotateQueues = false,

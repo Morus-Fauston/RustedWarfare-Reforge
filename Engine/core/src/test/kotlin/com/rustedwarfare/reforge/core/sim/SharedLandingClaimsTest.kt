@@ -6,6 +6,8 @@ import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.HoverProfile
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import java.nio.file.Files
+import java.nio.file.Paths
 import kotlin.test.*
 
 class SharedLandingClaimsTest {
@@ -13,7 +15,7 @@ class SharedLandingClaimsTest {
         val cells = BooleanArray(48 * 32)
         val map = MapDefinition(48, 32, 20, 20, emptyList(), IntArray(cells.size), BlockingGrid(48, 32, cells))
         val click = Position(640.0, 320.0)
-        val group = GroupMoveRequest(WorldHandle("push"), null, "p1", click, (1..32).map { "car-$it" }.toSet(), true)
+        val group = GroupMoveRequest(WorldHandle("push"), null, "p1", click, (1..32).map { "car-$it" }.toSet())
         val def = TestContentFactory.openScenario().unitDefinitions.getValue("tank")
         val car = MutableUnit("car-1", "p1", "tank", def, Position(80.0, 120.0), 90.0)
         car.updateNavigation {
@@ -24,10 +26,19 @@ class SharedLandingClaimsTest {
         assertNull(pool.mixedBays, "Homogeneous circular group needs no mixed bay survey")
         assertFalse(pool.near(car.position), "Far en-route unit is outside terminal landing zone")
     }
-    @Test fun overlapping_legacy_orders_keep_separate_parking_rights() = checkReissuedParking(false)
-    @Test fun a_shared_order_cannot_grant_parking_rights_to_its_legacy_predecessor() = checkReissuedParking(true)
 
-    private fun checkReissuedParking(shared: Boolean) {
+    @Test fun legacy_dual_track_slot_allocator_is_physically_removed() {
+        val navDir = Paths.get("src/main/kotlin/com/rustedwarfare/reforge/core/navigation")
+        assertFalse(Files.exists(navDir.resolve("GroupMoveDestinations.kt")),
+            "Legacy GroupMoveDestinations.kt must be physically deleted")
+        val simMethods = SimulationContext::class.java.declaredMethods.map { it.name }.toSet()
+        assertFalse("refreshGroupDestinations" in simMethods)
+        assertFalse("groupStopClearsSlots" in simMethods)
+        val simSource = Files.readString(Paths.get("src/main/kotlin/com/rustedwarfare/reforge/core/sim/SimulationContext.kt"))
+        assertFalse(simSource.contains("mixedThreshold"), "Legacy mixedThreshold dual-track fork must be removed")
+    }
+
+    @Test fun reissued_group_orders_keep_separate_parking_rights_and_rollback_cleanly() {
         val base = TestContentFactory.openScenario()
         val tank = base.unitDefinitions.getValue("tank")
         val map = MapDefinition(48, 32, 20, 20, base.map.tileSets, IntArray(1536) { base.map.tileSets.first().firstGid }, BlockingGrid(48, 32, BooleanArray(1536)))
@@ -35,7 +46,7 @@ class SharedLandingClaimsTest {
                 slidingMode = true, ignoringBody = true, reverseSpeedPercentage = 0.0))),
             units = listOf(UnitSpawn("a", "p1", "other", Position(80.0, 120.0), 90.0),
                 UnitSpawn("b", "p1", "tank", Position(320.0, 240.0), 90.0),
-                UnitSpawn("c", "p1", if (shared) "tank" else "other", Position(320.0, 360.0), 90.0)))
+                UnitSpawn("c", "p1", "tank", Position(320.0, 360.0), 90.0)))
         var failStopStep = false
         val init = SimulationContext(routePreparationBudget = {
             if (failStopStep) error("discard scheduled stop")
@@ -50,15 +61,12 @@ class SharedLandingClaimsTest {
                 return g
             }
             val old = send("old", "a", "b")
-            assertFalse(old.sharedLanding)
             ctx.advance(Step(0, 1.0, "sim-tick"))
             val current = send("new", "b", "c")
-            assertEquals(shared, current.sharedLanding)
             var step = 1L
             while (step < 3000 && ctx.observe().units.single { it.unitId == "b" }.moveArrival == null)
                 ctx.advance(Step(step++, 1.0, "sim-tick"))
             assertNotNull(ctx.observe().units.single { it.unitId == "b" }.moveArrival)
-            // Inspect the published simulation body after the two normal player commands.
             val bodies = SimulationContext::class.java.getDeclaredMethod("getUnits").apply { isAccessible = true }
             fun parkedBody() = (bodies.invoke(ctx) as Map<*, *>)["b"] as MutableUnit
             val parked = parkedBody()
@@ -66,16 +74,6 @@ class SharedLandingClaimsTest {
             assertFalse(old.hasParkedMember(parked), "Previous order must not own the reissued member at the same click")
             assertIs<ActionResult.Accepted>(ctx.submit(StopAction("stop-old-peer", "p1", "a", ctx.world, atStep = step)))
             ctx.advance(Step(step++, 1.0, "sim-tick"))
-            // Probe the same physical pose with each actual order's parking clearance.
-            val clears = SimulationContext::class.java.getDeclaredMethod("groupStopClearsSlots", MutableUnit::class.java)
-                .apply { isAccessible = true }
-            val probe = MutableUnit("probe", "p1", "tank", tank, parked.position, parked.heading)
-            val slot = GroupMoveSlot(probe.position, probe.heading, listOf(probe.position))
-            fun canStop(order: GroupMoveRequest): Boolean {
-                probe.updateNavigation { it.withGroupMoveReservation(GroupMoveReservation(order, slot)) }
-                return clears.invoke(ctx, probe) as Boolean
-            }
-            // Apply the contact solver to the published parking identity at a controlled angle.
             val body = com.rustedwarfare.reforge.core.content.UnitDefinition(tank.id, tank.className,
                 10.0, tank.displayRadius, tank.totalFrames, tank.imagePath, tank.imageScale,
                 tank.movement, tank.retainedUnconsumed, mass = 100.0)
@@ -84,7 +82,7 @@ class SharedLandingClaimsTest {
                 val mover = MutableUnit("probe", "p1", "tank", body, Position(100.0, 200.0), 90.0)
                 mover.updateNavigation {
                     it.withMoveTarget(click)
-                        .withGroupMoveReservation(order?.let { g -> GroupMoveReservation(g, slot) })
+                        .withLandingMember(order?.let { g -> LandingMember(g) })
                 }
                 val units = listOf(mover, rest)
                 val spatial = WorldSpatialIndex().apply { syncAll(units) }
@@ -93,8 +91,6 @@ class SharedLandingClaimsTest {
             }
             assertEquals(resolved(null), resolved(old))
             assertNotEquals(resolved(null), resolved(current))
-            assertFalse(canStop(current), "The current order protects its parked body")
-            assertTrue(canStop(old), "The superseded order has no parking clearance claim; parked=${parked.position} all=${ctx.observe().units.map { listOf(it.unitId, it.position, it.moveTarget, it.moveArrival != null) }}")
             assertIs<ActionResult.Accepted>(ctx.submit(StopAction("stop", "p1", "b", ctx.world, atStep = step)))
             failStopStep = true
             assertEquals("discard scheduled stop", assertFailsWith<IllegalStateException> {
@@ -116,7 +112,7 @@ class SharedLandingClaimsTest {
             source.movement, source.retainedUnconsumed, mass = 100.0)
         val click = Position(400.0, 200.0)
         val world = WorldHandle("contact")
-        fun order() = GroupMoveRequest(world, null, "p1", click, setOf("moving", "parked"), true)
+        fun order() = GroupMoveRequest(world, null, "p1", click, setOf("moving", "parked"))
         val own = order()
         fun translate(group: GroupMoveRequest?): Position {
             val moving = MutableUnit("moving", "p1", "tank", tank, Position(100.0, 200.0), 90.0)
@@ -124,7 +120,6 @@ class SharedLandingClaimsTest {
             moving.updateNavigation {
                 it.withMoveTarget(click, MotionContract.sharedCluster(click))
                     .withLandingMember(LandingMember(own, claimed = click))
-                    .withGroupMoveReservation(GroupMoveReservation(own, GroupMoveSlot(click, 90.0, listOf(click))))
             }
             if (group != null) {
                 resting.updateNavigation {
@@ -141,6 +136,7 @@ class SharedLandingClaimsTest {
         assertEquals(idle, translate(order()))
         assertNotEquals(idle, translate(own))
     }
+
     @Test
     fun reissuing_the_same_click_restores_the_new_orders_claims_after_a_failed_step() {
         fun replay(inject: Boolean): List<List<Any?>> {
@@ -199,7 +195,7 @@ class SharedLandingClaimsTest {
                         return rows
                     } else if (replaced) assertTrue(motion.none { it.originMoveId?.startsWith("old-") == true })
                 }
-                error("reissued group failed to settle")
+                error("Reissued landing did not finish")
             } finally { context.close() }
         }
         assertEquals(replay(false), replay(true))

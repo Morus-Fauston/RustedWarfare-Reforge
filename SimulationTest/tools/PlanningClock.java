@@ -10,8 +10,8 @@ import java.util.*;
 /** JDK 24+ host measurement agent. Counts outer intervals once, including repeated scans. */
 public final class PlanningClock implements ClassFileTransformer {
     static final Map<String, Set<String>> ROOTS = Map.of(
-        "SimulationContext", Set.of("requestGroupMove", "submit", "refreshGroupDestinations", "replanForKnowledge",
-            "repairInvalidConnections", "recoverStalledMoves", "prepareRouteSuccessors", "scheduleManeuverRepair", "groupStopClearsSlots",
+        "SimulationContext", Set.of("requestGroupMove", "submit", "replanForKnowledge",
+            "repairInvalidConnections", "recoverStalledMoves", "prepareRouteSuccessors", "scheduleManeuverRepair",
             "routeOccupancy", "continuationFits", "planningTerrainFor", "requestRouteContinuation",
             "updateUnit$maneuverAim", "preparesRouteSuccessor"),
         "PassageAdmission", Set.of("waitingUnits"),

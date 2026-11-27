@@ -33,10 +33,13 @@ class AmphibiousJetRecoveryTest {
                 val request = assertNotNull(context.requestGroupMove("p1", members, target))
                 for (id in members) assertIs<ActionResult.Accepted>(context.submitGroupMove(
                     MoveAction("group-$id", "p1", id, target, context.world), request))
-                val waiting = context.advance(Step(step, 1.0, "sim-tick"))
-                assertTrue(waiting.units.all { it.moveTarget == null && it.pathPoints.isEmpty() })
-                assertTrue(waiting.events.none { it.kind == "movement-started" })
-                assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
+                val started = context.advance(Step(step, 1.0, "sim-tick"))
+                // Under unified single-track landing (ENG-P017-007), airborne group orders clear the old
+                // terrain-paused move and adopt the new target directly without resuming the old (300, 200) route.
+                assertEquals(target, started.units.single { it.unitId == "jet" }.moveTarget)
+                assertEquals(target, started.units.single { it.unitId == "wing" }.moveTarget)
+                assertEquals("group-jet", started.units.single { it.unitId == "jet" }.tasks.single().actionId)
+                assertTrue(context.drainPathDiagnostics(context.world).none { it.actionId == "old" })
             } finally { context.close() }
         }
 

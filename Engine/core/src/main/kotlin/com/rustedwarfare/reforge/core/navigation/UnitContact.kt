@@ -430,11 +430,9 @@ internal object UnitContact {
             val bothCircles = unit.definition.movementCollision is MovementCollisionShape.Circle &&
                 other.definition.movementCollision is MovementCollisionShape.Circle
             if (!bothCircles) return null
-            val reservation = unit.groupMoveReservation
-            val sameLandingParked = unit.landingMember != null &&
+            val parkedPeer = unit.landingMember != null &&
                 other.landingMember?.group === unit.landingMember?.group &&
                 other.landingMember?.parked == true
-            val parkedPeer = reservation?.plan?.hasParkedMember(other) == true || sameLandingParked
             val drift = subtract(target, unit.position)
             val length = hypot(drift.x, drift.y)
             if (length == 0.0) return null

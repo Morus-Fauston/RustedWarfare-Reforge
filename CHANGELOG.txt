@@ -1,3 +1,10 @@
+v0.5.87 (2026-11-28 03:13)
+  架构改进: 移除 SimulationContext.requestGroupMove 的 mixedThreshold=4/8 等双轨分叉并将全介质圆单位与 2-7 矩形舰队统一收口至 LandingMember + MotionContract.sharedCluster 单一终点落位体系（补齐矩形编队收敛礼让与雾图编组最近可达重规划），物理删除 GroupMoveDestinations.kt 及 GroupMoveSlot、GroupReservation/groupMoveReservation/parkedReservationOwner、ManeuverRepair.GROUP_SLOT、refreshGroupDestinations、groupStopClearsSlots 与 MovePlanning.byGroup，统一按确定性 group.trafficOrder 迭代
+  体验优化: 基于 AuthorizedNavigationTerrain.clearanceRings、双体通宽跨度（覆盖 1 格、窄 2 格与 45 度对角瓶颈）及流场测地距离 sampleGeodesicDistance 升级瓶颈喉道防堵门 / 落地死胡同阶段 A 三项确定性机制（R<=24 局部有界 BFS PocketTopology 多地形缓存、O(1) 同型同组原子匿名槽位交换 tryAnonymousSlotSwap 与结合流场切向/测地进度的过角传染式外溢停稳），解除 culdesac-overflow-100 已知限制并达成 100/100 到达停稳（袋内 63 辆、袋外 37 辆、lastArrivalStep=718、零硬重叠与零停滞）
+  技术: 重写 GroupMoveDestinationsTest 为 6 项黑盒行为契约测并补齐 PocketTopology/SlotSwap/2 格喉道单测与相关调度单测适配；dev-ab 全 10 场景（含死胡同与双百石阵全部 100/100）、public_batch --kind pr --test-forks 4 --scenario-workers 8（1032.0s 全绿）、Android Debug/Test 编译与双根布局检查全绿，经独立全新上下文视觉审阅与非作者代码整审双 APPROVE（0 必修）
+
+====
+
 v0.5.86 (2026-11-28 01:55)
   性能优化: 改造 SimulationTest/ci/development_tests.gradle，消除 beforeTest/afterTest 在全局锁内每次线性查找并全量序列化覆写 methods.json 的 O(N²) 磁盘瓶颈，改为内存 O(1) ArrayDeque 记录并在顶层 afterSuite 单次落盘结构完全一致的 methods.json / 将 public_check.py、public_scenarios.py、public_batch.py、development_check.py、development_tests.gradle 与 quick_test.py 的 --test-forks 与 --scenario-workers 白名单扩展至 {1, 2, 4, 8}（严格保持 :pc:test 串行 maxParallelForks == 1 与云端配置不变），并将 development_check.py 的 41 项只读 Python 机制测试改为线程池并发、确定性顺序落盘及批前后全仓 SHA-256 校验（消除 80 次冗余扫盘）
   技术: 补齐 test_development_check.py（并发重叠、确定性排序、admit 边界与失败保全及 8-fork 断言）、test_public_check.py 与 test_quick_test.py 覆盖；74 项 CI 单测与 9 项 quick_test 单测全绿，实跑 --test-forks 8 机制验证一次通过（66.0s），同口径 public_batch --kind pr --test-forks 2 --scenario-workers 8 全绿并将整批墙钟由 1971.1s 降至 1365.0s（-30.7%，mechanisms -35.4%，Python 机制段 -67.6%），双根布局通过，经独立非作者代码整审 APPROVE（0 必修）
