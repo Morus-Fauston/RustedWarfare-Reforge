@@ -33,11 +33,10 @@ class SharedLandingClaimsTest {
                 UnitSpawn("b", "p1", "tank", Position(320.0, 240.0), 90.0),
                 UnitSpawn("c", "p1", if (shared) "tank" else "other", Position(320.0, 360.0), 90.0)))
         var failStopStep = false
-        val policies = ExperimentalPolicies(routePreparationBudget = {
+        val init = SimulationContext(routePreparationBudget = {
             if (failStopStep) error("discard scheduled stop")
             8
-        })
-        val init = SimulationContext(policies).initialize(scene)
+        }).initialize(scene)
         val ctx = assertIs<InitResult.Accepted>(init, init.toString()).context
         try {
             val click = Position(440.0, 240.0)
@@ -142,14 +141,13 @@ class SharedLandingClaimsTest {
             })
             var armed = false
             var tripped = false
-            val steering = SteeringPolicy { body, aim, delta, coordinates ->
+            val faultHook: (MutableUnit) -> Unit = { body ->
                 if (armed && !tripped && body.position.x > 340.0) {
                     tripped = true
                     error("retry reissued landing")
                 }
-                AcceleratedSteering.turn(body, aim, delta, coordinates)
             }
-            val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(steering = steering)).initialize(scene)).context
+            val context = assertIs<InitResult.Accepted>(SimulationContext(steeringFaultHook = faultHook).initialize(scene)).context
             try {
                 val ids = scene.units.map { it.unitId }
                 val click = Position(400.0, 260.0)

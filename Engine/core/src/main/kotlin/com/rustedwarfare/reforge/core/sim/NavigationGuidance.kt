@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.path.NavigationTopologyMasks
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import kotlin.math.abs
@@ -36,6 +37,7 @@ internal interface NavigationGuidance {
         val corridorClearanceWorld: Double,
         val finalApproach: Boolean,
         val fromFlowField: Boolean,
+        val waypointIndex: Int = 0,
     )
 
     fun sampleGuidance(
@@ -49,7 +51,14 @@ internal interface NavigationGuidance {
 }
 
 /**
- * Standard waypoint/polyline adapter for small squads, rectangular naval hulls, and individual moves.
+ * Continuous line-of-sight waypoint/polyline & rectangular [HullRoute] guidance adapter
+ * (ADR-012 / ADR-016 / ENG-P017-004).
+ *
+ * Drives individual units, small squads (`< 4`), claimed final landing approaches, and rectangular
+ * naval hulls without 20px breadcrumbs:
+ * - Accumulates exact remaining polyline distance across `unit.pathPoints`;
+ * - Aims continuously along the active LOS-clear leg and seamlessly rejoins downstream LOS-clear
+ *   waypoints whenever the immediate front waypoint is occluded after a lateral push.
  */
 internal object WaypointRouteAdapter : NavigationGuidance {
     override fun sampleGuidance(
@@ -60,24 +69,71 @@ internal object WaypointRouteAdapter : NavigationGuidance {
         finalPoint: Boolean,
         executionStep: Long,
     ): NavigationGuidance.Sample {
-        val dx = fallbackAim.x - unit.position.x
-        val dy = fallbackAim.y - unit.position.y
+        val points = unit.pathPoints
+        val mapW = terrain.widthTiles.toDouble() * terrain.tileWidth
+        val mapH = terrain.heightTiles.toDouble() * terrain.tileHeight
+        val queryPos = if (unit.nativeTransportPlacement) {
+            Position(unit.position.x.coerceIn(0.0, mapW), unit.position.y.coerceIn(0.0, mapH))
+        } else {
+            unit.position
+        }
+        val hull = HullRoute.forUnit(
+            unit = unit,
+            maneuver = unit.followsManeuverRoute,
+            tileWidth = terrain.tileWidth,
+            tileHeight = terrain.tileHeight,
+        )
+        val routeR = host.routeRadius(unit)
+        val occupancy = host.routeOccupancy(unit)
+
+        var chosenIndex = 0
+        var chosenAim = points.firstOrNull() ?: fallbackAim
+        if (points.size >= 2) {
+            val firstClear = host.continuationFits(terrain, queryPos, points[0], unit.heading, hull, routeR, occupancy)
+            if (!firstClear) {
+                for (i in points.lastIndex downTo 1) {
+                    val cand = points[i]
+                    if (host.continuationFits(terrain, queryPos, cand, unit.heading, hull, routeR, occupancy)) {
+                        chosenIndex = i
+                        chosenAim = cand
+                        break
+                    }
+                }
+            }
+        } else if (points.size == 1 && fallbackAim != points[0]) {
+            chosenAim = fallbackAim
+        }
+
+        val remaining = if (points.isEmpty()) {
+            hypot(chosenAim.x - unit.position.x, chosenAim.y - unit.position.y)
+        } else {
+            var sum = hypot(points[chosenIndex].x - unit.position.x, points[chosenIndex].y - unit.position.y)
+            for (i in chosenIndex until points.lastIndex) {
+                sum += hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y)
+            }
+            sum
+        }
+        val dx = chosenAim.x - unit.position.x
+        val dy = chosenAim.y - unit.position.y
         val dist = hypot(dx, dy)
         val dirX = if (dist > 1e-6) dx / dist else 0.0
         val dirY = if (dist > 1e-6) dy / dist else 0.0
         val col = floor(unit.position.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
         val row = floor(unit.position.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
         val minTile = min(terrain.tileWidth, terrain.tileHeight).toDouble()
-        val clearRings = terrain.clearanceField().clearanceRings(col, row)
+        val isLastLeg = if (points.isEmpty()) finalPoint else (chosenIndex == points.lastIndex)
+        val chosenFinal = finalPoint && isLastLeg && remaining <= minTile * 1.5
+        val clearRings = terrain.clearanceRings(col, row)
         val clearWorld = if (clearRings <= 0) 0.0 else (clearRings * 2.0 - 1.0) * minTile
         return NavigationGuidance.Sample(
-            aimPosition = fallbackAim,
+            aimPosition = chosenAim,
             dirX = dirX,
             dirY = dirY,
-            remainingDistance = dist,
+            remainingDistance = remaining,
             corridorClearanceWorld = clearWorld,
-            finalApproach = finalPoint,
+            finalApproach = chosenFinal,
             fromFlowField = false,
+            waypointIndex = chosenIndex,
         )
     }
 }
@@ -337,8 +393,8 @@ internal class ChunkedFlowFieldAdapter private constructor(
                 lastAccessStep: Long,
             ): ChunkedField {
                 val cellCount = width * height
-                val gateMask = sharedGateThroatMask(terrain)
-                val wideMask = sharedWideYieldMask(terrain, wideCorridorRings, key.smallYieldsWideCorridor, gateMask)
+                val gateMask = terrain.gateThroatMask()
+                val wideMask = terrain.wideYieldMask(wideCorridorRings, key.smallYieldsWideCorridor)
                 return ChunkedField(
                     key = key,
                     width = width,
@@ -749,8 +805,10 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val oldCf = oldTerrain.clearanceField()
         val newCf = newTerrain.clearanceField()
         val oldWideYield = field.wideYieldMask
-        val newGateThroat = sharedGateThroatMask(newTerrain)
-        val newWideYield = sharedWideYieldMask(newTerrain, field.wideCorridorRings, field.key.smallYieldsWideCorridor, newGateThroat)
+        val newGateThroat = newTerrain.gateThroatMask()
+        val newWideYield = newTerrain.wideYieldMask(field.wideCorridorRings, field.key.smallYieldsWideCorridor)
+        field.gateThroatMask = newGateThroat
+        field.wideYieldMask = newWideYield
         val dirtyChunks = BooleanArray(field.chunksX * field.chunksY)
         var anyDirty = false
         var anyCongActive = false
@@ -1034,8 +1092,12 @@ internal class ChunkedFlowFieldAdapter private constructor(
         finalPoint: Boolean,
         executionStep: Long,
     ): NavigationGuidance.Sample {
+        val lm = unit.landingMember
+        if (!host.trafficSeparationEnabled || lm == null || lm.claimed != null) {
+            return WaypointRouteAdapter.sampleGuidance(host, unit, terrain, fallbackAim, finalPoint, executionStep)
+        }
         val field = fieldForUnit(unit, terrain)
-            ?: return WaypointRouteAdapter.sampleGuidance(host, unit, terrain, fallbackAim, finalPoint)
+            ?: return WaypointRouteAdapter.sampleGuidance(host, unit, terrain, fallbackAim, finalPoint, executionStep)
 
         val w = field.width
         val h = field.height
@@ -1061,7 +1123,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
                         if (nc !in 0 until w) continue
                         val nIdx = nr * w + nc
                         val ncCost = field.cost[nIdx]
-                        if (ncCost < bestCost && gridLineUnblocked(terrain, col, row, nc, nr)) {
+                        if (ncCost < bestCost && PlanningSegmentClearance.gridLineUnblocked(terrain, col, row, nc, nr)) {
                             bestCost = ncCost
                             bestIdx = nIdx
                         }
@@ -1070,7 +1132,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
                 if (bestIdx >= 0) break
             }
             if (bestIdx < 0) {
-                return WaypointRouteAdapter.sampleGuidance(host, unit, terrain, fallbackAim, finalPoint)
+                return WaypointRouteAdapter.sampleGuidance(host, unit, terrain, fallbackAim, finalPoint, executionStep)
             }
             idx = bestIdx
             cellCost = bestCost
@@ -1204,13 +1266,15 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val clearRings = cf.clearanceRings(col, row)
         val clearWorld = if (clearRings <= 0) 0.0 else (clearRings * 2.0 - 1.0) * minTile
 
+        val goalDist = hypot(field.effectiveGoalWorld.x - unit.position.x, field.effectiveGoalWorld.y - unit.position.y)
+
         return NavigationGuidance.Sample(
             aimPosition = safeAim,
             dirX = vx,
             dirY = vy,
             remainingDistance = remainingWorld,
             corridorClearanceWorld = clearWorld,
-            finalApproach = finalPoint || remainingWorld <= minTile * 2.0,
+            finalApproach = directGoalClear && goalDist <= minTile,
             fromFlowField = true,
         )
     }
@@ -1453,18 +1517,6 @@ internal class ChunkedFlowFieldAdapter private constructor(
         return bestClear ?: firstHop?.takeIf { segmentClearWithHull(terrain, terrainHull, pos, it, routeR, unitRadius) }
     }
 
-    private fun gridLineUnblocked(terrain: PlanningTerrain, c0: Int, r0: Int, c1: Int, r1: Int): Boolean {
-        val steps = max(abs(c1 - c0), abs(r1 - r0)) * 2
-        if (steps <= 0) return !terrain.isBlocked(c0, r0)
-        for (i in 1..steps) {
-            val t = i.toDouble() / steps.toDouble()
-            val c = kotlin.math.round(c0 + (c1 - c0) * t).toInt()
-            val r = kotlin.math.round(r0 + (r1 - r0) * t).toInt()
-            if (terrain.isBlocked(c, r)) return false
-        }
-        return true
-    }
-
     private fun segmentClearWithHull(
         terrain: PlanningTerrain,
         terrainHull: MovementCollisionShape?,
@@ -1472,24 +1524,16 @@ internal class ChunkedFlowFieldAdapter private constructor(
         to: Position,
         routeR: Double,
         terrainR: Double,
-    ): Boolean {
-        if (!PlanningSegmentClearance.allows(terrain, from, to, routeR)) return false
-        val minTile = min(terrain.tileWidth, terrain.tileHeight).toDouble()
-        if (terrainHull == null || terrainR <= minTile * 0.5) return true
-        val dx = to.x - from.x
-        val dy = to.y - from.y
-        val dist = hypot(dx, dy)
-        if (dist <= 1e-4) return true
-        val stepLen = max(4.0, minTile * 0.45)
-        val steps = ceil(dist / stepLen).toInt().coerceAtLeast(1)
-        val grid = HullTerrainGrid.authorized(terrain)
-        for (i in 1..steps) {
-            val t = i.toDouble() / steps.toDouble()
-            val sample = Position(from.x + dx * t, from.y + dy * t)
-            if (!UnitContact.poseFits(terrainHull, sample, 0.0, grid)) return false
-        }
-        return true
-    }
+    ): Boolean = PlanningSegmentClearance.allowsHull(
+        terrain = terrain,
+        hullGrid = null,
+        terrainHull = terrainHull,
+        from = from,
+        to = to,
+        heading = 0.0,
+        boundaryRadius = routeR,
+        terrainRadius = terrainR,
+    )
 
     /**
      * Verifies both true hull-width terrain clearance AND that the chord does not evade toll-gated
@@ -1908,7 +1952,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
                     if (!throatMask[idx]) continue
                     // Determine whether this throat is pinched vertically (walls up/down -> gate opens along Y)
                     // or horizontally (walls left/right -> gate opens along X).
-                    val vertWall = isVerticallyBoundedThroat(field.terrain, c, r)
+                    val vertWall = NavigationTopologyMasks.isVerticallyBoundedThroat(field.terrain, c, r)
                     var sum = obstructedLoad[idx]
                     var widthCnt = 1
                     if (vertWall) {
@@ -2013,10 +2057,6 @@ internal class ChunkedFlowFieldAdapter private constructor(
         }
     }
 
-    private class TerrainStaticMasks(val gateThroatMask: BooleanArray) {
-        val wideYieldByRings: HashMap<Int, BooleanArray> = HashMap(2)
-    }
-
     companion object {
         internal const val CHUNK_SIZE: Int = 16
         internal const val MIN_GROUP_SIZE: Int = 4
@@ -2033,38 +2073,13 @@ internal class ChunkedFlowFieldAdapter private constructor(
         internal const val CONGESTION_REFRESH_INTERVAL: Long = 24L
         internal const val TRUNK_REUSE_RADIUS_TILES: Double = 14.0
         internal const val TRUNK_REUSE_LOCAL_HALO_TILES: Int = 8
-        private const val MAX_GATE_SPAN_TILES: Int = 8
 
         private val EMPTY_BOOLEAN_ARRAY = BooleanArray(0)
         private val EMPTY_FLOAT_ARRAY = FloatArray(0)
         private val EMPTY_INT_ARRAY = IntArray(0)
-        private val terrainMaskCache = java.util.WeakHashMap<PlanningTerrain, TerrainStaticMasks>()
-        internal var gateMaskComputeCount: Long = 0L
-
-        internal fun sharedGateThroatMask(terrain: PlanningTerrain): BooleanArray = synchronized(terrainMaskCache) {
-            terrainMaskCache.getOrPut(terrain) {
-                gateMaskComputeCount++
-                TerrainStaticMasks(computeGateThroatMask(terrain, terrain.widthTiles, terrain.heightTiles))
-            }.gateThroatMask
-        }
-
-        internal fun sharedWideYieldMask(
-            terrain: PlanningTerrain,
-            wideCorridorRings: Int,
-            enabled: Boolean,
-            gateThroatMask: BooleanArray,
-        ): BooleanArray {
-            if (!enabled) return EMPTY_BOOLEAN_ARRAY
-            return synchronized(terrainMaskCache) {
-                val entry = terrainMaskCache.getOrPut(terrain) {
-                    gateMaskComputeCount++
-                    TerrainStaticMasks(gateThroatMask)
-                }
-                entry.wideYieldByRings.getOrPut(wideCorridorRings) {
-                    computeWideYieldMask(terrain, terrain.widthTiles, terrain.heightTiles, wideCorridorRings, true, entry.gateThroatMask)
-                }
-            }
-        }
+        internal var gateMaskComputeCount: Long
+            get() = PlanningTerrain.gateMaskComputeCount
+            set(value) { PlanningTerrain.gateMaskComputeCount = value }
 
         private val ORTHO_DX = intArrayOf(1, -1, 0, 0)
         private val ORTHO_DY = intArrayOf(0, 0, 1, -1)
@@ -2077,126 +2092,10 @@ internal class ChunkedFlowFieldAdapter private constructor(
                 else -> UnitLocomotion.terrainPassabilityRadius(unit, tileWidth, tileHeight)
             }
 
-        internal fun clearanceBandFor(terrain: PlanningTerrain, radius: Double): Int {
-            val minTile = min(terrain.tileWidth, terrain.tileHeight).toDouble()
-            if (radius <= minTile * 0.5) return 1
-            return 1 + ceil((radius - minTile * 0.5) / minTile).toInt()
-        }
+        internal fun clearanceBandFor(terrain: PlanningTerrain, radius: Double): Int =
+            terrain.clearanceBandFor(radius)
 
-        /**
-         * Returns `1` if `(col, row)` is a horizontal 1-tile pinhole (blocked above AND below),
-         * `2` if it is a vertical 1-tile pinhole (blocked left AND right), or `0` otherwise.
-         */
-        internal fun singleTilePinholeAxis(terrain: PlanningTerrain, col: Int, row: Int): Int {
-            val w = terrain.widthTiles
-            val h = terrain.heightTiles
-            if (col !in 0 until w || row !in 0 until h || terrain.isBlocked(col, row)) return 0
-            val upB = row == 0 || terrain.isBlocked(col, row - 1)
-            val downB = row == h - 1 || terrain.isBlocked(col, row + 1)
-            val leftB = col == 0 || terrain.isBlocked(col - 1, row)
-            val rightB = col == w - 1 || terrain.isBlocked(col + 1, row)
-            if (upB && downB && !leftB && !rightB) return 1
-            if (leftB && rightB && !upB && !downB) return 2
-            return 0
-        }
-
-        /** True when `(c, r)` lies inside a passage pinched vertically (walls within `<= MAX_GATE_SPAN_TILES` above & below). */
-        private fun isVerticallyBoundedThroat(terrain: PlanningTerrain, c: Int, r: Int): Boolean {
-            val h = terrain.heightTiles
-            var upDist = -1
-            for (d in 1..MAX_GATE_SPAN_TILES) {
-                val nr = r - d
-                if (nr <= 0 || terrain.isBlocked(c, nr)) {
-                    // Exclude outer map frame walls (only interior obstacles form a gate)
-                    if (nr > 0 && terrain.isBlocked(c, nr)) upDist = d
-                    break
-                }
-            }
-            if (upDist < 0) return false
-            var downDist = -1
-            for (d in 1..MAX_GATE_SPAN_TILES) {
-                val nr = r + d
-                if (nr >= h - 1 || terrain.isBlocked(c, nr)) {
-                    if (nr < h - 1 && terrain.isBlocked(c, nr)) downDist = d
-                    break
-                }
-            }
-            return downDist > 0 && (upDist + downDist - 1) <= MAX_GATE_SPAN_TILES
-        }
-
-        private fun isHorizontallyBoundedThroat(terrain: PlanningTerrain, c: Int, r: Int): Boolean {
-            val w = terrain.widthTiles
-            var leftDist = -1
-            for (d in 1..MAX_GATE_SPAN_TILES) {
-                val nc = c - d
-                if (nc <= 0 || terrain.isBlocked(nc, r)) {
-                    if (nc > 0 && terrain.isBlocked(nc, r)) leftDist = d
-                    break
-                }
-            }
-            if (leftDist < 0) return false
-            var rightDist = -1
-            for (d in 1..MAX_GATE_SPAN_TILES) {
-                val nc = c + d
-                if (nc >= w - 1 || terrain.isBlocked(nc, r)) {
-                    if (nc < w - 1 && terrain.isBlocked(nc, r)) rightDist = d
-                    break
-                }
-            }
-            return rightDist > 0 && (leftDist + rightDist - 1) <= MAX_GATE_SPAN_TILES
-        }
-
-        private fun computeGateThroatMask(terrain: PlanningTerrain, w: Int, h: Int): BooleanArray {
-            val mask = BooleanArray(w * h)
-            for (r in 1 until h - 1) {
-                val base = r * w
-                for (c in 1 until w - 1) {
-                    if (terrain.isBlocked(c, r)) continue
-                    if (isVerticallyBoundedThroat(terrain, c, r) || isHorizontallyBoundedThroat(terrain, c, r)) {
-                        mask[base + c] = true
-                    }
-                }
-            }
-            return mask
-        }
-
-        /**
-         * Identifies confined wide-corridor cells where mixed-group small units should yield to large units:
-         * - Any passable cell with `rings in wideRings..(wideRings + 2)` (corridor wide enough for heavy hulls), OR
-         * - Any wall-hugging shoulder cell (`rings == 1`, NOT a 1-tile pinhole) inside a wide gate throat
-         *   whose opposite orthogonal neighbor has `rings >= wideRings` (so small units cannot evade yield
-         *   by hugging the 1-tile edge row of a 6-tile wide gate).
-         */
-        private fun computeWideYieldMask(
-            terrain: PlanningTerrain,
-            w: Int,
-            h: Int,
-            wideRings: Int,
-            enabled: Boolean,
-            throat: BooleanArray,
-        ): BooleanArray {
-            val mask = BooleanArray(w * h)
-            if (!enabled) return mask
-            val cf = terrain.clearanceField()
-            for (r in 1 until h - 1) {
-                val base = r * w
-                for (c in 1 until w - 1) {
-                    val idx = base + c
-                    val rings = cf.clearanceRingsAt(idx)
-                    if (rings == 0) continue
-                    if (rings in wideRings..(wideRings + 2)) {
-                        mask[idx] = true
-                    } else if (rings == 1 && throat[idx] && singleTilePinholeAxis(terrain, c, r) == 0) {
-                        val adjWide =
-                            (c > 0 && cf.clearanceRingsAt(idx - 1) >= wideRings) ||
-                            (c + 1 < w && cf.clearanceRingsAt(idx + 1) >= wideRings) ||
-                            (r > 0 && cf.clearanceRingsAt(idx - w) >= wideRings) ||
-                            (r + 1 < h && cf.clearanceRingsAt(idx + w) >= wideRings)
-                        if (adjWide) mask[idx] = true
-                    }
-                }
-            }
-            return mask
-        }
+        internal fun singleTilePinholeAxis(terrain: PlanningTerrain, col: Int, row: Int): Int =
+            terrain.singleTilePinholeAxis(col, row)
     }
 }

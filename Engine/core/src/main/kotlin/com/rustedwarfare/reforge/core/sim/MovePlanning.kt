@@ -204,7 +204,7 @@ internal class MovePlanning {
     fun hasPendingRepairs(): Boolean = p2Repairs.isNotEmpty() || optionalRejoins.isNotEmpty()
 
     fun advance(
-        pathPolicy: PathPolicy,
+        pathPolicy: ClearanceAStarPolicy,
         budget: PathWorkBudget,
         snapshot: (List<MoveAction>, GroupMoveRequest?, ManeuverRepair?) -> MovePlanningInput,
         publish: (MovePlanningMember, GroupMoveRequest?, ManeuverRepair?, List<String>, PlannedMove) -> Unit,
@@ -265,7 +265,7 @@ internal class MovePlanning {
 
     private fun processQueue(
         queue: LinkedHashSet<Order>,
-        pathPolicy: PathPolicy,
+        pathPolicy: ClearanceAStarPolicy,
         budget: PathWorkBudget,
         snapshot: (List<MoveAction>, GroupMoveRequest?, ManeuverRepair?) -> MovePlanningInput,
         publish: (MovePlanningMember, GroupMoveRequest?, ManeuverRepair?, List<String>, PlannedMove) -> Unit,
@@ -624,7 +624,7 @@ internal class MovePlanning {
             return mapOf(member.action.unitId to accepted)
         }
 
-        fun advance(pathPolicy: PathPolicy, budget: PathWorkBudget): Map<String, PlannedMove>? {
+        fun advance(pathPolicy: ClearanceAStarPolicy, budget: PathWorkBudget): Map<String, PlannedMove>? {
             searchedResult?.let { return it }
             if (group == null) {
                 val member = input.members.singleOrNull() ?: return emptyMap()
@@ -731,7 +731,7 @@ internal class MovePlanning {
             return PlannedMove(if (fits) slot(member, point, listOf(point)) else null, null, 0)
         }
 
-        private fun planRoute(member: MovePlanningMember, point: Position, policy: PathPolicy,
+        private fun planRoute(member: MovePlanningMember, point: Position, policy: ClearanceAStarPolicy,
                               budget: PathWorkBudget, clearApproach: Boolean = false): PlannedMove? {
             val active = search ?: run {
                 // The open-ground solver checks every relevant holder once, and only accepts

@@ -51,7 +51,6 @@ internal data class UnitNavigationState(
     val lastPlannedKnowledgeRevision: Long = -1L,
     val lastPlannedBuildingRevision: Long = -1L,
     val nearTargetTime: Double = 0.0,
-    val localMotion: LocalMotionSegment? = null,
     val routeContinuation: RouteContinuation? = null,
     val stalledRouteTicks: Long = 0L,
     val hardContactLimitedTicks: Long = 0L,
@@ -118,7 +117,6 @@ internal data class UnitNavigationState(
         lastPlannedKnowledgeRevision = -1L,
         lastPlannedBuildingRevision = -1L,
         nearTargetTime = 0.0,
-        localMotion = null,
         routeContinuation = null,
         stalledRouteTicks = 0L,
         hardContactLimitedTicks = 0L,
@@ -153,7 +151,6 @@ internal data class UnitNavigationState(
     ): UnitNavigationState = copy(
         adoptedRouteRevision = adoptedRouteRevision + 1L,
         pathPoints = immutableList(points),
-        localMotion = null,
         routeContinuation = null,
         stalledRouteTicks = 0L,
         hardContactLimitedTicks = 0L,
@@ -179,7 +176,6 @@ internal data class UnitNavigationState(
         return if (clearLocalSegment) {
             copy(
                 pathPoints = remaining,
-                localMotion = null,
                 routeContinuation = null,
                 localProgressTime = 0.0,
                 maneuverTurnWaypoint = maneuverTurnWaypoint,
@@ -202,7 +198,6 @@ internal data class UnitNavigationState(
         return if (resetLocalSegment) {
             copy(
                 pathPoints = frozen,
-                localMotion = null,
                 localProgressTime = 0.0,
                 routeContinuation = null,
                 lastAvoidHeadingDeg = null,
@@ -222,7 +217,6 @@ internal data class UnitNavigationState(
         return if (resetLocalSegment) {
             copy(
                 pathPoints = frozen,
-                localMotion = null,
                 routeContinuation = null,
                 localProgressTime = 0.0,
                 lastAvoidHeadingDeg = null,

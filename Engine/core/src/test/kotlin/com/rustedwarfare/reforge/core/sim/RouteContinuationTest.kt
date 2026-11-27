@@ -44,7 +44,7 @@ class RouteContinuationTest {
             val member = MovePlanningMember(action, follower, pose(follower), start, definition.radius,
                 terrain, HullRoute.forUnit(follower, maneuver = true), false, 0L)
             fun blocker() = MovePlanningOccupant(leader.copy(), pose(leader), null, idle = false, obstructsRoute = true)
-            val policy = ExperimentalPolicies().path
+            val policy = ClearanceAStarPolicy.DEFAULT
             fun repair(occupants: List<MovePlanningOccupant>): PlannedMove {
                 val queue = MovePlanning()
                 var result: PlannedMove? = null
@@ -70,21 +70,17 @@ class RouteContinuationTest {
             assertTrue(opposed.nearest)
             assertEquals(start, assertNotNull(opposed.slot).position)
 
-            val delayed = object : PathPolicy by policy {
-                override fun beginExact(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                                        hull: HullRoute?, occupancy: RouteOccupancy?, counters: PathSearchCounters?): ExactPathSearch {
-                    val search = policy.beginExact(map, start, target, radius, hull, occupancy, counters)
-                    return object : ExactPathSearch by search {
-                        private var first = true
-                        override fun advance(budget: PathWorkBudget, cache: PathClearanceCache?) {
-                            if (first) {
-                                first = false
-                                budget.take(budget.limit - budget.used)
-                            } else search.advance(budget, cache)
-                        }
+            val delayed = ClearanceAStarPolicy(exactSearchWrapper = { search, _ ->
+                object : ExactPathSearch by search {
+                    private var first = true
+                    override fun advance(budget: PathWorkBudget, cache: PathClearanceCache?) {
+                        if (first) {
+                            first = false
+                            budget.take(budget.limit - budget.used)
+                        } else search.advance(budget, cache)
                     }
                 }
-            }
+            })
             val queue = MovePlanning()
             val publications = mutableListOf<PlannedMove>()
             val work = mutableListOf<PlanningWorkSlice>()
@@ -158,8 +154,8 @@ class RouteContinuationTest {
                 IntArray(width * height) { water },
                 BlockingGrid(width, height, BooleanArray(width * height)), obstacles)
             val scene = WaterTestScene.scenario(map, MovementType.WATER, spawns.first().position).copy(units = spawns)
-            val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(
-                routePreparationBudget = { 1 })).initialize(scene)).context
+            val context = assertIs<InitResult.Accepted>(SimulationContext(
+                routePreparationBudget = { 1 }).initialize(scene)).context
             try {
                 context.enableRouteContinuationDiagnostics(context.world)
                 for ((id, y) in rows) assertIs<ActionResult.Accepted>(context.submit(
@@ -251,8 +247,8 @@ class RouteContinuationTest {
             val scene = WaterTestScene.scenario(map, MovementType.WATER, start)
             val delayedStep = 220L
             fun run(blockUntil: Long): Triple<List<Position>, List<Observation>, List<RouteContinuationSample>> {
-                val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(
-                    routePreparationBudget = { step -> if (step < blockUntil) 0 else 8 })).initialize(scene)).context
+                val context = assertIs<InitResult.Accepted>(SimulationContext(
+                    routePreparationBudget = { step -> if (step < blockUntil) 0 else 8 }).initialize(scene)).context
                 try {
                     context.enableRouteContinuationDiagnostics(context.world)
                     assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-order", "p1", "w1", goal, context.world)))

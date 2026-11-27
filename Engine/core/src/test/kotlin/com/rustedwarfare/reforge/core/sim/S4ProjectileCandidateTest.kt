@@ -44,7 +44,8 @@ class S4ProjectileCandidateTest {
             val after = context.observePlayer(context.world, "p1")
             assertEquals(listOf("born", "impact"), after.projectileEvents.map { it.kind })
             assertTrue(before.units.all { it.health == 210.0 })
-            assertNotSame(oldKnowledge, context.knowledgeSnapshot(context.world, "p1"))
+            assertSame(oldKnowledge, context.knowledgeSnapshot(context.world, "p1"))
+            assertEquals(oldKnowledge.revision, context.knowledgeSnapshot(context.world, "p1").revision)
         } finally { context.close() }
     }
 }

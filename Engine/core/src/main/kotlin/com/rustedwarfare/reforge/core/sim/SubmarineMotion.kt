@@ -32,7 +32,6 @@ internal object SubmarineMotion {
         val surface = !UnitLocomotion.isSubmerged(unit)
         val crossed = surface != unit.submarineSurfacePresentation
         unit.submarineSurfacePresentation = surface
-        if (crossed) unit.localMotion = null
         return crossed
     }
 

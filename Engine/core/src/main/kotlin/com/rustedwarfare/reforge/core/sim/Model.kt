@@ -550,9 +550,6 @@ internal data class MutableUnit(
     var nearTargetTime: Double
         get() = nav.nearTargetTime
         set(value) { if (nav.nearTargetTime != value) nav = nav.copy(nearTargetTime = value) }
-    var localMotion: LocalMotionSegment?
-        get() = nav.localMotion
-        set(value) { if (nav.localMotion != value) nav = nav.copy(localMotion = value) }
     var routeContinuation: RouteContinuation?
         get() = nav.routeContinuation
         set(value) { if (nav.routeContinuation != value) nav = nav.copy(routeContinuation = value) }
@@ -631,11 +628,6 @@ internal data class MutableUnit(
             state.targetId = null
             state.aimReady = false
         }
-    }
-    fun ensureLocalMotion(): LocalMotionSegment {
-        val first = pathPoints.first()
-        return localMotion?.takeIf { it.anchor == first }
-            ?: LocalMotionSegment.create(position, first, UnitLocomotion.movement(this)).also { localMotion = it; localProgressTime = 0.0 }
     }
 
     /** End the command while preserving linear/angular speed for the existing coasting rule. */

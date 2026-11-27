@@ -45,7 +45,7 @@ class StepMovePlanningTest {
                 val member = MovePlanningMember(action, null, MovePlanningPose(start, 0.0, ContactLayer.SURFACE,
                     MovementCollisionShape.Circle(0.0)), start, 0.0, terrain, null, false, 0)
                 val input = MovePlanningInput(map, listOf(member), emptyList(), true)
-                val policy = ExperimentalPolicies().path
+                val policy = ClearanceAStarPolicy.DEFAULT
                 for (step in 0L..1200L) {
                     fun advance(fail: Boolean): PlannedMove? {
                         var planned: PlannedMove? = null

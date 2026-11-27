@@ -37,7 +37,7 @@ internal object CustomUnitActions {
     } == true
 
     /** Runs after the base movement and the queue: submission itself never changes motion. */
-    fun constrain(unit: MutableUnit, delta: Double, steering: SteeringPolicy, coordinates: CoordinatePolicy,
+    fun constrain(unit: MutableUnit, delta: Double,
                   head: PendingUnitAction? = unit.customActionState.queue.firstOrNull()) {
         val action = head?.action ?: return
         if (action.cannotMove && (action.groundLaunch == null || head.progress > 0f)) {
@@ -45,13 +45,13 @@ internal object CustomUnitActions {
             unit.flightVelocity = Position(0.0, 0.0)
         }
         action.rotateTo?.let { sourceAngle ->
-            var heading = coordinates.normalize(sourceAngle + 90.0)
-            if (action.rotateToOrBackwards && kotlin.math.abs(coordinates.difference(heading, unit.heading)) > 90.0)
-                heading = coordinates.normalize(heading + 180.0)
-            val offset = coordinates.displacement(heading, 100.0)
+            var heading = ScreenPlane.normalize(sourceAngle + 90.0)
+            if (action.rotateToOrBackwards && kotlin.math.abs(ScreenPlane.difference(heading, unit.heading)) > 90.0)
+                heading = ScreenPlane.normalize(heading + 180.0)
+            val offset = ScreenPlane.displacement(heading, 100.0)
             val target = Position(unit.position.x + offset.x, unit.position.y + offset.y)
-            if (unit.mechState != null) MechMotion.turn(unit, target, delta, steering, coordinates)
-            else BodyMotion.turnOrdinary(unit, target, delta, steering, coordinates)
+            if (unit.mechState != null) MechMotion.turn(unit, target, delta)
+            else BodyMotion.turnOrdinary(unit, target, delta)
         }
     }
 

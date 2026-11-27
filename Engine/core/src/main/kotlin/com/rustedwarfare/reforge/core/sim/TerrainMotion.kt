@@ -2,6 +2,7 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
+import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
 
 /** Typed static center/cell correction. Map outer-circle handling belongs to the caller. */
 internal object TerrainMotion {
@@ -23,20 +24,19 @@ internal object TerrainMotion {
             !ground.blockingFor(movementType).isBlocked(newX, newY)) return resolve(ground, start, candidate,
                 movementType = movementType, nativeTransportPlacement = nativeTransportPlacement)
         if (kotlin.math.abs(newX.toLong() - oldX) > 1L || kotlin.math.abs(newY.toLong() - oldY) > 1L) {
-            val line = ExactCenterLineCells(start, candidate)
             val firstX = (minOf(oldX, newX).toLong() - 1L).coerceAtLeast(0L).toInt()
             val lastX = (maxOf(oldX, newX).toLong() + 1L).coerceAtMost(map.widthTiles.toLong() - 1L).toInt()
             val firstY = (minOf(oldY, newY).toLong() - 1L).coerceAtLeast(0L).toInt()
             val lastY = (maxOf(oldY, newY).toLong() + 1L).coerceAtMost(map.heightTiles.toLong() - 1L).toInt()
             if (blocking.widthTiles == map.widthTiles && blocking.heightTiles == map.heightTiles) {
                 if (blocking.anyBlocked(firstX, lastX, firstY, lastY) { column, row ->
-                    line.enters(column, row, map.tileWidth, map.tileHeight,
+                    PlanningSegmentClearance.entersCellExact(start, candidate, column, row, map.tileWidth, map.tileHeight,
                         column == map.widthTiles - 1, row == map.heightTiles - 1)
                 }) return start
             } else {
                 // Preserve the prior failure/short-circuit behavior for unqualified direct callers.
                 for (row in firstY..lastY) for (column in firstX..lastX) {
-                    if (blocking.isBlocked(column, row) && line.enters(column, row, map.tileWidth, map.tileHeight,
+                    if (blocking.isBlocked(column, row) && PlanningSegmentClearance.entersCellExact(start, candidate, column, row, map.tileWidth, map.tileHeight,
                             column == map.widthTiles - 1, row == map.heightTiles - 1)) return start
                 }
             }

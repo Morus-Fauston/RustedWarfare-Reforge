@@ -17,7 +17,7 @@ class GroupApproachReuseTest {
         val start = Position(50.0, 130.0)
         val cache = PathClearanceCache()
         fun search(map: PlanningTerrain, end: Position, cache: PathClearanceCache): Long {
-            val work = ExperimentalPolicies().path.beginExact(map, start, end, 4.0, counters = PathSearchCounters())
+            val work = ClearanceAStarPolicy.DEFAULT.beginExact(map, start, end, 4.0, counters = PathSearchCounters())
             while (!work.finished) work.advance(PathWorkBudget(64), cache)
             val path = assertNotNull(work.path)
             assertEquals(end, path.last())
@@ -36,7 +36,7 @@ class GroupApproachReuseTest {
     fun abandoning_a_step_after_it_warmed_the_cache_restores_the_cold_replay() {
         val terrain = PlanningTerrain(18, 12, 20, 20, BooleanArray(216) { it % 18 == 7 && it / 18 != 2 })
         val start = Position(50.0, 130.0)
-        val policy = ExperimentalPolicies().path
+        val policy = ClearanceAStarPolicy.DEFAULT
         fun replay(retry: Boolean): Pair<List<Int>, List<Position>> {
             var cache = PathClearanceCache()
             val charges = mutableListOf<Int>()
@@ -80,7 +80,7 @@ class GroupApproachReuseTest {
             assertTrue(PlanningSegmentClearance.allows(map, a, b, 4.0))
         assertTrue(!PlanningSegmentClearance.allows(map, prefix.last(), target, 4.0))
         cache.rememberApproach(map, 4.0, start, previous)
-        val active = ExperimentalPolicies().path.beginExact(map, start, target, 4.0, counters = PathSearchCounters())
+        val active = ClearanceAStarPolicy.DEFAULT.beginExact(map, start, target, 4.0, counters = PathSearchCounters())
         while (!active.finished) active.advance(PathWorkBudget(64), cache)
         val path = assertNotNull(active.path)
         assertEquals(target, path.last())

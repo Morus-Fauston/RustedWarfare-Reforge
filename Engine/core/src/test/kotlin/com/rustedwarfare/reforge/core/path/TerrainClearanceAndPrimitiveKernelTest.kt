@@ -127,7 +127,7 @@ class TerrainClearanceAndPrimitiveKernelTest {
         // Small pillar forcing A* (no direct line of sight)
         blocked[5 * w + 4] = true
         val terrain = PlanningTerrain(w, h, 20, 20, blocked)
-        val policy = ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain)
+        val policy = ClearanceAStarPolicy.DEFAULT
 
         val edgeStartPath = assertNotNull(
             policy.findPath(
@@ -174,7 +174,7 @@ class TerrainClearanceAndPrimitiveKernelTest {
         assertTrue(terrain.isCellConnected(46, 46, 51, 51))
 
         val counters = PathSearchCounters()
-        val policy = ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain)
+        val policy = ClearanceAStarPolicy.DEFAULT
         val exact = policy.findPath(
             terrain,
             start = Position(5.5 * 20.0, 5.5 * 20.0),
@@ -210,7 +210,7 @@ class TerrainClearanceAndPrimitiveKernelTest {
         val terrain = PlanningTerrain(w, h, 20, 20, blocked)
         val start = Position(2.5 * 20.0, 3.5 * 20.0)
         val target = Position(33.5 * 20.0, 4.5 * 20.0)
-        val policy = ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain)
+        val policy = ClearanceAStarPolicy.DEFAULT
 
         val directCounters = PathSearchCounters()
         val directPath = assertNotNull(policy.findPath(terrain, start, target, 6.0, counters = directCounters))
@@ -282,7 +282,7 @@ class TerrainClearanceAndPrimitiveKernelTest {
         val blocked = BooleanArray(w * h)
         for (y in 2..12) blocked[y * w + 10] = true
         val terrain = PlanningTerrain(w, h, 20, 20, blocked)
-        val policy = ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain)
+        val policy = ClearanceAStarPolicy.DEFAULT
 
         val route = assertNotNull(
             policy.findPath(

@@ -129,7 +129,7 @@ internal class MixedLandingBays(private val click: Position, private val horizon
     /** Allocate at most the last two unclaimed bays. A peer can protect a scarce bay before
      * reaching it. Only a vehicle which has reached the parking area can acquire its own claim. */
     fun choose(members: List<MutableUnit>, candidates: List<Position>, occupied: (MutableUnit, Position, Double) -> Boolean,
-               near: (Position) -> Boolean, terrain: (MutableUnit) -> PlanningTerrain, paths: PathPolicy,
+               near: (Position) -> Boolean, terrain: (MutableUnit) -> PlanningTerrain, paths: ClearanceAStarPolicy,
                budget: PathWorkBudget, advance: (ExactPathSearch, PathWorkBudget) -> Unit,
                obstacles: (MutableUnit) -> List<MutableUnit>): Decision {
         val pending = members.filter { it.landingMember?.let { state -> !state.parked && state.claimed == null } == true }
@@ -177,7 +177,7 @@ internal class MixedLandingBays(private val click: Position, private val horizon
     }
 
     private fun route(body: MutableUnit, site: Position, terrain: PlanningTerrain, obstacles: List<MutableUnit>,
-                      paths: PathPolicy, budget: PathWorkBudget, advance: (ExactPathSearch, PathWorkBudget) -> Unit): Witness {
+                      paths: ClearanceAStarPolicy, budget: PathWorkBudget, advance: (ExactPathSearch, PathWorkBudget) -> Unit): Witness {
         val key = Trial(body.unitId, site)
         val pose = Pose.geometry(body)
         val traffic = obstacles.map { Obstacle(it.unitId, Pose.geometry(it), it.definition.movementCollision) }

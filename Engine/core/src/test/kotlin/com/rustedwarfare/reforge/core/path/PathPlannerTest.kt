@@ -28,13 +28,11 @@ class PathPlannerTest {
 
     @Test fun standard_tile_clearance_matches_the_center_terrain_policy_at_all_map_edges() {
         val terrain = PlanningTerrain(5, 4, 13, 21, BooleanArray(20) { it == 7 || it == 10 })
-        val standard = CenterClearance(PlanningCenterTerrain)
-        val original = CenterClearance(PlanningTerrainPolicy { map, point, radius ->
-            PlanningCenterTerrain.intersects(map, point, radius)
-        })
         for (radius in listOf(0.0, 6.5, 6.500001, 10.5, 13.0, 30.0, -1.0, Double.NaN)) {
             for (row in 0 until terrain.heightTiles) for (column in 0 until terrain.widthTiles) {
-                assertEquals(original.allows(terrain, column, row, radius), standard.allows(terrain, column, row, radius),
+                val point = TileCenters.point(terrain, column, row)
+                val expected = radius.isFinite() && radius >= 0.0 && !PlanningCenterTerrain.intersects(terrain, point, radius)
+                assertEquals(expected, terrain.allowsCenter(column, row, radius),
                     "column $column, row $row, radius $radius")
             }
         }
@@ -44,48 +42,48 @@ class PathPlannerTest {
         val straight=listOf(Position(70.0,50.0))
         val upper=listOf(Position(30.0,30.0),Position(70.0,30.0),Position(70.0,50.0))
         // Both authorized histories are empty; true maps are intentionally never arguments to fromKnowledge.
-        assertEquals(straight,PathPlanner.findPath(knowledge(),start,target,1.0))
-        assertEquals(straight,PathPlanner.findPath(knowledge(),start,target,1.0))
-        val wronglySuppliedTruth=PathPlanner.findPath(PlanningTerrain.fromNoFog(map(2 to 2)),start,target,1.0)
+        assertEquals(straight,ClearanceAStarPolicy.findExactPath(knowledge(),start,target,1.0))
+        assertEquals(straight,ClearanceAStarPolicy.findExactPath(knowledge(),start,target,1.0))
+        val wronglySuppliedTruth=ClearanceAStarPolicy.findExactPath(PlanningTerrain.fromNoFog(map(2 to 2)),start,target,1.0)
         assertEquals(upper,wronglySuppliedTruth)
         assertNotEquals(straight,wronglySuppliedTruth) // Sensitive wrong-adapter control, not a security claim.
-        assertEquals(straight,PathPlanner.findPath(PlanningTerrain.fromNoFog(map()),start,target,1.0))
+        assertEquals(straight,ClearanceAStarPolicy.findExactPath(PlanningTerrain.fromNoFog(map()),start,target,1.0))
     }
     @Test fun ki04_unknown_goal_is_planned_but_known_blocked_goal_is_unreachable() {
-        assertEquals(listOf(Position(70.0,50.0)),PathPlanner.findPath(knowledge(),start,target,1.0))
-        assertNull(PathPlanner.findPath(knowledge(VisibleTerrainCell(3,2,true)),start,target,1.0))
-        assertNull(PathPlanner.findPath(PlanningTerrain.fromNoFog(map(3 to 2)),start,target,1.0))
+        assertEquals(listOf(Position(70.0,50.0)),ClearanceAStarPolicy.findExactPath(knowledge(),start,target,1.0))
+        assertNull(ClearanceAStarPolicy.findExactPath(knowledge(VisibleTerrainCell(3,2,true)),start,target,1.0))
+        assertNull(ClearanceAStarPolicy.findExactPath(PlanningTerrain.fromNoFog(map(3 to 2)),start,target,1.0))
     }
     @Test fun ki05_exact_target_tangency_uses_only_planning_obstacles() {
         val precise=Position(70.0,39.0)
         val literal=listOf(precise)
-        assertEquals(literal,PathPlanner.findPath(knowledge(),start,precise,1.0))
-        assertNotNull(PathPlanner.findPath(knowledge(VisibleTerrainCell(3,1,true)),start,target,1.0))
-        assertNotNull(PathPlanner.findPath(knowledge(VisibleTerrainCell(3,1,true)),start,Position(70.0,41.0),1.0))
-        assertNull(PathPlanner.findPath(knowledge(VisibleTerrainCell(3,1,true)),start,precise,1.0))
-        val wronglySuppliedTruth=PathPlanner.findPath(PlanningTerrain.fromNoFog(map(3 to 1)),start,precise,1.0)
+        assertEquals(literal,ClearanceAStarPolicy.findExactPath(knowledge(),start,precise,1.0))
+        assertNotNull(ClearanceAStarPolicy.findExactPath(knowledge(VisibleTerrainCell(3,1,true)),start,target,1.0))
+        assertNotNull(ClearanceAStarPolicy.findExactPath(knowledge(VisibleTerrainCell(3,1,true)),start,Position(70.0,41.0),1.0))
+        assertNull(ClearanceAStarPolicy.findExactPath(knowledge(VisibleTerrainCell(3,1,true)),start,precise,1.0))
+        val wronglySuppliedTruth=ClearanceAStarPolicy.findExactPath(PlanningTerrain.fromNoFog(map(3 to 1)),start,precise,1.0)
         assertNull(wronglySuppliedTruth);assertNotEquals(literal,wronglySuppliedTruth)
     }
     @Test fun ki06_candidate_tangency_uses_only_planning_obstacles() {
         val straight=listOf(Position(70.0,50.0))
-        assertEquals(straight,PathPlanner.findPath(knowledge(),start,target,10.0))
-        assertEquals(straight,PathPlanner.findPath(knowledge(VisibleTerrainCell(2,1,true)),start,target,10.0))
-        val wronglySuppliedTruth=PathPlanner.findPath(PlanningTerrain.fromNoFog(map(2 to 1)),start,target,10.0)
+        assertEquals(straight,ClearanceAStarPolicy.findExactPath(knowledge(),start,target,10.0))
+        assertEquals(straight,ClearanceAStarPolicy.findExactPath(knowledge(VisibleTerrainCell(2,1,true)),start,target,10.0))
+        val wronglySuppliedTruth=ClearanceAStarPolicy.findExactPath(PlanningTerrain.fromNoFog(map(2 to 1)),start,target,10.0)
         assertEquals(straight,wronglySuppliedTruth) // Radius overlap no longer changes center-cell routing.
     }
 
     @Test fun ki07_same_cell_exact_target_and_finite_outside_coordinates() {
-        assertEquals(listOf(Position(35.0,55.0)),PathPlanner.findPath(terrain(),start,Position(35.0,55.0),1.0))
-        assertEquals(listOf(Position(70.25,50.5)),PathPlanner.findPath(terrain(),start,Position(70.25,50.5),1.0))
+        assertEquals(listOf(Position(35.0,55.0)),ClearanceAStarPolicy.findExactPath(terrain(),start,Position(35.0,55.0),1.0))
+        assertEquals(listOf(Position(70.25,50.5)),ClearanceAStarPolicy.findExactPath(terrain(),start,Position(70.25,50.5),1.0))
         for(outside in listOf(Position(-1.0,50.0),Position(100.0,50.0),Position(50.0,-1.0),Position(50.0,100.0))) {
-            assertNull(PathPlanner.findPath(terrain(),outside,target,1.0))
-            assertNull(PathPlanner.findPath(terrain(),start,outside,1.0))
+            assertNull(ClearanceAStarPolicy.findExactPath(terrain(),outside,target,1.0))
+            assertNull(ClearanceAStarPolicy.findExactPath(terrain(),start,outside,1.0))
         }
     }
     @Test fun ki08_public_planner_rejects_nonfinite_and_negative_parameters_in_declared_order() {
         val terrain=terrain()
         fun rejected(code:String,s:Position,t:Position,r:Double) {
-            assertEquals(code,assertFailsWith<PlanningException> { PathPlanner.findPath(terrain,s,t,r) }.code)
+            assertEquals(code,assertFailsWith<PlanningException> { ClearanceAStarPolicy.findExactPath(terrain,s,t,r) }.code)
         }
         for(bad in listOf(Double.NaN,Double.POSITIVE_INFINITY,Double.NEGATIVE_INFINITY)) {
             rejected("invalid-coordinate",Position(bad,50.0),target,1.0)
@@ -97,9 +95,9 @@ class PathPlannerTest {
         rejected("invalid-radius",start,target,-1.0)
         rejected("invalid-coordinate",Position(Double.NaN,50.0),target,-1.0)
         rejected("invalid-radius",Position(-1.0,50.0),target,-1.0)
-        for(radius in listOf(0.0,-0.0)) assertEquals(listOf(Position(70.0,50.0)),PathPlanner.findPath(terrain,start,target,radius))
-        assertNull(PathPlanner.findPath(terrain(3 to 2),start,target,0.0))
-        assertEquals(listOf(Position(70.0,50.0)),PathPlanner.findPath(terrain,start,target,1.0))
+        for(radius in listOf(0.0,-0.0)) assertEquals(listOf(Position(70.0,50.0)),ClearanceAStarPolicy.findExactPath(terrain,start,target,radius))
+        assertNull(ClearanceAStarPolicy.findExactPath(terrain(3 to 2),start,target,0.0))
+        assertEquals(listOf(Position(70.0,50.0)),ClearanceAStarPolicy.findExactPath(terrain,start,target,1.0))
     }
 
     @Test fun ki09_truth_collision_pair_and_zero_radius_core_remain_unchanged() {
@@ -160,10 +158,10 @@ class PathPlannerTest {
 
     @Test fun ki02_known_center_uses_literal_upper_parent_chain() {
         assertEquals(listOf(Position(30.0,30.0),Position(70.0,30.0),Position(70.0,50.0)),
-            PathPlanner.findPath(terrain(2 to 2),start,target,1.0))
+            ClearanceAStarPolicy.findExactPath(terrain(2 to 2),start,target,1.0))
     }
 
     @Test fun ki01_empty_terrain_returns_literal_straight_path() {
-        assertEquals(listOf(Position(70.0,50.0)),PathPlanner.findPath(terrain(),start,target,1.0))
+        assertEquals(listOf(Position(70.0,50.0)),ClearanceAStarPolicy.findExactPath(terrain(),start,target,1.0))
     }
 }

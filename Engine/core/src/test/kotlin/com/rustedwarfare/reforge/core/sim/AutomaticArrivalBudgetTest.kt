@@ -28,11 +28,10 @@ class AutomaticArrivalBudgetTest {
             var stable = 0
             var previous = context.observe().units.single()
             for (step in 0L until 2500L) {
-                val localBefore = context.localMotionSnapshots(context.world)
                 val observation = context.advance(Step(step, 1.0, "sim-tick"))
                 val value = observation.units.single()
                 val searches = context.drainPathDiagnostics(context.world)
-                println("A1,$step,$value,${observation.events},$searches,pre=$localBefore,post=${context.localMotionSnapshots(context.world)}")
+                println("A1,$step,$value,${observation.events},$searches")
                 assertTrue(value.position.x in 11.0..589.0 && value.position.y in 11.0..389.0, "step=$step circle outside")
                 if (observation.events.any { it.kind == "movement-arrived" }) {
                     val distance = hypot(previous.position.x - goal.x, previous.position.y - goal.y)

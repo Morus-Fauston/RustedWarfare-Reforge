@@ -86,11 +86,11 @@ class PlanningTerrainTest {
         assertTrue(terrain.isBlocked(2,2))
         for((c,r) in listOf(-1 to 0,5 to 0,0 to -1,0 to 5)) assertEquals("out-of-bounds",assertFailsWith<PlanningException> { terrain.isBlocked(c,r) }.code)
         val literal=listOf(Position(30.0,30.0),Position(70.0,30.0),Position(70.0,50.0))
-        val path=assertNotNull(PathPlanner.findPath(terrain,Position(30.0,50.0),Position(70.0,50.0),1.0))
+        val path=assertNotNull(ClearanceAStarPolicy.findExactPath(terrain,Position(30.0,50.0),Position(70.0,50.0),1.0))
         assertEquals(literal,path)
         assertFailsWith<UnsupportedOperationException> { (path as MutableList<Position>).clear() }
         assertFailsWith<UnsupportedOperationException> { (path as MutableList<Position>)[0]=Position(0.0,0.0) }
-        assertEquals(literal,PathPlanner.findPath(terrain,Position(30.0,50.0),Position(70.0,50.0),1.0))
+        assertEquals(literal,ClearanceAStarPolicy.findExactPath(terrain,Position(30.0,50.0),Position(70.0,50.0),1.0))
     }
 
     @Test fun ki08_knowledge_adapter_projects_memory_and_forgetting_without_live_store_aliases() {
@@ -104,9 +104,9 @@ class PlanningTerrainTest {
             val current=PlanningTerrain.fromKnowledge(store.snapshot(world),20,20)
             store.close()
             assertTrue(old.isBlocked(2,2))
-            assertEquals(literalUpper,PathPlanner.findPath(old,Position(30.0,50.0),Position(70.0,50.0),1.0))
+            assertEquals(literalUpper,ClearanceAStarPolicy.findExactPath(old,Position(30.0,50.0),Position(70.0,50.0),1.0))
             assertEquals(if(retention==TerrainRetention.MEMORY) literalUpper else literalStraight,
-                PathPlanner.findPath(current,Position(30.0,50.0),Position(70.0,50.0),1.0))
+                ClearanceAStarPolicy.findExactPath(current,Position(30.0,50.0),Position(70.0,50.0),1.0))
         }
     }
 }

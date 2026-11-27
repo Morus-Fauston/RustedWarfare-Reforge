@@ -49,7 +49,7 @@ class RectangularManeuverTest {
         val fresh = members[0].action.copy(actionId = "fresh", unitId = "scout")
         withFreshMove.enqueue(fresh, null)
         val served = mutableListOf<String>()
-        withFreshMove.advance(ExperimentalPolicies().path, PathWorkBudget(8), { actions, _, reason ->
+        withFreshMove.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(8), { actions, _, reason ->
             served += actions.single().unitId
             MovePlanningInput(map, emptyList(), emptyList(), false, reason)
         }, { _, _, _, _, _ -> })
@@ -58,7 +58,7 @@ class RectangularManeuverTest {
             val budget = PathWorkBudget(24)
             val samples = mutableListOf<com.rustedwarfare.reforge.core.path.PlanningWorkSlice>()
             val releases = mutableListOf<String>()
-            q.advance(ExperimentalPolicies().path, budget, { actions, _, reason ->
+            q.advance(ClearanceAStarPolicy.DEFAULT, budget, { actions, _, reason ->
                 assertTrue(!budget.exhausted, "Live occupancy was sampled after exhausting the budget")
                 val m = members.single { it.action == actions.single() }
                 if (entered && m === members.first()) error("Materialized a live snapshot too large for the step")
@@ -374,17 +374,12 @@ class RectangularManeuverTest {
                     UnitSpawn("vehicle", "p1", vehicle.id, vehicleStart, 90.0)),
                 combatContract = CombatContract(831, -1,
                     mapOf("a" to 8L, "z" to 9L, "scout" to 10L, "sub" to 11L, "vehicle" to 12L), 13L))
-            val normal = ExperimentalPolicies().path
             var forceContinuation = false
-            val path = object : PathPolicy by normal {
-                override fun beginExact(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                                        hull: HullRoute?, occupancy: RouteOccupancy?, counters: PathSearchCounters?): ExactPathSearch {
-                    val actual = normal.beginExact(map, start, target, radius, hull, occupancy, counters)
-                    return if (forceContinuation && hull is RectangularDeparture) deferOneSlice(actual) else actual
-                }
-            }
+            val path = ClearanceAStarPolicy(exactSearchWrapper = { actual, hull ->
+                if (forceContinuation && hull is RectangularDeparture) deferOneSlice(actual) else actual
+            })
             val context = assertIs<InitResult.Accepted>(
-                SimulationContext(ExperimentalPolicies(path = path)).initialize(scenario)).context
+                SimulationContext(pathPolicy = path).initialize(scenario)).context
             try {
                 context.enableKnowledge(context.world, KnowledgeRules(TerrainRetention.MEMORY,
                     PathInformationSource.PLAYER_KNOWLEDGE, false))
@@ -473,7 +468,7 @@ class RectangularManeuverTest {
         val start = Position(240.0, 120.0)
         val target = Position(110.0, 120.0)
         val shape = RectangularDeparture(hull, 90.0, reverse = false, maneuver = true)
-        val policy = ExperimentalPolicies().path
+        val policy = ClearanceAStarPolicy.DEFAULT
         var work = policy.beginExact(terrain, start, target, 10.0, shape, counters = PathSearchCounters())
         val cache = PathClearanceCache()
         var slices = 0

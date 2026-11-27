@@ -21,6 +21,7 @@
       "com.rustedwarfare.reforge.core.knowledge.KnowledgeReplanningTest",
       "com.rustedwarfare.reforge.core.knowledge.PlayerTerrainKnowledgeTest",
       "com.rustedwarfare.reforge.core.knowledge.VisionIncrementalTest",
+      "com.rustedwarfare.reforge.core.path.AuthorizedNavigationTerrainTest",
       "com.rustedwarfare.reforge.core.path.CapturedKnowledgeReachabilityTest",
       "com.rustedwarfare.reforge.core.path.CenterPlanningBoundaryTest",
       "com.rustedwarfare.reforge.core.path.ClearanceBoundaryTest",

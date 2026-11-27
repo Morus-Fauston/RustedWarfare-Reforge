@@ -135,7 +135,7 @@ class MixedLandingTest {
             val other = MutableUnit("parked", "p1", def.id, def, site, 90.0)
             var blockers = emptyList<MutableUnit>()
             var ground = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map)
-            val paths = ExperimentalPolicies().path
+            val paths = ClearanceAStarPolicy.DEFAULT
             fun serve(survey: MixedLandingBays, sites: List<Position> = listOf(site)): MixedLandingBays.Decision {
                 car.heading += 0.1 // A circular body can keep steering between slices of the same swept route.
                 val slice = PathWorkBudget(1)

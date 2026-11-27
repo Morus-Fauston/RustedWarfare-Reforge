@@ -136,7 +136,7 @@ class GroupMoveExpansionTest {
             var published = false
             val samples = mutableListOf<com.rustedwarfare.reforge.core.path.PlanningWorkSlice>()
             for (step in 0..1000) {
-                planning.advance(ExperimentalPolicies().path, PathWorkBudget(128),
+                planning.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(128),
                     { _, _, _ -> if (snapshots++ == 0) initial else current },
                     { _, _, _, _, _ -> published = true }, samples)
                 if (snapshots > 1) break
@@ -180,7 +180,7 @@ class GroupMoveExpansionTest {
                                 emptyList(), emptyList(), emptyList())
                         }) { candidate ->
                             val budget = PathWorkBudget(128)
-                            candidate.state.movePlanning.advance(ExperimentalPolicies().path, budget, { _, _, _ -> input },
+                            candidate.state.movePlanning.advance(ClearanceAStarPolicy.DEFAULT, budget, { _, _, _ -> input },
                                 { _, _, _, _, plan -> published += assertNotNull(plan.slot).position })
                             assertTrue(budget.used <= 128)
                         }
@@ -212,14 +212,13 @@ class GroupMoveExpansionTest {
                 UnitSpawn("u$it", "p1", "tank", Position(80.0 + it * 80.0, 100.0), 180.0)
             })
             var injected = false
-            val steering = SteeringPolicy { body, aim, delta, coordinates ->
+            val faultHook: (MutableUnit) -> Unit = { body ->
                 if (inject && !injected && (body.landingMember?.flankSign ?: 0) != 0) {
                     injected = true
                     error("injected after shared claim")
                 }
-                AcceleratedSteering.turn(body, aim, delta, coordinates)
             }
-            val initialized = SimulationContext(ExperimentalPolicies(steering = steering)).initialize(scene)
+            val initialized = SimulationContext(steeringFaultHook = faultHook).initialize(scene)
             val context = assertIs<InitResult.Accepted>(initialized, initialized.toString()).context
             try {
                 context.enablePlanningWorkDiagnostics(context.world)

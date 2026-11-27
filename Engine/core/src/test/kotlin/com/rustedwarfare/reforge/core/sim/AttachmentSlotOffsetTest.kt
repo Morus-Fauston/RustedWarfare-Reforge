@@ -175,7 +175,7 @@ class AttachmentSlotOffsetTest {
 
             assertIs<ActionResult.Accepted>(match.move("west", "beta", Position(70.0, 160.0)))
             var touchedBody = false
-            repeat(550) {
+            repeat(860) {
                 val frame = match.tick()
                 val a = match.unit("alpha").position
                 val b = match.unit("beta").position

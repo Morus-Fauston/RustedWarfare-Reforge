@@ -24,17 +24,15 @@ class BuildingMaintenanceWorkTest {
         assertNull(work.requestTarget(ReclaimUnitAction("also", "p1", "helper", "factory", world),
             helper, scene, units))
         worker.taskQueue = worker.taskQueue.append(UnitTask(UnitTaskKind.PATROL, "tail", Position(450.0, 170.0)))
-        val policies = ExperimentalPolicies()
         val access = object : BuildingWorkAccess {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? =
-                policies.path.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
+                ClearanceAStarPolicy.DEFAULT.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
                     worker.position, target, worker.definition.radius, targetRange = range)?.let { BuildingRoute(it, -1L, -1L) }
             override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
                                    paidLedger: ProductionLedger): ConstructionRegistration =
                 error("Maintenance does not create an object")
         }
-        fun frame(step: Long) = BuildingWorkFrame(scene, units, Step(step, 1.0, "sim-tick"), null,
-            policies.coordinates, policies.steering, access)
+        fun frame(step: Long) = BuildingWorkFrame(scene, units, Step(step, 1.0, "sim-tick"), null, access)
         repeat(99) { step ->
             val change = work.advanceActivity(worker, frame(step.toLong()), ledger, null)
             ledger = change.ledger

@@ -43,7 +43,7 @@ internal class TerrainClearanceField private constructor(
 
     /**
      * Returns true iff cell `(col, row)` is passable and its center `(col + 0.5)*tileWidth, (row + 0.5)*tileHeight`
-     * lies within map bounds inset by [radius], matching [CenterClearance] / [PlanningCenterTerrain].
+     * lies within map bounds inset by [radius], matching [AuthorizedNavigationTerrain.allowsCenter].
      */
     fun allowsCenter(col: Int, row: Int, tileWidth: Int, tileHeight: Int, radius: Double): Boolean {
         if (!radius.isFinite() || radius < 0.0) return false

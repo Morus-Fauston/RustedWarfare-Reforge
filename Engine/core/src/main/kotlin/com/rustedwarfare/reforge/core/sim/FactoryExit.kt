@@ -136,98 +136,27 @@ internal object FactoryExit {
 
     fun departingSeaFactoryCells(map: MapDefinition, unit: MutableUnit, producer: MutableUnit?,
                                  next: Position, shape: MovementCollisionShape,
-                                 requireExitOrder: Boolean = true): Set<Pair<Int, Int>> {
-        if (producer?.alive != true || producer.definition.production?.exitProfile != FactoryExitProfile.NATIVE_SEA ||
-            (requireExitOrder && unit.originMoveId == null) || next == unit.position) return emptySet()
-        val building = checkNotNull(producer.definition.building)
-        val producerCells = BuildingTerrain.footprint(map, producer.position, building.footprint, building.anchor)
-        val north = producerCells.minOf { it.second }.toDouble() * map.tileHeight
-        val west = producerCells.minOf { it.first }.toDouble() * map.tileWidth
-        val east = (producerCells.maxOf { it.first } + 1.0) * map.tileWidth
-        val south = (producerCells.maxOf { it.second } + 1.0) * map.tileHeight
-        val start = unit.position
-        val leaving = when (shape) {
-            is MovementCollisionShape.Circle -> {
-                CircularTerrain.separatesFrom(start, next.x - start.x, next.y - start.y, shape.radius,
-                    west, east, north, south)
-            }
-            is MovementCollisionShape.Rectangle ->
-                (producer.definition.id in nativeSeaFactoryIds || unit.originMoveId == "production-exit:${unit.unitId}") &&
-                start.y >= producer.position.y && next.y > start.y &&
-                start.y - kotlin.math.hypot(shape.length / 2.0, shape.width / 2.0) < south &&
-                (requireExitOrder || UnitContact.separatesExistingOverlap(shape, start, unit.heading, next,
-                    MovementCollisionShape.Rectangle(south - north, east - west),
-                    Position((west + east) / 2.0, (north + south) / 2.0), 0.0))
-        }
-        return if (leaving) producerCells else emptySet()
-    }
+                                 requireExitOrder: Boolean = true): Set<Pair<Int, Int>> =
+        BuildingOverlapEscape.departingSeaFactoryCells(map, unit, producer, next, shape, requireExitOrder)
 
-    /**
-     * Releases any live building footprint that a circular hull ALREADY overlaps at [unit.position]
-     * (e.g., parent land/mech/experimental/sea factory after `birthRemaining` expires, or a newly placed
-     * building adjacent to its builder) along displacement directions that monotonically separate from
-     * that building's combined footprint rectangle (preventing internal 20x20 sub-tile seam snags).
-     */
     fun departingOverlappedBuildingCells(
         map: MapDefinition,
         buildingTerrain: BuildingTerrain,
+        spatialIndex: WorldSpatialIndex?,
         units: Map<String, MutableUnit>,
         unit: MutableUnit,
         next: Position,
         shape: MovementCollisionShape,
-    ): Set<Pair<Int, Int>> {
-        if (next == unit.position) return emptySet()
-        val seaCells = departingSeaFactoryCells(map, unit, unit.productionOrigin?.let { units[it.producerId] }, next, shape)
-        if (shape !is MovementCollisionShape.Circle || shape.radius <= 0.0) return seaCells
-        val start = unit.position
-        // O(1) zero-allocation local building-tile pre-check so non-overlapping 60Hz movers never scan units.values.
-        val c0 = kotlin.math.floor((start.x - shape.radius) / map.tileWidth).toInt().coerceAtLeast(0)
-        val c1 = kotlin.math.floor((start.x + shape.radius) / map.tileWidth).toInt().coerceAtMost(map.widthTiles - 1)
-        val r0 = kotlin.math.floor((start.y - shape.radius) / map.tileHeight).toInt().coerceAtLeast(0)
-        val r1 = kotlin.math.floor((start.y + shape.radius) / map.tileHeight).toInt().coerceAtMost(map.heightTiles - 1)
-        var touchesBuildingTile = false
-        for (r in r0..r1) {
-            val minY = r.toDouble() * map.tileHeight
-            val maxY = minY + map.tileHeight
-            for (c in c0..c1) {
-                if (!buildingTerrain.isBuildingCell(c, r)) continue
-                val minX = c.toDouble() * map.tileWidth
-                val maxX = minX + map.tileWidth
-                val ox = start.x - start.x.coerceIn(minX, maxX)
-                val oy = start.y - start.y.coerceIn(minY, maxY)
-                if (ox * ox + oy * oy < shape.radius * shape.radius) {
-                    touchesBuildingTile = true
-                    break
-                }
-            }
-            if (touchesBuildingTile) break
-        }
-        if (!touchesBuildingTile) return seaCells
-        val dx = next.x - start.x
-        val dy = next.y - start.y
-        var released: MutableSet<Pair<Int, Int>>? = if (seaCells.isEmpty()) null else seaCells.toMutableSet()
-        for (other in units.values) {
-            if (!other.alive) continue
-            val building = other.definition.building ?: continue
-            val footprintCells = BuildingTerrain.footprint(map, other.position, building.footprint, building.anchor)
-            if (footprintCells.isEmpty()) continue
-            val west = footprintCells.minOf { it.first }.toDouble() * map.tileWidth
-            val east = (footprintCells.maxOf { it.first } + 1.0) * map.tileWidth
-            val north = footprintCells.minOf { it.second }.toDouble() * map.tileHeight
-            val south = (footprintCells.maxOf { it.second } + 1.0) * map.tileHeight
-            val cx = start.x.coerceIn(west, east)
-            val cy = start.y.coerceIn(north, south)
-            val ox = start.x - cx
-            val oy = start.y - cy
-            val overlapsAtStart = (ox == 0.0 && oy == 0.0) || (ox * ox + oy * oy < shape.radius * shape.radius)
-            if (!overlapsAtStart) continue
-            if (CircularTerrain.separatesFrom(start, dx, dy, shape.radius, west, east, north, south)) {
-                val acc = released ?: HashSet<Pair<Int, Int>>().also { released = it }
-                acc.addAll(footprintCells)
-            }
-        }
-        return released ?: emptySet()
-    }
+    ): Set<Pair<Int, Int>> =
+        BuildingOverlapEscape.departingOverlappedBuildingCells(
+            map = map,
+            buildingTerrain = buildingTerrain,
+            spatialIndex = spatialIndex,
+            units = units,
+            unit = unit,
+            next = next,
+            shape = shape,
+        )
 
     fun birth(factory: MutableUnit, product: UnitDefinition, map: MapDefinition): FactoryBirth {
         if (factory.definition.production?.exitProfile == FactoryExitProfile.AUTHORED_MOBILE)

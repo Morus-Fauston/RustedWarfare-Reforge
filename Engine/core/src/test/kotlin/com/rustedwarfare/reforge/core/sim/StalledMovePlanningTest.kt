@@ -88,7 +88,7 @@ class StalledMovePlanningTest {
             UnitSpawn("m1", "p1", mover.id, Position(150.0, 500.0), 90.0),
             UnitSpawn("z-pusher", "p1", pusher.id, Position(150.0, 144.0), 0.0)))
         val context = assertIs<InitResult.Accepted>(
-            SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = 8)).initialize(scene),
+            SimulationContext(movePlanningBudgetPerStep = 8).initialize(scene),
         ).context
         try {
             context.enablePathDiagnostics(context.world)
@@ -195,7 +195,7 @@ class StalledMovePlanningTest {
         val map = MapDefinition(width, height, 20, 20, emptyList(), IntArray(width * height),
             BlockingGrid(width, height, BooleanArray(width * height)))
         val context = assertIs<InitResult.Accepted>(
-            SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = 24)).initialize(jam(source).copy(map = map)),
+            SimulationContext(movePlanningBudgetPerStep = 24).initialize(jam(source).copy(map = map)),
         ).context
         try {
             context.enablePathDiagnostics(context.world)

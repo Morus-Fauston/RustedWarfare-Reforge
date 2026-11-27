@@ -425,6 +425,8 @@ internal class WorldSpatialIndex private constructor(
         maxBufferRadius = DoubleArray(LAYER_COUNT),
     )
 
+    fun isEmpty(): Boolean = entries.isEmpty()
+
     fun fork(forkedUnits: Map<String, MutableUnit>): WorldSpatialIndex {
         val nextBuckets = Array(LAYER_COUNT) { layerIdx ->
             val src = buckets[layerIdx]

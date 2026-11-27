@@ -543,24 +543,16 @@ internal object TerminalLanding {
         to: Position,
         heading: Double,
         terrainR: Double,
-    ): Boolean {
-        if (!PlanningSegmentClearance.allows(terrain, from, to, terrainR)) return false
-        if (terrainShape == null) return true
-        val minTile = min(terrain.tileWidth, terrain.tileHeight).toDouble()
-        if (terrainR <= minTile * 0.5) return true
-        val dx = to.x - from.x
-        val dy = to.y - from.y
-        val dist = hypot(dx, dy)
-        if (dist <= minTile * 0.25) return true
-        val stepSize = max(4.0, minTile * 0.5)
-        val steps = max(1, ceil(dist / stepSize).toInt())
-        for (i in 1 until steps) {
-            val t = i.toDouble() / steps
-            val sample = Position(from.x + dx * t, from.y + dy * t)
-            if (!UnitContact.poseFits(terrainShape, sample, heading, hullGrid)) return false
-        }
-        return true
-    }
+    ): Boolean = PlanningSegmentClearance.allowsHull(
+        terrain = terrain,
+        hullGrid = hullGrid,
+        terrainHull = terrainShape,
+        from = from,
+        to = to,
+        heading = heading,
+        boundaryRadius = terrainR,
+        terrainRadius = terrainR,
+    )
 
     private fun updateRadialProgressTicks(
         member: LandingMember,
@@ -608,7 +600,7 @@ internal object TerminalLanding {
         if (probeDist > distToGoal + distDeltaCap) return null
         if (!MapBounds.contains(mapW, mapH, probe, boundR)) return null
         if (terrainShape != null) {
-            if (!PlanningSegmentClearance.allows(terrain, unit.position, probe, terrainR)) return null
+            if (!PlanningSegmentClearance.allowsClearance(terrain, unit.position, probe, terrainR)) return null
             if (!UnitContact.poseFits(terrainShape, probe, unit.heading, hullGrid)) return null
         }
         val queryR = hardR + 22.0

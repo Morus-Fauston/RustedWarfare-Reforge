@@ -15,7 +15,7 @@ internal interface BuildingWorkAccess {
                   paidLedger: ProductionLedger): ConstructionRegistration
 }
 internal data class BuildingWorkFrame(val input: Scenario, val units: Map<String, MutableUnit>, val step: Step,
-    val view: VisionSnapshot?, val coordinates: CoordinatePolicy, val steering: SteeringPolicy, val access: BuildingWorkAccess)
+    val view: VisionSnapshot?, val access: BuildingWorkAccess, val faultHook: ((MutableUnit) -> Unit)? = null)
 internal data class BuildingWorkChange(val work: BuildingWork, val ledger: ProductionLedger,
     val upgrades: OrdinaryUpgrades?, val created: MutableUnit? = null, val events: List<Event> = emptyList(),
     val reclaimedUnitId: String? = null)
@@ -211,7 +211,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA) 110.0 else 0.0
         if (nativeBay(worker)) {
             val range = 230.0 + bonus + if (wasWorking) 5.0 else 0.0
-            if (frame.coordinates.distanceSquared(worker.position, target.position) > range * range) {
+            if (ScreenPlane.distanceSquared(worker.position, target.position) > range * range) {
                 worker.taskQueue = worker.taskQueue.pop()
                 worker.constructionElapsed = 0f
                 worker.cancelRoute()
@@ -224,7 +224,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         }
         val profile = checkNotNull(worker.definition.builder)
         val range = profile.range.toDouble() + bonus + if (wasWorking) 5.0 else 0.0
-        if (frame.coordinates.distanceSquared(worker.position, target.position) > range * range) {
+        if (ScreenPlane.distanceSquared(worker.position, target.position) > range * range) {
             if (worker.tasks.firstOrNull()?.automaticRepair == true) {
                 worker.taskQueue = worker.taskQueue.pop()
                 worker.constructionElapsed = 0f
@@ -259,7 +259,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             return ScreenPlane.difference(desired, updated)
         }
         val name = profile.mainNanoTurret
-            ?: return frame.steering.turn(worker, target, frame.step.delta, frame.coordinates)
+            ?: return AcceleratedSteering.turn(worker, target, frame.step.delta, frame.faultHook)
         val definition = checkNotNull(worker.definition.combat?.namedWeapons).byName.getValue(name)
         val state = checkNotNull(worker.namedWeapons).getValue(name)
         state.idleHold = 70f
@@ -354,7 +354,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         }
         val order = checkNotNull(task.target)
         val range = checkNotNull(worker.definition.builder).range.toDouble()
-        if (frame.coordinates.distanceSquared(worker.position, order) > range * range) {
+        if (ScreenPlane.distanceSquared(worker.position, order) > range * range) {
             val events = route(worker, order, range, task, frame)
             if (worker.moveTarget != null && worker.singleNodePathCount > 3) {
                 worker.taskQueue = worker.taskQueue.pop()
@@ -400,7 +400,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             }
         val reused = if (blocked) live.firstOrNull { other ->
             !mobile && other.ownerPlayerId == worker.ownerPlayerId && other.typeId == definition.id &&
-                frame.coordinates.distanceSquared(position, other.position) <
+                ScreenPlane.distanceSquared(position, other.position) <
                     (definition.radius + other.definition.radius) * (definition.radius + other.definition.radius)
         } else null
         if (blocked && reused == null) return unavailable(worker, ledger, upgrades)

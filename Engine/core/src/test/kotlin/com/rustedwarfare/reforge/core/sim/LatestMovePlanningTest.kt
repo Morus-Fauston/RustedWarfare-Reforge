@@ -24,7 +24,7 @@ class LatestMovePlanningTest {
         val hull = RectangularDeparture(MovementCollisionShape.Rectangle(62.0, 20.0), 90.0, false, true)
         fun replay(retry: Boolean): List<Int> {
             val cache = PathClearanceCache()
-            val policy = ExperimentalPolicies().path
+            val policy = ClearanceAStarPolicy.DEFAULT
             val used = mutableListOf<Int>()
             for (target in listOf(Position(290.0, 101.0), Position(290.0, 121.0))) {
                 var active = policy.beginExact(terrain, origin, target, 0.0, hull)

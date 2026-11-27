@@ -21,10 +21,14 @@ internal data class MechState(val bodyAngle: Double, val motionAngle: Double, va
 internal object MechMotion {
     fun sourceHeading(heading: Double): Double = (heading - 90.0).let { if (it > 180.0) it - 360.0 else it }
 
-    fun turn(unit: MutableUnit, target: Position, delta: Double, steering: SteeringPolicy,
-             coordinates: CoordinatePolicy): Double {
+    fun turn(
+        unit: MutableUnit,
+        target: Position,
+        delta: Double,
+        faultHook: ((MutableUnit) -> Unit)? = null,
+    ): Double {
         val previous = checkNotNull(unit.mechState)
-        val turn = BodyMotion.turn(unit, target, delta, steering, coordinates, previous.reversing)
+        val turn = BodyMotion.turn(unit, target, delta, previous.reversing, faultHook = faultHook)
         val reverse = turn.reversing
         val hold = if (unit.combat == null && reverse != previous.reversing && previous.hold >= 0.0)
             maxOf(25.0, previous.hold) else previous.hold

@@ -2,26 +2,12 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
+import com.rustedwarfare.reforge.core.path.PlanningException
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.path.PathSearchCounters
 import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
+import java.util.Collections
 import java.util.PriorityQueue
-
-/** The candidate and waypoint policies are experimental and replaceable for later calibration. */
-internal interface PathPolicy {
-    fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                 counters: PathSearchCounters? = null, targetRange: Double = 0.0,
-                 hull: HullRoute? = null, occupancy: RouteOccupancy? = null): List<Position>?
-
-    fun beginExact(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                   hull: HullRoute? = null, occupancy: RouteOccupancy? = null,
-                   counters: PathSearchCounters? = null): ExactPathSearch
-
-    fun beginNearest(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                     hull: HullRoute? = null, occupancy: RouteOccupancy? = null,
-                     counters: PathSearchCounters? = null): ExactPathSearch
-}
-
 
 internal data class PathGridKey(val col: Int, val row: Int, val heading: Double = 0.0,
                                 val initialPose: Boolean = false, val cornerMode: Int = 0)
@@ -237,16 +223,22 @@ internal fun interface RouteOccupancy {
     fun nearestBoundary(index: Int, target: Position): Position? = null
 }
 
-internal class ClearanceAStarPolicy(
-    private val candidatePolicy: PathCandidatePolicy,
-    private val pointPolicy: PathPointPolicy,
-    private val terrain: PlanningTerrainPolicy,
-) : PathPolicy {
-    private val usesDefaultCenterClearance: Boolean =
-        candidatePolicy is CenterClearance && candidatePolicy.usesPlanningCenterTerrain && terrain === PlanningCenterTerrain
-    override fun findPath(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                          counters: PathSearchCounters?, targetRange: Double,
-                          hull: HullRoute?, occupancy: RouteOccupancy?): List<Position>? {
+class ClearanceAStarPolicy internal constructor(
+    private val candidateFilter: ((PlanningTerrain, Int, Int, Double) -> Boolean)? = null,
+    private val exactSearchWrapper: ((ExactPathSearch, HullRoute?) -> ExactPathSearch)? = null,
+) {
+    private val usesDefaultCenterClearance: Boolean = candidateFilter == null
+
+    internal fun findPath(
+        map: PlanningTerrain,
+        start: Position,
+        target: Position,
+        radius: Double,
+        counters: PathSearchCounters? = null,
+        targetRange: Double = 0.0,
+        hull: HullRoute? = null,
+        occupancy: RouteOccupancy? = null,
+    ): List<Position>? {
         require(targetRange.isFinite() && targetRange >= 0.0)
         if (targetRange > 0.0) {
             if (counters != null) counters.actualSearchCalls++
@@ -257,12 +249,28 @@ internal class ClearanceAStarPolicy(
         return search.path
     }
 
-    override fun beginExact(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                            hull: HullRoute?, occupancy: RouteOccupancy?, counters: PathSearchCounters?): ExactPathSearch =
-        ClearPathSearch(map, start, target, radius, hull, occupancy, counters)
+    internal fun beginExact(
+        map: PlanningTerrain,
+        start: Position,
+        target: Position,
+        radius: Double,
+        hull: HullRoute? = null,
+        occupancy: RouteOccupancy? = null,
+        counters: PathSearchCounters? = null,
+    ): ExactPathSearch {
+        val raw = ClearPathSearch(map, start, target, radius, hull, occupancy, counters)
+        return exactSearchWrapper?.invoke(raw, hull) ?: raw
+    }
 
-    override fun beginNearest(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                              hull: HullRoute?, occupancy: RouteOccupancy?, counters: PathSearchCounters?): ExactPathSearch =
+    internal fun beginNearest(
+        map: PlanningTerrain,
+        start: Position,
+        target: Position,
+        radius: Double,
+        hull: HullRoute? = null,
+        occupancy: RouteOccupancy? = null,
+        counters: PathSearchCounters? = null,
+    ): ExactPathSearch =
         ClearPathSearch(map, start, target, radius, hull, occupancy, counters, nearest = true)
 
     private data class Node(val key: PathGridKey, val g: Int, val f: Int)
@@ -287,7 +295,7 @@ internal class ClearanceAStarPolicy(
         private val checkEverySegment = hull != null || occupancy != null
         private val fastOrthogonalCircleStep = hull is HullRoute.Circle &&
             hull.radius <= 0.5 * minOf(map.tileWidth, map.tileHeight).toDouble() &&
-            occupancy == null && pointPolicy === TileCenters
+            occupancy == null
         private val usesPrimitiveFrontier = hull !is RectangularDeparture
         private val offsets = if (hull is RectangularDeparture) rectangleOffsets else orthogonal
         private var phase = SearchPhase.START
@@ -399,7 +407,7 @@ internal class ClearanceAStarPolicy(
                 !MapBounds.contains(width, height, target, if (nearest) 0.0 else radius)) return complete()
             val startCell = cellOf(map, start) ?: return complete()
             goal = cellOf(map, target) ?: return complete()
-            if (terrain.intersects(map, start, radius) || !nearest && terrain.intersects(map, target, radius)) return complete()
+            if (PlanningCenterTerrain.intersects(map, start, radius) || !nearest && PlanningCenterTerrain.intersects(map, target, radius)) return complete()
             hullGrid = if (hull != null || nearest) HullTerrainGrid.authorized(map) else null
             // Every orientation contains this disk, so an obstructed disk rules out the endpoint.
             if (!nearest && hull is RectangularDeparture && hull.maneuver &&
@@ -413,8 +421,8 @@ internal class ClearanceAStarPolicy(
             // A displaced pose and its tile center are different reachable
             // states. Merging them prevents a legal rejoin around a bank corner.
             startKey = PathGridKey(startCell.first, startCell.second, heading,
-                initialPose = start != pointPolicy.point(map, startCell.first, startCell.second))
-            if (nearest && start != pointPolicy.point(map, startCell.first, startCell.second)) useDepartureLattice = true
+                initialPose = start != TileCenters.point(map, startCell.first, startCell.second))
+            if (nearest && start != TileCenters.point(map, startCell.first, startCell.second)) useDepartureLattice = true
             if (!nearest && usesDefaultCenterClearance && hull !is RectangularDeparture && !useDepartureLattice) {
                 val (goalCol, goalRow) = checkNotNull(goal)
                 if (!map.isCellConnected(startCell.first, startCell.second, goalCol, goalRow) &&
@@ -449,7 +457,7 @@ internal class ClearanceAStarPolicy(
             while (cellsChecked < limit) {
                 val index = cellsChecked++
                 if (counters != null) counters.candidatesChecked++
-                cells[index] = candidatePolicy.allows(map, index % map.widthTiles, index / map.widthTiles, radius)
+                cells[index] = checkNotNull(candidateFilter).invoke(map, index % map.widthTiles, index / map.widthTiles, radius)
             }
             if (cellsChecked == cells.size) {
                 cache?.put(map, radius, cells)
@@ -512,11 +520,11 @@ internal class ClearanceAStarPolicy(
                 (hull is HullRoute.Circle && occupancy != null && localExpanded <= 4)
             if (!canDepartBetweenCenters || useDepartureLattice) return false
             val key = checkNotNull(startKey)
-            return start != pointPolicy.point(map, key.col, key.row)
+            return start != TileCenters.point(map, key.col, key.row)
         }
 
         private fun routePoint(col: Int, row: Int): Position {
-            if (!useDepartureLattice) return pointPolicy.point(map, col, row)
+            if (!useDepartureLattice) return TileCenters.point(map, col, row)
             val origin = checkNotNull(startKey)
             return Position(start.x + (col - origin.col).toDouble() * map.tileWidth,
                 start.y + (row - origin.row).toDouble() * map.tileHeight)
@@ -524,7 +532,7 @@ internal class ClearanceAStarPolicy(
 
         private fun routePoint(key: PathGridKey): Position {
             if (key.cornerMode == 0) return routePoint(key.col, key.row)
-            val base = pointPolicy.point(map, key.col, key.row)
+            val base = TileCenters.point(map, key.col, key.row)
             val rect = hull as? RectangularDeparture ?: return base
             val minTile = minOf(map.tileWidth, map.tileHeight).toDouble()
             val halfDiag = kotlin.math.hypot(rect.shape.length * 0.5, rect.shape.width * 0.5)
@@ -1052,7 +1060,7 @@ internal class ClearanceAStarPolicy(
             is HullRoute.Circle -> maxOf(radius, hull.boundaryRadius)
             else -> radius
         }
-        if (!MapBounds.contains(width, height, start, boundR) || terrain.intersects(map, start, boundR)) return null
+        if (!MapBounds.contains(width, height, start, boundR) || PlanningCenterTerrain.intersects(map, start, boundR)) return null
         val startKey = cellOf(map, start) ?: return null
         val hullGrid = if (terrainR > 0.0) HullTerrainGrid.authorized(map) else null
         val circle = if (terrainR > 0.0) CircularTerrain(terrainR, boundR) else null
@@ -1091,7 +1099,7 @@ internal class ClearanceAStarPolicy(
         }
 
         fun poseClear(pos: Position): Boolean {
-            if (!MapBounds.contains(width, height, pos, boundR) || terrain.intersects(map, pos, boundR)) return false
+            if (!MapBounds.contains(width, height, pos, boundR) || PlanningCenterTerrain.intersects(map, pos, boundR)) return false
             if (hullGrid != null && circleShape != null) {
                 if (!UnitContact.poseFits(circleShape, pos, 0.0, hullGrid)) return false
             }
@@ -1113,7 +1121,7 @@ internal class ClearanceAStarPolicy(
                 if (row + 1 < h && map.isBlocked(col, row + 1)) bottom = minOf(bottom, (row + 1.0) * th - terrainR)
             }
             if (left > right || top > bottom) return null
-            val center = pointPolicy.point(map, col, row)
+            val center = TileCenters.point(map, col, row)
             val point = Position(center.x.coerceIn(left, right), center.y.coerceIn(top, bottom))
             return point.takeIf(::poseClear)
         }
@@ -1134,7 +1142,7 @@ internal class ClearanceAStarPolicy(
             var goal = Position(target.x.coerceIn(left, right), target.y.coerceIn(top, bottom))
             if (ScreenPlane.distanceSquared(goal, target) >= rangeSq) return null
             if (!poseClear(goal) && circle != null && hullGrid != null) {
-                val center = Position(pointPolicy.point(map, col, row).x.coerceIn(left, right), pointPolicy.point(map, col, row).y.coerceIn(top, bottom))
+                val center = Position(TileCenters.point(map, col, row).x.coerceIn(left, right), TileCenters.point(map, col, row).y.coerceIn(top, bottom))
                 if (!poseClear(center)) return null
                 val swept = circle.resolve(hullGrid, center, goal)
                 goal = if (poseClear(swept)) swept else return null
@@ -1233,16 +1241,17 @@ internal class ClearanceAStarPolicy(
     private fun heuristic(col: Int, row: Int, goalCol: Int, goalRow: Int): Int =
         kotlin.math.abs(col - goalCol) + kotlin.math.abs(row - goalRow)
 
-    private companion object {
-        const val CLEARANCE_CELLS_PER_WORK = 32
-        val orthogonal = listOf(0 to -1, -1 to 0, 1 to 0, 0 to 1)
-        val rectangleOffsets = orthogonal + listOf(-1 to -1, 1 to -1, -1 to 1, 1 to 1)
-        val nodeOrder = compareBy<Node> { it.f }.thenBy { it.key.row }.thenBy { it.key.col }
+    companion object {
+        internal val DEFAULT = ClearanceAStarPolicy()
+        private const val CLEARANCE_CELLS_PER_WORK = 32
+        private val orthogonal = listOf(0 to -1, -1 to 0, 1 to 0, 0 to 1)
+        private val rectangleOffsets = orthogonal + listOf(-1 to -1, 1 to -1, -1 to 1, 1 to 1)
+        private val nodeOrder = compareBy<Node> { it.f }.thenBy { it.key.row }.thenBy { it.key.col }
             .thenBy { it.g }.thenBy { it.key.heading }.thenBy { it.key.cornerMode }.thenBy { it.key.initialPose }
 
         private val rangeFrontierPool = ThreadLocal<PrimitiveGridFrontier?>()
 
-        fun acquireRangeFrontier(w: Int, h: Int): PrimitiveGridFrontier {
+        internal fun acquireRangeFrontier(w: Int, h: Int): PrimitiveGridFrontier {
             val cached = rangeFrontierPool.get()
             if (cached != null && cached.width == w && cached.height == h) {
                 cached.resetForNextSearch()
@@ -1251,6 +1260,18 @@ internal class ClearanceAStarPolicy(
             return PrimitiveGridFrontier(w, h, initialPoseIndex = w * h).also {
                 rangeFrontierPool.set(it)
             }
+        }
+
+        /** Validated exact-target clearance path query over [PlanningTerrain]. */
+        fun findExactPath(terrain: PlanningTerrain, start: Position, target: Position, radius: Double): List<Position>? {
+            if (!start.x.isFinite() || !start.y.isFinite() || !target.x.isFinite() || !target.y.isFinite()) {
+                throw PlanningException("invalid-coordinate", "Planning coordinates must be finite")
+            }
+            if (!radius.isFinite() || radius < 0.0) {
+                throw PlanningException("invalid-radius", "Planning radius must be finite and nonnegative")
+            }
+            val points = DEFAULT.findPath(terrain, start, target, radius) ?: return null
+            return Collections.unmodifiableList(ArrayList(points))
         }
     }
 }
@@ -1317,49 +1338,21 @@ internal data class RectangularDeparture(
     }
 }
 
-internal fun interface PathCandidatePolicy {
-    fun allows(map: PlanningTerrain, col: Int, row: Int, radius: Double): Boolean
-}
-
-internal class CenterClearance(private val terrain: PlanningTerrainPolicy) : PathCandidatePolicy {
-    internal val usesPlanningCenterTerrain: Boolean get() = terrain === PlanningCenterTerrain
-
-    override fun allows(map: PlanningTerrain, col: Int, row: Int, radius: Double): Boolean {
-        if (map.isBlocked(col, row)) return false
-        if (terrain !== PlanningCenterTerrain) return !terrain.intersects(map, TileCenters.point(map, col, row), radius)
-        return map.allowsCenter(col, row, radius)
-    }
-}
-
-internal fun interface PathPointPolicy {
-    fun point(map: PlanningTerrain, col: Int, row: Int): Position
-}
-
-internal object TileCenters : PathPointPolicy {
-    override fun point(map: PlanningTerrain, col: Int, row: Int): Position =
+internal object TileCenters {
+    fun point(map: PlanningTerrain, col: Int, row: Int): Position =
         Position((col + 0.5) * map.tileWidth, (row + 0.5) * map.tileHeight)
 }
 
-internal fun interface PlanningTerrainPolicy {
-    fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean
-}
-
-internal object PlanningCenterTerrain : PlanningTerrainPolicy {
-    override fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean =
+internal object PlanningCenterTerrain {
+    fun intersects(map: PlanningTerrain, position: Position, radius: Double): Boolean =
         !MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
             map.heightTiles.toDouble() * map.tileHeight, position, radius) ||
         map.isBlocked(MapBounds.cell(position.x, map.tileWidth, map.widthTiles),
             MapBounds.cell(position.y, map.tileHeight, map.heightTiles))
 }
 
-internal fun interface TerrainPolicy {
-    fun intersects(map: MapDefinition, position: Position, radius: Double,
-                   movementType: com.rustedwarfare.reforge.core.content.MovementType): Boolean
-}
-
-internal object CenterTerrain : TerrainPolicy {
-    override fun intersects(map: MapDefinition, position: Position, radius: Double,
-                            movementType: com.rustedwarfare.reforge.core.content.MovementType): Boolean =
+internal object CenterTerrain {
+    fun intersects(map: MapDefinition, position: Position, movementType: com.rustedwarfare.reforge.core.content.MovementType): Boolean =
         map.blockingFor(movementType)
             .isBlocked(MapBounds.cell(position.x, map.tileWidth, map.widthTiles),
             MapBounds.cell(position.y, map.tileHeight, map.heightTiles))

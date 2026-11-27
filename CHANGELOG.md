@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.82 (2026-11-27 15:06)
+
+### 修复
+
+- **迷雾视野空变更伪失效与宽体单位贴边新障重规划**：针对迷雾对局中视野无已知变化时仍每步递增修订号以及已探索区域单纯可见标记切换触发规划地形重建的问题，将 `PlayerTerrainKnowledge` 修订递增收束至真实状态变更并独立维护仅随阻挡或地表图块变化的 `terrainRevision`；同时将网格射线裁剪与扫掠圆盘距离统一收敛至 `PlanningSegmentClearance` 并接入 `KnowledgePathImpact`，修复宽体单位沿障碍边缘行进揭开迷雾新障碍时因中心线未入格而漏触发重规划的问题。
+- **多格建筑重叠脱离防子格接缝卡滞与全图数组克隆消除**：针对悬浮或圆形建造单位在多格建筑边缘重叠起步切向滑离时偶发卡在内部子格圆角接缝，以及母厂重叠单位每步重复克隆全图阻挡数组的问题，将原分散在五处的重叠母厂与新建建筑安全脱离判定统一收拢至 `BuildingOverlapEscape`（结合空间索引查询与单调不减切向轴滑移结算，严守硬地形与其他建筑不可穿透），并在 `PlanningTerrain` 引入有界增量建筑掩码缓存。
+
+### 架构改进
+
+- **只读授权导航地形深模块、真折线前视引导与浅层死代码清退**：提炼按玩家与通行介质隔离的只读 `AuthorizedNavigationTerrain` 契约，统一暴露切比雪夫净空环、多档连通分量、静态门洞/宽道让空掩码及带半径线段净空查询；端到端接通 `WaypointRouteAdapter` 与 `ChunkedFlowFieldAdapter` 共享同一 `NavigationGuidance` 窄契约，以连续视线前视与精确剩余折线距离取代旧 20 像素面包屑分段；移除 `ReferencePropulsion` 非终点 `< 9.0` 隐式归零暗门及编排器全部伪造距离修正，并物理删除 `PathPlanner`、`CenterLineCells`、`ExactCenterLineCells`、`LocalMotionSegment`、`LocalMotionMaintenance` 与 9 个单实现 `ExperimentalPolicies` 假接口。
+
+### 技术
+
+- **授权地形契约单测、全套公共 PR 层与独立整审**：新增 `AuthorizedNavigationTerrainTest`（覆盖迷雾静止与记忆走廊 100% 规划地形缓存命中、黑雾零真值泄露、宽车贴边新障重规划及编排器零伪造距离静态守卫）并将关联旧白盒单测升级为外部行为契约单测；全量 `:core:test`、`:android:compileDebugAndroidTestKotlin`、`dev-ab` 10 场景、`public_batch.py --kind pr`（全部 7 套公共机制与公开短测）及双根工作区布局检查全绿，经全新上下文独立非作者代码整审 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.81 (2026-11-27 06:02)
 
 ### 新增

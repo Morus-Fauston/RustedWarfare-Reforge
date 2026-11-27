@@ -10,20 +10,24 @@ import com.rustedwarfare.reforge.core.knowledge.CellKnowledge
 
 class PlanningException(val code: String, message: String) : IllegalArgumentException(message)
 
-/** A self-contained planning value, not an authorization interface or a live truth query. */
+/** A self-contained planning value implementing [AuthorizedNavigationTerrain], retaining no truth reference. */
 class PlanningTerrain private constructor(
-    val widthTiles: Int,
-    val heightTiles: Int,
-    val tileWidth: Int,
-    val tileHeight: Int,
+    override val widthTiles: Int,
+    override val heightTiles: Int,
+    override val tileWidth: Int,
+    override val tileHeight: Int,
     private val cells: BooleanArray,
     private val blockedIndex: BlockedCellIndex,
     private val subdivision: Int,
     private val prebuiltClearance: TerrainClearanceField? = null,
-) {
+) : AuthorizedNavigationTerrain {
     private val clearanceLock = Any()
     @Volatile
     private var lazyClearance: TerrainClearanceField? = prebuiltClearance
+    @Volatile
+    private var lazyGateThroatMask: BooleanArray? = null
+    private var lazyWideYieldByRings: HashMap<Int, BooleanArray>? = null
+    private var lazyBuildingExclusions: LinkedHashMap<Set<Pair<Int, Int>>, PlanningTerrain>? = null
 
     private constructor(
         width: Int,
@@ -61,7 +65,7 @@ class PlanningTerrain private constructor(
     }
 
     /** O(1) Chebyshev obstacle clearance rings for cell `(column, row)`. */
-    internal fun clearanceRings(column: Int, row: Int): Int {
+    override fun clearanceRings(column: Int, row: Int): Int {
         if (column !in 0 until widthTiles || row !in 0 until heightTiles)
             throw PlanningException("out-of-bounds", "Planning cell is outside the terrain")
         val field = clearanceField()
@@ -70,10 +74,9 @@ class PlanningTerrain private constructor(
     }
 
     /**
-     * O(1) center-clearance check matching [CenterClearance] / [PlanningCenterTerrain] semantics
-     * without scanning the full map.
+     * O(1) center-clearance check matching center-terrain semantics without scanning the full map.
      */
-    internal fun allowsCenter(column: Int, row: Int, radius: Double): Boolean {
+    override fun allowsCenter(column: Int, row: Int, radius: Double): Boolean {
         if (!radius.isFinite() || radius < 0.0) return false
         if (column !in 0 until widthTiles || row !in 0 until heightTiles) return false
         val blocked = cells[(row / subdivision) * (widthTiles / subdivision) + column / subdivision]
@@ -83,6 +86,11 @@ class PlanningTerrain private constructor(
         val mapW = widthTiles.toDouble() * tileWidth
         val mapH = heightTiles.toDouble() * tileHeight
         return cx >= radius && cy >= radius && cx <= mapW - radius && cy <= mapH - radius
+    }
+
+    override fun allowsDiskClearance(column: Int, row: Int, radius: Double): Boolean {
+        if (!allowsCenter(column, row, radius)) return false
+        return clearanceRings(column, row) >= clearanceBandFor(radius)
     }
 
     /**
@@ -95,19 +103,73 @@ class PlanningTerrain private constructor(
         startRow: Int,
         goalCol: Int,
         goalRow: Int,
+    ): Boolean = isConnected(startCol, startRow, goalCol, goalRow, 1)
+
+    override fun isConnected(
+        startCol: Int,
+        startRow: Int,
+        goalCol: Int,
+        goalRow: Int,
+        minRings: Int,
     ): Boolean {
         if (startCol !in 0 until widthTiles || startRow !in 0 until heightTiles ||
-            goalCol !in 0 until widthTiles || goalRow !in 0 until heightTiles) return false
+            goalCol !in 0 until widthTiles || goalRow !in 0 until heightTiles
+        ) return false
         val field = clearanceField()
-        val sc = field.componentId(startCol / subdivision, startRow / subdivision)
-        return sc != 0 && sc == field.componentId(goalCol / subdivision, goalRow / subdivision)
+        return field.isConnected(
+            startCol / subdivision,
+            startRow / subdivision,
+            goalCol / subdivision,
+            goalRow / subdivision,
+            minRings,
+        )
     }
 
-    /** O(1) 4-connected component ID for cell `(column, row)` (0 if blocked). */
-    internal fun componentId(column: Int, row: Int): Int {
+    /** O(1) 4-connected component ID for cell `(column, row)` under [minRings] (`0` if below threshold). */
+    override fun componentId(column: Int, row: Int, minRings: Int): Int {
         if (column !in 0 until widthTiles || row !in 0 until heightTiles) return 0
-        return clearanceField().componentId(column / subdivision, row / subdivision)
+        return clearanceField().componentId(column / subdivision, row / subdivision, minRings)
     }
+
+    internal fun gateThroatMask(): BooleanArray {
+        check(subdivision == 1) { "Gate-throat mask belongs to base terrain resolution" }
+        lazyGateThroatMask?.let { return it }
+        synchronized(clearanceLock) {
+            lazyGateThroatMask?.let { return it }
+            gateMaskComputeCount++
+            return NavigationTopologyMasks.computeGateThroatMask(this).also { lazyGateThroatMask = it }
+        }
+    }
+
+    internal fun wideYieldMask(wideCorridorRings: Int, enabled: Boolean): BooleanArray {
+        if (!enabled) return NavigationTopologyMasks.EMPTY_BOOLEAN_ARRAY
+        check(subdivision == 1) { "Wide-yield mask belongs to base terrain resolution" }
+        val throat = gateThroatMask()
+        synchronized(clearanceLock) {
+            val map = lazyWideYieldByRings ?: HashMap<Int, BooleanArray>(2).also { lazyWideYieldByRings = it }
+            return map.getOrPut(wideCorridorRings) {
+                NavigationTopologyMasks.computeWideYieldMask(this, wideCorridorRings, throat)
+            }
+        }
+    }
+
+    override fun isGateThroat(column: Int, row: Int): Boolean {
+        if (column !in 0 until widthTiles || row !in 0 until heightTiles) return false
+        if (subdivision == 1) return gateThroatMask()[row * widthTiles + column]
+        val baseW = widthTiles / subdivision
+        val baseTerrain = PlanningTerrain(baseW, heightTiles / subdivision, tileWidth * subdivision, tileHeight * subdivision, cells, blockedIndex, 1, lazyClearance)
+        return baseTerrain.isGateThroat(column / subdivision, row / subdivision)
+    }
+
+    override fun singleTilePinholeAxis(column: Int, row: Int): Int =
+        NavigationTopologyMasks.singleTilePinholeAxis(this, column, row)
+
+    override fun allowsSegment(
+        start: com.rustedwarfare.reforge.core.sim.Position,
+        end: com.rustedwarfare.reforge.core.sim.Position,
+        clearanceRadius: Double,
+        boundaryRadius: Double,
+    ): Boolean = PlanningSegmentClearance.allows(this, start, end, boundaryRadius, clearanceRadius)
 
     /** A finer graph over the same immutable authorized terrain. No second mask or index is built. */
     internal fun subdivided(factor: Int): PlanningTerrain {
@@ -131,7 +193,8 @@ class PlanningTerrain private constructor(
             false
         }
     }
-    fun isBlocked(column: Int, row: Int): Boolean {
+
+    override fun isBlocked(column: Int, row: Int): Boolean {
         if(column !in 0 until widthTiles || row !in 0 until heightTiles) throw PlanningException("out-of-bounds", "Planning cell is outside the terrain")
         return cells[(row / subdivision) * (widthTiles / subdivision) + column / subdivision]
     }
@@ -160,8 +223,27 @@ class PlanningTerrain private constructor(
         return PlanningTerrain(widthTiles, heightTiles, tileWidth, tileHeight, combined, Unit, updatedClearance)
     }
 
+    /**
+     * Cached view of `this.withBuildings(ownerBuildings - overlappedCells)` attached to this base
+     * ground terrain, preventing repeated 122,500-cell clones when units overlap a factory footprint.
+     */
+    internal fun withBuildingsCached(effectiveBuildings: Set<Pair<Int, Int>>): PlanningTerrain {
+        if (effectiveBuildings.isEmpty()) return this
+        synchronized(clearanceLock) {
+            val cache = lazyBuildingExclusions ?: object : LinkedHashMap<Set<Pair<Int, Int>>, PlanningTerrain>(8, 0.75f, true) {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Set<Pair<Int, Int>>, PlanningTerrain>?): Boolean = size > 8
+            }.also { lazyBuildingExclusions = it }
+            cache[effectiveBuildings]?.let { return it }
+            val keyCopy = HashSet(effectiveBuildings)
+            val built = withBuildings(keyCopy)
+            cache[keyCopy] = built
+            return built
+        }
+    }
+
     internal fun withUpdatedKnowledge(previous: KnowledgeSnapshot, current: KnowledgeSnapshot,
                                       movementType: MovementType, tileSets: List<TileSetDefinition>): PlanningTerrain {
+        if (current.terrainRevision == previous.terrainRevision) return this
         var updated: BooleanArray? = null
         var changed = IntArray(16)
         var changedCount = 0
@@ -182,6 +264,7 @@ class PlanningTerrain private constructor(
     }
 
     companion object {
+        internal var gateMaskComputeCount: Long = 0L
         private fun validateShape(width: Int, height: Int, tileWidth: Int, tileHeight: Int) {
             if(width<=0 || height<=0 || width.toLong()*height>Int.MAX_VALUE) throw PlanningException("invalid-dimensions", "Positive dimensions with product within Int are required")
             if(tileWidth<=0 || tileHeight<=0) throw PlanningException("invalid-geometry", "Planning tile dimensions must be positive")

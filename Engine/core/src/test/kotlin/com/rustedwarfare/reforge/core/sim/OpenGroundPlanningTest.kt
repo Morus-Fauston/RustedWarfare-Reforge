@@ -46,7 +46,7 @@ class OpenGroundPlanningTest {
             var published = 0
             val samples = mutableListOf<PlanningWorkSlice>()
             for (tick in 0..40) {
-                planning.advance(ExperimentalPolicies().path, PathWorkBudget(16),
+                planning.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(16),
                     { _, _, _ -> current },
                     { _, _, _, _, result -> assertNotNull(result.slot); published++ }, samples)
                 if (samples.any { it.restarted } || published != 0) break
@@ -76,7 +76,7 @@ class OpenGroundPlanningTest {
         val byId = input.members.associateBy { it.action.unitId }
         var published = 0
         for (tick in 0..4000) {
-            planning.advance(ExperimentalPolicies().path, PathWorkBudget(128), { actions, _, _ ->
+            planning.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(128), { actions, _, _ ->
                 val m = byId.getValue(actions.single().unitId)
                 input.copy(members = listOf(m), occupants = emptyList(), segmentPeers = counted)
             }, { _, _, _, _, result -> assertNotNull(result.slot); published++ })

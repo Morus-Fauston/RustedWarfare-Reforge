@@ -12,10 +12,10 @@ internal data class ConstructionRegistration(val unit: MutableUnit, val ledger: 
 
 /** Creates and inserts units in the current candidate; world publication remains at the caller's commit. */
 internal object UnitRegistration {
-    fun initial(state: StepState, input: Scenario, spawn: UnitSpawn, coordinates: CoordinatePolicy): MutableUnit {
+    fun initial(state: StepState, input: Scenario, spawn: UnitSpawn): MutableUnit {
         val definition = input.unitDefinitions.getValue(spawn.typeId)
         val chassis = definition.attachmentLayout != null
-        return register(state, input, spawn.copy(heading = if (chassis) 90.0 else coordinates.normalize(spawn.heading),
+        return register(state, input, spawn.copy(heading = if (chassis) 90.0 else ScreenPlane.normalize(spawn.heading),
             height = if (chassis) UnitAttachments.OPENING_HEIGHT else definition.movement.flight?.startingHeightOffset ?: spawn.height),
             input.combatContract?.unitObjectIds?.getValue(spawn.unitId))
     }
@@ -112,12 +112,12 @@ internal object UnitRegistration {
     }
 
     fun sandbox(state: StepState, input: Scenario, command: SandboxCommand.Spawn,
-                id: String, coordinates: CoordinatePolicy): MutableUnit {
+                id: String): MutableUnit {
         val definition = input.unitDefinitions.getValue(command.typeId)
         check(id !in state.units) { "Sandbox identity must be new" }
         val identity = nextIdentity(state)
         val unit = create(input, UnitSpawn(id, command.ownerPlayerId, command.typeId, command.position,
-            coordinates.normalize(command.heading), definition.movement.flight?.startingHeightOffset
+            ScreenPlane.normalize(command.heading), definition.movement.flight?.startingHeightOffset
                 ?: definition.fixedUnderwaterTarget?.height ?: 0.0), identity.objectId, identity.updateKey)
         if (command.state == SandboxInitialState.DAMAGED) unit.health = checkNotNull(definition.maximumHealth) / 2.0
         registerUnit(state, input, unit, identity)

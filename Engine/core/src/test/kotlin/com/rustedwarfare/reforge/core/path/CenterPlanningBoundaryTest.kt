@@ -1,11 +1,12 @@
 package com.rustedwarfare.reforge.core.path
 
+import com.rustedwarfare.reforge.core.sim.ClearanceAStarPolicy
 import com.rustedwarfare.reforge.core.sim.Position
 import kotlin.test.*
 
 class CenterPlanningBoundaryTest {
     private val terrain = PlanningTerrain(30, 20, 20, 20, BooleanArray(600) { it == 6 * 30 + 14 })
-    private fun path(a: Position, b: Position) = PathPlanner.findPath(terrain, a, b, 11.0)
+    private fun path(a: Position, b: Position) = ClearanceAStarPolicy.findExactPath(terrain, a, b, 11.0)
 
     @Test fun half_open_edges_are_direction_independent_and_allow_zero_length_open_targets() {
         for ((a, b) in listOf(

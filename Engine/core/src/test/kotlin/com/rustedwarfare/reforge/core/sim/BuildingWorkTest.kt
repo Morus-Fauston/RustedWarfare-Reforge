@@ -27,11 +27,10 @@ class BuildingWorkTest {
         val scene = scene()
         val worker = worker(scene)
         val units = linkedMapOf(worker.unitId to worker)
-        val policies = ExperimentalPolicies()
         val registration = StepState(units = units, nextObjectId = 11L)
         val access = object : BuildingWorkAccess {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? =
-                policies.path.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
+                ClearanceAStarPolicy.DEFAULT.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
                     worker.position, target, worker.definition.radius, targetRange = range)?.let { BuildingRoute(it, -1L, -1L) }
             override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
                                    paidLedger: ProductionLedger): ConstructionRegistration =
@@ -50,8 +49,7 @@ class BuildingWorkTest {
             val wasWorking = worker.constructionWorking
             worker.constructionWorking = false
             work = work.advanceClock(1.0)
-            val frame = BuildingWorkFrame(scene, units, Step(step++, 1.0, "sim-tick"), null,
-                policies.coordinates, policies.steering, access)
+            val frame = BuildingWorkFrame(scene, units, Step(step++, 1.0, "sim-tick"), null, access)
             val change = work.dispatch(worker, frame, wasWorking, ledger, null)
             work = change.work; ledger = change.ledger
             events += change.events
@@ -200,10 +198,9 @@ class BuildingWorkTest {
         val worker = worker(valid)
         val units = linkedMapOf(worker.unitId to worker)
         val registration = StepState(units = units, nextObjectId = 11L)
-        val policies = ExperimentalPolicies()
         val access = object : BuildingWorkAccess {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute? =
-                policies.path.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(input.map),
+                ClearanceAStarPolicy.DEFAULT.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(input.map),
                     worker.position, target, worker.definition.radius, targetRange = range)?.let { BuildingRoute(it, -1L, -1L) }
             override fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
                                    paidLedger: ProductionLedger): ConstructionRegistration =
@@ -214,8 +211,7 @@ class BuildingWorkTest {
         val nonce = "a".repeat(32)
         assertNull(work.request(BuildAction("build", "p1", "worker", "landFactory", Position(190.0, 170.0),
             nonce, WorldHandle("direct-module")), worker, input))
-        val frame = BuildingWorkFrame(input, units, Step(0L, 1.0, "sim-tick"), null,
-            policies.coordinates, policies.steering, access)
+        val frame = BuildingWorkFrame(input, units, Step(0L, 1.0, "sim-tick"), null, access)
         assertFailsWith<NoSuchElementException> { work.dispatch(worker, frame, false, ledger, null) }
         assertEquals(listOf("worker"), units.keys.toList())
         assertEquals(1750L, ledger.balances.getValue("p1"))

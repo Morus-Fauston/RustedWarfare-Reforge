@@ -21,7 +21,7 @@ class MovementRegression011Test {
         blocked[3 * w + 3] = false
         val map = MapDefinition(w, h, 20, 20, emptyList(), IntArray(w * h), BlockingGrid(w, h, blocked))
         val terrain = PlanningTerrain.fromNoFog(map, MovementType.LAND)
-        val policy = ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain)
+        val policy = ClearanceAStarPolicy.DEFAULT
         val hull = HullRoute.Circle(radius = 9.0, boundaryRadius = 10.0, simplify = true)
         val search = policy.beginNearest(terrain, Position(70.0, 70.0), Position(110.0, 70.0), 10.0, hull = hull)
         while (!search.finished) search.advance(PathWorkBudget(1024))
@@ -55,7 +55,7 @@ class MovementRegression011Test {
         val hull = HullRoute.Circle(radius = 9.0, boundaryRadius = 10.0, simplify = true)
         val terrain = PlanningTerrain.fromNoFog(map, MovementType.LAND)
         val path = assertNotNull(
-            ClearanceAStarPolicy(CenterClearance(PlanningCenterTerrain), TileCenters, PlanningCenterTerrain).findPath(
+            ClearanceAStarPolicy.DEFAULT.findPath(
                 map = terrain,
                 start = start,
                 target = target,

@@ -183,7 +183,6 @@ internal object LocomotionModule {
         maximumSpeed: Double,
         finalPoint: Boolean,
         delta: Double,
-        coordinates: CoordinatePolicy,
         terminalDockingWeight: Double = 0.0,
         ignoredContactUnitId: String? = null,
         engagementArcCenter: Position? = null,
@@ -191,14 +190,14 @@ internal object LocomotionModule {
         protectedClusterKey: Any? = null,
     ): SolveResult {
         if (maximumSpeed <= EPS || delta <= 0.0) {
-            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
+            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed)
         }
         val collision = unit.definition.movementCollision
         if (collision !is MovementCollisionShape.Circle || collision.boundingRadius <= 0.0) {
-            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
+            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed)
         }
         val contactLayer = UnitContact.layer(unit)
-            ?: return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
+            ?: return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed)
         val spatialLayer = SpatialLayer.fromContact(contactLayer)
         val scale = KinematicScale.from(unit, movement, maximumSpeed, terrain.tileWidth, terrain.tileHeight)
         val dockingFade = clamp(1.0 - clamp(terminalDockingWeight, 0.0, 1.0), 0.0, 1.0)
@@ -206,7 +205,7 @@ internal object LocomotionModule {
         val toTarget = Vec2(desiredTarget.x - unit.position.x, desiredTarget.y - unit.position.y)
         val distToTarget = toTarget.length()
         if (distToTarget <= EPS) {
-            return passthrough(unit, desiredTarget, 0.0, maximumSpeed, coordinates)
+            return passthrough(unit, desiredTarget, 0.0, maximumSpeed)
         }
         val desiredDir = Vec2(toTarget.x / distToTarget, toTarget.y / distToTarget)
 
@@ -215,9 +214,13 @@ internal object LocomotionModule {
         // opposing/waiting mouth peers per-neighbor while preserving full 2D ORCA car-following behind same-lane
         // front vehicles and all static terrain wall half-planes.
         val admittedEntry = unit.passageEntry
+        val admittedOutletDepth = if (admittedEntry != null && admittedEntry.entered) {
+            admittedEntry.passage.mouths[1 - admittedEntry.side].depth(unit.position)
+        } else -1.0
         val isAdmittedSingleLane = admittedEntry != null &&
             admittedEntry.admitted &&
-            admittedEntry.passage.width < 3.6 * scale.hardRadius
+            admittedEntry.passage.width < 3.6 * scale.hardRadius &&
+            admittedOutletDepth < scale.hardRadius * 0.5
 
         val scratch = scratchPool.get()
         val neighborsBuf = scratch.neighbors
@@ -272,7 +275,7 @@ internal object LocomotionModule {
         } else 0
 
         if (neighborCount == 0 && opposingCount == 0) {
-            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
+            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed)
         }
 
         val ownSnap = host.spatialIndex.frozenUnit(unit.unitId)
@@ -385,7 +388,7 @@ internal object LocomotionModule {
                 val peerHeadingDir = Vec2.fromHeading(peer.heading, 1.0)
                 val peerOpposing = peerHeadingDir.dot(desiredDir) < 0.15 ||
                     (peerMoving && peerVel.dot(desiredDir) < -0.10)
-                val skipPinnedAnchor = peerAnchored &&
+                val skipPinnedAnchor = peerVerySlow &&
                     unit.hardContactLimitedTicks >= 18L &&
                     localClearanceWorld >= selfHalfWidth * 2.2
                 if (!skipPinnedAnchor &&
@@ -444,7 +447,7 @@ internal object LocomotionModule {
             ) {
                 continue
             }
-            if (peerAnchored && fwdDot > 0.0 && latAbs <= scale.hardRadius * 0.12 && peer.hasAttachments) {
+            if (peerVerySlow && fwdDot > 0.0 && latAbs <= scale.hardRadius * 0.12 && peer.hasAttachments) {
                 continue
             }
             // Direct bow-on contact (already touching at dist <= 1.005 * combinedHard): defer to ADR-009
@@ -564,10 +567,10 @@ internal object LocomotionModule {
             if (pairCanPassSideBySide && !clusterPerimeterPeer && dockingFade > 0.25) {
                 val peerAlongSpeed = peerVel.dot(desiredDir)
                 val closingRate = desiredSpeed - peerAlongSpeed
-                val wantsPass = peerAnchored ||
+                val wantsPass = peerVerySlow ||
                     (sameFlow && closingRate > max(0.12 * maximumSpeed, 0.18 * desiredSpeed))
                 val overtakeHorizon = min(distToTarget, max(combinedHard * 5.0, max(0.1, closingRate) * scale.timeHorizon * 1.65))
-                val overtakeLatLimit = if (peerAnchored) combinedHard * 1.15 else (selfHalfWidth + peerHalfWidth) * 1.35 + 4.0
+                val overtakeLatLimit = if (peerVerySlow) combinedHard * 1.15 else (selfHalfWidth + peerHalfWidth) * 1.35 + 4.0
                 if (wantsPass && fwdDot > 0.0 && fwdDot < overtakeHorizon &&
                     latAbs < overtakeLatLimit
                 ) {
@@ -582,9 +585,9 @@ internal object LocomotionModule {
                     )
                     val checkR = max(0.0, scale.terrainRadius * 0.92)
                     val rightTerrainClear = isPointClearOnTerrain(terrain, rightProbe, checkR) &&
-                        PlanningSegmentClearance.allows(terrain, ownPos, rightProbe, checkR)
+                        PlanningSegmentClearance.allowsClearance(terrain, ownPos, rightProbe, checkR)
                     val leftTerrainClear = isPointClearOnTerrain(terrain, leftProbe, checkR) &&
-                        PlanningSegmentClearance.allows(terrain, ownPos, leftProbe, checkR)
+                        PlanningSegmentClearance.allowsClearance(terrain, ownPos, leftProbe, checkR)
                     val rightFree = if (isRangedPursuer) {
                         rightTerrainClear && isProbeClearOfAnchoredPeers(
                             rightProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
@@ -754,7 +757,7 @@ internal object LocomotionModule {
         for (i in 0 until opposingCount) opposingBuf[i] = null
 
         if (activeDynamicConstraints == 0 && hypot(sepX, sepY) <= EPS && rightShift <= EPS && abs(overtakeShift) <= EPS) {
-            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed, coordinates)
+            return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed)
         }
 
         val maxSepMag = maximumSpeed * (0.45 + 0.35 * corridorOpenness)
@@ -892,32 +895,32 @@ internal object LocomotionModule {
 
         val rawTargetHeading = headingFromVector(vFinal)
         val prevAvoid = unit.nav.lastAvoidHeadingDeg
-        val travelHeading = if (unit.reversing) coordinates.normalize(unit.heading + 180.0) else unit.heading
-        val rawDiffFromCurrent = coordinates.difference(rawTargetHeading, travelHeading)
+        val travelHeading = if (unit.reversing) ScreenPlane.normalize(unit.heading + 180.0) else unit.heading
+        val rawDiffFromCurrent = ScreenPlane.difference(rawTargetHeading, travelHeading)
 
         val sectorClampedHeading = if (abs(rawDiffFromCurrent) > 165.0 && prevAvoid != null) {
-            val prevSide = coordinates.difference(prevAvoid, travelHeading)
+            val prevSide = ScreenPlane.difference(prevAvoid, travelHeading)
             if (abs(prevSide) > 1.0) {
                 val turnSign = if (prevSide < 0.0) -1.0 else 1.0
-                coordinates.normalize(travelHeading + turnSign * 165.0)
+                ScreenPlane.normalize(travelHeading + turnSign * 165.0)
             } else rawTargetHeading
         } else rawTargetHeading
 
         val stabilizedHeading = if (prevAvoid != null) {
-            val deltaFromPrev = coordinates.difference(sectorClampedHeading, prevAvoid)
+            val deltaFromPrev = ScreenPlane.difference(sectorClampedHeading, prevAvoid)
             when {
                 abs(deltaFromPrev) < 2.5 -> prevAvoid
                 abs(rawDiffFromCurrent) > 110.0 -> sectorClampedHeading
                 abs(deltaFromPrev) > 35.0 && abs(rawDiffFromCurrent) > 20.0 -> {
-                    coordinates.normalize(prevAvoid + deltaFromPrev * 0.72)
+                    ScreenPlane.normalize(prevAvoid + deltaFromPrev * 0.72)
                 }
                 else -> {
-                    coordinates.normalize(prevAvoid + deltaFromPrev * 0.85)
+                    ScreenPlane.normalize(prevAvoid + deltaFromPrev * 0.85)
                 }
             }
         } else sectorClampedHeading
 
-        val headingErrorAfterTurn = coordinates.difference(stabilizedHeading, travelHeading)
+        val headingErrorAfterTurn = ScreenPlane.difference(stabilizedHeading, travelHeading)
         val absErr = abs(headingErrorAfterTurn)
         val cosThrottle = when {
             absErr <= 12.0 -> 1.0
@@ -1499,10 +1502,9 @@ internal object LocomotionModule {
         desiredTarget: Position,
         baseSpeedTarget: Double,
         maximumSpeed: Double,
-        coordinates: CoordinatePolicy,
     ): SolveResult {
-        val desiredHeading = coordinates.desired(unit.position, desiredTarget)
-        val err = coordinates.difference(desiredHeading, unit.heading)
+        val desiredHeading = ScreenPlane.desired(unit.position, desiredTarget)
+        val err = ScreenPlane.difference(desiredHeading, unit.heading)
         val frac = if (maximumSpeed > EPS) baseSpeedTarget / maximumSpeed else 0.0
         return SolveResult(
             applied = false,

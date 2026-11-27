@@ -154,7 +154,7 @@ class PriorityPlanningSchedulerTest {
             planning.enqueue(playerAction, null, selectionSize = 1)
 
             val orderLog = mutableListOf<String>()
-            val policy = ExperimentalPolicies().path
+            val policy = ClearanceAStarPolicy.DEFAULT
             val budget = PathWorkBudget(64)
             planning.advance(
                 pathPolicy = policy,
@@ -202,7 +202,7 @@ class PriorityPlanningSchedulerTest {
             val planning = MovePlanning()
             val action = MoveAction("nudge-move", "p1", "u1", Position(550.0, 70.0), origin.world)
             planning.enqueue(action, null, selectionSize = 1)
-            val policy = ExperimentalPolicies().path
+            val policy = ClearanceAStarPolicy.DEFAULT
             val originalStart = Position(50.0, 70.0)
             // After initial step binds snapshot at originalStart, unit gets nudged by 8px (< 1.5 tiles = 30px)
             val nudgedStart = Position(54.0, 76.0)
@@ -259,7 +259,7 @@ class PriorityPlanningSchedulerTest {
         )
             // Budget of 16 allows multi-step planning when clicking far, exercising optimistic steer during pending steps
         val context = assertIs<InitResult.Accepted>(
-            SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = 16)).initialize(scenario),
+            SimulationContext(movePlanningBudgetPerStep = 16).initialize(scenario),
         ).context
         // Advance until initial move route is published and unit is cruising
         try {
@@ -305,7 +305,7 @@ class PriorityPlanningSchedulerTest {
             units = listOf(UnitSpawn("u1", "p1", tank.id, Position(60.0, 200.0), 90.0)),
         )
         val context = assertIs<InitResult.Accepted>(
-            SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = 32)).initialize(scenario),
+            SimulationContext(movePlanningBudgetPerStep = 32).initialize(scenario),
         ).context
         try {
             context.enablePlanningWorkDiagnostics(context.world)
@@ -367,7 +367,7 @@ class PriorityPlanningSchedulerTest {
             ),
         )
         val connCtx = assertIs<InitResult.Accepted>(
-            SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = 24)).initialize(connScenario),
+            SimulationContext(movePlanningBudgetPerStep = 24).initialize(connScenario),
         ).context
         try {
             connCtx.enablePlanningWorkDiagnostics(connCtx.world)
@@ -503,7 +503,7 @@ class PriorityPlanningSchedulerTest {
                 val events = mutableListOf<String>()
                 val budget = PathWorkBudget(100)
                 val p2Used = queue.advance(
-                    pathPolicy = ExperimentalPolicies().path,
+                    pathPolicy = ClearanceAStarPolicy.DEFAULT,
                     budget = budget,
                     snapshot = { actions, _, repair ->
                         val act = actions.single()
@@ -545,7 +545,7 @@ class PriorityPlanningSchedulerTest {
             // must NOT exceed the step-wide 75 cap!
             val budgetPass2 = PathWorkBudget(100)
             val extraP2 = planning.advance(
-                pathPolicy = ExperimentalPolicies().path,
+                pathPolicy = ClearanceAStarPolicy.DEFAULT,
                 budget = budgetPass2,
                 snapshot = { actions, _, repair ->
                     val act = actions.single()
@@ -596,7 +596,7 @@ class PriorityPlanningSchedulerTest {
             units = listOf(UnitSpawn("u1", "p1", tank.id, Position(150.0, 200.0), 90.0)),
         )
         val context = assertIs<InitResult.Accepted>(
-            SimulationContext(ExperimentalPolicies(movePlanningBudgetPerStep = 8)).initialize(scenario),
+            SimulationContext(movePlanningBudgetPerStep = 8).initialize(scenario),
         ).context
         try {
             // Drive east until cruising close to the wall (x ~ 184..192, speed > 0.5)

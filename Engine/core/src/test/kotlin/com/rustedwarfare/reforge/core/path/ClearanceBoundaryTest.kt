@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.core.path
 
+import com.rustedwarfare.reforge.core.sim.ClearanceAStarPolicy
 import com.rustedwarfare.reforge.core.sim.Position
 import kotlin.test.*
 
@@ -23,7 +24,7 @@ class ClearanceBoundaryTest {
             // D-076 uses the actual point; D-083 requires the entire circle inside the map.
             val edgeDistance = minOf(point.x, point.y, width * tw - point.x, height * th - point.y)
             val expected = if (collides(point) || edgeDistance < radius) null else listOf(point)
-            assertEquals(expected, PathPlanner.findPath(terrain, point, point, radius), "case $it")
+            assertEquals(expected, ClearanceAStarPolicy.findExactPath(terrain, point, point, radius), "case $it")
         }
     }
 
@@ -40,8 +41,8 @@ class ClearanceBoundaryTest {
             Position(37.0, 56.0) to Position(36.99, 56.0),
         )
         for ((touching, separated) in contacts) {
-            assertEquals(listOf(touching), PathPlanner.findPath(terrain, touching, touching, 5.0), "$touching")
-            assertEquals(listOf(separated), PathPlanner.findPath(terrain, separated, separated, 5.0), "$separated")
+            assertEquals(listOf(touching), ClearanceAStarPolicy.findExactPath(terrain, touching, touching, 5.0), "$touching")
+            assertEquals(listOf(separated), ClearanceAStarPolicy.findExactPath(terrain, separated, separated, 5.0), "$separated")
         }
     }
 
@@ -49,13 +50,13 @@ class ClearanceBoundaryTest {
         val cells = BooleanArray(64).also { it[2 * 8 + 2] = true }
         val terrain = PlanningTerrain(8, 8, 20, 30, cells)
         val edge = Position(60.0, 75.0)
-        assertEquals(listOf(edge), PathPlanner.findPath(terrain, edge, edge, 0.0))
-        assertNull(PathPlanner.findPath(terrain, Position(40.0, 75.0), Position(40.0, 75.0), 0.0))
+        assertEquals(listOf(edge), ClearanceAStarPolicy.findExactPath(terrain, edge, edge, 0.0))
+        assertNull(ClearanceAStarPolicy.findExactPath(terrain, Position(40.0, 75.0), Position(40.0, 75.0), 0.0))
         val beyond = Position(60.01, 75.0)
-        assertEquals(listOf(beyond), PathPlanner.findPath(terrain, beyond, beyond, 0.0))
+        assertEquals(listOf(beyond), ClearanceAStarPolicy.findExactPath(terrain, beyond, beyond, 0.0))
         val origin = Position(10.0, 15.0)
-        assertNull(PathPlanner.findPath(terrain, origin, origin, Double.MAX_VALUE))
+        assertNull(ClearanceAStarPolicy.findExactPath(terrain, origin, origin, Double.MAX_VALUE))
         val empty = PlanningTerrain(8, 8, 20, 30, BooleanArray(64))
-        assertNull(PathPlanner.findPath(empty, origin, origin, Double.MAX_VALUE))
+        assertNull(ClearanceAStarPolicy.findExactPath(empty, origin, origin, Double.MAX_VALUE))
     }
 }

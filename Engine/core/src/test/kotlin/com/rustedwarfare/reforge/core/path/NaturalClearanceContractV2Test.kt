@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.core.path
 
+import com.rustedwarfare.reforge.core.sim.ClearanceAStarPolicy
 import com.rustedwarfare.reforge.core.sim.Position
 import java.util.Random
 import kotlin.math.hypot
@@ -35,7 +36,7 @@ class NaturalClearanceContractV2Test {
                 assertEquals(10.0, radius)
                 assertFalse(pointCollides)
             }
-            val path = PathPlanner.findPath(terrain, point, point, radius)
+            val path = ClearanceAStarPolicy.findExactPath(terrain, point, point, radius)
             val outside = minOf(point.x, point.y, width * tileWidth - point.x,
                 height * tileHeight - point.y) < radius
             if (pointCollides || outside) assertNull(path, "same-point case $index: illegal actual endpoint")
@@ -48,7 +49,7 @@ class NaturalClearanceContractV2Test {
         val terrain = PlanningTerrain(30, 20, 20, 20, BooleanArray(600))
         val start = Position(110.0, 110.0)
         for (target in listOf(Position(250.0, 110.0), Position(250.0, 250.0))) {
-            assertEquals(listOf(target), PathPlanner.findPath(terrain, start, target, 11.0))
+            assertEquals(listOf(target), ClearanceAStarPolicy.findExactPath(terrain, start, target, 11.0))
         }
     }
 
@@ -58,7 +59,7 @@ class NaturalClearanceContractV2Test {
         val start = Position(110.0, 110.0)
         val target = Position(170.0, 110.0)
         for (radius in listOf(0.0, -0.0)) {
-            assertEquals(listOf(target), PathPlanner.findPath(terrain, start, target, radius))
+            assertEquals(listOf(target), ClearanceAStarPolicy.findExactPath(terrain, start, target, radius))
         }
     }
 }

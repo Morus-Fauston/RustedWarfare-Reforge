@@ -558,14 +558,13 @@ class LocomotionModuleTest {
 
         fun runTrace(injectFault: Boolean): List<List<Any?>> {
             var faultFired = false
-            val steering = SteeringPolicy { body, aim, delta, coordinates ->
+            val faultHook: (MutableUnit) -> Unit = { body ->
                 if (injectFault && !faultFired && body.nav.lastAvoidHeadingDeg != null) {
                     faultFired = true
                     error("injected-avoid-rollback-fault")
                 }
-                AcceleratedSteering.turn(body, aim, delta, coordinates)
             }
-            val ctx = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(steering = steering)).initialize(scene)).context
+            val ctx = assertIs<InitResult.Accepted>(SimulationContext(steeringFaultHook = faultHook).initialize(scene)).context
             try {
                 val eIds = (0 until 6).map { "e-$it" }
                 val wIds = (0 until 6).map { "w-$it" }

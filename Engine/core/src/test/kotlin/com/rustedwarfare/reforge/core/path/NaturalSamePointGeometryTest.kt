@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.core.path
 
+import com.rustedwarfare.reforge.core.sim.ClearanceAStarPolicy
 import com.rustedwarfare.reforge.core.sim.Position
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -55,7 +56,7 @@ class NaturalSamePointGeometryTest {
                 blocked[cell] && point.x >= left && point.x < left + tileWidth && point.y >= top && point.y < top + tileHeight
             }
             val expected = if (blockedCenter || outside) null else listOf(point)
-            assertEquals(expected, PathPlanner.findPath(
+            assertEquals(expected, ClearanceAStarPolicy.findExactPath(
                 PlanningTerrain(width, height, tileWidth, tileHeight, blocked), point, point, radius,
             ), "natural same-point case $case")
         }
@@ -73,8 +74,8 @@ class NaturalSamePointGeometryTest {
         assertFalse(intersectsAnyClosedRectangle(point, 10.0, blocked, 8, 20, 30))
         assertTrue(intersectsAnyClosedRectangle(center, 10.0, blocked, 8, 20, 30))
         assertTrue(intersectsAnyClosedRectangle(point, 11.0, blocked, 8, 20, 30))
-        assertEquals(listOf(point), PathPlanner.findPath(terrain, point, point, 10.0))
-        assertEquals(listOf(center), PathPlanner.findPath(terrain, center, center, 10.0))
-        assertEquals(listOf(point), PathPlanner.findPath(terrain, point, point, 11.0))
+        assertEquals(listOf(point), ClearanceAStarPolicy.findExactPath(terrain, point, point, 10.0))
+        assertEquals(listOf(center), ClearanceAStarPolicy.findExactPath(terrain, center, center, 10.0))
+        assertEquals(listOf(point), ClearanceAStarPolicy.findExactPath(terrain, point, point, 11.0))
     }
 }

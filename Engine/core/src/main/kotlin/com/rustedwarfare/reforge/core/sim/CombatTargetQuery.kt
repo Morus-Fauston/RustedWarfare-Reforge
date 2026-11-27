@@ -82,9 +82,14 @@ internal object CombatTargetQuery {
         target.alive && target.carriedBy == null && target.health != null && target.ownerPlayerId != owner &&
             (team == null || players.single { it.playerId == target.ownerPlayerId }.teamId != team)
 
-    fun nearestEnemy(actor: MutableUnit, candidates: Collection<MutableUnit>, players: List<Player>,
-                     coordinates: CoordinatePolicy, map: MapDefinition): MutableUnit? {
-        val weapon = actor.definition.combat ?: return null
+    fun nearestEnemy(
+        actor: MutableUnit,
+        candidates: Collection<MutableUnit>,
+        players: List<Player>,
+        map: MapDefinition,
+        distanceSquared: (Position, Position) -> Double = ScreenPlane::distanceSquared,
+    ): MutableUnit? {
+        actor.definition.combat ?: return null
         val team = players.single { it.playerId == actor.ownerPlayerId }.teamId
         val range = UnitCombat.range(actor)
         val rangeSquared = range * range
@@ -93,7 +98,7 @@ internal object CombatTargetQuery {
         var chosenArmed = false
         for (candidate in candidates) {
             if (!isEnemy(actor.ownerPlayerId, team, candidate, players) || !canAttackAirCategory(actor, candidate, map)) continue
-            val distance = coordinates.distanceSquared(actor.position, candidate.position)
+            val distance = distanceSquared(actor.position, candidate.position)
             if (!(distance < rangeSquared)) continue
             val armed = candidate.definition.combat != null
             if (chosen == null || (armed && !chosenArmed) ||

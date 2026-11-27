@@ -2,7 +2,6 @@ package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
-import com.rustedwarfare.reforge.core.path.PathPlanner
 import com.rustedwarfare.reforge.core.path.PlanningTerrain
 import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.*
@@ -87,20 +86,20 @@ class MapBoundaryTest {
         val terrain = PlanningTerrain(5, 5, 20, 20, BooleanArray(25))
         val center = Position(50.0, 50.0)
         for (edge in listOf(Position(11.0, 50.0), Position(89.0, 50.0), Position(50.0, 11.0), Position(50.0, 89.0))) {
-            assertEquals(listOf(edge), PathPlanner.findPath(terrain, center, edge, 11.0))
+            assertEquals(listOf(edge), ClearanceAStarPolicy.findExactPath(terrain, center, edge, 11.0))
         }
         for (outside in listOf(Position(10.99, 50.0), Position(89.01, 50.0), Position(50.0, 10.99), Position(50.0, 89.01))) {
-            assertNull(PathPlanner.findPath(terrain, center, outside, 11.0))
-            assertNull(PathPlanner.findPath(terrain, outside, center, 11.0))
+            assertNull(ClearanceAStarPolicy.findExactPath(terrain, center, outside, 11.0))
+            assertNull(ClearanceAStarPolicy.findExactPath(terrain, outside, center, 11.0))
         }
-        assertNull(PathPlanner.findPath(terrain, center, center, 51.0))
+        assertNull(ClearanceAStarPolicy.findExactPath(terrain, center, center, 51.0))
         for (radius in listOf(0.0, -0.0)) {
             for (edge in listOf(Position(0.0, 50.0), Position(100.0, 50.0), Position(50.0, 0.0),
                 Position(50.0, 100.0), Position(100.0, 100.0))) {
-                assertEquals(listOf(edge), PathPlanner.findPath(terrain, center, edge, radius))
-                assertEquals(listOf(center), PathPlanner.findPath(terrain, edge, center, radius))
+                assertEquals(listOf(edge), ClearanceAStarPolicy.findExactPath(terrain, center, edge, radius))
+                assertEquals(listOf(center), ClearanceAStarPolicy.findExactPath(terrain, edge, center, radius))
             }
-            assertNull(PathPlanner.findPath(terrain, center, Position(100.01, 50.0), radius))
+            assertNull(ClearanceAStarPolicy.findExactPath(terrain, center, Position(100.01, 50.0), radius))
         }
     }
 

@@ -77,7 +77,6 @@ class UnitNavigationStateTest {
         assertEquals(-1L, paused.lastPlannedKnowledgeRevision)
         assertEquals(-1L, paused.lastPlannedBuildingRevision)
         assertEquals(0.0, paused.nearTargetTime)
-        assertNull(paused.localMotion)
         assertNull(paused.routeContinuation)
         assertEquals(0L, paused.stalledRouteTicks)
         assertEquals(0L, paused.hardContactLimitedTicks)

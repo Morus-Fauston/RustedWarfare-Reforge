@@ -17,19 +17,19 @@ class ContinuousStartConnectorTest {
         assertFalse(clear(Position(270.0, 110.0), Position(270.0, 110.0), 11.0))
         val witness = listOf(start, Position(270.0, 150.0), Position(310.0, 150.0), target)
         assertTrue(witness.zipWithNext().all { (a, b) -> clear(a, b, 11.0) })
-        val path = assertNotNull(PathPlanner.findPath(terrain, start, target, 11.0),
+        val path = assertNotNull(ClearanceAStarPolicy.findExactPath(terrain, start, target, 11.0),
             "A clear continuous start must not be rejected merely because its snapped center is blocked")
         assertEquals(target, path.last())
         assertTrue((listOf(start) + path).zipWithNext().all { (a, b) -> clear(a, b, 0.0) })
     }
 
     @Test fun cs02_actual_contact_and_embedded_starts_remain_rejected() {
-        assertNotNull(PathPlanner.findPath(terrain, Position(269.0, 115.0), Position(350.0, 110.0), 11.0))
+        assertNotNull(ClearanceAStarPolicy.findExactPath(terrain, Position(269.0, 115.0), Position(350.0, 110.0), 11.0))
         for (start in listOf(Position(280.0, 115.0), Position(290.0, 110.0))) {
             assertFalse(clear(start, start, 11.0))
-            assertNull(PathPlanner.findPath(terrain, start, Position(350.0, 110.0), 11.0))
+            assertNull(ClearanceAStarPolicy.findExactPath(terrain, start, Position(350.0, 110.0), 11.0))
         }
-        assertNotNull(PathPlanner.findPath(terrain, Position(268.0, 115.0), Position(250.0, 115.0), 11.0))
+        assertNotNull(ClearanceAStarPolicy.findExactPath(terrain, Position(268.0, 115.0), Position(250.0, 115.0), 11.0))
     }
 
     @Test fun cs03_center_clear_root_edge_does_not_search_a_radius_expanded_graph() {
@@ -39,8 +39,7 @@ class ContinuousStartConnectorTest {
         assertTrue(clear(target, target, 11.0))
         assertFalse(clear(start, target, 11.0))
         // Restrict the graph to the one candidate to distinguish root-edge rejection from simplify's backstop.
-        val policy = ClearanceAStarPolicy(PathCandidatePolicy { _, col, row, _ -> col == 13 && row == 4 },
-            TileCenters, PlanningCenterTerrain)
+        val policy = ClearanceAStarPolicy(candidateFilter = { _, col, row, _ -> col == 13 && row == 4 })
         val counters = PathSearchCounters()
         assertEquals(listOf(target), policy.findPath(terrain, start, target, 11.0, counters))
         assertEquals(0L, counters.enqueued)

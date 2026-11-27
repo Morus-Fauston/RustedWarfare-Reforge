@@ -1,5 +1,6 @@
 package com.rustedwarfare.reforge.core.path
 
+import com.rustedwarfare.reforge.core.sim.ClearanceAStarPolicy
 import com.rustedwarfare.reforge.core.sim.Position
 import kotlin.test.*
 
@@ -22,7 +23,7 @@ class CapturedKnowledgeReachabilityTest {
 
     private fun assertReachable(blocked:Set<Int>,start:Position,target:Position,label:String) {
         val terrain=PlanningTerrain(30,20,20,20,BooleanArray(600) { it in blocked })
-        val route=assertNotNull(PathPlanner.findPath(terrain,start,target,11.0),label)
+        val route=assertNotNull(ClearanceAStarPolicy.findExactPath(terrain,start,target,11.0),label)
         assertTrue(route.isNotEmpty(),label)
         assertEquals(target,route.last(),label)
         var previous=start

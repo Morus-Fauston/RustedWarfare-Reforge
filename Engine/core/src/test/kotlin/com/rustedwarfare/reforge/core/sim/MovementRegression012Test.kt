@@ -68,7 +68,7 @@ class MovementRegression012Test {
                 pathPoints = listOf(click)
             }
             val terrain = PlanningTerrain.fromNoFog(scene.map)
-            val paths = ExperimentalPolicies().path
+            val paths = ClearanceAStarPolicy.DEFAULT
             val bays = MixedLandingBays(click, true, 110.0)
 
             // While the larger unit (h-1) is still unparked & unclaimed, bay survey stays active (Pending on empty sites).

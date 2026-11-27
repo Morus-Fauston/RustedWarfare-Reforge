@@ -25,7 +25,7 @@ class BlockedCellIndexOrderTest {
         val coordinates = listOf(0.0, 10.0, Math.nextDown(40.0), 40.0, Math.nextUp(40.0), 61.0, 120.0)
         val points = coordinates.flatMap { x -> coordinates.map { y -> com.rustedwarfare.reforge.core.sim.Position(x, y) } }
         for (from in points) for (to in points) {
-            val clear = cells.indices.none { cell -> cells[cell] && CenterLineCells.enters(from, to, cell % size, cell / size, 20, 20) }
+            val clear = cells.indices.none { cell -> cells[cell] && PlanningSegmentClearance.entersCell(from, to, cell % size, cell / size, 20, 20) }
             assertEquals(clear, PlanningSegmentClearance.allows(map, from, to, 0.0), "$from -> $to")
         }
     }

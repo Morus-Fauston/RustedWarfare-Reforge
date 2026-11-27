@@ -56,7 +56,7 @@ class NearestMoveRollbackTest {
                                 emptyList(), emptyList(), emptyList())
                         }) { candidate ->
                             val budget = PathWorkBudget(128)
-                            candidate.state.movePlanning.advance(ExperimentalPolicies().path, budget, { _, _, _ -> input },
+                            candidate.state.movePlanning.advance(ClearanceAStarPolicy.DEFAULT, budget, { _, _, _ -> input },
                                 { member, _, _, _, plan -> published[member.action.unitId] = plan.nearest to plan.slot })
                             used = budget.used
                             assertTrue(used in 0..128)
@@ -113,7 +113,7 @@ class NearestMoveRollbackTest {
                                 emptyList(), emptyList(), emptyList())
                         }) { candidate ->
                             val budget = PathWorkBudget(8)
-                            candidate.state.movePlanning.advance(ExperimentalPolicies().path, budget, { _, _, _ -> input },
+                            candidate.state.movePlanning.advance(ClearanceAStarPolicy.DEFAULT, budget, { _, _, _ -> input },
                                 { _, _, _, _, plan -> published = plan })
                             used = budget.used
                             assertTrue(used in 0..8)

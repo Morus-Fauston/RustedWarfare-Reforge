@@ -817,11 +817,10 @@ internal object UnitContact {
         // A paid birth can still overlap its producer after Stop; pressure may only relieve that overlap.
         // Keep underlying terrain and all other buildings in the same authoritative sweep.
         val producerCells = unit.productionOrigin?.let { origin ->
-            FactoryExit.departingSeaFactoryCells(ground, unit, units[origin.producerId], target, shape,
+            BuildingOverlapEscape.departingSeaFactoryCells(ground, unit, units[origin.producerId], target, shape,
                 requireExitOrder = false)
         }.orEmpty()
-        val grid = if (producerCells.isEmpty()) ordinaryGrid
-            else HullTerrainGrid.leavingProducer(map, ground, terrain, producerCells)
+        val grid = checkNotNull(BuildingOverlapEscape.leavingGrid(map, ground, terrain, producerCells, ordinaryGrid))
         val traversed = when (shape) {
             is MovementCollisionShape.Circle -> if (shape.radius > 0.0)
                 CircularTerrain(shape.radius).resolve(grid, unit.position, target) == target
