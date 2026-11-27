@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.DirectHitTargetKind
 import com.rustedwarfare.reforge.core.content.CombatProfile
 import com.rustedwarfare.reforge.core.content.MechKind

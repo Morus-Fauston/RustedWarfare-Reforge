@@ -332,7 +332,7 @@ class BlockingGrid(val widthTiles: Int, val heightTiles: Int, blocked: BooleanAr
         require(widthTiles > 0 && heightTiles > 0 && widthTiles.toLong() * heightTiles == blocked.size.toLong())
     }
     private val cells = blocked.copyOf()
-    private val blockedIndex = com.rustedwarfare.reforge.core.path.BlockedCellIndex(widthTiles, cells)
+    private val blockedIndex = com.rustedwarfare.reforge.core.navigation.BlockedCellIndex(widthTiles, cells)
     val blockedCount: Int = blockedIndex.count
 
     internal fun anyBlocked(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,

@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.IncomeProfile
 import com.rustedwarfare.reforge.core.content.BomberRules
@@ -20,20 +22,18 @@ import com.rustedwarfare.reforge.core.content.ScoutPayloadStage
 import com.rustedwarfare.reforge.core.content.NuclearSiloKind
 import com.rustedwarfare.reforge.core.content.isTerminalExpiryPayload
 import com.rustedwarfare.reforge.core.content.supportsExpirySteering
-import com.rustedwarfare.reforge.core.path.AuthorizedNavigationTerrain
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
-import com.rustedwarfare.reforge.core.path.PlanningSegmentClearance
-import com.rustedwarfare.reforge.core.path.PathDiagnosticsException
-import com.rustedwarfare.reforge.core.path.PathSearchSample
-import com.rustedwarfare.reforge.core.path.PathSearchCounters
-import com.rustedwarfare.reforge.core.path.PathSearchOutcome
-import com.rustedwarfare.reforge.core.path.KnowledgePathImpact
-import com.rustedwarfare.reforge.core.path.movementBlocked
-import com.rustedwarfare.reforge.core.path.PathSearchReason
-import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
-import com.rustedwarfare.reforge.core.path.PlanningWorkSample
-import com.rustedwarfare.reforge.core.sim.TacticalRouteRequest
-import com.rustedwarfare.reforge.core.sim.TacticalRouteResolution
+import com.rustedwarfare.reforge.core.navigation.AuthorizedNavigationTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningSegmentClearance
+import com.rustedwarfare.reforge.core.navigation.PathDiagnosticsException
+import com.rustedwarfare.reforge.core.navigation.PathSearchSample
+import com.rustedwarfare.reforge.core.navigation.PathSearchCounters
+import com.rustedwarfare.reforge.core.navigation.PathSearchOutcome
+import com.rustedwarfare.reforge.core.navigation.KnowledgePathImpact
+import com.rustedwarfare.reforge.core.navigation.movementBlocked
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSlice
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSample
 import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -1777,12 +1777,14 @@ class SimulationContext internal constructor(
                     if (action.flying) "amphibious-fly-requested" else "amphibious-dive-requested", unit.unitId)))
             }
             is SubmarineDepthAction -> {
-                if (unit.definition.submarine == null)
-                    return reject(action, "unsupported-submarine-action", "Unit has no submarine depth capability")
+                val subProfile = SubmarineMotion.effectiveProfile(unit.definition)
+                    ?: return reject(action, "unsupported-submarine-action", "Unit has no submarine depth capability")
                 if (!BuildingWork.isReady(unit))
                     return reject(action, "inactive-unit", "Unfinished units cannot change depth intent")
                 if (unit.submarineSurfaceIntent == action.surface)
                     return reject(action, "submarine-state-unchanged", "Requested depth intent is already active")
+                if (!action.surface && subProfile.diveRequiresOverWater && !AmphibiousJetMotion.overWater(unit, currentScenario.map))
+                    return reject(action, "dive-requires-water", "Diving requires the current tile to be water")
                 unit.submarineSurfaceIntent = action.surface
                 ActionResult.Accepted(action.actionId, listOf(Event(
                     if (action.surface) "submarine-surface-requested" else "submarine-dive-requested", unit.unitId)))
@@ -2465,7 +2467,7 @@ class SimulationContext internal constructor(
                 prof.addNanos(SimHotspotStage.SIM_COMBAT, now - phaseMark)
                 phaseMark = now
             }
-            val wallDue = candidate.state.sharedWallRepairDue(step.stepIndex)
+            val wallDue = sharedWallRepairDue(candidate.state.units.values, step.stepIndex)
             val needsGateWork = candidate.state.gateWorkDeferred
             val stepBudgetLimit = movePlanningBudgetPerStep
             val reserve = if (needsGateWork || wallDue) stepBudgetLimit / 4 else 0
@@ -2929,6 +2931,12 @@ class SimulationContext internal constructor(
                 FlightMotion.advancePose(unit, currentScenario.map, step.delta, acceptsHeight)
                 NautilusMotion.advance(unit, step.delta, acceptsHeight)
                 Transport.refreshTerrain(unit, currentScenario.map)
+                if (unit.definition.effectiveWaterLandSpeed != null || unit.transportState != null) {
+                    unit.overLiquid = currentScenario.map.isLiquid(
+                        MapBounds.cell(unit.position.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles),
+                        MapBounds.cell(unit.position.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles),
+                    )
+                }
                 pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta, acceptsHeight)
                 if (passengersBeforeUnload != null) {
                     val remaining = unit.transportState?.passengerIds.orEmpty()
@@ -2946,7 +2954,8 @@ class SimulationContext internal constructor(
                 }
                 if (unit.transportState == null || unit.definition.transport == TransportProfile.AUTHORED)
                     HoverMotion.advancePose(unit, step.delta)
-                if (SubmarineMotion.advance(unit, step.delta, acceptsHeight)) pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
+                if (SubmarineMotion.advance(unit, step.delta, acceptsHeight, currentScenario.map))
+                    pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
                 if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta, acceptsHeight))
                     pendingEvents += Event("amphibious-threshold-crossed", unit.unitId)
                 spatialIndex.relocate(unit)
@@ -3266,8 +3275,20 @@ class SimulationContext internal constructor(
                 return SimulationError("unsupported-flight", "Expected finite rotorless AIR combat movement")
             val hovering = m.type == MovementType.HOVER && m.hover != null
             if (m.hover != null && (!hovering || !m.hover.isValid() || m.flight != null ||
-                    (definition.transport == null && (!m.slidingMode || !m.ignoringBody)) || m.reverseSpeedPercentage != 0.0 || definition.mech != null))
-                return SimulationError("unsupported-hover", "Expected a finite sliding HOVER height profile")
+                    !m.reverseSpeedPercentage.isFinite() || m.reverseSpeedPercentage !in 0.0..1.0 || definition.mech != null))
+                return SimulationError("unsupported-hover", "Expected a finite HOVER height profile")
+            if (m.waterLandSpeed != null && !m.waterLandSpeed.isValid())
+                return SimulationError("unsupported-unit", "Expected finite positive water/land speed profile")
+            if (m.submersible != null && (!m.submersible.isValid() || m.type == MovementType.NONE ||
+                    m.hover != null || m.verticalPose != null || m.flight != null ||
+                    definition.amphibiousJet != null || definition.fixedUnderwaterTarget != null || definition.building != null))
+                return SimulationError("unsupported-submarine", "Expected a finite exclusive submersible motion profile")
+            if (m.verticalPose != null && (!m.verticalPose.isValid() || m.type == MovementType.AIR ||
+                    m.hover != null || m.submersible != null || m.flight != null))
+                return SimulationError("unsupported-unit", "Expected a finite exclusive non-air custom vertical pose profile")
+            if (m.shortReverseDistance != null && (!m.shortReverseDistance.isFinite() || m.shortReverseDistance <= 0.0 ||
+                    !(m.shortReverseDistance * m.shortReverseDistance).isFinite()))
+                return SimulationError("unsupported-unit", "Short reverse distance must be finite, positive, and have a finite square")
             definition.fixedUnderwaterTarget?.let { fixed ->
                 if (fixed.height != -8.0 || m.type != MovementType.WATER ||
                     listOf(m.moveSpeed, m.moveAccelerationSpeed, m.moveDecelerationSpeed, m.maxTurnSpeed,
@@ -3282,10 +3303,9 @@ class SimulationContext internal constructor(
                     !m.slidingMode || !m.ignoringBody || m.reverseSpeedPercentage != .1 || definition.mech != null) ||
                 !air && (m.flight != null || definition.rotor != null))
                 return SimulationError("unsupported-flight", "Expected a finite AIR profile and a single finite rotor")
-            if (!m.reverseSpeedPercentage.isFinite() || !air && !submarine && !engineer && !nautilus && (m.reverseSpeedPercentage !in setOf(0.0, 1.0) ||
-                m.reverseSpeedPercentage != 0.0 && definition.mech == null && m.type != MovementType.WATER) ||
-                definition.mech?.let { !it.isValid() || !bunker && !nautilus && !scout && !flameMech && !attachedProfile && m.type != (if (it.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED) MovementType.OVER_CLIFF else MovementType.LAND) } == true)
-                return SimulationError("unsupported-mech", "Expected the finite supported mech locomotion category")
+            if (!m.reverseSpeedPercentage.isFinite() || m.reverseSpeedPercentage !in 0.0..1.0 ||
+                definition.mech?.let { !it.isValid() } == true)
+                return SimulationError("unsupported-mech", "Expected finite reverse speed in [0, 1] and valid mech locomotion")
             val authoredMaintenance = definition.maintenance == com.rustedwarfare.reforge.core.content.MaintenanceProfile.AUTHORED
             if (authoredMaintenance != (definition.authoredMaintenance != null) || authoredMaintenance &&
                     (definition.authoredMaintenance?.isValid() != true || definition.className != "AuthoredConstructor" && !roles ||
@@ -3432,7 +3452,6 @@ class SimulationContext internal constructor(
             }
             val numbers = listOf(definition.radius, m.moveSpeed, m.moveAccelerationSpeed, m.moveDecelerationSpeed,
                 m.maxTurnSpeed, m.turnAcceleration)
-            val fourLegged = definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
             val navalHull = definition.id == "heavyBattleship" && m.type == MovementType.WATER && definition.radius == 40.0
             val authoredSurface = definition.authoredWaterCombat
             if (authoredSurface && (m.type != MovementType.WATER || definition.combat == null ||
@@ -3450,11 +3469,8 @@ class SimulationContext internal constructor(
                     shape.length / 2.0 > 0.0 && shape.width / 2.0 > 0.0
                 is MovementCollisionShape.Circle -> shape.radius.isFinite() && shape.radius >= 0.0
             }
-            if (!validShape || numbers.any { !it.isFinite() || it < 0.0 } ||
-                (definition.building == null && definition.radius >= input.map.tileWidth && !(fourLegged && definition.radius == 22.0) && !navalHull && !authoredSurface && !dropship && !beamGunship && !bunker && !nautilus && !flameMech && !authoredAir && !attachedProfile) ||
-                m.type != MovementType.AIR && !fourLegged && !hovering && (m.slidingMode || m.ignoringBody) ||
-                fourLegged && !bunker && (m.type != MovementType.OVER_CLIFF || !m.slidingMode || !m.ignoringBody)) {
-                return SimulationError("unsupported-unit", "Expected finite movement and the supported representative's radius and locomotion")
+            if (!validShape || numbers.any { !it.isFinite() || it < 0.0 }) {
+                return SimulationError("unsupported-unit", "Expected finite nonnegative movement and collision dimensions")
             }
             if (m.type == MovementType.NONE && !bunker && !NuclearOrdnance.supports(definition) && numbers.drop(1).any { it != 0.0 })
                 return SimulationError("unsupported-unit", "Immobile definitions require zero movement parameters")
@@ -4975,6 +4991,16 @@ class SimulationContext internal constructor(
         }
     }
 
+    internal val navigationSubsystem: NavigationSubsystem = object : NavigationSubsystem {
+        override val spatialIndex: WorldSpatialIndex get() = this@SimulationContext.spatialIndex
+        override val flowFields: ChunkedFlowFieldAdapter get() = this@SimulationContext.flowFields
+        override val navigationGuidance: NavigationGuidance get() = this@SimulationContext.flowFields
+        override val landingOccupancy: LandingOccupancy get() = this@SimulationContext.steps.current.landingOccupancy
+
+        override fun authorizedTerrain(unit: MutableUnit, map: MapDefinition): AuthorizedNavigationTerrain =
+            this@SimulationContext.planningTerrainFor(unit, map)
+    }
+
     private val movementHost = object : UnitMovementHost {
         override val activeWorld: WorldHandle get() = this@SimulationContext.world
         override val simulationTime: Double get() = this@SimulationContext.simulationTime
@@ -4984,7 +5010,7 @@ class SimulationContext internal constructor(
         override val spatialIndex: WorldSpatialIndex get() = this@SimulationContext.spatialIndex
         override val landingOccupancy: LandingOccupancy get() = this@SimulationContext.steps.current.landingOccupancy
         override val navigationGuidance: NavigationGuidance get() = this@SimulationContext.flowFields
-        override val buildingTerrain: BuildingTerrain? get() = this@SimulationContext.buildingTerrain
+        override val buildingTerrain: DynamicBuildingGrid? get() = this@SimulationContext.buildingTerrain
         override val pendingEvents: MutableList<Event> get() = this@SimulationContext.pendingEvents
         override val steeringFaultHook: ((MutableUnit) -> Unit)? get() = this@SimulationContext.steeringFaultHook
 
@@ -5058,12 +5084,61 @@ class SimulationContext internal constructor(
 
         override fun approachSpeed(current: Double, target: Double, maxDelta: Double): Double =
             approach(current, target, maxDelta)
+
+        override fun isUnitReadyForMotion(unit: MutableUnit): Boolean =
+            BuildingWork.isReady(unit)
+
+        override fun isMovementActionLocked(unit: MutableUnit): Boolean =
+            CustomUnitActions.movementLocked(unit, this@SimulationContext.unitActionHead(unit))
+
+        override fun isNativeSeaDeparture(unit: MutableUnit): Boolean =
+            FactoryExit.isNativeSeaDeparture(unit)
+
+        override fun combatWeaponRange(unit: MutableUnit): Double? =
+            UnitCombat.profile(unit)?.attackRange
+
+        override fun recordMotionGate(unit: MutableUnit, active: Boolean) =
+            Transport.recordMotionGate(unit, active)
+
+        override fun isLoadingPairAtContact(pusher: MutableUnit, blocker: MutableUnit): Boolean =
+            Transport.isLoadingPairAtContact(pusher, blocker, this@SimulationContext.units)
+
+        override fun limitAttachmentTurn(
+            unit: MutableUnit,
+            map: MapDefinition,
+            headingBefore: Double,
+            terrainHeading: Double,
+        ): Double = UnitAttachments.limitTurn(this@SimulationContext.units, unit, map, headingBefore, terrainHeading)
+
+        override fun limitAttachmentTranslation(
+            unit: MutableUnit,
+            map: MapDefinition,
+            candidate: Position,
+        ): Position = UnitAttachments.limitTranslation(this@SimulationContext.units, unit, map, candidate)
+
+        override fun synchronizeAttachmentChildren(unit: MutableUnit) =
+            UnitAttachments.synchronizeAdjustedChildren(this@SimulationContext.units, unit)
+
+        override fun recordSeparationIntervention() {
+            this@SimulationContext.steps.current.separationInterventions++
+        }
     }
 
     private fun updateUnit(unit: MutableUnit, map: MapDefinition, delta: Double, executionStep: Long,
                            step: CandidateStep, passageWaiting: Boolean, departureWaiting: Boolean) {
-        UnitMovementOrchestrator.advanceUnit(
-            movementHost, unit, map, delta, executionStep, step, passageWaiting, departureWaiting,
+        navigationSubsystem.advanceUnit(
+            host = movementHost,
+            unit = unit,
+            map = map,
+            delta = delta,
+            executionStep = executionStep,
+            movePlanning = step.state.movePlanning,
+            pendingFlowStart = step.state.pendingFlowStart,
+            translations = step.translations,
+            motionSamples = step.motionSamples,
+            routeContinuationSamples = step.routeContinuationSamples,
+            passageWaiting = passageWaiting,
+            departureWaiting = departureWaiting,
         )
     }
 
@@ -5146,9 +5221,9 @@ class SimulationContext internal constructor(
                     },
                     attachmentOverview = attachments,
                     factoryRally = unit.factoryRally.takeIf { unit.definition.production?.rallyEnabled == true && unit.alive },
-                    submarine = unit.definition.submarine?.let { SubmarineObservation(unit.submarineSurfaceIntent,
+                    submarine = if (SubmarineMotion.isSubmersible(unit.definition)) SubmarineObservation(unit.submarineSurfaceIntent,
                         unit.submarineVerticalSpeed, UnitLocomotion.isSubmerged(unit), unit.submarineSurfacePresentation,
-                        UnitLocomotion.movement(unit).moveSpeed, UnitCombat.range(unit)) },
+                        UnitLocomotion.movement(unit).moveSpeed, if (unit.definition.combat != null) UnitCombat.range(unit) else 0.0) else null,
                     amphibiousJet = AmphibiousJetMotion.observation(unit, currentScenario.map),
                     carriedBy = unit.carriedBy, transport = Transport.observe(unit, units), transportExit = unit.transportExit,
                     alive = unit.alive,

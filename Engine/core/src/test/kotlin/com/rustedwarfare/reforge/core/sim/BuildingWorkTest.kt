@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,7 +32,7 @@ class BuildingWorkTest {
         val registration = StepState(units = units, nextObjectId = 11L)
         val access = object : BuildingWorkAccess {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRouteResolution =
-                ClearanceAStarPolicy.DEFAULT.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map),
+                ClearanceAStarPolicy.DEFAULT.findPath(com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(scene.map),
                     worker.position, target, worker.definition.radius, targetRange = range)
                     ?.let { BuildingRouteResolution.Ready(BuildingRoute(it, -1L, -1L)) }
                     ?: BuildingRouteResolution.Unreachable
@@ -202,7 +204,7 @@ class BuildingWorkTest {
         val registration = StepState(units = units, nextObjectId = 11L)
         val access = object : BuildingWorkAccess {
             override fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRouteResolution =
-                ClearanceAStarPolicy.DEFAULT.findPath(com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(input.map),
+                ClearanceAStarPolicy.DEFAULT.findPath(com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(input.map),
                     worker.position, target, worker.definition.radius, targetRange = range)
                     ?.let { BuildingRouteResolution.Ready(BuildingRoute(it, -1L, -1L)) }
                     ?: BuildingRouteResolution.Unreachable

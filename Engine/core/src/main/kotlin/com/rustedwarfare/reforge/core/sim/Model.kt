@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.GroundProjectileProfile
@@ -445,7 +447,7 @@ internal data class MutableUnit(
     var height: Double = definition.movement.flight?.startingHeightOffset ?: 0.0,
     var submarineSurfaceIntent: Boolean = false,
     var submarineVerticalSpeed: Float = 0f,
-    var submarineSurfacePresentation: Boolean = definition.submarine == null || height >= UnitLocomotion.SUBMERGED_DEPTH,
+    var submarineSurfacePresentation: Boolean = !SubmarineMotion.isSubmersible(definition) || height >= UnitLocomotion.SUBMERGED_DEPTH,
     var amphibiousState: AmphibiousJetState? = if (definition.amphibiousJet != null) AmphibiousJetState() else null,
     var heightPhase: Double = 0.0,
     var flightIdleTime: Float = 0f,
@@ -485,6 +487,7 @@ internal data class MutableUnit(
     var factoryRally: Position? = null,
     /** Custom instance j; retained when the normal locomotion-aim gate is closed. */
     var terrainSpeedMultiplier: Double = 1.0,
+    var overLiquid: Boolean = false,
     var carriedBy: String? = null,
     var transportState: TransportState? = if (definition.transport != null) TransportState() else null,
     var transportExit: TransportExitObservation? = null,

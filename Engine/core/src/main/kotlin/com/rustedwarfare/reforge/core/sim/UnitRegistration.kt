@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.FactoryExitProfile
 import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
 import com.rustedwarfare.reforge.core.content.MapDefinition
@@ -198,6 +200,10 @@ internal object UnitRegistration {
         val terrain = if (unit.definition.building == null) state.buildingTerrain else
             BuildingTerrain.fromLive(input.map, state.units.values + unit, state.buildingTerrain)
         Transport.refreshTerrain(unit, input.map)
+        unit.overLiquid = input.map.isLiquid(
+            MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles),
+            MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles),
+        )
         state.units[unit.unitId] = unit
         state.spatialIndex.insert(unit)
         state.productionLedger = ledger

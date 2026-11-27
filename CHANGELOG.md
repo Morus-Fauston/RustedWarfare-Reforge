@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.5.85 (2026-11-28 00:39)
+
+### 架构改进
+
+- **`core.navigation` 包级模块化收拢与三道窄接口隔离**：在 `:Engine:core` 建立独立包域 `com.rustedwarfare.reforge.core.navigation`，将原 `core.path` 全部 7 个文件与 `core.sim` 中 26 个寻路、流场、局部避让、空间索引、窄道、终点落位与接触文件共 36 文件物理收拢（同步移除 `src/main` 与 `src/test` 下旧 `core/path` 目录并更新跨模块引用）；对外收敛为三道窄接口（`LocomotionDescriptor` 与 `VerticalPoseController`、`AuthorizedNavigationTerrain`、`NavigationSubsystem`）及只读 `DynamicBuildingGrid`、窄化 `UnitMovementHost`，彻底切断 `core.navigation` 对战斗、建造、经济、升级、`StepState`/`CandidateStep`/`SimulationContext`、`UnitTaskKind` 及具体单位 ID 的逆向依赖；顺手收口 `NavigationGuidance` 单点回退剩余距离与 `BuildingOverlapEscape` 动态建筑半宽边界。
+- **六期 B 全量单位移动与垂向/介质参数化清障**：在 `MovementProfile` 引入纯数据可选契约 `WaterLandSpeedProfile`、`SubmersibleMotionProfile`、`CustomVerticalPoseProfile`、`shortReverseDistance` 与 `sinksInWaterOnDeath`（补齐 Float 有限/下溢、平方有限及多垂向控制器互斥校验）；拔除 `SimulationContext.validate` 中针对 `radius >= tileWidth`、离散 `reverseSpeedPercentage`、`slidingMode`/`ignoringBody` 与 `FOUR_LEGGED` 仅限 `OVER_CLIFF` 的历史代表单位锁，贯通 `OVER_CLIFF_WATER` 跨崖减速与全链路通行；将 `UnitLocomotion`、`SubmarineMotion`、`AmphibiousJetMotion`、`NautilusMotion`、`WaterBody`、`BodyMotion` 及 `BuildingOverlapEscape` 运行期路径全量改为纯参数驱动（零单位 ID 白名单，支持 `waterLandSpeed + submersible` 组合与非 `WATER` 单位陆地防钻地/显式沉没规则），同时保持既有原生代表单位契约 100% 兼容。
+
+### 文档
+
+- **主仓治理规则与领域术语同步**：按 `ENG-P017-006` 授权将主仓库既有未提交的 `AGENTS.md`（规则索引入口与排障/协作治理微调）与 `CONTEXT.md`（统一命令队列、知识寻路、编队行进、出厂散开、连片停稳与局部拥塞术语增量）同步纳入本分支。
+
+### 技术
+
+- **包边界静态守卫、六期 B 原型契约与全量短长测验证**：新增 `NavigationModuleArchitectureGuardTest`（覆盖 `core.navigation` 零业务/任务/单位 ID 逆向耦合、双目录旧 `core/path` 物理删除及 `*Motion`/`WaterBody` 运行期零单位 ID 白名单）与 `PhaseSixBMovementContractTest`（5 组契约覆盖 `radius=38` `OVER_CLIFF_WATER` 六足巨兽群移推挤、自定义参数潜艇下潜/上浮与跨层路由切换、自定义水陆双速气垫登陆、自定义 `72x44` 大矩形舰绕宽水道与沉没、以及 Float/平方溢出与多垂向控制器互斥组合）并注册至 `content-movement-knowledge` 套件，同步更新 `HoverMotionTest`、`BottleneckContractABTest` 与 `MotionContractAndBudgetTest`；全量 `:core:test`、Android Debug 与测试编译、`dev-ab` 10 场景、`public_batch.py --kind pr`（全部 7 套机制含 `:client`/`:pc`/`:tools`/Python 与公开短测）、`public_batch.py --kind long`（全部 33 条连续长链）及双根布局校验全绿，经独立全新上下文非作者代码整审及 R01 定向复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.84 (2026-11-27 21:50)
 
 ### 架构改进

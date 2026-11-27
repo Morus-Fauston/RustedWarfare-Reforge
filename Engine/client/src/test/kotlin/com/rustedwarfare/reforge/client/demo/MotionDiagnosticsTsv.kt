@@ -1,6 +1,6 @@
 package com.rustedwarfare.reforge.client.demo
 
-import com.rustedwarfare.reforge.core.sim.MotionStepSample
+import com.rustedwarfare.reforge.core.navigation.MotionStepSample
 
 internal const val MOTION_TSV_HEADER = "world\tstep\tunit\towner\ttype\ttimeBefore\tdelta\torigin\tbeforeX\tbeforeY\tbeforeHeading\tbeforeSpeed\tbeforeCg\tcommandX\tcommandY\tnormalCompletion\tsteeringInvoked\taimX\taimY\tfinalLocal\tdiff\tfraction\tintegratedHeading\tintegratedSpeed\tcandidateX\tcandidateY\tresolvedX\tresolvedY\tdisposition\tfinalX\tfinalY\tfinalHeading\tfinalSpeed\tfinalCg\tyBefore\tyAfter\tbBefore\tbAfter"
 

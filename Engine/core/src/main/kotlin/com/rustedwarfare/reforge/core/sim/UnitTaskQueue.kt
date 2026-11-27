@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 /** Immutable value: 30 physical slots, at most 29 active. Slot 29 is still written at capacity. */
 internal class UnitTaskQueue private constructor(private val slots: List<UnitTask?>, val size: Int) {
     constructor() : this(List(30) { null }, 0)

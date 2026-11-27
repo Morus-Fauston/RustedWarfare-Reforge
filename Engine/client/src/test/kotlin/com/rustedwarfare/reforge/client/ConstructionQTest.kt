@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.client
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.sim.*
@@ -31,7 +33,7 @@ class ConstructionQTest {
             assertEquals(1, context.drainPathDiagnostics(context.world).size)
             val oldWorld = context.world
             context.close()
-            assertEquals("closed", assertFailsWith<com.rustedwarfare.reforge.core.path.PathDiagnosticsException> { context.drainPathDiagnostics(oldWorld) }.code)
+            assertEquals("closed", assertFailsWith<com.rustedwarfare.reforge.core.navigation.PathDiagnosticsException> { context.drainPathDiagnostics(oldWorld) }.code)
             assertFailsWith<IllegalStateException> { context.observe() }
             assertIs<InitResult.Accepted>(context.initialize(openScene()))
             assertNotSame(oldWorld, context.world)
@@ -40,8 +42,8 @@ class ConstructionQTest {
             assertNull(fresh.logicalRequestX); assertNull(fresh.logicalRequestY)
             assertTrue(fresh.pendingPathNodeCounts.isEmpty() && fresh.consumedPathNodeCounts.isEmpty())
             assertEquals(1.toByte(), old.singleNodePathCount)
-            assertEquals("stale-world", assertFailsWith<com.rustedwarfare.reforge.core.path.PathDiagnosticsException> { context.enablePathDiagnostics(oldWorld) }.code)
-            assertEquals("not-enabled", assertFailsWith<com.rustedwarfare.reforge.core.path.PathDiagnosticsException> { context.drainPathDiagnostics(context.world) }.code)
+            assertEquals("stale-world", assertFailsWith<com.rustedwarfare.reforge.core.navigation.PathDiagnosticsException> { context.enablePathDiagnostics(oldWorld) }.code)
+            assertEquals("not-enabled", assertFailsWith<com.rustedwarfare.reforge.core.navigation.PathDiagnosticsException> { context.drainPathDiagnostics(context.world) }.code)
             context.enablePathDiagnostics(context.world)
             assertTrue(context.drainPathDiagnostics(context.world).isEmpty())
         } finally { contexts.forEach { it.close() } }
@@ -95,7 +97,7 @@ class ConstructionQTest {
                 println("BUILD-Q4-NULL setup=$index worker=$worker searches=$searches factoryPresent=${context.observe().units.any { it.unitId == "f" }}")
                 assertEquals(1, searches.size)
                 assertEquals(1, searches.single().pathPointCount)
-                assertEquals(com.rustedwarfare.reforge.core.path.PathSearchOutcome.FOUND, searches.single().outcome)
+                assertEquals(com.rustedwarfare.reforge.core.navigation.PathSearchOutcome.FOUND, searches.single().outcome)
                 assertEquals(index.toByte(), worker.qBeforeDispatch)
                 assertEquals((index + 1).toByte(), worker.singleNodePathCount)
                 assertEquals(listOf(1), worker.consumedPathNodeCounts)
@@ -110,8 +112,8 @@ class ConstructionQTest {
                 val searches = context.drainPathDiagnostics(context.world).filter { it.unitId == workerId }
                 println("BUILD-Q4-NULL blocked=$index worker=$worker searches=$searches tasks=${view.tasks}")
                 assertTrue(searches.isNotEmpty())
-                assertTrue(searches.all { it.outcome == com.rustedwarfare.reforge.core.path.PathSearchOutcome.UNREACHABLE && it.pathPointCount == 0 })
-                if (index == 0) assertTrue(searches.any { it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR })
+                assertTrue(searches.all { it.outcome == com.rustedwarfare.reforge.core.navigation.PathSearchOutcome.UNREACHABLE && it.pathPointCount == 0 })
+                if (index == 0) assertTrue(searches.any { it.reason == com.rustedwarfare.reforge.core.navigation.PathSearchReason.ROUTE_REPAIR })
                 assertEquals(listOf("head", "tail"), view.tasks.map { it.actionId }, "A real null result cannot let the old q gate pop BUILD")
                 assertEquals(4.toByte(), worker.qBeforeDispatch)
                 assertEquals(4.toByte(), worker.singleNodePathCount)
@@ -259,7 +261,7 @@ class ConstructionQTest {
                 val view = context.observePlayer(context.world, "p1").units.single { it.unitId == "worker" }
                 println("BUILD-NULL step=$step worker=$worker searches=$searches tasks=${view.tasks}")
                 assertTrue(searches.isNotEmpty())
-                assertTrue(searches.all { it.outcome == com.rustedwarfare.reforge.core.path.PathSearchOutcome.UNREACHABLE && it.pathPointCount == 0 })
+                assertTrue(searches.all { it.outcome == com.rustedwarfare.reforge.core.navigation.PathSearchOutcome.UNREACHABLE && it.pathPointCount == 0 })
                 assertEquals(1.toByte(), worker.qBeforeDispatch, "An unavailable route must not cancel the logical request")
                 assertEquals(1.toByte(), worker.singleNodePathCount)
                 assertTrue(worker.pendingPathNodeCounts.isEmpty() && worker.consumedPathNodeCounts.isEmpty())
@@ -294,8 +296,8 @@ class ConstructionQTest {
             val view = context.observePlayer(context.world, "p1").units.single { it.unitId == "worker" }
             println("BUILD-MULTI worker=$worker searches=$searches position=${view.position} path=${view.pathPoints}")
             assertEquals(1, searches.size)
-            assertEquals(com.rustedwarfare.reforge.core.path.PathSearchReason.KNOWLEDGE_REPLAN, searches.single().reason)
-            assertEquals(com.rustedwarfare.reforge.core.path.PathSearchOutcome.FOUND, searches.single().outcome)
+            assertEquals(com.rustedwarfare.reforge.core.navigation.PathSearchReason.KNOWLEDGE_REPLAN, searches.single().reason)
+            assertEquals(com.rustedwarfare.reforge.core.navigation.PathSearchOutcome.FOUND, searches.single().outcome)
             assertTrue(searches.single().pathPointCount > 1)
             assertEquals(listOf(searches.single().pathPointCount), worker.consumedPathNodeCounts)
             assertEquals(1.toByte(), worker.qBeforeDispatch)
@@ -350,10 +352,10 @@ class ConstructionQTest {
                 val searches = context.drainPathDiagnostics(context.world).filter { it.unitId == workerId }
                 println("BUILD-Q at=$at index=$index worker=$worker position=${view.position} route=${view.pathPoints} searches=$searches buildings=${host.construction!!.buildings}")
                 assertEquals(1, searches.size, "Exactly one real search must supply this acceptance")
-                assertEquals(if (index == 0) com.rustedwarfare.reforge.core.path.PathSearchReason.CONSTRUCTION_APPROACH else
-                    com.rustedwarfare.reforge.core.path.PathSearchReason.KNOWLEDGE_REPLAN, searches.single().reason)
+                assertEquals(if (index == 0) com.rustedwarfare.reforge.core.navigation.PathSearchReason.CONSTRUCTION_APPROACH else
+                    com.rustedwarfare.reforge.core.navigation.PathSearchReason.KNOWLEDGE_REPLAN, searches.single().reason)
                 assertEquals(1, searches.single().pathPointCount)
-                assertEquals(com.rustedwarfare.reforge.core.path.PathSearchOutcome.FOUND, searches.single().outcome)
+                assertEquals(com.rustedwarfare.reforge.core.navigation.PathSearchOutcome.FOUND, searches.single().outcome)
                 assertEquals(at, searches.single().executionStep)
                 assertEquals(index.toByte(), worker.qBeforeDispatch)
                 assertEquals((index + 1).toByte(), worker.singleNodePathCount)
@@ -393,7 +395,7 @@ class ConstructionQTest {
                     context.advance(Step(index.toLong(), 1.0, "sim-tick"))
                     val search = context.drainPathDiagnostics(context.world).single()
                     assertEquals("same-$index", search.actionId)
-                    assertEquals(com.rustedwarfare.reforge.core.path.PathSearchOutcome.FOUND, search.outcome)
+                    assertEquals(com.rustedwarfare.reforge.core.navigation.PathSearchOutcome.FOUND, search.outcome)
                     assertEquals(1, search.pathPointCount)
                     assertEquals(listOf(1), context.observe().construction!!.workers.single().consumedPathNodeCounts)
                 }
@@ -419,7 +421,7 @@ class ConstructionQTest {
             assertEquals(0.toByte(), context.observe().construction!!.workers.single().singleNodePathCount)
             context.advance(Step(0, 1.0, "sim-tick"))
             val search = context.drainPathDiagnostics(context.world).single()
-            assertEquals(com.rustedwarfare.reforge.core.path.PathSearchOutcome.FOUND, search.outcome)
+            assertEquals(com.rustedwarfare.reforge.core.navigation.PathSearchOutcome.FOUND, search.outcome)
             assertEquals(1, search.pathPointCount, "The actual path policy must really return a single node")
             val first = context.observe().construction!!.workers.single()
             assertEquals(1.toByte(), first.singleNodePathCount)

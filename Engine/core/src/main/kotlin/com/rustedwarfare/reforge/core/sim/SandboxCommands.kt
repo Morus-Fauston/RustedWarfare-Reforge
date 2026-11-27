@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 enum class SandboxInitialState { READY, DAMAGED }
 
 /** Host identities for explicitly enabled offline test evidence only. */

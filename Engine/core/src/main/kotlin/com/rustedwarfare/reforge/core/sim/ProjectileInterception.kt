@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.CustomBallisticProfile
 import com.rustedwarfare.reforge.core.content.LinearProjectileAcceleration
 import com.rustedwarfare.reforge.core.content.NuclearSiloKind

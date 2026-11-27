@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BuildingFootprint
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
@@ -7,24 +9,35 @@ import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.FootprintAnchor
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.foundationMovementType
+import com.rustedwarfare.reforge.core.navigation.DynamicBuildingGrid
 import java.util.Collections
 
 internal class BuildingInitializationException(val error: SimulationError) : IllegalArgumentException(error.message)
 
 /** Immutable live-building cost, separate from the original ground map. */
-internal class BuildingTerrain private constructor(map: MapDefinition, occupied: Set<Pair<Int, Int>>) {
+internal class BuildingTerrain private constructor(
+    map: MapDefinition,
+    occupied: Set<Pair<Int, Int>>,
+    override val maxHalfExtentTiles: Int = DEFAULT_MAX_HALF_EXTENT_TILES,
+) : DynamicBuildingGrid {
     private val widthTiles: Int = map.widthTiles
     private val heightTiles: Int = map.heightTiles
-    val cells: Set<Pair<Int, Int>> = Collections.unmodifiableSet(LinkedHashSet(occupied.sortedWith(
+    override val cells: Set<Pair<Int, Int>> = Collections.unmodifiableSet(LinkedHashSet(occupied.sortedWith(
         compareBy<Pair<Int, Int>> { it.second }.thenBy { it.first })))
     private val buildingMask: BooleanArray = BooleanArray(widthTiles * heightTiles).also { mask ->
         for ((c, r) in cells) {
             if (c in 0 until widthTiles && r in 0 until heightTiles) mask[r * widthTiles + c] = true
         }
     }
-    fun isBuildingCell(column: Int, row: Int): Boolean =
+    override fun isBuildingCell(column: Int, row: Int): Boolean =
         column in 0 until widthTiles && row in 0 until heightTiles && buildingMask[row * widthTiles + column]
-    val collisionMap: MapDefinition = MapDefinition(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
+    override fun footprintCells(
+        map: MapDefinition,
+        position: Position,
+        shape: BuildingFootprint,
+        anchor: FootprintAnchor?,
+    ): Set<Pair<Int, Int>> = footprint(map, position, shape, anchor)
+    override val collisionMap: MapDefinition = MapDefinition(map.widthTiles, map.heightTiles, map.tileWidth, map.tileHeight,
         map.tileSets, map.groundGids, BlockingGrid(map.widthTiles, map.heightTiles,
             BooleanArray(map.widthTiles * map.heightTiles) { index ->
                 val column = index % map.widthTiles
@@ -33,12 +46,28 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
             }), map.waterObstacles + cells)
 
     companion object {
+        private const val DEFAULT_MAX_HALF_EXTENT_TILES = 6
+
+        private fun computeMaxHalfExtent(buildings: Collection<UnitDefinition>): Int {
+            var maxExtent = DEFAULT_MAX_HALF_EXTENT_TILES
+            for (def in buildings) {
+                val fp = def.building?.footprint ?: continue
+                val extent = maxOf(kotlin.math.abs(fp.left), kotlin.math.abs(fp.right),
+                    kotlin.math.abs(fp.top), kotlin.math.abs(fp.bottom)) + 2
+                if (extent > maxExtent) maxExtent = extent
+            }
+            return maxExtent
+        }
+
         fun fromLive(map: MapDefinition, units: Collection<MutableUnit>, old: BuildingTerrain?): BuildingTerrain {
-            val cells = units.filter { it.alive && it.definition.building != null }.flatMapTo(linkedSetOf()) {
+            val liveBuildings = units.filter { it.alive && it.definition.building != null }
+            val cells = liveBuildings.flatMapTo(linkedSetOf()) {
                 val building = checkNotNull(it.definition.building)
                 footprint(map, it.position, building.footprint, building.anchor)
             }
-            return if (old != null && cells == old.cells) old else BuildingTerrain(map, cells)
+            val maxExtent = computeMaxHalfExtent(liveBuildings.map { it.definition })
+            return if (old != null && cells == old.cells && maxExtent == old.maxHalfExtentTiles) old
+            else BuildingTerrain(map, cells, maxExtent)
         }
 
         fun initial(input: Scenario): BuildingTerrain? {
@@ -56,7 +85,7 @@ internal class BuildingTerrain private constructor(map: MapDefinition, occupied:
                     MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles)
                 if (cell in cells) fail("Initial mobile unit center must be outside live building cost")
             }
-            return BuildingTerrain(input.map, cells)
+            return BuildingTerrain(input.map, cells, computeMaxHalfExtent(input.unitDefinitions.values))
         }
 
         /** Check this proposed building only; existing live products may still occupy their birth factory. */

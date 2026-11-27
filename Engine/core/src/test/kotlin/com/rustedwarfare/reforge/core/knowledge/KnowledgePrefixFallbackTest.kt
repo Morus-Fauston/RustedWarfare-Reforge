@@ -1,8 +1,8 @@
 package com.rustedwarfare.reforge.core.knowledge
 
 import com.rustedwarfare.reforge.core.content.*
-import com.rustedwarfare.reforge.core.path.PathSearchOutcome
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchOutcome
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import com.rustedwarfare.reforge.core.sim.*
 import java.awt.geom.Line2D
 import java.nio.file.Path

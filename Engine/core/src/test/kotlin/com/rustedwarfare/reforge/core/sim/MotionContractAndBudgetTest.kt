@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
@@ -7,7 +9,7 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.TransportProfile
 import com.rustedwarfare.reforge.core.content.UnitDefinition
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -436,20 +438,21 @@ class MotionContractAndBudgetTest {
             .firstOrNull { Files.isDirectory(it.resolve("Engine/core/src/main/kotlin")) }
             ?: return // Sealed test-jar runs without source tree skip raw file scan
         val simDir = repoRoot.resolve("Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/sim")
+        val navDir = repoRoot.resolve("Engine/core/src/main/kotlin/com/rustedwarfare/reforge/core/navigation")
         val decoupledFiles = listOf(
-            "BodyMotion.kt",
-            "NarrowPassage.kt",
-            "SharedLandingSites.kt",
-            "UnitMovementOrchestrator.kt",
-            "MovePlanning.kt",
-            "NavigationGuidance.kt",
-            "UnitContact.kt",
+            simDir.resolve("BodyMotion.kt"),
+            navDir.resolve("NarrowPassage.kt"),
+            navDir.resolve("SharedLandingSites.kt"),
+            navDir.resolve("UnitMovementOrchestrator.kt"),
+            navDir.resolve("MovePlanning.kt"),
+            navDir.resolve("NavigationGuidance.kt"),
+            navDir.resolve("UnitContact.kt"),
         )
         val blockComments = Regex("/\\*[\\s\\S]*?\\*/")
         val lineComments = Regex("//.*")
-        for (name in decoupledFiles) {
-            val file = simDir.resolve(name)
-            if (!Files.isRegularFile(file)) continue
+        for (file in decoupledFiles) {
+            assertTrue(Files.isRegularFile(file), "Expected decoupled source file to exist: $file")
+            val name = file.fileName.toString()
             val codeOnly = Files.readString(file)
                 .replace(blockComments, "")
                 .replace(lineComments, "")
@@ -458,13 +461,12 @@ class MotionContractAndBudgetTest {
             assertFalse(".taskQueue" in codeOnly, "$name must not mutate unit.taskQueue directly")
         }
 
-        val pathfindingFile = simDir.resolve("Pathfinding.kt")
-        if (Files.isRegularFile(pathfindingFile)) {
-            val codeOnly = Files.readString(pathfindingFile)
-                .replace(blockComments, "")
-                .replace(lineComments, "")
-            assertFalse("ThreadLocal" in codeOnly, "Pathfinding.kt must not retain unbudgeted ThreadLocal frontier state")
-        }
+        val pathfindingFile = navDir.resolve("Pathfinding.kt")
+        assertTrue(Files.isRegularFile(pathfindingFile), "Expected Pathfinding.kt in core/navigation")
+        val codeOnly = Files.readString(pathfindingFile)
+            .replace(blockComments, "")
+            .replace(lineComments, "")
+        assertFalse("ThreadLocal" in codeOnly, "Pathfinding.kt must not retain unbudgeted ThreadLocal frontier state")
     }
 
     @Test
@@ -501,7 +503,7 @@ class MotionContractAndBudgetTest {
             ).apply { isAccessible = true }
             val state = (stepsField.get(ctx) as CandidateSteps).current
             val blocker = state.units.getValue("blocker")
-            val planningTerrain = terrainMethod.invoke(ctx, blocker, map, MovementType.LAND) as com.rustedwarfare.reforge.core.path.PlanningTerrain
+            val planningTerrain = terrainMethod.invoke(ctx, blocker, map, MovementType.LAND) as com.rustedwarfare.reforge.core.navigation.PlanningTerrain
             val unreachableTarget = Position(100.0, 50.0)
             val tinyBudget = PathWorkBudget(2)
 

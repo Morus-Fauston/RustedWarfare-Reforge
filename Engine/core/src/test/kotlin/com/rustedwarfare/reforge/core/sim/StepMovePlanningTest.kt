@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
@@ -9,9 +11,9 @@ import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.PathInformationSource
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
 import com.rustedwarfare.reforge.core.knowledge.VisibleTerrainCell
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
-import com.rustedwarfare.reforge.core.path.PlanningWorkSample
-import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSample
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSlice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

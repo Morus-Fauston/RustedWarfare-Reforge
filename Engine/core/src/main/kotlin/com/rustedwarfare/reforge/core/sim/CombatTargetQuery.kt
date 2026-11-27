@@ -1,24 +1,24 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.NamedWeaponDefinition
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.TransportProfile
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.WeaponCondition
+import com.rustedwarfare.reforge.core.navigation.UnitLocomotion
 
 /** Queries current candidate objects in gameplay order; no position or membership survives a call. */
 internal object CombatTargetQuery {
-    fun isFlying(target: MutableUnit): Boolean =
-        if (target.amphibiousState != null) UnitLocomotion.movement(target).type == MovementType.AIR
-        else target.definition.movement.type == MovementType.AIR && target.height >= 4.0
+    fun isFlying(target: MutableUnit): Boolean = UnitLocomotion.isFlying(target)
 
-    fun isUnderwater(target: MutableUnit, height: Double = target.height): Boolean = isUnderwater(target.definition, height)
+    fun isUnderwater(target: MutableUnit, height: Double = target.height): Boolean =
+        UnitLocomotion.isUnderwater(target, height)
 
     fun isUnderwater(definition: UnitDefinition, height: Double): Boolean =
-        UnitLocomotion.isSubmerged(definition, height) ||
-            definition.transport == TransportProfile.NAUTILUS_SUBMERGED && height < UnitLocomotion.SUBMERGED_DEPTH ||
-            definition.fixedUnderwaterTarget != null && height <= UnitLocomotion.SUBMERGED_DEPTH
+        UnitLocomotion.isUnderwater(definition, height)
 
     /** Physical flying takes precedence; negative ordinary heights do not grant underwater capability. */
     fun weaponAllows(target: MutableUnit, weapon: NamedWeaponDefinition): Boolean = when {

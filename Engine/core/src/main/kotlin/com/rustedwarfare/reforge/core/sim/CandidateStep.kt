@@ -1,12 +1,14 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.NautilusRules
 import com.rustedwarfare.reforge.core.content.ScoutBotRules
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
-import com.rustedwarfare.reforge.core.path.PathSearchSample
-import com.rustedwarfare.reforge.core.path.PlanningWorkSample
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PathSearchSample
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSample
 import com.rustedwarfare.reforge.core.knowledge.*
 import java.util.IdentityHashMap
 
@@ -146,7 +148,8 @@ internal data class StepState(
                 "Flight timers and approach must remain finite"
             }
             require(unit.sinkSpeed.isFinite() && unit.sinkSpeed >= 0f) { "Water-body sink state must remain finite" }
-            require(unit.submarineVerticalSpeed.isFinite() && unit.submarineVerticalSpeed in 0f..0.08f) {
+            val maxSubRate = SubmarineMotion.maxVerticalRate(unit.definition)
+            require(unit.submarineVerticalSpeed.isFinite() && unit.submarineVerticalSpeed in 0f..maxSubRate) {
                 "Submarine vertical speed must remain finite and bounded"
             }
             val origin = unit.productionOrigin
@@ -327,7 +330,12 @@ internal class CandidateSteps {
 
 /** Owns projected resources and the publication window, as well as the working state. */
 internal class CandidateStep(val state: StepState, private val step: Step) {
-    val translations = UnitContact.Translations(step.delta, state.spatialIndex) { id ->
+    val translations = UnitContact.Translations(
+        delta = step.delta,
+        spatialIndex = state.spatialIndex,
+        isSeparatingBirth = FactoryExit::isNativeSeaDeparture,
+        containsAdjustedSlots = { moved, map, pos -> UnitAttachments.containsAdjustedSlots(state.units, moved, map, pos) },
+    ) { id ->
         (state.movePlanning.pending(id) && !state.movePlanning.repairing(id)) || id in state.pendingFlowStart
     }
     val existingProjectileIds = state.projectiles.mapTo(hashSetOf()) { it.objectId }

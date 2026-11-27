@@ -1,8 +1,10 @@
 package com.rustedwarfare.reforge.core.sim
 
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.*
+
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import kotlin.test.Test
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -124,8 +126,8 @@ class PassageSurveyBudgetTest {
             drivers.forEachIndexed { i, u -> u.updateNavigation { it.withPathPoints(listOf(Position(176.0, 191.0 + 100 * i))) } }
             assertNull(state.landingSites[wallGroup])
             assertNull(state.landingSites[other])
-            kotlin.test.assertFalse(state.sharedWallRepairDue(retryStep - 1))
-            kotlin.test.assertTrue(state.sharedWallRepairDue(retryStep), "Due drivers without sites still need a reserved slice")
+            kotlin.test.assertFalse(sharedWallRepairDue(state.units.values, retryStep - 1))
+            kotlin.test.assertTrue(sharedWallRepairDue(state.units.values, retryStep), "Due drivers without sites still need a reserved slice")
             ctx.advance(Step(retryStep, 1.0, "sim-tick"))
             val shared = ctx.drainPlanningWorkDiagnostics(ctx.world).single()
             val wallWork = shared.slices.filter { it.reason == PathSearchReason.ROUTE_REPAIR && it.unitIds.isEmpty() }.sumOf { it.workUnits }

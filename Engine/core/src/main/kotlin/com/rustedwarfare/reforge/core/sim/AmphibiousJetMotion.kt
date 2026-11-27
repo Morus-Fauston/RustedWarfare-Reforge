@@ -1,6 +1,10 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
+import com.rustedwarfare.reforge.core.navigation.UnitLocomotion
+import com.rustedwarfare.reforge.core.navigation.VerticalPoseController
 import kotlin.math.abs
 import kotlin.math.sin
 
@@ -10,8 +14,15 @@ internal data class AmphibiousJetState(val phase: Float = 0f, val verticalSpeed:
     val terrainPausedMove: Boolean = false)
 
 /** Closed native capability, separate from rotor flight and submarine intent. */
-internal object AmphibiousJetMotion {
-    fun advanceCorpse(unit: MutableUnit, map: MapDefinition, delta: Double) {
+internal object AmphibiousJetMotion : VerticalPoseController {
+    override fun advancePose(
+        unit: MutableUnit,
+        map: MapDefinition,
+        delta: Double,
+        acceptsHeight: (Double) -> Boolean,
+    ): String? = if (advance(unit, map, delta, acceptsHeight)) "amphibious-threshold-crossed" else null
+
+    override fun advanceCorpse(unit: MutableUnit, map: MapDefinition, delta: Double) {
         val state = unit.amphibiousState ?: return
         if (unit.waterSettled) return
         val elapsed = delta.toFloat()

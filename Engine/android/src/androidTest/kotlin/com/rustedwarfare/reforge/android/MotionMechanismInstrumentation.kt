@@ -1,12 +1,14 @@
 package com.rustedwarfare.reforge.android
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import android.app.Activity
 import android.app.Instrumentation
 import android.os.Bundle
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.knowledge.*
-import com.rustedwarfare.reforge.core.path.AuthorizedNavigationTerrain
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.AuthorizedNavigationTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import com.rustedwarfare.reforge.core.sim.*
 import org.json.JSONArray
 import org.json.JSONObject

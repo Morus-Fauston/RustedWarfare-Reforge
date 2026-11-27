@@ -1,7 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
 import com.rustedwarfare.reforge.core.content.*
-import com.rustedwarfare.reforge.core.path.*
+import com.rustedwarfare.reforge.core.navigation.*
 import kotlin.test.*
 
 /**
@@ -88,7 +88,7 @@ class MovementRegression011Test {
             for (s in 0L until 10L) ctx.advance(Step(s, 1.0, "sim-tick"))
             val samples = ctx.drainPathDiagnostics(ctx.world)
             assertTrue(
-                samples.any { it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.USER_MOVE },
+                samples.any { it.reason == com.rustedwarfare.reforge.core.navigation.PathSearchReason.USER_MOVE },
                 "Expected USER_MOVE diagnostic sample from shared flow field, got $samples",
             )
         } finally {

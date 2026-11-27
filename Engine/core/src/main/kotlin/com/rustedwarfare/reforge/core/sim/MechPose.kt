@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 /** The stage executed in the most recent step, not a promise about the next step. */
 enum class MechLegPhase { PLANTED, WARMING_UP, LIFTING, SWINGING, LOWERING }
 

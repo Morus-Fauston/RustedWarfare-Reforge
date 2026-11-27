@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
@@ -13,11 +15,11 @@ import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.PathInformationSource
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
 import com.rustedwarfare.reforge.core.knowledge.VisibleTerrainCell
-import com.rustedwarfare.reforge.core.path.PathSearchCounters
-import com.rustedwarfare.reforge.core.path.PathSearchOutcome
-import com.rustedwarfare.reforge.core.path.PathSearchReason
-import com.rustedwarfare.reforge.core.path.PathSearchSample
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PathSearchCounters
+import com.rustedwarfare.reforge.core.navigation.PathSearchOutcome
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchSample
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -56,7 +58,7 @@ class RectangularManeuverTest {
         assertEquals("scout", served.first(), "Optional backlog held up a later player command")
         fun slice(q: MovePlanning, entered: Boolean = false): Pair<List<String>, Int> {
             val budget = PathWorkBudget(24)
-            val samples = mutableListOf<com.rustedwarfare.reforge.core.path.PlanningWorkSlice>()
+            val samples = mutableListOf<com.rustedwarfare.reforge.core.navigation.PlanningWorkSlice>()
             val releases = mutableListOf<String>()
             q.advance(ClearanceAStarPolicy.DEFAULT, budget, { actions, _, reason ->
                 assertTrue(!budget.exhausted, "Live occupancy was sampled after exhausting the budget")

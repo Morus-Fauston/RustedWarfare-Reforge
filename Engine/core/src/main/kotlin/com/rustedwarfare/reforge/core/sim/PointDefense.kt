@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 /** Runs in each live unit's slot, before that step's projectile movement. */
 internal object PointDefense {
     fun muzzle(unit: MutableUnit): Position = checkNotNull(unit.definition.pointDefense).muzzle(unit.position, unit.heading)

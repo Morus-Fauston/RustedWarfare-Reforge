@@ -1,9 +1,11 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
-import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSlice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

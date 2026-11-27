@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
 import com.rustedwarfare.reforge.core.knowledge.VisionSnapshot
 import java.util.Collections

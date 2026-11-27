@@ -1,15 +1,17 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementProfile
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
-import com.rustedwarfare.reforge.core.path.PathSearchReason
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
-import com.rustedwarfare.reforge.core.path.PlanningWorkSample
-import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSample
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSlice
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals

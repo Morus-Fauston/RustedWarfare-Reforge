@@ -1,8 +1,11 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.*
+import com.rustedwarfare.reforge.core.navigation.UnitLocomotion
 
 /** Immutable per-carrier value: candidate forks never share a mutable passenger container. */
 internal data class TransportState(val passengerIds: List<String> = emptyList(),
@@ -14,42 +17,18 @@ internal data class TransportChange(val error: SimulationError? = null, val even
 
 /** Owns admission and both sides of the passenger relation. Callers never edit the manifest. */
 internal object Transport {
-    fun boundaryRadius(unit: MutableUnit): Double = if (unit.nativeTransportPlacement) 0.0 else unit.definition.radius
+    fun boundaryRadius(unit: MutableUnit): Double = UnitLocomotion.boundaryRadius(unit)
 
     /** Native placement can occupy the small negative strip that JVM f2i maps to cell zero. */
-    fun containsPosition(unit: MutableUnit, map: MapDefinition, position: Position): Boolean {
-        val within = if (unit.nativeTransportPlacement)
-            MapBounds.contains(map.widthTiles.toDouble() * map.tileWidth,
-                map.heightTiles.toDouble() * map.tileHeight, position, 0.0)
-        else when (val shape = unit.definition.movementCollision) {
-            is MovementCollisionShape.Circle -> MapBounds.contains(
-                map.widthTiles.toDouble() * map.tileWidth,
-                map.heightTiles.toDouble() * map.tileHeight,
-                position,
-                maxOf(shape.radius, unit.definition.radius),
-            )
-            else -> MapBounds.containsHull(map, position, unit.heading, shape)
-        }
-        if (within) return true
-        if (!unit.nativeTransportPlacement || !position.x.isFinite() || !position.y.isFinite()) return false
-        if (unit.scoutOrigin != null) {
-            // A spread impact may be outside the map. Keep the observed birth pose and permit a route back inside.
-            val start = MapBounds.clamp(map, unit.position)
-            val end = MapBounds.clamp(map, position)
-            return kotlin.math.abs(position.x - end.x) <= kotlin.math.abs(unit.position.x - start.x) &&
-                kotlin.math.abs(position.y - end.y) <= kotlin.math.abs(unit.position.y - start.y)
-        }
-        val column = (position.x.toFloat() / map.tileWidth).toInt()
-        val row = (position.y.toFloat() / map.tileHeight).toInt()
-        return column in 0 until map.widthTiles && row in 0 until map.heightTiles
-    }
+    fun containsPosition(unit: MutableUnit, map: MapDefinition, position: Position): Boolean =
+        UnitLocomotion.containsPosition(unit, map, position)
 
     /** Adapt only the routing/vision query, never the native stored placement. */
     fun queryPosition(position: Position, nativePlacement: Boolean, map: MapDefinition): Position =
-        if (nativePlacement) MapBounds.clamp(map, position) else position
+        UnitLocomotion.queryPosition(position, nativePlacement, map)
 
     fun queryPosition(unit: MutableUnit, map: MapDefinition, position: Position = unit.position): Position =
-        queryPosition(position, unit.nativeTransportPlacement, map)
+        UnitLocomotion.queryPosition(unit, map, position)
 
     fun supports(definition: UnitDefinition): Boolean {
         if (definition.transport == TransportProfile.AUTHORED)

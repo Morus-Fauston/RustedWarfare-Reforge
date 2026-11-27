@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import kotlin.test.*
 import com.rustedwarfare.reforge.core.content.*
 

@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.testing.cross
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.sim.*
 import kotlin.test.*
 

@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.DurabilityProfile
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
@@ -70,7 +72,7 @@ class PatrolCommandTest {
                 val searches = context.drainPathDiagnostics(context.world).filter { it.unitId == id }
                 assertTrue(searches.isNotEmpty(), "Birth end must replace the temporary direct route even when its target is unchanged")
                 assertTrue(searches.all { it.searchTarget == point && it.usedPlayerKnowledge &&
-                    it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.USER_MOVE })
+                    it.reason == com.rustedwarfare.reforge.core.navigation.PathSearchReason.USER_MOVE })
                 val unit = after.units.single { it.unitId == id }
                 println("P005-007 unchanged-birth-point retention=$retention before=$before searches=$searches after=$unit")
                 assertEquals(point, unit.moveTarget)
@@ -130,7 +132,7 @@ class PatrolCommandTest {
                 val searches = context.drainPathDiagnostics(context.world).filter { it.unitId == id }
                 assertTrue(searches.isNotEmpty())
                 assertTrue(searches.all { it.searchTarget == point && it.usedPlayerKnowledge &&
-                    it.reason != com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR })
+                    it.reason != com.rustedwarfare.reforge.core.navigation.PathSearchReason.ROUTE_REPAIR })
                 println("P005-007 newborn-loss retention=$retention step=$at searches=$searches")
             } finally { context.close() }
         }
@@ -176,7 +178,7 @@ class PatrolCommandTest {
                         context.advance(Step(step + 1, 1.0, "sim-tick"))
                         val searches = context.drainPathDiagnostics(context.world)
                         assertTrue(searches.any { it.unitId == "witness" &&
-                            it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.KNOWLEDGE_REPLAN },
+                            it.reason == com.rustedwarfare.reforge.core.navigation.PathSearchReason.KNOWLEDGE_REPLAN },
                             "The pending knowledge consumer must really execute for the manual witness")
                         assertTrue(searches.filter { it.unitId == "a" }.all { it.searchTarget == point })
                         assertEquals(point, context.drainMotionDiagnostics(context.world).single { it.unitId == "a" }.commandTargetBefore)
@@ -446,7 +448,7 @@ class PatrolCommandTest {
             val searches = context.drainPathDiagnostics(context.world)
             assertTrue(searches.isNotEmpty())
             assertTrue(searches.all { it.searchTarget == Position(290.0, 210.0) &&
-                it.outcome == com.rustedwarfare.reforge.core.path.PathSearchOutcome.UNREACHABLE })
+                it.outcome == com.rustedwarfare.reforge.core.navigation.PathSearchOutcome.UNREACHABLE })
         } finally { context.close() }
     }
 
@@ -473,7 +475,7 @@ class PatrolCommandTest {
             assertEquals(0f, checkNotNull(context.observe().production).units.single().birthRemaining)
             val searches = context.drainPathDiagnostics(context.world).filter { it.unitId == id }
             assertTrue(searches.isNotEmpty(), "An unchanged visible T also requires a normal route at birth end")
-            assertTrue(searches.all { it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ATTACK_PURSUIT &&
+            assertTrue(searches.all { it.reason == com.rustedwarfare.reforge.core.navigation.PathSearchReason.ATTACK_PURSUIT &&
                 it.searchTarget == Position(510.0, 215.0) }, "Birth completion must use the normal patrol stage")
             assertEquals(listOf(point), context.observe().units.single { it.unitId == id }.tasks.map { it.target })
         } finally { context.close() }

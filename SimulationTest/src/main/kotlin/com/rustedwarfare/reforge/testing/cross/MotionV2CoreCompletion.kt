@@ -1,7 +1,7 @@
 package com.rustedwarfare.reforge.testing.cross
 
-import com.rustedwarfare.reforge.core.sim.MotionStepSample
-import com.rustedwarfare.reforge.core.sim.MotionTerrainDisposition
+import com.rustedwarfare.reforge.core.navigation.MotionStepSample
+import com.rustedwarfare.reforge.core.navigation.MotionTerrainDisposition
 import com.rustedwarfare.reforge.core.sim.Position
 
 /** Paired history only; does not grant source, event or local-aim qualification. */

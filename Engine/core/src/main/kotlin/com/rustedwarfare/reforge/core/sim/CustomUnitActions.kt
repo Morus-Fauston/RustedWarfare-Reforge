@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlinkWork
 import com.rustedwarfare.reforge.core.content.CustomActionDefinition
 import com.rustedwarfare.reforge.core.content.AutomaticActionCondition

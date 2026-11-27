@@ -1,3 +1,10 @@
+v0.5.85 (2026-11-28 00:39)
+  架构改进: 在 :Engine:core 建立独立包域 core.navigation 物理收拢原 core.path 与 core.sim 共 36 个寻路/流场/避让/空间索引/落位/接触文件（删除 src/main 与 src/test 旧 core/path 目录），收敛为 LocomotionDescriptor & VerticalPoseController、AuthorizedNavigationTerrain、NavigationSubsystem 三道窄接口与 DynamicBuildingGrid/窄化 UnitMovementHost，彻底切断业务类、StepState/CandidateStep、UnitTaskKind 与具体单位 ID 逆向依赖 / 新增 WaterLandSpeedProfile、SubmersibleMotionProfile、CustomVerticalPoseProfile、shortReverseDistance、sinksInWaterOnDeath 纯数据契约（配 Float/平方溢出与多垂向控制器互斥校验），拔除 SimulationContext.validate 的 radius>=20、离散倒车比、slidingMode/ignoringBody 与 FOUR_LEGGED 介质锁，将 UnitLocomotion、*Motion、WaterBody 与 BuildingOverlapEscape 运行期全面参数化清零单位 ID 白名单并贯通 OVER_CLIFF_WATER 全链路
+  文档: 按授权同步主仓库 AGENTS.md 治理索引微调与 CONTEXT.md 命令队列/编队行进/出厂散开/连片停稳领域术语增量
+  技术: 新增 NavigationModuleArchitectureGuardTest（包隔离、双目录旧 path 删除与运行期零单位 ID 守卫）及 PhaseSixBMovementContractTest（radius=38 六足 OVER_CLIFF_WATER 巨兽、自定义参数潜艇跨层路由、水陆双速气垫登陆、72x44 矩形巨舰绕宽水道与沉没及边界组合校验）并注册至公开套件；全量 :core:test、Android 编译、dev-ab 10 场景、public_batch --kind pr（7 套机制与全部短测）、public_batch --kind long（33 条长链）及双根布局校验全绿，经独立非作者代码整审与 R01 定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.84 (2026-11-27 21:50)
   架构改进: 删除 MutableUnit 32 个逐字段 var 导航写代理并将 6 个路径节点审计字段并入不可变 UnitNavigationState.NavigationRequestAudit（配反射单测守卫），引入与上层任务解耦的正交 MotionContract（Point/SharedCluster/RangeBand、isBoardingApproach 与 INDEPENDENT/COHORT_ESCORT）彻底拔除 7 个导航与避让文件对 UnitTaskKind 及任务队列长度的直接读取 / 以分步预算且支持回滚的 RangePathSearch（含 1 步无障碍直线快检、O(1) 连通预检与 KKT 闭式可容许启发式）取代无预算同步 findPathToRange 及 ThreadLocal 缓冲，将施工、攻击追击（加 O(1) 尾段接驳与目标格迟滞）、巡逻、装载 4 条场外寻路统一收口至 ADR-010 步内预算，并按 TacticalUnreachablePolicy 对齐跨步修路不可达守卫与任务队头弹出
   修复: 修复 org.gradle.parallel=true 下 development_tests.gradle 在 :publicPreparation 的 doLast 阶段无锁解析跨项目 testRuntimeClasspath 的并发锁报错（前移至 gradle.taskGraph.whenReady），并为双根 gradle.properties 与测试子进程配置有界堆/元空间与 G1PeriodicGCInterval=5000

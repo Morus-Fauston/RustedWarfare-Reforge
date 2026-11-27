@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MechBodyDefinition
 import com.rustedwarfare.reforge.core.content.MechKind
 import java.util.Random

@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MapDefinition
 internal data class SpiderBlink(val target: Position, val queuedAt: Long, val duration: Int, val remaining: Int = duration)
 

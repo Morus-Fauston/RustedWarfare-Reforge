@@ -1,11 +1,13 @@
 package com.rustedwarfare.reforge.client.demo
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
 import com.rustedwarfare.reforge.core.knowledge.PathInformationSource
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
 import com.rustedwarfare.reforge.core.knowledge.VisibleTerrainCell
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import com.rustedwarfare.reforge.core.sim.*
 import kotlin.math.floor
 

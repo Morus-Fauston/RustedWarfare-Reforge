@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.UnitDefinition
@@ -61,7 +63,7 @@ class MixedLandingTest {
         }
         val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"), true)
         val pool = SharedLandingSites.forGroup(scene.map, group, cars)
-        val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
+        val terrain = com.rustedwarfare.reforge.core.navigation.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
         val survey = assertNotNull(pool.mixedBays)
         assertNull(survey.sites(terrain, PathWorkBudget(1)))
         assertEquals(emptyList(), survey.sites(terrain, PathWorkBudget(256)))
@@ -138,7 +140,7 @@ class MixedLandingTest {
             }
             val other = MutableUnit("parked", "p1", def.id, def, site, 90.0)
             var blockers = emptyList<MutableUnit>()
-            var ground = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map)
+            var ground = com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(scene.map)
             val paths = ClearanceAStarPolicy.DEFAULT
             fun serve(survey: MixedLandingBays, sites: List<Position> = listOf(site)): MixedLandingBays.Decision {
                 car.heading += 0.1 // A circular body can keep steering between slices of the same swept route.
@@ -161,7 +163,7 @@ class MixedLandingTest {
             car.position = Position(400.0, 330.0)
             assertEquals(listOf(site), assertIs<MixedLandingBays.Decision.Claim>(serve(bay)).path)
             val blocked = scenario({ x, y -> x == 21 && y == 16 }, car.position)
-            ground = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(blocked.map)
+            ground = com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(blocked.map)
             assertIs<MixedLandingBays.Decision.Pending>(serve(bay))
         } finally { context.close() }
     }

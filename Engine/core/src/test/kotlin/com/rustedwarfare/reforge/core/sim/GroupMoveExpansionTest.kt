@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import kotlin.math.sqrt
@@ -120,7 +122,7 @@ class GroupMoveExpansionTest {
             val holder = MutableUnit("holder", "p2", unit.id, unit, Position(900.0, 600.0), heading)
             val action = MoveAction("corner", "p1", body.unitId, click, context.world)
             val group = GroupMoveRequest(context.world, null, "p1", click, setOf(body.unitId))
-            val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(map)
+            val terrain = com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(map)
             // Birth routing bypasses path search and isolates publication validity;
             // vacancy checks still use the actual rectangular hull and buffer.
             val member = MovePlanningMember(action, body,
@@ -134,7 +136,7 @@ class GroupMoveExpansionTest {
             planning.enqueue(action, group)
             var snapshots = 0
             var published = false
-            val samples = mutableListOf<com.rustedwarfare.reforge.core.path.PlanningWorkSlice>()
+            val samples = mutableListOf<com.rustedwarfare.reforge.core.navigation.PlanningWorkSlice>()
             for (step in 0..1000) {
                 planning.advance(ClearanceAStarPolicy.DEFAULT, PathWorkBudget(128),
                     { _, _, _ -> if (snapshots++ == 0) initial else current },
@@ -160,7 +162,7 @@ class GroupMoveExpansionTest {
         try {
             val target = Position(640.0, 600.0)
             val group = assertNotNull(origin.requestGroupMove("p1", scene.units.map { it.unitId }, target))
-            val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(map)
+            val terrain = com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(map)
             val members = scene.units.map { spawn ->
                 val action = MoveAction("go-${spawn.unitId}", "p1", spawn.unitId, target, origin.world)
                 val body = MutableUnit(spawn.unitId, "p1", "tank", tank, spawn.position, spawn.heading)

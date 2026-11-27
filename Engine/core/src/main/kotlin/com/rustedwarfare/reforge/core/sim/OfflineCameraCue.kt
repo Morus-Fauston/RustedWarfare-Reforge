@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 sealed interface OfflineCameraMotion {
     data class Locate(val center: Position) : OfflineCameraMotion
     data class Pan(val center: Position, val durationTicks: Int) : OfflineCameraMotion

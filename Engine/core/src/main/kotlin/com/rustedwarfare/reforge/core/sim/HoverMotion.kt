@@ -1,12 +1,25 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.navigation.VerticalPoseController
 import kotlin.math.sin
 
 /** Height remains part of the candidate unit; failure cannot publish a partial pose. */
-internal object HoverMotion {
+internal object HoverMotion : VerticalPoseController {
+    override fun advancePose(
+        unit: MutableUnit,
+        map: MapDefinition,
+        delta: Double,
+        acceptsHeight: (Double) -> Boolean,
+    ): String? {
+        advancePose(unit, delta)
+        return null
+    }
+
     /** Native land-base death branch; hover bobbing stops at death. */
-    fun advanceCorpse(unit: MutableUnit, map: MapDefinition, delta: Double) {
+    override fun advanceCorpse(unit: MutableUnit, map: MapDefinition, delta: Double) {
         if (unit.definition.movement.hover == null) return
         val column = MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles)
         val row = MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles)

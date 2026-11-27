@@ -1,8 +1,10 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.knowledge.*
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max

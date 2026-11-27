@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 /**
  * Authoritative simulation stage keys for [SimHotspotCollector] and client `LiveHotspotProfiler` (ENG-P017-003).
  *
