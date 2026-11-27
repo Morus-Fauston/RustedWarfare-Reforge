@@ -55,7 +55,8 @@
       "com.rustedwarfare.reforge.client.UiP004MainMenuAndMapPickerTest",
       "com.rustedwarfare.reforge.client.UiP004SkirmishLobbyTest",
       "com.rustedwarfare.reforge.client.UiP004SandboxAndLoadingTest",
-      "com.rustedwarfare.reforge.client.UiP004SettingsAndPacksTest"
+      "com.rustedwarfare.reforge.client.UiP004SettingsAndPacksTest",
+      "com.rustedwarfare.reforge.client.UiP004Phase6BAssetsAndSoundsTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",

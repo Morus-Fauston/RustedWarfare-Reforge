@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.6.6 (2026-11-28 04:36)
+
+### 新增
+
+- **六期 B 剩余 49 单位自有俯视工业像素与残骸贴图集（`visuals/placeholder/phase6b/`）**：严格沿用既有俯视工业像素画风、轮廓辨识度与纯绿通道（`#00FF00`）玩家阵营着色规范，原创补绘陆军重装/火炮/激光等离子坦克、空军截击/重型炮艇/导弹飞艇、海军侦察/建造/重型潜艇与防空导弹舰、小型与大型四型机甲、防御炮塔/前哨/T3 采矿机及实验级悬浮坦克/蜘蛛/航母/炮艇/登陆舰等 49 个单位与共享部件的全部主体、炮塔、腿足、阴影、蓄能光效及损毁残骸贴图；同步完成 `placeholder/manifest.json` 49 项单位槽位绑定及桌面端 `--original-assets` 原版贴图路径双向映射。
+- **30 核心事件程序化合成占位音效与原版 `.ogg` 映射（`sounds/`）**：在保留既有 5 份基础音效的前提下，采用纯数学波形合成新增火炮/机炮/防空炮、等离子/电弧/激光充能、点防御拦截、大中小型爆炸、虫族攻击与死亡、移动与攻击指令确认、UI 点击/建造队列增删/错误/聊天提示及基地预警等 25 份 16-bit 单声道 PCM WAV 占位音（峰值严控 `< 0.95` 零削波且听感频谱区分清晰），补齐全部 30 个核心音效事件与 7 项衍生事件别名，并接通 `PcBaseSoundResources` 与原版 `.ogg` 覆盖映射。
+
+### 技术
+
+- **公开克隆自包含资源与波形合规单测、按产线拼图目视与独立双审**：更新展示版本号至 `v0.6.6`，新增零私有目录依赖的 `UiP004Phase6BAssetsAndSoundsTest`（逐项核验贴图尺寸/帧数/纯绿通道零误染、49 单位绑定闭环及全部 WAV 标准 PCM 头与非静音防削波峰值）并同步扩展 `PcOriginalDirectLaunchTest` 与 `VisualAssetPlaceholderTest`；`platform-basics` 机制套件与双根 `workspace_layout.py` 全绿；陆/空/海/机甲/建筑防御/实验级 6 张高清阵营染色与残骸对照拼图经全新上下文独立视觉审查 `APPROVED`，清单、代码与 100% 原创版权合规经独立非作者整审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/resources/visuals/placeholder/phase6b/*.png` | **新增** — 六期 B 剩余 49 单位与共享部件的 127 张自有俯视工业像素主体、炮塔、腿足、阴影与残骸贴图 |
+| `Engine/client/src/main/resources/visuals/placeholder/manifest.json` | 注册全部新增占位贴图元数据与 49 项单位视觉槽位绑定 |
+| `Engine/client/src/main/resources/sounds/*.wav` | **新增** — 25 份程序化数学合成 16-bit PCM WAV 占位音效 |
+| `Engine/client/src/main/resources/sounds/sounds.json` | 补齐全部 30 个核心音效定义、标准事件与 7 项衍生战斗事件映射 |
+| `Engine/client/src/main/resources/sounds/README.md` | 更新内置程序化合成音效清单、波形规格与事件映射说明 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcPlaceholderVisualAssets.kt` | 接入新增单位与部件占位贴图资源校验及槽位解析 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcBaseSoundResources.kt` | 扩展桌面端内置基础音效事件映射与原版资源覆盖绑定 |
+| `Engine/pc/src/main/resources/visuals/pc-original-images-profile.json` | 补齐新增单位贴图与残骸对应的原版路径映射 |
+| `Engine/pc/src/main/resources/visuals/pc-original-resources-profile.json` | 补齐新增单位视觉与 30 核心事件原版 `.ogg` 音频提取映射 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.6` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004Phase6BAssetsAndSoundsTest.kt` | **新增** — 自包含的贴图尺寸/纯绿通道、单位绑定与 30 事件 WAV 波形合规单测 |
+| `Engine/pc/src/test/kotlin/com/rustedwarfare/reforge/pc/PcOriginalDirectLaunchTest.kt` | 同步校验扩展后的原版视觉与音效资源映射集 |
+| `Engine/pc/src/test/kotlin/com/rustedwarfare/reforge/pc/VisualAssetPlaceholderTest.kt` | 同步校验扩展后的全量内置占位视觉清单完整性 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004Phase6BAssetsAndSoundsTest` |
+
+---
+
 ## v0.6.5 (2026-11-28 04:21)
 
 ### 架构改进

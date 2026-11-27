@@ -5,6 +5,6 @@ package com.rustedwarfare.reforge.client
  */
 object ReforgeVersion {
     const val PROJECT_TITLE: String = "RustedWarfare-Reforge"
-    const val DISPLAY_VERSION: String = "v0.6.4"
+    const val DISPLAY_VERSION: String = "v0.6.6"
     const val COPYRIGHT_NOTICE: String = "© Fauston Morus & Rust Tech"
 }

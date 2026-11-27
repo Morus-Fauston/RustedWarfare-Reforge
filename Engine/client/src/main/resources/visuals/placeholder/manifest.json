@@ -342,6 +342,1276 @@
       "width": 100,
       "height": 160,
       "frames": 1
+    },
+    {
+      "id": "p6b-gunship",
+      "resource": "phase6b/gunship.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/gunship.png",
+      "bytes": 668,
+      "sha256": "51d17b9e2fc48ff28b7f62d7added13fbd2190f1571fce98849be73aabb06535",
+      "width": 25,
+      "height": 35,
+      "frames": 1
+    },
+    {
+      "id": "p6b-gunship-dead",
+      "resource": "phase6b/gunship-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/gunship-dead.png",
+      "bytes": 655,
+      "sha256": "f8d709ae526f0b59f863df4963f86a43a3de722195c87a587912d7fe8e6913c2",
+      "width": 25,
+      "height": 35,
+      "frames": 1
+    },
+    {
+      "id": "p6b-gunship-shadow",
+      "resource": "phase6b/gunship-shadow.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/gunship-shadow.png",
+      "bytes": 298,
+      "sha256": "19a1a5531fe821b6170b483b27af0b833c60275d0448ace22ea1297d660bd695",
+      "width": 25,
+      "height": 35,
+      "frames": 1
+    },
+    {
+      "id": "p6b-scout-ship",
+      "resource": "phase6b/scout-ship.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/scout-ship.png",
+      "bytes": 436,
+      "sha256": "1ec517e03c2bfb65e99029a9963d68796a8f54cc82aba5d67d1ba743d37999c8",
+      "width": 17,
+      "height": 31,
+      "frames": 1
+    },
+    {
+      "id": "p6b-scout-ship-dead",
+      "resource": "phase6b/scout-ship-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/scout-ship-dead.png",
+      "bytes": 564,
+      "sha256": "ec6886617159850ebe9eceda8c92e1c23305a9aa0e66699bc2910f819e975fc9",
+      "width": 17,
+      "height": 31,
+      "frames": 1
+    },
+    {
+      "id": "p6b-battle-ship-t2",
+      "resource": "phase6b/battle-ship-t2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/battle-ship-t2.png",
+      "bytes": 588,
+      "sha256": "992f531376576d1174a2ae1e312e067a5f8dcc54aac4be99d7113c6789a95f80",
+      "width": 17,
+      "height": 68,
+      "frames": 1
+    },
+    {
+      "id": "p6b-battle-ship-t2-turret",
+      "resource": "phase6b/battle-ship-t2-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/battle-ship-t2-turret.png",
+      "bytes": 179,
+      "sha256": "70132f3f8da232e15ae4d29305a87eeb0da1b0769ecdd992d79ddfefae16baae",
+      "width": 6,
+      "height": 30,
+      "frames": 1
+    },
+    {
+      "id": "p6b-battle-ship-t2-dead",
+      "resource": "phase6b/battle-ship-t2-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/battle-ship-t2-dead.png",
+      "bytes": 1052,
+      "sha256": "0503c60b600361c3d42605a1ea94dd3fd05b3a79f023bd9804c61f531160058d",
+      "width": 17,
+      "height": 76,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-tank",
+      "resource": "phase6b/heavy-tank.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-tank.png",
+      "bytes": 877,
+      "sha256": "e4657660f68da7d770f2846a56329f598d773190fcd73c75547a0a90843f8608",
+      "width": 66,
+      "height": 36,
+      "frames": 3
+    },
+    {
+      "id": "p6b-heavy-tank-turret",
+      "resource": "phase6b/heavy-tank-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-tank-turret.png",
+      "bytes": 312,
+      "sha256": "50bfdb2deefe996772098f98f8216e476b4de9921f4ce51254867bc0b96025b7",
+      "width": 16,
+      "height": 42,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-tank-dead",
+      "resource": "phase6b/heavy-tank-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-tank-dead.png",
+      "bytes": 820,
+      "sha256": "f80939456a2bd7f53d5de417e03ae563d744a7433c80088862f54a3157a979bf",
+      "width": 22,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-hover-tank",
+      "resource": "phase6b/heavy-hover-tank.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-hover-tank.png",
+      "bytes": 697,
+      "sha256": "22c713c8d7d9712b8f517b9a7eaa9db966a901f263820b836251274dcb8a4742",
+      "width": 24,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-hover-tank-dead",
+      "resource": "phase6b/heavy-hover-tank-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-hover-tank-dead.png",
+      "bytes": 858,
+      "sha256": "a11959e375a100dfc818f3ecacf4110382cfaa813ee3519b027013c26e6a4fa4",
+      "width": 24,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-hover-tank-shadow",
+      "resource": "phase6b/heavy-hover-tank-shadow.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-hover-tank-shadow.png",
+      "bytes": 202,
+      "sha256": "db9fc287e650b59307a4c908368e2ed546d329d421b293a0a778b36e44d5a03e",
+      "width": 24,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-builder-ship",
+      "resource": "phase6b/builder-ship.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/builder-ship.png",
+      "bytes": 404,
+      "sha256": "c8b6dd050046bac651ff68a7971e3755ac44fcd85581b7a7b023d92b2735e906",
+      "width": 17,
+      "height": 27,
+      "frames": 1
+    },
+    {
+      "id": "p6b-builder-ship-turret",
+      "resource": "phase6b/builder-ship-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/builder-ship-turret.png",
+      "bytes": 223,
+      "sha256": "bfbb5d614d5e31ff8a85c11ac0e83c578f96eec0463bf38626e163ec59619fbf",
+      "width": 11,
+      "height": 19,
+      "frames": 1
+    },
+    {
+      "id": "p6b-builder-ship-dead",
+      "resource": "phase6b/builder-ship-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/builder-ship-dead.png",
+      "bytes": 447,
+      "sha256": "7371c27a33321c5e85d2322a12ec2de634ca71f9f67baa4465c0f801426c493e",
+      "width": 17,
+      "height": 27,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-hovertank",
+      "resource": "phase6b/experimental-hovertank.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-hovertank.png",
+      "bytes": 1446,
+      "sha256": "12d1738637c843694f7e7a6d883708309535f74d9a0723ed5a1666c5330c7659",
+      "width": 53,
+      "height": 77,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-hovertank-turret",
+      "resource": "phase6b/experimental-hovertank-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-hovertank-turret.png",
+      "bytes": 455,
+      "sha256": "fa22444201968dbbfb79a2b87f1d7f78295d76a043fba63041384d9f210f9292",
+      "width": 21,
+      "height": 57,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-hovertank-shield",
+      "resource": "phase6b/experimental-hovertank-shield.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-hovertank-shield.png",
+      "bytes": 2819,
+      "sha256": "60228d71b725b5bbd570fe38bea3d6dd974cf550e0c18e311087b0b74789b17c",
+      "width": 70,
+      "height": 92,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-hovertank-dead",
+      "resource": "phase6b/experimental-hovertank-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-hovertank-dead.png",
+      "bytes": 2206,
+      "sha256": "8b6e72d351e74965c9056a265b4edd59863f683e396cf250016c601d95b2c0e8",
+      "width": 53,
+      "height": 77,
+      "frames": 1
+    },
+    {
+      "id": "p6b-combat-engineer-base",
+      "resource": "phase6b/combat-engineer-base.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/combat-engineer-base.png",
+      "bytes": 914,
+      "sha256": "2dc9e89e5c55869977f893a8bb76ecb0415c03616cdc7c4539a86ac1bb4a3416",
+      "width": 45,
+      "height": 49,
+      "frames": 1
+    },
+    {
+      "id": "p6b-combat-engineer-base-dead",
+      "resource": "phase6b/combat-engineer-base-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/combat-engineer-base-dead.png",
+      "bytes": 1307,
+      "sha256": "40247a62c5b840696227fa10fd8c9c19b8b2750aa32bd49d4964cc7940d81026",
+      "width": 45,
+      "height": 49,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-carrier-experiemental-carrier",
+      "resource": "phase6b/experimental-carrier-experiemental-carrier.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-carrier-experiemental-carrier.png",
+      "bytes": 1081,
+      "sha256": "459ca9a73891d3f035ba55d7c0178c392cb547f4c66ff916eaecf904140c1a1f",
+      "width": 40,
+      "height": 153,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-carrier-turret-top-cannon",
+      "resource": "phase6b/experimental-carrier-turret-top-cannon.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-carrier-turret-top-cannon.png",
+      "bytes": 379,
+      "sha256": "5796ba814323cb223ba404c9d458edcc9e0ff895431eadcda3ba42f9d2e69622",
+      "width": 18,
+      "height": 152,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-carrier-experiemental-carrier-dead",
+      "resource": "phase6b/experimental-carrier-experiemental-carrier-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-carrier-experiemental-carrier-dead.png",
+      "bytes": 2741,
+      "sha256": "4eb1cf13898f6ed6c1d51597323029ca87a1096f554671a86f173397c1dcc644",
+      "width": 40,
+      "height": 153,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-carrier-anti-air-top-flakgun",
+      "resource": "phase6b/experimental-carrier-anti-air-top-flakgun.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-carrier-anti-air-top-flakgun.png",
+      "bytes": 330,
+      "sha256": "ca1d56e874cf9b560b79ad858e616cf8c62e5066829b7194d87a4bb5428b9e3f",
+      "width": 22,
+      "height": 24,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-mega-tank-turret",
+      "resource": "phase6b/shared-mega-tank-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-mega-tank-turret.png",
+      "bytes": 297,
+      "sha256": "b8093ac46b67c488d542bfca021b57ca8ba79a701a4bc2878a7e19e9b259166d",
+      "width": 14,
+      "height": 27,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-dropship-experimental-dropship",
+      "resource": "phase6b/experimental-dropship-experimental-dropship.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-dropship-experimental-dropship.png",
+      "bytes": 1176,
+      "sha256": "0b0c9f78578532f14d47f18026a07a4ad12b3a2ee5c0f6456a3baac21659452f",
+      "width": 65,
+      "height": 82,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-small-laser-turret",
+      "resource": "phase6b/shared-small-laser-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-small-laser-turret.png",
+      "bytes": 226,
+      "sha256": "b36467a5fc597166896cac07d0b39b1edf4cff163a8c12ee293fb6a0966774be",
+      "width": 8,
+      "height": 34,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-dropship-experimental-dropship-dead",
+      "resource": "phase6b/experimental-dropship-experimental-dropship-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-dropship-experimental-dropship-dead.png",
+      "bytes": 2455,
+      "sha256": "5cf76626e7745da13ffc3208dabb28b8354f46c99b37f30b88879d4b86e551c6",
+      "width": 65,
+      "height": 82,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-gunship-body",
+      "resource": "phase6b/experimental-gunship-body.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-gunship-body.png",
+      "bytes": 1939,
+      "sha256": "72128d2114c47e86cf20576c71b1a125cb645318e28b2d444b19ccb6a7647707",
+      "width": 96,
+      "height": 96,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-mega-tank-turret2",
+      "resource": "phase6b/shared-mega-tank-turret2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-mega-tank-turret2.png",
+      "bytes": 255,
+      "sha256": "e361b9bc025893e2b34eb8f0b01a87b2750839774d96ed3e845c002e179540f2",
+      "width": 10,
+      "height": 26,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-gunship-body-dead",
+      "resource": "phase6b/experimental-gunship-body-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-gunship-body-dead.png",
+      "bytes": 3260,
+      "sha256": "5bdd49a823c1e8730468146022084ac94248d75ed6790da63720922e24421974",
+      "width": 96,
+      "height": 96,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-nano-turret",
+      "resource": "phase6b/shared-nano-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-nano-turret.png",
+      "bytes": 272,
+      "sha256": "bd978eed18de4768c0bc3f98ea3b511a208c9a884b834c40af45c82935c5cddb",
+      "width": 11,
+      "height": 19,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-experimental-tank-turret3",
+      "resource": "phase6b/shared-experimental-tank-turret3.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-experimental-tank-turret3.png",
+      "bytes": 567,
+      "sha256": "05d9ee0407c163431dcced72537a30a103b98d90fe55948172a42ab1900d3acf",
+      "width": 25,
+      "height": 41,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-lighting-charge",
+      "resource": "phase6b/shared-lighting-charge.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-lighting-charge.png",
+      "bytes": 190,
+      "sha256": "5e071166bfe8d5c0b42916144cd184b1a87c413d60523194feba8a00485451b4",
+      "width": 15,
+      "height": 15,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-gunship-turbine",
+      "resource": "phase6b/experimental-gunship-turbine.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-gunship-turbine.png",
+      "bytes": 340,
+      "sha256": "c8614adb1d62db4f97e1b7392f87ba6161e3b9211f70d8093d78d36d16d65f5f",
+      "width": 23,
+      "height": 18,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-gunship-door",
+      "resource": "phase6b/experimental-gunship-door.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-gunship-door.png",
+      "bytes": 310,
+      "sha256": "613d7ebcad9b630e544ccedebeaf916c746bb5fb7c79332186cdb38ce3166a90",
+      "width": 20,
+      "height": 28,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-spider-body",
+      "resource": "phase6b/experimental-spider-body.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-spider-body.png",
+      "bytes": 1532,
+      "sha256": "20276b0d9fe230b2359fc0a988703dc32876752ef998810150ef47a56cf67406",
+      "width": 70,
+      "height": 90,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-spider-body-dead",
+      "resource": "phase6b/experimental-spider-body-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-spider-body-dead.png",
+      "bytes": 2692,
+      "sha256": "ecf48e9c2118be6740881ceabb16692586c78461bbded0b84b298ad2c27ddc41",
+      "width": 70,
+      "height": 90,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-turret-small",
+      "resource": "phase6b/shared-turret-small.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-turret-small.png",
+      "bytes": 209,
+      "sha256": "017741e52045cf71ee60811f4fb301244894f13ec4dc7a97d993acbbde09460b",
+      "width": 8,
+      "height": 34,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-spider-experimental-tank-turret2",
+      "resource": "phase6b/experimental-spider-experimental-tank-turret2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-spider-experimental-tank-turret2.png",
+      "bytes": 236,
+      "sha256": "bf0cb5cb8057d533a4a5b6143562c3e56286e6cef90286f8c029c337b88ff2fa",
+      "width": 7,
+      "height": 35,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-spider-spider-turret-base",
+      "resource": "phase6b/experimental-spider-spider-turret-base.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-spider-spider-turret-base.png",
+      "bytes": 354,
+      "sha256": "8a84baf6868162b48eb988fbdd2033c60e6bbcef680698cf5dc59a10578e960b",
+      "width": 20,
+      "height": 19,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-spider-leg",
+      "resource": "phase6b/experimental-spider-leg.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-spider-leg.png",
+      "bytes": 368,
+      "sha256": "10d56ba4ce8d8c76fcc819b72af739197bfa2569151e256d28178bb2e6056e1d",
+      "width": 10,
+      "height": 68,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-spider-foot",
+      "resource": "phase6b/experimental-spider-foot.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-spider-foot.png",
+      "bytes": 398,
+      "sha256": "845ea5dadfef5ce3fd93c620467fcb7f9557299452f666883f6705352002519c",
+      "width": 17,
+      "height": 22,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-tank-experimental-tank",
+      "resource": "phase6b/experimental-tank-experimental-tank.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-tank-experimental-tank.png",
+      "bytes": 2067,
+      "sha256": "7bc2b9322afee9d21ab11787c54f3e2a96b64c716127a9f547066dc3710bfd3b",
+      "width": 186,
+      "height": 86,
+      "frames": 3
+    },
+    {
+      "id": "p6b-experimental-tank-experimental-tank-turret",
+      "resource": "phase6b/experimental-tank-experimental-tank-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-tank-experimental-tank-turret.png",
+      "bytes": 325,
+      "sha256": "62351209ac04c83456e8f44e25d41903a2373a2881202907e9bf238d1b11c51e",
+      "width": 13,
+      "height": 42,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-tank-experimental-tank-dead",
+      "resource": "phase6b/experimental-tank-experimental-tank-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-tank-experimental-tank-dead.png",
+      "bytes": 2506,
+      "sha256": "fc0b5869fd43efdcc486780ca8a4da163ce3067e3b393a6a2149928e5c6b33b2",
+      "width": 62,
+      "height": 86,
+      "frames": 1
+    },
+    {
+      "id": "p6b-experimental-tank-experimental-tank-barrel",
+      "resource": "phase6b/experimental-tank-experimental-tank-barrel.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/experimental-tank-experimental-tank-barrel.png",
+      "bytes": 165,
+      "sha256": "745918110a4c5243be84781927792bf5199153ced7c4bdd31f1807cabefb3fd9",
+      "width": 13,
+      "height": 42,
+      "frames": 1
+    },
+    {
+      "id": "p6b-extractor-extractor-t3-overclocked",
+      "resource": "phase6b/extractor-extractor-t3-overclocked.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/extractor-extractor-t3-overclocked.png",
+      "bytes": 1272,
+      "sha256": "a25ceae362ecfd6badd97c15ea33ab06ea6ea906e6c92100e0d96bd9f42a772b",
+      "width": 148,
+      "height": 58,
+      "frames": 4
+    },
+    {
+      "id": "p6b-extractor-extractor-back",
+      "resource": "phase6b/extractor-extractor-back.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/extractor-extractor-back.png",
+      "bytes": 624,
+      "sha256": "066e620de61f11cf1f3826005d9a56089857ab8ce71ba02a591e113da41e8185",
+      "width": 51,
+      "height": 44,
+      "frames": 1
+    },
+    {
+      "id": "p6b-extractor-extractor-t3-reinforced",
+      "resource": "phase6b/extractor-extractor-t3-reinforced.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/extractor-extractor-t3-reinforced.png",
+      "bytes": 937,
+      "sha256": "5234823e7c66817663bf09eeefbc8c89ef41aad331459fc80eb5e06e55141dcb",
+      "width": 148,
+      "height": 59,
+      "frames": 4
+    },
+    {
+      "id": "p6b-fire-bee-body",
+      "resource": "phase6b/fire-bee-body.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/fire-bee-body.png",
+      "bytes": 1243,
+      "sha256": "7e5af999f59b84ab9b45cd11d1c38f8b9b19df70eb8658cd3af5068d1f96ef49",
+      "width": 86,
+      "height": 57,
+      "frames": 2
+    },
+    {
+      "id": "p6b-fire-bee-small-laser-turret",
+      "resource": "phase6b/fire-bee-small-laser-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/fire-bee-small-laser-turret.png",
+      "bytes": 243,
+      "sha256": "05477f920451fe02fdb2aedd2045740646be137ea0f7e116016386785bb71bbe",
+      "width": 8,
+      "height": 34,
+      "frames": 1
+    },
+    {
+      "id": "p6b-fire-bee-body-dead",
+      "resource": "phase6b/fire-bee-body-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/fire-bee-body-dead.png",
+      "bytes": 1547,
+      "sha256": "62ddf0feab998b4468b7424a11808244edb3068b77a81316bbbd00544ef0c173",
+      "width": 43,
+      "height": 57,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-aa-ship-heavy-aa-ship",
+      "resource": "phase6b/heavy-aa-ship-heavy-aa-ship.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-aa-ship-heavy-aa-ship.png",
+      "bytes": 1080,
+      "sha256": "004e73fcd93ca87611f92b5ea0544db1ec78519c21ab58a95b0e90aec840ff6e",
+      "width": 40,
+      "height": 68,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-aa-ship-anti-air-top-flakgun",
+      "resource": "phase6b/heavy-aa-ship-anti-air-top-flakgun.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-aa-ship-anti-air-top-flakgun.png",
+      "bytes": 304,
+      "sha256": "3ddd44f6f5ba6b95d7e6da1b9d2d70451d8330bc314a2824b243e229f3617a6f",
+      "width": 22,
+      "height": 24,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-aa-ship-heavy-aa-ship-dead",
+      "resource": "phase6b/heavy-aa-ship-heavy-aa-ship-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-aa-ship-heavy-aa-ship-dead.png",
+      "bytes": 1606,
+      "sha256": "d578615a4f2ecb3aa31f11725ca6e104b6bc663e0f2f7ccf2b291b6e8abab453",
+      "width": 40,
+      "height": 68,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-interceptor-base2",
+      "resource": "phase6b/heavy-interceptor-base2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-interceptor-base2.png",
+      "bytes": 658,
+      "sha256": "282380044b73983b9044f90ad161940ff3c4560ec25f42e74b7560c013ad83c2",
+      "width": 32,
+      "height": 35,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-interceptor-turret",
+      "resource": "phase6b/heavy-interceptor-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-interceptor-turret.png",
+      "bytes": 124,
+      "sha256": "c63050d7a405832d7c3918a33d98795d35b947de06e3697f5ff858d784249fbd",
+      "width": 5,
+      "height": 5,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-interceptor-base-dead",
+      "resource": "phase6b/heavy-interceptor-base-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-interceptor-base-dead.png",
+      "bytes": 720,
+      "sha256": "5c79eac1d0ab715f055e80b33c5a106440d6df7a86afacfc87d9d31c600b6fca",
+      "width": 32,
+      "height": 35,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-missile-ship-body",
+      "resource": "phase6b/heavy-missile-ship-body.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-missile-ship-body.png",
+      "bytes": 1060,
+      "sha256": "b3e2a9982a3c922d9a76420d4ade0b5270ba55e4b454484dfc41b3cbc05c0292",
+      "width": 42,
+      "height": 83,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-missile-ship-body-dead",
+      "resource": "phase6b/heavy-missile-ship-body-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-missile-ship-body-dead.png",
+      "bytes": 1912,
+      "sha256": "276058bce2ffc9ac256b0fb23037a58ad840c67a40c6807fff7d96cb6524de99",
+      "width": 42,
+      "height": 83,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-sub-base",
+      "resource": "phase6b/heavy-sub-base.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-sub-base.png",
+      "bytes": 693,
+      "sha256": "732ce879a6ba115d3d1f48a1c2ecb4af0982af7e2f5e21ad6c5145d2cce8e1ec",
+      "width": 29,
+      "height": 60,
+      "frames": 1
+    },
+    {
+      "id": "p6b-heavy-sub-base-dead",
+      "resource": "phase6b/heavy-sub-base-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/heavy-sub-base-dead.png",
+      "bytes": 1099,
+      "sha256": "11718e1779239022568dae8f78679b4dafc81cd87a7ce9a01e2fb5f14f19929f",
+      "width": 29,
+      "height": 60,
+      "frames": 1
+    },
+    {
+      "id": "p6b-interceptor-interceptor",
+      "resource": "phase6b/interceptor-interceptor.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/interceptor-interceptor.png",
+      "bytes": 504,
+      "sha256": "7eb98c2a4246d60fb92aafd90c5a1d5309646fa6d61ba589d42ca32fd0da99e3",
+      "width": 24,
+      "height": 22,
+      "frames": 1
+    },
+    {
+      "id": "p6b-interceptor-interceptor-turret",
+      "resource": "phase6b/interceptor-interceptor-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/interceptor-interceptor-turret.png",
+      "bytes": 132,
+      "sha256": "5a71945e57070e86ce0c6840e8514d396dcff912d9c9961a40177c4a55ef94df",
+      "width": 5,
+      "height": 14,
+      "frames": 1
+    },
+    {
+      "id": "p6b-interceptor-interceptor-dead",
+      "resource": "phase6b/interceptor-interceptor-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/interceptor-interceptor-dead.png",
+      "bytes": 486,
+      "sha256": "32c7204c347832b643b282a116ca9bca2e1464ac12723ac23ad30bf4181a6fb3",
+      "width": 24,
+      "height": 22,
+      "frames": 1
+    },
+    {
+      "id": "p6b-interceptor-interceptor-shadow",
+      "resource": "phase6b/interceptor-interceptor-shadow.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/interceptor-interceptor-shadow.png",
+      "bytes": 218,
+      "sha256": "7cf5d50a10fef802d0d6b0f50cc61b992553f48d895e8f769fda93f13419621c",
+      "width": 24,
+      "height": 22,
+      "frames": 1
+    },
+    {
+      "id": "p6b-laser-tank-laser-tank",
+      "resource": "phase6b/laser-tank-laser-tank.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/laser-tank-laser-tank.png",
+      "bytes": 744,
+      "sha256": "8efb1b54ccc8ffb908e495df217b4067d05617d280902e84642f24e043342548",
+      "width": 72,
+      "height": 29,
+      "frames": 3
+    },
+    {
+      "id": "p6b-laser-tank-laser-tank-turret",
+      "resource": "phase6b/laser-tank-laser-tank-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/laser-tank-laser-tank-turret.png",
+      "bytes": 213,
+      "sha256": "db05fa0a95405027459f09214364624115e58f11c1d24ac865603b53b66a7d94",
+      "width": 10,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-laser-tank-laser-tank-dead",
+      "resource": "phase6b/laser-tank-laser-tank-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/laser-tank-laser-tank-dead.png",
+      "bytes": 675,
+      "sha256": "886369e7c12b8b0020eb767af3d33dc2e1548817d4a728aa53fba7c6f330bee9",
+      "width": 24,
+      "height": 29,
+      "frames": 1
+    },
+    {
+      "id": "p6b-laser-tank-laser-tank-barrel",
+      "resource": "phase6b/laser-tank-laser-tank-barrel.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/laser-tank-laser-tank-barrel.png",
+      "bytes": 175,
+      "sha256": "b818a940df33bb70526ece2da6d419f9022e9d50165531a2dc173abd543b7ae6",
+      "width": 10,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-laser-tank-laser-tank-charge",
+      "resource": "phase6b/laser-tank-laser-tank-charge.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/laser-tank-laser-tank-charge.png",
+      "bytes": 362,
+      "sha256": "f2e758182fe7bb5c43cd7dec146f5453320c99cd51ac5e71c5002a9231bf4970",
+      "width": 15,
+      "height": 15,
+      "frames": 1
+    },
+    {
+      "id": "p6b-light-gunship-base",
+      "resource": "phase6b/light-gunship-base.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/light-gunship-base.png",
+      "bytes": 627,
+      "sha256": "fc8aaadf9953acd52963bf4c7cc741b50387e2d8b48da28a00c4e97d6661c3f2",
+      "width": 48,
+      "height": 20,
+      "frames": 2
+    },
+    {
+      "id": "p6b-light-gunship-base-dead",
+      "resource": "phase6b/light-gunship-base-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/light-gunship-base-dead.png",
+      "bytes": 469,
+      "sha256": "77af00da29295ac8b1aa5698dc35aeb9f930128d6b77e6a727cf5e82036c9e6e",
+      "width": 24,
+      "height": 21,
+      "frames": 1
+    },
+    {
+      "id": "p6b-light-sub-base",
+      "resource": "phase6b/light-sub-base.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/light-sub-base.png",
+      "bytes": 402,
+      "sha256": "8cece1fd469152524ee1af40671035da03d04e834e16a7d4ff929d9fa58fd5c1",
+      "width": 21,
+      "height": 24,
+      "frames": 1
+    },
+    {
+      "id": "p6b-light-sub-base-dead",
+      "resource": "phase6b/light-sub-base-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/light-sub-base-dead.png",
+      "bytes": 453,
+      "sha256": "9bb0984bf2bbc4af0cb82d30be53755fd93475af40c95ad758e8ce39bd88c931",
+      "width": 21,
+      "height": 24,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mammoth-tank-mammoth-tank",
+      "resource": "phase6b/mammoth-tank-mammoth-tank.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mammoth-tank-mammoth-tank.png",
+      "bytes": 1028,
+      "sha256": "226b211af577dd984ae4c7c3805f33f97acdb6044202fa52a98013bf49ecf338",
+      "width": 90,
+      "height": 41,
+      "frames": 3
+    },
+    {
+      "id": "p6b-mammoth-tank-mammoth-tank-turret",
+      "resource": "phase6b/mammoth-tank-mammoth-tank-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mammoth-tank-mammoth-tank-turret.png",
+      "bytes": 213,
+      "sha256": "9386e191f2af165961ddf7a0ff8bc2929737cd9ebf513048e17df94187f16288",
+      "width": 12,
+      "height": 44,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mammoth-tank-mammoth-tank-dead",
+      "resource": "phase6b/mammoth-tank-mammoth-tank-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mammoth-tank-mammoth-tank-dead.png",
+      "bytes": 1207,
+      "sha256": "d89d46f364dde55b2e596e4cde5f7ace6b877b6ff79b82ff3ecac736fe80a26f",
+      "width": 32,
+      "height": 43,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mammoth-tank-mammoth-tank-coil",
+      "resource": "phase6b/mammoth-tank-mammoth-tank-coil.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mammoth-tank-mammoth-tank-coil.png",
+      "bytes": 223,
+      "sha256": "c776a0274272632a1ed20c61b75b7e6c0cf3a96f5b0bb70096d3329eec980593",
+      "width": 12,
+      "height": 44,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-large-topartillery",
+      "resource": "phase6b/mechs-large-topartillery.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-large-topartillery.png",
+      "bytes": 566,
+      "sha256": "4adb03810cff5e3c28b81d3d2ba7302db92ec60e6297ac438ed1a903b9d38e65",
+      "width": 36,
+      "height": 60,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-large-leg",
+      "resource": "phase6b/mechs-large-leg.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-large-leg.png",
+      "bytes": 535,
+      "sha256": "be9129da7748a1f9a9073aaeed9d089694dfb071956f0155cb5be5d58587753c",
+      "width": 16,
+      "height": 68,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-large-foot-med",
+      "resource": "phase6b/mechs-large-foot-med.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-large-foot-med.png",
+      "bytes": 372,
+      "sha256": "5bb05be03059bb29c3799b6094c8bfe84ae0495cad7260f70f5ec3664a1816fc",
+      "width": 17,
+      "height": 28,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-large-toplaser",
+      "resource": "phase6b/mechs-large-toplaser.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-large-toplaser.png",
+      "bytes": 875,
+      "sha256": "140fe838e69b29a6d70c039b04eed8925cdee7092a8636ffa94f6e627bd1a56f",
+      "width": 39,
+      "height": 100,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-large-foot",
+      "resource": "phase6b/mechs-large-foot.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-large-foot.png",
+      "bytes": 402,
+      "sha256": "64d974348bef0ac8e69d4a804369f4fe2c71cabda3129fe783fae45cbf6381f3",
+      "width": 17,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-large-toplightning",
+      "resource": "phase6b/mechs-large-toplightning.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-large-toplightning.png",
+      "bytes": 801,
+      "sha256": "8cb417ee8f6be961b7179fa5334f801ec96ec47dbf31240d1fdee3439944535e",
+      "width": 50,
+      "height": 58,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-lighting-charge2",
+      "resource": "phase6b/shared-lighting-charge2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-lighting-charge2.png",
+      "bytes": 235,
+      "sha256": "cf7c4fa12473e9b29cc677811930ce3d97b153a3eba8aba7876db93fab5b0751",
+      "width": 20,
+      "height": 20,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-large-foot-small",
+      "resource": "phase6b/mechs-large-foot-small.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-large-foot-small.png",
+      "bytes": 415,
+      "sha256": "833c5d8a403ea80eec147f1c39f70be27e769e14bc599eccf6224c71ad45234c",
+      "width": 17,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-large-topminigun",
+      "resource": "phase6b/mechs-large-topminigun.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-large-topminigun.png",
+      "bytes": 738,
+      "sha256": "e47e78cd76f2bada04a50f2bd426efa20ba0545297ba00bb4fdcdf8db63062eb",
+      "width": 72,
+      "height": 51,
+      "frames": 2
+    },
+    {
+      "id": "p6b-mechs-small-topmissile",
+      "resource": "phase6b/mechs-small-topmissile.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-small-topmissile.png",
+      "bytes": 360,
+      "sha256": "f0843e38753166622e2e51b8917c4d75af5993700953cc60bf101c93514e48ac",
+      "width": 27,
+      "height": 22,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-small-leg",
+      "resource": "phase6b/mechs-small-leg.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-small-leg.png",
+      "bytes": 165,
+      "sha256": "bdae854930b3e1cf7df7f354de00bd03d6dfdb53311cccbabbd12536d5d56937",
+      "width": 7,
+      "height": 47,
+      "frames": 1
+    },
+    {
+      "id": "p6b-mechs-small-foot",
+      "resource": "phase6b/mechs-small-foot.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/mechs-small-foot.png",
+      "bytes": 133,
+      "sha256": "d4d11e68a1ac511f10a24da925e1d5e0d474890ffa645a5296df4fb0bc24c60e",
+      "width": 6,
+      "height": 18,
+      "frames": 1
+    },
+    {
+      "id": "p6b-missile-airship-body",
+      "resource": "phase6b/missile-airship-body.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/missile-airship-body.png",
+      "bytes": 646,
+      "sha256": "b871debb4ede3be7e3db8ac0ba1b670ac34315df4e072c4b7bff135756ba2771",
+      "width": 31,
+      "height": 41,
+      "frames": 1
+    },
+    {
+      "id": "p6b-missile-airship-body-dead",
+      "resource": "phase6b/missile-airship-body-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/missile-airship-body-dead.png",
+      "bytes": 936,
+      "sha256": "6c91faca86e6d577a33c27b3ff6c057c9e72b0f7f0bedd6739bc9b6835a8cc05",
+      "width": 31,
+      "height": 41,
+      "frames": 1
+    },
+    {
+      "id": "p6b-missile-tank-missile-tank",
+      "resource": "phase6b/missile-tank-missile-tank.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/missile-tank-missile-tank.png",
+      "bytes": 768,
+      "sha256": "8d645509b12112c5de60b3b33af56c50cee240391d7abe7dba933d111c74a175",
+      "width": 60,
+      "height": 39,
+      "frames": 2
+    },
+    {
+      "id": "p6b-missile-tank-missile-tank-turret",
+      "resource": "phase6b/missile-tank-missile-tank-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/missile-tank-missile-tank-turret.png",
+      "bytes": 379,
+      "sha256": "ad7e84867220d0f36a42fc9c0a8788ed7df1a5ea831417f19909fc9acd181e4e",
+      "width": 22,
+      "height": 26,
+      "frames": 1
+    },
+    {
+      "id": "p6b-missile-tank-missile-tank-dead",
+      "resource": "phase6b/missile-tank-missile-tank-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/missile-tank-missile-tank-dead.png",
+      "bytes": 955,
+      "sha256": "a2daf8811a63324b52f87b0c2605965cbfd75ebe0b4d86c38df876782ceb538d",
+      "width": 30,
+      "height": 39,
+      "frames": 1
+    },
+    {
+      "id": "p6b-outpost-outpost",
+      "resource": "phase6b/outpost-outpost.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/outpost-outpost.png",
+      "bytes": 971,
+      "sha256": "420df27a13e4597ad33b36d04e033fb0d672919b7b1d076f2f133785cdcde88f",
+      "width": 48,
+      "height": 56,
+      "frames": 1
+    },
+    {
+      "id": "p6b-plasma-tank-plasma-tank",
+      "resource": "phase6b/plasma-tank-plasma-tank.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/plasma-tank-plasma-tank.png",
+      "bytes": 719,
+      "sha256": "a4f689b99abac00af3de686ee7f71134a81cfe5a3eafe1e7e0692872aeee714f",
+      "width": 52,
+      "height": 29,
+      "frames": 2
+    },
+    {
+      "id": "p6b-plasma-tank-turret",
+      "resource": "phase6b/plasma-tank-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/plasma-tank-turret.png",
+      "bytes": 323,
+      "sha256": "fa9aac587cc8b0713fe90bff941011d095d5dd1c450b08e64981c3bccf250668",
+      "width": 14,
+      "height": 42,
+      "frames": 1
+    },
+    {
+      "id": "p6b-plasma-tank-plasma-tank-dead",
+      "resource": "phase6b/plasma-tank-plasma-tank-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/plasma-tank-plasma-tank-dead.png",
+      "bytes": 749,
+      "sha256": "d1a0522074fce698737ec55a4fcc54afc749d8de3fce162dd38a98ca63b478c8",
+      "width": 24,
+      "height": 29,
+      "frames": 1
+    },
+    {
+      "id": "p6b-scout-base",
+      "resource": "phase6b/scout-base.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/scout-base.png",
+      "bytes": 413,
+      "sha256": "118a8f09405904e5fb30eac7bd706a0cf198a2a23de9357fe7690506f37bb343",
+      "width": 24,
+      "height": 21,
+      "frames": 1
+    },
+    {
+      "id": "p6b-scout-base-dead",
+      "resource": "phase6b/scout-base-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/scout-base-dead.png",
+      "bytes": 463,
+      "sha256": "678a67118a4435f89670d8b0882609d8e55bd5c1b9b23fc777d4dbdf2240af40",
+      "width": 24,
+      "height": 21,
+      "frames": 1
+    },
+    {
+      "id": "p6b-spy-drone-base",
+      "resource": "phase6b/spy-drone-base.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/spy-drone-base.png",
+      "bytes": 764,
+      "sha256": "6adba21f2c76691dcf972750b4e99c8c1cf77234c33e6c14f21805e46834b4ea",
+      "width": 45,
+      "height": 47,
+      "frames": 1
+    },
+    {
+      "id": "p6b-spy-drone-base-dead",
+      "resource": "phase6b/spy-drone-base-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/spy-drone-base-dead.png",
+      "bytes": 863,
+      "sha256": "c8d288989a726cde95424ecc8df819d8f5ec946f2e1d00149fb1b70fdfbc3eb2",
+      "width": 45,
+      "height": 47,
+      "frames": 1
+    },
+    {
+      "id": "p6b-tanks-artillery",
+      "resource": "phase6b/tanks-artillery.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/tanks-artillery.png",
+      "bytes": 921,
+      "sha256": "fdde61e9f49f94fb5ba1a6cccf7e49c6386ee1ab62029f9dcf765b608e3e5e38",
+      "width": 72,
+      "height": 47,
+      "frames": 3
+    },
+    {
+      "id": "p6b-tanks-artillery-dead",
+      "resource": "phase6b/tanks-artillery-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/tanks-artillery-dead.png",
+      "bytes": 951,
+      "sha256": "e9a7652191c42a718fc28bd63c6f615258534b8995ec2f9038bdedf0f97b86ce",
+      "width": 24,
+      "height": 47,
+      "frames": 1
+    },
+    {
+      "id": "p6b-tanks-heavy-artillery",
+      "resource": "phase6b/tanks-heavy-artillery.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/tanks-heavy-artillery.png",
+      "bytes": 759,
+      "sha256": "3f482fdbdd62303cc3d78b201b9565560db6e2ea00f63aa9a4c5f99ca06a81b1",
+      "width": 58,
+      "height": 38,
+      "frames": 2
+    },
+    {
+      "id": "p6b-tanks-heavy-artillery-turret",
+      "resource": "phase6b/tanks-heavy-artillery-turret.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/tanks-heavy-artillery-turret.png",
+      "bytes": 349,
+      "sha256": "6bddfe3c63a8509fff5920736cc7cf0c4dc2711bedda90eabfd4e1d8e46b209d",
+      "width": 13,
+      "height": 65,
+      "frames": 1
+    },
+    {
+      "id": "p6b-tanks-heavy-artillery-dead",
+      "resource": "phase6b/tanks-heavy-artillery-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/tanks-heavy-artillery-dead.png",
+      "bytes": 899,
+      "sha256": "4eed9f5fa50ec8cae5571a53ca5aabd4e4636692192acf262e81efdf8583fb6b",
+      "width": 29,
+      "height": 38,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-base",
+      "resource": "phase6b/turrets-turret-base.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-base.png",
+      "bytes": 520,
+      "sha256": "5918386977a8a04403bb39222c78a91bc669f8a422002b3df05b57e3c37b14c7",
+      "width": 35,
+      "height": 32,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-anti-air-top",
+      "resource": "phase6b/turrets-anti-air-top.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-anti-air-top.png",
+      "bytes": 247,
+      "sha256": "2d1108ee2e2115dfc45295e991b1b411b40512b9e2827fb8c42d85b5c6a8bad1",
+      "width": 16,
+      "height": 26,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-base-dead",
+      "resource": "phase6b/turrets-turret-base-dead.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-base-dead.png",
+      "bytes": 1040,
+      "sha256": "7d146e3ec8e1db70e0108d24e87a1d64bee2e36dd4021d54eca2e270a7dbbb45",
+      "width": 35,
+      "height": 42,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-base2",
+      "resource": "phase6b/turrets-turret-base2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-base2.png",
+      "bytes": 673,
+      "sha256": "060a7585b97c25971e867085dbb1d1869d805388b9e220dce57dccf39f325f61",
+      "width": 43,
+      "height": 36,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-anti-air-top-flakgun",
+      "resource": "phase6b/turrets-anti-air-top-flakgun.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-anti-air-top-flakgun.png",
+      "bytes": 457,
+      "sha256": "b5de8bf47e85a361c4be222926612f1b57b29da43898ddb2fc77d3c63f1cfbdc",
+      "width": 29,
+      "height": 32,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-anti-air-top-l2",
+      "resource": "phase6b/turrets-anti-air-top-l2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-anti-air-top-l2.png",
+      "bytes": 341,
+      "sha256": "b4b9b723bba1e9633fdd818f5f93df0ca9fd98a649bb7d28e0fbe468d7241340",
+      "width": 25,
+      "height": 24,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-anti-air-top-l3",
+      "resource": "phase6b/turrets-anti-air-top-l3.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-anti-air-top-l3.png",
+      "bytes": 416,
+      "sha256": "5cd099089c146e1a0632e41c9553e4051169bf5cbfef302c39fb918cffd6b52e",
+      "width": 25,
+      "height": 24,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-top-lightning",
+      "resource": "phase6b/turrets-turret-top-lightning.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-top-lightning.png",
+      "bytes": 412,
+      "sha256": "9e6cb968e44dea8b9e3b0664d76897efe1d93fbd216077380f8960a002d6744a",
+      "width": 22,
+      "height": 31,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-base2b",
+      "resource": "phase6b/turrets-turret-base2b.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-base2b.png",
+      "bytes": 849,
+      "sha256": "60142a08b7326811e7304dd57027058b88ef575d95aa5d65d8bb7b2720aa9348",
+      "width": 46,
+      "height": 38,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-top-artillery-l2",
+      "resource": "phase6b/turrets-turret-top-artillery-l2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-top-artillery-l2.png",
+      "bytes": 370,
+      "sha256": "63dcc6fc085be0654e6713dea28aee08e5fb5e9609ccb21eaeebefe06023816c",
+      "width": 19,
+      "height": 39,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-top-flame",
+      "resource": "phase6b/turrets-turret-top-flame.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-top-flame.png",
+      "bytes": 326,
+      "sha256": "9d6df057e0cedb748a435912c75029dec84f0285950cb7645881e45e6d168660",
+      "width": 14,
+      "height": 46,
+      "frames": 1
+    },
+    {
+      "id": "p6b-shared-light-25",
+      "resource": "phase6b/shared-light-25.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/shared-light-25.png",
+      "bytes": 583,
+      "sha256": "443ee120826c6f9f79d5f6ff598289d3c530b717bcd00db59c853328c051bc38",
+      "width": 25,
+      "height": 25,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-top-lightning-l2",
+      "resource": "phase6b/turrets-turret-top-lightning-l2.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-top-lightning-l2.png",
+      "bytes": 417,
+      "sha256": "5ef4b04fa91531e58818f15160a4e54f51e535e26ce3d1282882f3c9f3fb8e77",
+      "width": 26,
+      "height": 28,
+      "frames": 1
+    },
+    {
+      "id": "p6b-turrets-turret-top-l3",
+      "resource": "phase6b/turrets-turret-top-l3.png",
+      "source": "Engine/client/src/main/resources/visuals/placeholder/phase6b/turrets-turret-top-l3.png",
+      "bytes": 371,
+      "sha256": "f864230e0ea556af8af621a650e69ff75dbcc7d309acdc8379a98137909413f6",
+      "width": 16,
+      "height": 46,
+      "frames": 1
     }
   ],
   "unitBindings": {
@@ -412,6 +1682,274 @@
       "body": "turret2",
       "turret": "turret-artillery",
       "dead": "turret-dead"
+    },
+    "gunShip": {
+      "body": "p6b-gunship",
+      "dead": "p6b-gunship-dead",
+      "shadow": "p6b-gunship-shadow"
+    },
+    "missileShip": {
+      "body": "p6b-scout-ship",
+      "dead": "p6b-scout-ship-dead"
+    },
+    "battleShip": {
+      "body": "p6b-battle-ship-t2",
+      "turret": "p6b-battle-ship-t2-turret",
+      "dead": "p6b-battle-ship-t2-dead"
+    },
+    "heavyTank": {
+      "body": "p6b-heavy-tank",
+      "turret": "p6b-heavy-tank-turret",
+      "dead": "p6b-heavy-tank-dead"
+    },
+    "heavyHoverTank": {
+      "body": "p6b-heavy-hover-tank",
+      "dead": "p6b-heavy-hover-tank-dead",
+      "shadow": "p6b-heavy-hover-tank-shadow"
+    },
+    "builderShip": {
+      "body": "p6b-builder-ship",
+      "turret": "p6b-builder-ship-turret",
+      "dead": "p6b-builder-ship-dead"
+    },
+    "experimentalHoverTank": {
+      "body": "p6b-experimental-hovertank",
+      "turret": "p6b-experimental-hovertank-turret",
+      "shield": "p6b-experimental-hovertank-shield",
+      "dead": "p6b-experimental-hovertank-dead"
+    },
+    "combatEngineer": {
+      "body": "p6b-combat-engineer-base",
+      "dead": "p6b-combat-engineer-base-dead"
+    },
+    "experiementalCarrier": {
+      "body": "p6b-experimental-carrier-experiemental-carrier",
+      "turret": "p6b-experimental-carrier-turret-top-cannon",
+      "dead": "p6b-experimental-carrier-experiemental-carrier-dead",
+      "weaponTurrets": {
+        "flakPivotPoint": "p6b-experimental-carrier-anti-air-top-flakgun",
+        "plasma1": "p6b-shared-mega-tank-turret",
+        "plasma2": "p6b-shared-mega-tank-turret"
+      }
+    },
+    "experimentalDropship": {
+      "body": "p6b-experimental-dropship-experimental-dropship",
+      "turret": "p6b-shared-small-laser-turret",
+      "dead": "p6b-experimental-dropship-experimental-dropship-dead"
+    },
+    "experimentalGunship": {
+      "body": "p6b-experimental-gunship-body",
+      "turret": "p6b-shared-mega-tank-turret2",
+      "dead": "p6b-experimental-gunship-body-dead",
+      "arm1": "p6b-experimental-gunship-turbine",
+      "arm2": "p6b-experimental-gunship-door",
+      "weaponTurrets": {
+        "nano": "p6b-shared-nano-turret",
+        "main": "p6b-shared-experimental-tank-turret3"
+      }
+    },
+    "experimentalGunshipLanded": {
+      "body": "p6b-experimental-gunship-body",
+      "turret": "p6b-shared-mega-tank-turret2",
+      "dead": "p6b-experimental-gunship-body-dead",
+      "arm1": "p6b-experimental-gunship-turbine",
+      "arm2": "p6b-experimental-gunship-door",
+      "weaponTurrets": {
+        "nano": "p6b-shared-nano-turret",
+        "main": "p6b-shared-experimental-tank-turret3"
+      }
+    },
+    "experimentalSpider": {
+      "body": "p6b-experimental-spider-body",
+      "turret": "p6b-shared-nano-turret",
+      "dead": "p6b-experimental-spider-body-dead",
+      "leg": "p6b-experimental-spider-leg",
+      "foot": "p6b-experimental-spider-foot",
+      "weaponTurrets": {
+        "smallLaser1": "p6b-shared-turret-small",
+        "smallLaser2": "p6b-shared-turret-small",
+        "mainCannon": "p6b-experimental-spider-experimental-tank-turret2",
+        "mainCannonBase": "p6b-experimental-spider-spider-turret-base"
+      }
+    },
+    "c_experimentalTank": {
+      "body": "p6b-experimental-tank-experimental-tank",
+      "turret": "p6b-experimental-tank-experimental-tank-turret",
+      "dead": "p6b-experimental-tank-experimental-tank-dead",
+      "weaponTurrets": {
+        "cannon1": "p6b-experimental-tank-experimental-tank-barrel",
+        "cannon2": "p6b-experimental-tank-experimental-tank-barrel",
+        "cannon3": "p6b-experimental-tank-experimental-tank-barrel",
+        "cannon4": "p6b-experimental-tank-experimental-tank-barrel"
+      }
+    },
+    "extractorT3_overclocked": {
+      "body": "p6b-extractor-extractor-t3-overclocked",
+      "back": "p6b-extractor-extractor-back"
+    },
+    "extractorT3_reinforced": {
+      "body": "p6b-extractor-extractor-t3-reinforced",
+      "back": "p6b-extractor-extractor-back"
+    },
+    "fireBee": {
+      "body": "p6b-fire-bee-body",
+      "turret": "p6b-fire-bee-small-laser-turret",
+      "dead": "p6b-fire-bee-body-dead"
+    },
+    "heavyAAShip": {
+      "body": "p6b-heavy-aa-ship-heavy-aa-ship",
+      "turret": "p6b-heavy-aa-ship-anti-air-top-flakgun",
+      "dead": "p6b-heavy-aa-ship-heavy-aa-ship-dead"
+    },
+    "heavyInterceptor": {
+      "body": "p6b-heavy-interceptor-base2",
+      "turret": "p6b-heavy-interceptor-turret",
+      "dead": "p6b-heavy-interceptor-base-dead"
+    },
+    "heavyMissileShip": {
+      "body": "p6b-heavy-missile-ship-body",
+      "dead": "p6b-heavy-missile-ship-body-dead"
+    },
+    "heavySub": {
+      "body": "p6b-heavy-sub-base",
+      "dead": "p6b-heavy-sub-base-dead"
+    },
+    "c_interceptor": {
+      "body": "p6b-interceptor-interceptor",
+      "turret": "p6b-interceptor-interceptor-turret",
+      "dead": "p6b-interceptor-interceptor-dead",
+      "shadow": "p6b-interceptor-interceptor-shadow"
+    },
+    "c_laserTank": {
+      "body": "p6b-laser-tank-laser-tank",
+      "turret": "p6b-laser-tank-laser-tank-turret",
+      "dead": "p6b-laser-tank-laser-tank-dead",
+      "weaponTurrets": {
+        "barrel": "p6b-laser-tank-laser-tank-barrel"
+      }
+    },
+    "lightGunship": {
+      "body": "p6b-light-gunship-base",
+      "dead": "p6b-light-gunship-base-dead"
+    },
+    "lightSub": {
+      "body": "p6b-light-sub-base",
+      "dead": "p6b-light-sub-base-dead"
+    },
+    "c_mammothTank": {
+      "body": "p6b-mammoth-tank-mammoth-tank",
+      "turret": "p6b-mammoth-tank-mammoth-tank-turret",
+      "dead": "p6b-mammoth-tank-mammoth-tank-dead",
+      "weaponTurrets": {
+        "1": "p6b-mammoth-tank-mammoth-tank-coil"
+      }
+    },
+    "mechArtillery": {
+      "body": "p6b-mechs-large-topartillery",
+      "leg": "p6b-mechs-large-leg",
+      "foot": "p6b-mechs-large-foot-med"
+    },
+    "mechLaser": {
+      "body": "p6b-mechs-large-toplaser",
+      "leg": "p6b-mechs-large-leg",
+      "foot": "p6b-mechs-large-foot"
+    },
+    "mechLightning": {
+      "body": "p6b-mechs-large-toplightning",
+      "leg": "p6b-mechs-large-leg",
+      "foot": "p6b-mechs-large-foot-small"
+    },
+    "mechMinigun": {
+      "body": "p6b-mechs-large-topminigun",
+      "leg": "p6b-mechs-large-leg",
+      "foot": "p6b-mechs-large-foot-med"
+    },
+    "mechMissile": {
+      "body": "p6b-mechs-small-topmissile",
+      "leg": "p6b-mechs-small-leg",
+      "foot": "p6b-mechs-small-foot"
+    },
+    "missileAirship": {
+      "body": "p6b-missile-airship-body",
+      "dead": "p6b-missile-airship-body-dead"
+    },
+    "missileTank": {
+      "body": "p6b-missile-tank-missile-tank",
+      "turret": "p6b-missile-tank-missile-tank-turret",
+      "dead": "p6b-missile-tank-missile-tank-dead"
+    },
+    "outpostT1": {
+      "body": "p6b-outpost-outpost"
+    },
+    "outpostT2": {
+      "body": "p6b-outpost-outpost"
+    },
+    "plasmaTank": {
+      "body": "p6b-plasma-tank-plasma-tank",
+      "turret": "p6b-plasma-tank-turret",
+      "dead": "p6b-plasma-tank-plasma-tank-dead"
+    },
+    "scout": {
+      "body": "p6b-scout-base",
+      "dead": "p6b-scout-base-dead"
+    },
+    "spyDrone": {
+      "body": "p6b-spy-drone-base",
+      "dead": "p6b-spy-drone-base-dead"
+    },
+    "c_artillery": {
+      "body": "p6b-tanks-artillery",
+      "dead": "p6b-tanks-artillery-dead"
+    },
+    "heavyArtillery": {
+      "body": "p6b-tanks-heavy-artillery",
+      "turret": "p6b-tanks-heavy-artillery-turret",
+      "dead": "p6b-tanks-heavy-artillery-dead"
+    },
+    "c_antiAirTurret": {
+      "body": "p6b-turrets-turret-base",
+      "turret": "p6b-turrets-anti-air-top",
+      "dead": "p6b-turrets-turret-base-dead"
+    },
+    "antiAirTurretFlak": {
+      "body": "p6b-turrets-turret-base2",
+      "turret": "p6b-turrets-anti-air-top-flakgun",
+      "dead": "p6b-turrets-turret-base-dead"
+    },
+    "c_antiAirTurretT2": {
+      "body": "p6b-turrets-turret-base",
+      "turret": "p6b-turrets-anti-air-top-l2",
+      "dead": "p6b-turrets-turret-base-dead"
+    },
+    "c_antiAirTurretT3": {
+      "body": "p6b-turrets-turret-base2",
+      "turret": "p6b-turrets-anti-air-top-l3",
+      "dead": "p6b-turrets-turret-base-dead"
+    },
+    "c_turret_t1_lightning": {
+      "body": "p6b-turrets-turret-base2",
+      "turret": "p6b-turrets-turret-top-lightning",
+      "dead": "p6b-turrets-turret-base-dead"
+    },
+    "c_turret_t2_artillery": {
+      "body": "p6b-turrets-turret-base2b",
+      "turret": "p6b-turrets-turret-top-artillery-l2",
+      "dead": "p6b-turrets-turret-base-dead"
+    },
+    "c_turret_t2_flame": {
+      "body": "p6b-turrets-turret-base2",
+      "turret": "p6b-turrets-turret-top-flame",
+      "dead": "p6b-turrets-turret-base-dead"
+    },
+    "c_turret_t2_lightning": {
+      "body": "p6b-turrets-turret-base2b",
+      "turret": "p6b-turrets-turret-top-lightning-l2",
+      "dead": "p6b-turrets-turret-base-dead"
+    },
+    "c_turret_t3_gun": {
+      "body": "p6b-turrets-turret-base2b",
+      "turret": "p6b-turrets-turret-top-l3",
+      "dead": "p6b-turrets-turret-base-dead"
     }
   },
   "terrain": {

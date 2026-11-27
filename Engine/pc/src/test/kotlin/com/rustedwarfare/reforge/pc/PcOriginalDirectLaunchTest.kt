@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class PcOriginalDirectLaunchTest {
 
     @Test
-    fun `bundled PC original image profile maps all 66 units including repairbay experimentalLandFactory silos and hoverTank`() {
+    fun `bundled PC original image profile maps all 115 units including repairbay experimentalLandFactory silos and hoverTank`() {
         val pcProfile = PcOriginalImageProfile.bundled()
         val mapped = requireNotNull(pcProfile.mappedImages) { "PC original profile must carry mappedImages" }
         val unitBindings = mapped.json.get("unitBindings")
@@ -20,7 +20,7 @@ class PcOriginalDirectLaunchTest {
             node.name?.let(names::add)
             node = node.next
         }
-        assertEquals(66, names.size, "Expected 66 mapped units in PC original profile")
+        assertEquals(115, names.size, "Expected 115 mapped units in PC original profile")
         for (required in listOf(
             "repairbay",
             "experimentalLandFactory",
