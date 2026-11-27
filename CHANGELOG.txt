@@ -1,3 +1,10 @@
+v0.6.3 (2026-11-28 02:50)
+  新增: 复用双栏骨架落地测试与沙盒页 TestAndSandboxScreen（非开发态隐藏模式开关并提供带待机靶机的 1-10 席自由沙盒，开发态支持镜头切换、锁定场景阵型预览并完整兼容 TestScenarioPanel 自动化动作 ID） / 新增构成主义加载画面 MatchLoadingScreen（顶底刻度尺、带玩家色出生点编号的 1:1 缩略图、01-05 对局摘要、中英文混排自然折行 TIPS、字母本体零位移的加粗 LOADING... 及安全取消回退）
+  修复: 将 DrawnActionLayout 输出矩形按视口逻辑宽高归一化至 960x640 契约空间以消除高分辨率窗口越界与点击偏移 / 保护开发态已选锁定测试种子的干净 NO_FOG 契约与 CLI --inputs 受控输入不被默认 .tmx 覆写，并补齐主菜单 .tmx 开局对 package/pack.json 的自动回退
+  技术: 新增 UiP004SandboxAndLoadingTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题共 9 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）
+
+====
+
 v0.6.2 (2026-11-28 01:46)
   新增: 定义强不可变对局启动契约 SkirmishLaunchConfig 与状态机 SkirmishLobbyState（支持 .tmx winCondition 自动映射胜负模式、往返主菜单及退局返厅保留配置与现有参数安全桥接） / 落地左窄右宽遭遇战大厅 SkirmishLobbyScreen（单行常驻规则、带非默认指示点的更多设置弹窗 MoreMatchSettingsModal、带玩家色出生点标记的大幅实时预览、全屏选图接入与本地 .tmx 载入） / 新增可复用 1-10 席参战席位表 MatchSlotTableView（10 色点击循环与撞色互换、队伍与出生点语义染色下拉及撞位互换、混战/双队平分、满 10 席隐藏添加行与席位缩减出生点自动收敛）及 4x4 超采样单一体实心三角下拉控件 UnifiedDropdown
   技术: 补齐遭遇战默认内容包回退与局外呈现释放闭环，新增 UiP004SkirmishLobbyTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题共 9 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）

@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.6.3 (2026-11-28 02:50)
+
+### 新增
+
+- **测试与沙盒双栏复用视图（`TestAndSandboxScreen`）**：直接复用遭遇战大厅的左窄右宽双栏几何骨架与统一顶栏，默认对全体构建开放「自由沙盒」态（非开发模式自动隐藏「模式」分段开关，顶行平铺默认无迷雾、无限初始资金与快速建造开关，左栏直接复用支持「沙盒靶机 · 待机」档位的 1–10 席 `MatchSlotTableView`，右栏复用大幅地图预览、共用全屏 `MapPicker` 选图、独立 `.tmx` 探针载入及「进入自由沙盒」主按钮并开放桌面局内沙盒布置）；开发模式（`--development true`）额外解锁「测试场景」态，提供跟随种子脚本/自由镜头切换、`SHA-256` 锁定场景列表（完整保留既有 `TestScenarioPanel` 自动化动作 ID）、带阵营开局单位点位的锁定地图预览与 `.json` 种子路径载入（自动隐藏选图入口防止篡改锁定地图）。
+- **构成主义对局加载画面（`MatchLoadingScreen`）**：在压暗动态地图背景中央渲染居中简报加载卡，顶部与底部配置无文字刻度尺细栏，中部左侧绘制带玩家色描边出生点编号的 `1:1` 正方形地图缩略图，右侧依次展示大号地图中文名与基线英文副标识、`01–05` 五格对局基本设置摘要（胜负/迷雾/资金/经济/禁核）及支持中英文混排自然折行的 `TIPS` 实战提示框；底部左上方固定锚点渲染加粗加大 `LOADING` 并在右侧循环追加动态点（字母本体 `0.0px` 零位移），右上方同步显示百分比进度，同时接通左上 `← 取消` 与 `Esc`/返回键安全回退来源页。
+
+### 修复
+
+- **高分辨率视口下 `action-layout` 自动化坐标越界与点击偏移**：此前 `DrawnActionLayout` 在非 `960×640` 窗口（如 `1200×800`、`1920×1080`）下直接写出原始 Stage 坐标，超出外部自动化驱动的 `960×640` 归一化边界；现先在真实 Stage 坐标完成命中遮挡校验，再按视口逻辑宽高线性归一化至 `[0..960] × [0..640]`，使任意分辨率下的物理像素点击中心精确对齐。
+- **开发态锁定种子迷雾契约与主菜单 `.tmx` 默认内容包解析**：修正从大厅启动已选锁定测试场景时被默认记忆迷雾覆写及 CLI `--inputs` 受控输入被默认 `.tmx` 劫持的问题，并为主菜单非开发模式启动下的 `.tmx` 开局补齐 `package/pack.json` 自动解析回退。
+
+### 技术
+
+- **双态兼容单测、三主题真 GL 实窗目视与独立双审**：更新展示版本号至 `v0.6.3`，新增 `UiP004SandboxAndLoadingTest` 并纳入 `platform-basics` 套件，客户端单测、`development_check.py --suite platform-basics` 与双根 `workspace_layout.py` 全部通过；采集 `1920×1080` 暗黑、白色、骨白三套主题下自由沙盒态、测试场景态与加载画面共 9 张真 GL 实窗截图，经全新上下文独立视觉审查 `APPROVED` 及独立非作者代码整审与 R02 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/TestAndSandboxScreen.kt` | **新增** — 复用双栏骨架的自由沙盒与开发测试场景双态视图及锁定场景阵型预览组件 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MatchLoadingScreen.kt` | **新增** — 带顶底刻度尺、`1:1` 出生点缩略图、`01–05` 摘要、`TIPS` 与本体零位移 `LOADING...` 的加载画面 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/OutGameChrome.kt` | 新增 `OutGameDraw.wrapTextCjk` 中英文混排自然折行工具 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DrawnActionLayout.kt` | 将上报的动作矩形线性归一化至 `960×640` 契约空间并保留真实 Stage 命中校验 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxLoader.kt` | 补充遭遇战 `.tmx` 加载对 `package/pack.json` 子目录的自动识别与回退 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 补充测试场景条目与加载取消按钮的中英双语文案键 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.3` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 接入 `TestAndSandboxScreen`、`MatchLoadingScreen`、锁定种子 `NO_FOG` 保护与 GL 纹理释放 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SandboxAndLoadingTest.kt` | **新增** — 覆盖非开发门控、双态与 `DrawnAction` 兼容、`LOADING` 零位移、跨分辨率坐标归一化及开局契约单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004SandboxAndLoadingTest` |
+
+---
+
 ## v0.6.2 (2026-11-28 01:46)
 
 ### 新增

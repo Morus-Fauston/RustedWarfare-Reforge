@@ -102,6 +102,57 @@ internal object OutGameDraw {
             fillRect(batch, white, tx, ty, 1f, th, col, parentAlpha)
         }
     }
+
+    /**
+     * CJK-aware multi-line text wrapper so mixed Chinese + ASCII tokens (such as `按住 Shift 下达移动...`)
+     * wrap naturally at [maxWidth] without breaking prematurely right after an ASCII space.
+     */
+    fun wrapTextCjk(font: BitmapFont, text: String, maxWidth: Float, scratch: GlyphLayout = GlyphLayout()): List<String> {
+        if (text.isEmpty()) return emptyList()
+        val limit = maxWidth.coerceAtLeast(40f)
+        val out = ArrayList<String>(4)
+        for (paragraph in text.split('\n')) {
+            if (paragraph.isEmpty()) {
+                out += ""
+                continue
+            }
+            val tokens = tokenizeMixedCjk(paragraph)
+            val current = StringBuilder()
+            for (token in tokens) {
+                if (current.isEmpty() && token.isBlank()) continue
+                val candidate = current.toString() + token
+                scratch.setText(font, candidate)
+                if (current.isNotEmpty() && scratch.width > limit) {
+                    out += current.toString().trimEnd()
+                    current.setLength(0)
+                    if (!token.isBlank()) current.append(token)
+                } else {
+                    current.append(token)
+                }
+            }
+            if (current.isNotEmpty()) {
+                out += current.toString().trimEnd()
+            }
+        }
+        return out
+    }
+
+    private fun tokenizeMixedCjk(line: String): List<String> {
+        val tokens = ArrayList<String>(line.length)
+        var i = 0
+        while (i < line.length) {
+            val ch = line[i]
+            if (ch.code in 33..126) {
+                val start = i
+                while (i < line.length && line[i].code in 33..126) i++
+                tokens += line.substring(start, i)
+            } else {
+                tokens += ch.toString()
+                i++
+            }
+        }
+        return tokens
+    }
 }
 
 /**

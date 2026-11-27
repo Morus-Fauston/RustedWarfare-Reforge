@@ -53,7 +53,8 @@
       "com.rustedwarfare.reforge.client.ShieldResourceBindingTest",
       "com.rustedwarfare.reforge.client.UiP004ShellSettingsThemeTest",
       "com.rustedwarfare.reforge.client.UiP004MainMenuAndMapPickerTest",
-      "com.rustedwarfare.reforge.client.UiP004SkirmishLobbyTest"
+      "com.rustedwarfare.reforge.client.UiP004SkirmishLobbyTest",
+      "com.rustedwarfare.reforge.client.UiP004SandboxAndLoadingTest"
     ],
     "pc": [
       "com.rustedwarfare.reforge.pc.VisualAssetPreparationTest",
