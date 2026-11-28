@@ -15,6 +15,23 @@ import kotlin.math.ceil
 
 /** Technical replay only. It accepts no standard approval and produces no compatibility judgment. */
 object MotionDiagnosticCapture {
+    internal fun diagnosticActionKindForType(action: Any): String = when (action) {
+        is MoveAction -> "move"
+        is StopAction -> "stop"
+        is SelectAction -> "select"
+        is SubmarineDepthAction -> error("Movement diagnostic capture does not support SubmarineDepthAction")
+        is AmphibiousFlightAction -> error("Movement diagnostic capture does not support AmphibiousFlightAction")
+        is UnitAction -> error("Movement diagnostic capture does not support UnitAction")
+        is LoadAction, is UnloadAction -> error("Movement diagnostic capture does not support transport actions")
+        is AttackAction -> error("Movement diagnostic capture does not support AttackAction")
+        is PatrolAction -> error("Movement diagnostic capture does not support PatrolAction")
+        is BuildAction, is ResumeConstructionAction, is CancelConstructionAction, is RepairUnitAction, is ReclaimUnitAction ->
+            error("Movement diagnostic capture does not support construction actions")
+        is ProduceAction, is CancelProductionAction, is UpgradeAction, is CancelUpgradeAction ->
+            error("Movement diagnostic capture does not support economy actions")
+        else -> error("Movement diagnostic capture does not support ${action.javaClass.simpleName}")
+    }
+
     internal fun submitAndRecord(context:SimulationContext,action:Action,original:JsonObject,sequence:Int,q:Int,
                                  attempts:MutableList<JsonElement>):ActionResult.Accepted {
         require(action !is PatrolAction) { "Movement diagnostic capture does not support PatrolAction" }
@@ -29,20 +46,15 @@ object MotionDiagnosticCapture {
         require(action !is AmphibiousFlightAction) { "Movement diagnostic capture does not support AmphibiousFlightAction" }
         require(action !is UnitAction) { "Movement diagnostic capture does not support UnitAction" }
         require(action !is LoadAction && action !is UnloadAction) { "Movement diagnostic capture does not support transport actions" }
+        require(action !is AttackAction) { "Movement diagnostic capture does not support AttackAction" }
+        require(action is MoveAction || action is StopAction || action is SelectAction) {
+            "Movement diagnostic capture does not support ${action.javaClass.simpleName}"
+        }
         val before=context.observe().json()
         val submitted=context.submit(action)
         val issued=obj("actionId" to s(action.actionId),"actorPlayerId" to s(action.actorPlayerId),"unitId" to s(action.unitId),
             "worldId" to s(action.world.id),"atStep" to action.atStep?.let(::n),
-            "kind" to s(when(action) { is MoveAction -> "move";is StopAction -> "stop";is SelectAction -> "select"
-                is SubmarineDepthAction -> error("Movement diagnostic capture does not support SubmarineDepthAction")
-                is AmphibiousFlightAction -> error("Movement diagnostic capture does not support AmphibiousFlightAction")
-                is UnitAction -> error("Movement diagnostic capture does not support UnitAction")
-                is LoadAction, is UnloadAction -> error("Movement diagnostic capture does not support transport actions")
-                is AttackAction -> error("Movement diagnostic capture does not support AttackAction")
-                is PatrolAction -> error("Movement diagnostic capture does not support PatrolAction")
-                is BuildAction, is ResumeConstructionAction, is CancelConstructionAction, is RepairUnitAction, is ReclaimUnitAction ->
-                    error("Movement diagnostic capture does not support construction actions")
-                is ProduceAction, is CancelProductionAction, is UpgradeAction, is CancelUpgradeAction -> error("Movement diagnostic capture does not support economy actions") }),
+            "kind" to s(diagnosticActionKindForType(action)),
             "target" to (action as? MoveAction)?.target?.json())
         attempts+=obj("attempted" to b(true),"sequence" to n(sequence),"q" to n(q),
             "actualSimulationTime" to before.required("simulationTime"),"actualStepIndex" to before.required("stepIndex"),

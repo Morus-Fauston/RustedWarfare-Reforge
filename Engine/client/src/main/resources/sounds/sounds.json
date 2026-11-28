@@ -15,12 +15,84 @@
     },
     "reforge:sounds/nuke-explode": {
       "file": "nuke-explode.wav"
+    },
+    "reforge:sounds/cannon-fire": {
+      "file": "cannon-fire.wav"
+    },
+    "reforge:sounds/gun-fire": {
+      "file": "gun-fire.wav"
+    },
+    "reforge:sounds/autocannon-fire": {
+      "file": "autocannon-fire.wav"
+    },
+    "reforge:sounds/heavy-autocannon-fire": {
+      "file": "heavy-autocannon-fire.wav"
+    },
+    "reforge:sounds/flak-cannon-fire": {
+      "file": "flak-cannon-fire.wav"
+    },
+    "reforge:sounds/missile-hit": {
+      "file": "missile-hit.wav"
+    },
+    "reforge:sounds/plasma-fire": {
+      "file": "plasma-fire.wav"
+    },
+    "reforge:sounds/heavy-plasma-fire": {
+      "file": "heavy-plasma-fire.wav"
+    },
+    "reforge:sounds/lightning-burst": {
+      "file": "lightning-burst.wav"
+    },
+    "reforge:sounds/laser-deflect-charge": {
+      "file": "laser-deflect-charge.wav"
+    },
+    "reforge:sounds/point-defense-intercept": {
+      "file": "point-defense-intercept.wav"
+    },
+    "reforge:sounds/unit-explode": {
+      "file": "unit-explode.wav"
+    },
+    "reforge:sounds/unit-explode-small": {
+      "file": "unit-explode-small.wav"
+    },
+    "reforge:sounds/building-explode": {
+      "file": "building-explode.wav"
+    },
+    "reforge:sounds/bug-die": {
+      "file": "bug-die.wav"
+    },
+    "reforge:sounds/bug-attack": {
+      "file": "bug-attack.wav"
+    },
+    "reforge:sounds/order-move": {
+      "file": "order-move.wav"
+    },
+    "reforge:sounds/order-attack": {
+      "file": "order-attack.wav"
+    },
+    "reforge:sounds/order-attack-alt": {
+      "file": "order-attack-alt.wav"
+    },
+    "reforge:sounds/ui-click": {
+      "file": "ui-click.wav"
+    },
+    "reforge:sounds/ui-queue-add": {
+      "file": "ui-queue-add.wav"
+    },
+    "reforge:sounds/ui-queue-remove": {
+      "file": "ui-queue-remove.wav"
+    },
+    "reforge:sounds/ui-error": {
+      "file": "ui-error.wav"
+    },
+    "reforge:sounds/alert-warning": {
+      "file": "alert-warning.wav"
+    },
+    "reforge:sounds/ui-message": {
+      "file": "ui-message.wav"
     }
   },
   "events": {
-    "reforge:events/hover-fire": {
-      "sound": "reforge:sounds/tank-fire"
-    },
     "reforge:events/tank-fire": {
       "sound": "reforge:sounds/tank-fire"
     },
@@ -30,23 +102,104 @@
     "reforge:events/naval-missile-fire": {
       "sound": "reforge:sounds/naval-missile-fire"
     },
-    "reforge:events/amphibious-lightning-fire": {
-      "sound": "reforge:sounds/tank-fire"
-    },
-    "reforge:events/spider-lightning-fire": {
-      "sound": "reforge:sounds/tank-fire"
-    },
-    "reforge:events/scout-plasma-fire": {
-      "sound": "reforge:sounds/tank-fire"
-    },
     "reforge:events/nuke-launch": {
       "sound": "reforge:sounds/nuke-launch"
     },
     "reforge:events/nuke-explode": {
       "sound": "reforge:sounds/nuke-explode"
     },
+    "reforge:events/cannon-fire": {
+      "sound": "reforge:sounds/cannon-fire"
+    },
+    "reforge:events/gun-fire": {
+      "sound": "reforge:sounds/gun-fire"
+    },
+    "reforge:events/autocannon-fire": {
+      "sound": "reforge:sounds/autocannon-fire"
+    },
+    "reforge:events/heavy-autocannon-fire": {
+      "sound": "reforge:sounds/heavy-autocannon-fire"
+    },
+    "reforge:events/flak-cannon-fire": {
+      "sound": "reforge:sounds/flak-cannon-fire"
+    },
+    "reforge:events/missile-hit": {
+      "sound": "reforge:sounds/missile-hit"
+    },
+    "reforge:events/plasma-fire": {
+      "sound": "reforge:sounds/plasma-fire"
+    },
+    "reforge:events/heavy-plasma-fire": {
+      "sound": "reforge:sounds/heavy-plasma-fire"
+    },
+    "reforge:events/lightning-burst": {
+      "sound": "reforge:sounds/lightning-burst"
+    },
+    "reforge:events/laser-deflect-charge": {
+      "sound": "reforge:sounds/laser-deflect-charge"
+    },
+    "reforge:events/point-defense-intercept": {
+      "sound": "reforge:sounds/point-defense-intercept"
+    },
+    "reforge:events/unit-explode": {
+      "sound": "reforge:sounds/unit-explode"
+    },
+    "reforge:events/unit-explode-small": {
+      "sound": "reforge:sounds/unit-explode-small"
+    },
+    "reforge:events/building-explode": {
+      "sound": "reforge:sounds/building-explode"
+    },
+    "reforge:events/bug-die": {
+      "sound": "reforge:sounds/bug-die"
+    },
+    "reforge:events/bug-attack": {
+      "sound": "reforge:sounds/bug-attack"
+    },
+    "reforge:events/order-move": {
+      "sound": "reforge:sounds/order-move"
+    },
+    "reforge:events/order-attack": {
+      "sound": "reforge:sounds/order-attack"
+    },
+    "reforge:events/order-attack-alt": {
+      "sound": "reforge:sounds/order-attack-alt"
+    },
+    "reforge:events/ui-click": {
+      "sound": "reforge:sounds/ui-click"
+    },
+    "reforge:events/ui-queue-add": {
+      "sound": "reforge:sounds/ui-queue-add"
+    },
+    "reforge:events/ui-queue-remove": {
+      "sound": "reforge:sounds/ui-queue-remove"
+    },
+    "reforge:events/ui-error": {
+      "sound": "reforge:sounds/ui-error"
+    },
+    "reforge:events/alert-warning": {
+      "sound": "reforge:sounds/alert-warning"
+    },
+    "reforge:events/ui-message": {
+      "sound": "reforge:sounds/ui-message"
+    },
+    "reforge:events/hover-fire": {
+      "sound": "reforge:sounds/heavy-plasma-fire"
+    },
+    "reforge:events/amphibious-lightning-fire": {
+      "sound": "reforge:sounds/lightning-burst"
+    },
+    "reforge:events/spider-lightning-fire": {
+      "sound": "reforge:sounds/lightning-burst"
+    },
+    "reforge:events/scout-plasma-fire": {
+      "sound": "reforge:sounds/plasma-fire"
+    },
+    "reforge:events/spider-gun-fire": {
+      "sound": "reforge:sounds/autocannon-fire"
+    },
     "reforge:events/nuke-intercept": {
-      "sound": "reforge:sounds/naval-missile-fire"
+      "sound": "reforge:sounds/building-explode"
     },
     "reforge:events/bomber-impact": {
       "sound": "reforge:sounds/naval-missile-fire"

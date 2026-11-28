@@ -42,19 +42,77 @@
     "debugLegendStalled": "#FF2929FF",
     "debugLegendDetail": "#52D8FFFF"
   },
+  "outGame": {
+    "railSolid": "#212528FF",
+    "textStrong": "#F2F5F7FF",
+    "ally": "#2ECC40FF",
+    "primaryBg": "#DBD5C6FF",
+    "primaryBgHover": "#F2EDE0FF",
+    "primaryFg": "#1A1A18FF",
+    "primaryBevel": "#1A1A18@0.24",
+    "segActiveBg": "#C9D1D5FF",
+    "segActiveFg": "#1A1A18FF",
+    "mapScrim": "#000000@0.58",
+    "mapScrimDeep": "#000000@0.70",
+    "modalScrim": "#0A0C0E@0.74",
+    "scaleAlertScrim": "#0A0C0E@0.90",
+    "panelShadow": "#000000@0.58",
+    "rulerMajor": "#FFFFFF@0.22",
+    "selfRowBg": "#C9D1D5@0.07",
+    "hoverSoft": "#FFFFFF@0.03",
+    "lockedPackBg": "#1A1E20@0.65",
+    "packThumbBg": "#14181AFF",
+    "logoFrame": "#9AA3A8FF",
+    "logoAccent": "#DC5A22FF",
+    "logoMain": "#F2EDE0FF",
+    "logoTicks": "#FFFFFF@0.26",
+    "copyrightFg": "#A9B2B7FF",
+    "dangerBorder": "#E0564A@0.74",
+    "dangerBg": "#E0564A@0.19",
+    "dangerFg": "#FF7B72FF",
+    "dangerHoverBg": "#E0564AFF",
+    "dangerHoverFg": "#F2F5F7FF",
+    "tintedDropdownFg": "#F2F5F7FF",
+    "mapCardLabelPillBg": "#0C0E10@0.82",
+    "mapCardLabelPillBorder": "#000000@0.00",
+    "mapCardLabelFg": "#F2F5F7FF",
+    "menuExtrudeAccent": "#E86426FF",
+    "menuExtrudeStroke": "#15191CFF",
+    "backdropWater": "#1A1E20FF",
+    "backdropLow": "#353B3FFF",
+    "backdropMid": "#596167FF",
+    "backdropHigh": "#9AA3A8FF",
+    "backdropOre": "#DBD5C6FF",
+    "backdropGrid": "#000000@0.35"
+  },
   "metrics": {
     "keyRadius": 4.0,
     "keyShadowHeight": 3.0,
     "commonKeyShadowHeight": 2.0,
     "queueBadgeOffsetX": 3.0,
     "queueBadgeOffsetY": 3.0,
-    "queueBadgeStrokeWidth": 1.0
+    "queueBadgeStrokeWidth": 1.0,
+    "tintedDropdownFillAlpha": 0.34,
+    "tintedDropdownBorderAlpha": 0.78
   },
   "unitIconTuning": {
     "gamma": 0.82,
     "brightnessLift": 0.05,
     "saturationScale": 1.08,
     "outlineLumaThreshold": 0.14
+  },
+  "palettes": {
+    "players": [
+      "#2ECC40", "#E0463E", "#3B82F6", "#EAB308", "#06B6D4",
+      "#A855F7", "#F97316", "#EC4899", "#6366F1", "#E2E8F0"
+    ],
+    "teams": [
+      "#2ECC40", "#E0463E", "#3B82F6", "#EAB308", "#06B6D4",
+      "#A855F7", "#F97316", "#EC4899", "#6366F1", "#94A3B8"
+    ]
+  },
+  "features": {
+    "mainMenuExtrudeText": true
   },
   "assets": {
     "commandIconsJson": "icons/hud-command-icons.json",

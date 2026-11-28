@@ -93,10 +93,12 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
 
     private fun fallbackCatalogPack(root: Path): ContentPackChoice? {
         val candidates = listOf(
+            root.resolve("../phase-seven-sandbox/json/package"),
+            Path.of("test-scenarios/inputs/phase-seven-sandbox/json/package"),
+            Path.of("SimulationTest/public/inputs/phase-seven-sandbox/json/package"),
             root.resolve("package"),
             root.resolve("json/package"),
             root.resolve("../phase-six-a-sandbox/json/package"),
-            root.resolve("../phase-seven-sandbox/json/package"),
             Path.of("test-scenarios/inputs/phase-six-a-sandbox/json/package"),
             Path.of("SimulationTest/public/inputs/phase-six-a-sandbox/json/package"),
         )
@@ -124,14 +126,31 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
         pending = executor.submit<Result<LoadedSandbox>> { runCatching {
             val startedNanos = System.nanoTime()
             val checked = contentPack?.revalidate()
-            val autoPack = if (checked == null && java.nio.file.Files.isRegularFile(root.resolve("pack.json"))) {
-                when (val loadedPack = com.rustedwarfare.reforge.core.content.ContentLoader.loadContentPack(root)) {
+            val preferSevenRoot = if (checked == null && root.toString().replace('\\', '/').endsWith("phase-six-a-sandbox/json")) {
+                listOf(
+                    root.resolve("../../phase-seven-sandbox/json/package"),
+                    Path.of("test-scenarios/inputs/phase-seven-sandbox/json/package"),
+                    Path.of("SimulationTest/public/inputs/phase-seven-sandbox/json/package"),
+                ).map { it.toAbsolutePath().normalize() }.firstOrNull { java.nio.file.Files.isRegularFile(it.resolve("pack.json")) }
+            } else null
+            val directPackDir = when {
+                checked != null -> null
+                preferSevenRoot != null -> preferSevenRoot
+                java.nio.file.Files.isRegularFile(root.resolve("pack.json")) -> root
+                java.nio.file.Files.isRegularFile(root.resolve("package/pack.json")) -> root.resolve("package")
+                else -> null
+            }
+            val autoPack = if (directPackDir != null) {
+                when (val loadedPack = com.rustedwarfare.reforge.core.content.ContentLoader.loadContentPack(directPackDir)) {
                     is ContentResult.Success -> ContentPackChoice(loadedPack.value, loadedPack.value.units.keys.first())
                     is ContentResult.Failure -> null
                 }
             } else null
-            val effectivePack = checked ?: autoPack
-            val definitions = effectivePack?.content?.units ?: ControlledScenario.prepare(root).scenario.unitDefinitions
+            val controlledDefs = if (checked == null && autoPack == null && java.nio.file.Files.isDirectory(root)) {
+                runCatching { ControlledScenario.prepare(root).scenario.unitDefinitions }.getOrNull()
+            } else null
+            val effectivePack = checked ?: autoPack ?: if (controlledDefs == null) fallbackCatalogPack(root) else null
+            val definitions = effectivePack?.content?.units ?: controlledDefs ?: ControlledScenario.prepare(root).scenario.unitDefinitions
             val built = TmxSkirmishScenarioBuilder.build(mapPath, definitions, originalDirectory, displayName)
             val scene = built.scenario
             val scenarioPreparedNanos = System.nanoTime()

@@ -1,3 +1,67 @@
+v0.6.9 (2026-11-28 16:15)
+  修复: 将自动探测到的本地 Steam 等非默认原版目录同步补入 VisualAssetSettingsSession 并在异步扫描与预览完成时保持，修复启用本地原版表现资源包后因默认路径缺失锁死开始对局的问题 / 无有效原版目录时禁用移入按钮并透出后台资源准备进度提示 / 补齐临时 CLI 覆盖不写盘守卫、统一取消后台 PREVIEW 并在启动 CATALOG 期间延后对账以保留外部资源包校验记录
+  技术: 更新版本号至 v0.6.9，新增 Steam 65 单位直启与临时 CLI 零写盘及 CATALOG 对账回归测试，通过公开短测 6/6、PC 安装包、Android Debug APK 校验及双根布局检查，经独立非作者 R02 定向复核 APPROVE（0 必修）
+
+====
+
+v0.6.8 (2026-11-28 15:11)
+  新增: 支持资源包 pack.json 声明式 enum/boolean 表现变体选项与已启用包右侧矢量齿轮设置弹窗 ResourcePackOptionsModal（按声明顺序叠合包内 uiTheme/images/sounds、导入期全量 HMAC 托管固化与同名声音去重恢复、禁用保留记忆、跨重启异步扫描保持选项、局内放行纯 UiTheme 即时切换并锁定媒体项） / 自动探测扫描原版 assets/maps/skirmish 与用户私有目录的真实可玩 .tmx 地图及随图 _map.png 缩略图（隔离战役挑战脚本图、清洗标签按 2P-10P 排序，公开环境回退含新增 10 人图 ring_atoll.tmx 在内的 3 张随包可玩地图，未手动改席位时切换 2P/3P 图自适应默认席位数）
+  调整: 将局外动态背景替换为对齐演示稿 mapSVG 的 80x45 格构成主义测绘蓝图（新增 6 项 backdrop* 主题令牌，最近邻整数像素缓慢平移且零模拟开销） / 移除画面设置重复主题行与 3 个虚拟主题包并将暗黑/白色/骨白统一收编至 reforge:base 包设置 / 将非开发态默认内容根对齐至 65 单位 phase-seven-sandbox/json/package 并在 .tmx 开局构建时先落位建筑再落位机动单位，打通选定任意真实地图直接进图闭环
+  技术: 更新版本号至 v0.6.8 并同步表现变体选项术语，新增全量本地遭遇战 .tmx 初始化与多变体包 HMAC 托管回归单测，通过公开短测 6/6、PC 安装包、Android 四架构 Debug 构建与宿主校验及双根布局检查，32 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）
+
+====
+
+v0.6.7 (2026-11-28 06:33)
+  修复: 将局内设置覆盖层切换为与主题同极性的 mapScrimDeep 遮罩并在打开期间隐藏底层局内 HUD 悬浮层（返回后恢复），消除白色/骨白主题顶栏标题低对比度与左上系统条双层叠影，同时统一内置基础资源包局内外构成主义徽章 / 新增 OutGameDraw.ellipsizeMiddle 字宽二分中间省略并优化紧凑双行规则间距，消除 960x640 视口右栏场景副标题碰撞
+  技术: 更新版本号至 v0.6.7 并补充中间省略单测；完成 960x640 / 1920x1080 / 2560x1440 三分辨率与暗黑/白色/骨白三主题全流程实窗终审（R02 APPROVED）、全套公开 PR 机制与 6/6 短测、PC 安装包、Android 四架构 Debug 构建与宿主校验及双根布局检查，经整期独立代码与收据终审 APPROVE（0 必修）
+
+====
+
+v0.6.6 (2026-11-28 04:36)
+  新增: 补绘六期 B 剩余 49 单位与共享部件的自有俯视工业像素主体、炮塔、腿足、阴影及残骸贴图（支持纯绿通道阵营染色），同步完成占位清单绑定与桌面端原版贴图路径映射 / 程序化数学合成新增 25 份无削波 16-bit PCM WAV 占位音，闭合全部 30 个核心武器、爆炸、虫族、指令与界面预警音效事件及原版 .ogg 覆盖映射
+  技术: 更新版本号至 v0.6.6，新增自包含贴图纯绿通道与 WAV 波形合规单测并通过 platform-basics 机制套件及双根布局检查，6 组产线阵营染色与残骸拼图经独立视觉审查 APPROVED 且清单与原创版权合规经独立整审 APPROVE（0 必修）
+
+====
+
+v0.6.5 (2026-11-28 04:21)
+  架构改进: 为 MotionDiagnosticCapture 与 MotionV2CoreTraceJson 补充核心 Action 开放默认分支与提交前拦截守卫以消除新增指令穷举编译耦合 / 将 TraceComparator 的 UnitTask 锁死 9 键与 6 枚举升级为核心必需键 + 大写枚举与有限扩展键开放校验且保持双边全键精确判错 / 将 PlatformSessionRunner 的 unit-action 硬编码动作白名单重构为结合实时菜单 groundTargeted 元数据的数据驱动开放校验并保留全部非法参数拒绝
+  技术: 新增 TestUi004OpenValidationTest 正反例单测，tooling 全套机制测试、公开短测 6/6 与双根布局检查全绿，经独立非作者代码整审 APPROVE（0 必修）
+
+====
+
+v0.6.4 (2026-11-28 03:52)
+  新增: 落地 7 分类构成主义双栏设置页 SettingsScreen（常规双语切换、音频滑块与静音实时联动 SoundPlayback 含前后台恢复、画面缩放与暗黑/白色/骨白三主题切换、操作偏好即时落盘、关于声明弹窗，以及局内菜单打开时的双包只读锁定与底层热键滚轮穿透屏蔽） / 新增类 MC 左右双栏包管理器 DualColumnPackManagerView（1:1 缩略图、displayText_zh 优先回退、四向超采样实心三角按钮、双列滚轮滚动、基础包底层常驻锁定、ADR-014 层级对齐及内容包启用栈同步驱动主包入口） / 新增 UI 缩放全屏模态 10 秒倒计时自动还原弹窗 UiScaleConfirmModal 并统一局内外模态返回键最优先回滚
+  技术: 新增 UiP004SettingsAndPacksTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题共 15 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）
+
+====
+
+v0.6.3 (2026-11-28 02:50)
+  新增: 复用双栏骨架落地测试与沙盒页 TestAndSandboxScreen（非开发态隐藏模式开关并提供带待机靶机的 1-10 席自由沙盒，开发态支持镜头切换、锁定场景阵型预览并完整兼容 TestScenarioPanel 自动化动作 ID） / 新增构成主义加载画面 MatchLoadingScreen（顶底刻度尺、带玩家色出生点编号的 1:1 缩略图、01-05 对局摘要、中英文混排自然折行 TIPS、字母本体零位移的加粗 LOADING... 及安全取消回退）
+  修复: 将 DrawnActionLayout 输出矩形按视口逻辑宽高归一化至 960x640 契约空间以消除高分辨率窗口越界与点击偏移 / 保护开发态已选锁定测试种子的干净 NO_FOG 契约与 CLI --inputs 受控输入不被默认 .tmx 覆写，并补齐主菜单 .tmx 开局对 package/pack.json 的自动回退
+  技术: 新增 UiP004SandboxAndLoadingTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题共 9 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）
+
+====
+
+v0.6.2 (2026-11-28 01:46)
+  新增: 定义强不可变对局启动契约 SkirmishLaunchConfig 与状态机 SkirmishLobbyState（支持 .tmx winCondition 自动映射胜负模式、往返主菜单及退局返厅保留配置与现有参数安全桥接） / 落地左窄右宽遭遇战大厅 SkirmishLobbyScreen（单行常驻规则、带非默认指示点的更多设置弹窗 MoreMatchSettingsModal、带玩家色出生点标记的大幅实时预览、全屏选图接入与本地 .tmx 载入） / 新增可复用 1-10 席参战席位表 MatchSlotTableView（10 色点击循环与撞色互换、队伍与出生点语义染色下拉及撞位互换、混战/双队平分、满 10 席隐藏添加行与席位缩减出生点自动收敛）及 4x4 超采样单一体实心三角下拉控件 UnifiedDropdown
+  技术: 补齐遭遇战默认内容包回退与局外呈现释放闭环，新增 UiP004SkirmishLobbyTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题共 9 张真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审与 R02 复核 APPROVE（0 必修）
+
+====
+
+v0.6.1 (2026-11-28 00:48)
+  新增: 新增零模拟缓慢平移的构成主义蓝图动态地图背景 DynamicMapBackdrop、二级页统一顶栏 SubPageTopBar 与面板外壳 OutGamePanelShell / 落地无外框主菜单 MainMenuScreen（含 4x4 超采样 RWRE 矢量标志、四项无框菜单、触控二次确认退出及仅暗黑主题启用的 -52 度斜拉排线橙色棱柱选中字效） / 新增共用全屏 1:1 正方形战术卡片选图器 MapPickerScreen（支持暗黑底渐变与浅色胶囊铭牌自适应、取消保原选）及覆盖 4P-10P 的 8 图内置遭遇战目录
+  修复: 将主 SpriteBatch 切换为分离式 Alpha 混合，消除半透明遮罩叠加冲淡帧缓冲目标 Alpha 通道的问题
+  技术: 扩展 UiFontSet 局外字阶与地图双语文案，新增 UiP004MainMenuAndMapPickerTest 并通过 platform-basics 机制套件与双根布局检查，1920x1080 三主题真 GL 实窗截图经独立视觉审查 APPROVED 且代码经独立整审复核 APPROVE（0 必修）
+
+====
+
+v0.6.0 (2026-11-27 23:09)
+  新增: 抽离轻量局外路由栈与模态协调器 AppShell（含加载取消/退局来源页还原与移动端二次确认退出）并薄委托接入 BootstrapScreen / 新增平台私有目录原子 JSON 设置存储 UserSettingsStore（基础包强制置底、损坏回退默认，支持 --lang 与 --theme 命令行优先覆写且不污染落盘配置） / 默认语言切为简体中文，补齐局外全页双语文案、缺省兜底、开发态拒绝码门控及资源包/内容包 displayText_zh 多源回退 / 扩展 ADR-014 实装暗黑、白色、骨白三套内置主题（支持叠加表现资源包局部覆写）并将对局玩家与队伍色板扩至 10 色
+  架构改进: 移除旧同步 AWT 字体 PcVisualAssetFont 桥接并物理清理 14 份 v1..v5 历史提取配置 JSON 及旧版读取分支
+  技术: 新增 UiP004ShellSettingsThemeTest（含 NotoSansSC OpenType cmap 全字符零缺字校验）并同步 platform-basics 套件，客户端/PC 单测、platform-basics 机制套件与双根布局检查全绿，经全新上下文独立非作者代码整审与 R01 定向复核 APPROVE（0 必修）
+
+====
+
 v0.5.91 (2026-11-28 16:15)
   性能优化: 针对 350x350 大地图 4x 压测热点完成模拟与渲染全链路提速，包括 WorldSpatialIndex 原语链表与双槽 ping-pong 冻结快照复用及 Chebyshev 环剪枝 Top-K、LocomotionModule 拆分 7 项中粒度子方法与原始数组 ORCA 求解、NavigationGuidance/PlanningTerrain 增量地形掩码与大地图影子重建配额及轻量回滚、CircularTerrain/UnitContact 长线段走廊早停与零分配圆形扫掠、SimulationContext 阵营包围盒索敌剪枝/活体建筑快径/SimulationKernelWarmup JIT 预热，以及 SandboxGraphics 静态地形 SpriteCache 与 OfflineStepClock 帧预算守卫
   修复: 修复 WorldSpatialIndex 对向车流圆锥补角余弦回绕、NavigationGuidance 小地图影子限流与门洞梯度余量及自格通行费扣减、UnitContact 纯在途独立车流与 41px 近目标轴向对接及静止群死锁回退、contactLayerAt 水下闭区间边界、SHORE_REJOIN 弹栈进度清零与 BuildingTerrain 慢路径条目同步

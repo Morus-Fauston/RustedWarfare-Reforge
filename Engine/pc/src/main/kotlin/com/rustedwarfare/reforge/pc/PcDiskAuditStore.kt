@@ -95,6 +95,10 @@ internal class PcDiskAuditStore(private val cache: Path) {
             val fields = mutableListOf(selection.source.name, selection.originalDirectory?.toString().orEmpty(), selection.temporary.toString())
             selection.packs.catalog.forEach { fields += listOf(it.id, it.manifest.toString(), it.identity) }
             fields += "enabled"; fields += selection.packs.enabled
+            selection.packOptions.toSortedMap().forEach { (pid, opts) ->
+                fields += "packOpts:$pid"
+                opts.toSortedMap().forEach { (k, v) -> fields += "$k=$v" }
+            }
             fields += "content"; fields += content?.unitId.orEmpty()
             content?.content?.sources?.forEach { fields += listOf(it.path.toString(), it.bytes.toString(), it.sha256) }
             return visualHash(fields.joinToString("\u0000").toByteArray(Charsets.UTF_8))

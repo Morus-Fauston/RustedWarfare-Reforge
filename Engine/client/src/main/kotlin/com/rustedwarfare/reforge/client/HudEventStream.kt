@@ -55,8 +55,12 @@ class HudEventStream {
     }
 
     /** Convenience helper translating a core/UI reason code via [UiStrings.rejectionReason]. */
-    fun pushRejectionCode(code: String, language: UiLanguage = UiStrings.currentLanguage) {
-        pushWarning(UiStrings.rejectionReason(code, language))
+    fun pushRejectionCode(
+        code: String,
+        language: UiLanguage = UiStrings.currentLanguage,
+        showRawCode: Boolean = false,
+    ) {
+        pushWarning(UiStrings.rejectionReason(code, language, showRawCode = showRawCode))
     }
 
     private fun push(text: String, kind: HudNoticeKind, duration: Float) {

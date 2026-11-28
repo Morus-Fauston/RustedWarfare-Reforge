@@ -15,7 +15,7 @@ class VisualAssetPlaceholderTest {
             val selection = VisualAssetSelection(VisualAssetSource.PLACEHOLDER, root.resolve("原版 missing"))
             val prepared = PcPlaceholderVisualAssets().prepare(selection)
             assertEquals(selection, prepared.selection)
-            assertEquals(16, prepared.units.size)
+            assertEquals(65, prepared.units.size)
             assertEquals(6, prepared.terrain.size)
             assertEquals(3, prepared.units.getValue("c_tank").totalFrames)
             assertEquals(1, prepared.units.getValue("demo_tank").totalFrames)

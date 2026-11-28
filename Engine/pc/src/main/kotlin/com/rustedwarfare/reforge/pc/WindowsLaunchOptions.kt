@@ -5,6 +5,8 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import com.rustedwarfare.reforge.client.BuiltInUiThemeId
+import com.rustedwarfare.reforge.client.UiLanguage
 import com.rustedwarfare.reforge.client.VisualAssetSource
 
 data class WindowsLaunchOptions(
@@ -26,20 +28,26 @@ data class WindowsLaunchOptions(
     val skirmishMap: Path? = null,
     val themePackDir: Path? = null,
     val catalogSceneId: String? = null,
+    val cliLanguage: UiLanguage? = null,
+    val cliThemeId: BuiltInUiThemeId? = null,
     val hotspotSummary: Path? = null,
 ) {
     val hasVisualOverride: Boolean get() = visualSource != null || originalAssets != null
     companion object {
         fun parse(args: Array<String>, repoRoot: Path,
                   defaultScenarioSeed: Path = repoRoot.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")): WindowsLaunchOptions {
-            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--scene ID] [--development true] [--diagnostics true|false] [--hotspot-summary PATH] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
+            require(args.size % 2 == 0) { "Usage: [--mode sandbox|demo] [--inputs PATH] [--map PATH] [--scene ID] [--lang zh|en] [--theme dark|white|bone] [--development true] [--diagnostics true|false] [--hotspot-summary PATH] [--evidence NEW_RUN_DIRECTORY] [--visuals placeholder|original] [--original-assets PATH]" }
             val visualKeys = setOf("--visuals", "--original-assets")
+            val singleOverrideKeys = setOf("--lang", "--theme")
             val pairs = args.toList().chunked(2)
             require(pairs.filter { it[0] in visualKeys }.map { it[0] }.distinct().size == pairs.count { it[0] in visualKeys }) {
                 "Duplicate visual asset option"
             }
+            for (singleKey in singleOverrideKeys) {
+                require(pairs.count { it[0] == singleKey } <= 1) { "Duplicate option: $singleKey" }
+            }
             val options = pairs.associate { (key, value) ->
-                require(key in setOf("--mode", "--inputs", "--map", "--scene", "--theme-pack", "--development", "--diagnostics", "--hotspot-summary", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys) { "Unknown option: $key" }
+                require(key in setOf("--mode", "--inputs", "--map", "--scene", "--theme-pack", "--development", "--diagnostics", "--hotspot-summary", "--evidence", "--background-input", "--background-size", "--touch") + visualKeys + singleOverrideKeys) { "Unknown option: $key" }
                 key to value
             }
             val mode = options["--mode"] ?: "sandbox"
@@ -99,10 +107,20 @@ data class WindowsLaunchOptions(
                 require(value.isNotBlank()) { "--original-assets requires a directory" }; resolve(value)
             }
             if (mode == "demo") {
-                require("--inputs" !in options && "--map" !in options && "--scene" !in options && "--theme-pack" !in options && "--hotspot-summary" !in options) { "Demo uses packaged self-owned inputs" }
+                require("--inputs" !in options && "--map" !in options && "--scene" !in options && "--theme-pack" !in options && "--hotspot-summary" !in options && "--lang" !in options && "--theme" !in options) { "Demo uses packaged self-owned inputs" }
                 return WindowsLaunchOptions(mode, null,
                     resolve(options["--evidence"] ?: "Engine/pc/build/demo-runs/$runId"), runId,
                     "RustedWarfare-Reforge | Field Demo", visualSource, originalAssets)
+            }
+            val cliLanguage = options["--lang"]?.let { raw ->
+                requireNotNull(UiLanguage.fromCodeOrNull(raw)) { "Unsupported --lang '$raw'; expected zh or en" }
+            }
+            val cliThemeId = options["--theme"]?.let { raw ->
+                val norm = raw.trim().lowercase()
+                require(norm != "nasa") { "Unsupported --theme '$raw'" }
+                requireNotNull(BuiltInUiThemeId.entries.firstOrNull { it.code == norm || it.themeId.lowercase() == norm }) {
+                    "Unsupported --theme '$raw'; expected dark, white, or bone"
+                }
             }
             val explicitInputs = options["--inputs"]
             val explicitHotspotSummary = options["--hotspot-summary"]?.let { value ->
@@ -122,7 +140,7 @@ data class WindowsLaunchOptions(
             require(skirmishMap == null || catalogSceneId == null) { "--map and --scene are mutually exclusive" }
             val themePackDir = options["--theme-pack"]?.let { value -> require(value.isNotBlank()) { "--theme-pack requires a directory" }; resolve(value) }
             val seed = defaultScenarioSeed.toAbsolutePath().normalize()
-            val defaultInputs = if (skirmishMap != null)
+            val defaultInputs = if (skirmishMap != null || !development)
                 seed.parent.resolve("../inputs/phase-seven-sandbox/json/package").normalize()
             else
                 seed.parent.resolve("../inputs/phase-six-a-sandbox/json").normalize()
@@ -139,7 +157,7 @@ data class WindowsLaunchOptions(
                 }, visualSource, originalAssets,
                 if (development && explicitInputs == null && skirmishMap == null && catalogSceneId == null) seed else null, backgroundInput, backgroundCompact,
                 bgWidth, bgHeight, touchSimulation, development, explicitDiagnostics ?: ("--evidence" in options), skirmishMap, themePackDir, catalogSceneId,
-                resolvedHotspotSummary)
+                cliLanguage, cliThemeId, resolvedHotspotSummary)
         }
     }
 }

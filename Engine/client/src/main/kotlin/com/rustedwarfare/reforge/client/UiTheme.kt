@@ -14,11 +14,11 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
 /**
- * Lightweight, immutable in-game HUD visual style theme (ADR-014).
+ * Lightweight, immutable UI visual style theme spanning both in-game HUD and out-game screens (ADR-014 & UI-P004).
  *
- * Strictly governs visual presentation (colors, decorative metrics, HUD icon brightness tuning,
- * and optional command icon/font/nine-patch resource paths). Never alters HUD section organization,
- * information set, interaction state machines, or touch hit-target safety floors.
+ * Strictly governs visual presentation (colors, out-game tokens, palettes, decorative metrics,
+ * HUD icon brightness tuning, optional theme feature toggles, and optional icon/font/nine-patch paths).
+ * Never alters page/HUD section organization, information set, interaction state machines, or touch safety floors.
  */
 data class UiThemeColors(
     val rail: Color,
@@ -62,6 +62,53 @@ data class UiThemeColors(
     val debugLegendDetail: Color,
 )
 
+/**
+ * Shared out-game & cross-screen semantic color tokens (UI Supplement §2–§7).
+ */
+data class UiThemeOutGameColors(
+    val railSolid: Color,
+    val textStrong: Color,
+    val ally: Color,
+    val primaryBg: Color,
+    val primaryBgHover: Color,
+    val primaryFg: Color,
+    val primaryBevel: Color,
+    val segActiveBg: Color,
+    val segActiveFg: Color,
+    val mapScrim: Color,
+    val mapScrimDeep: Color,
+    val modalScrim: Color,
+    val scaleAlertScrim: Color,
+    val panelShadow: Color,
+    val rulerMajor: Color,
+    val selfRowBg: Color,
+    val hoverSoft: Color,
+    val lockedPackBg: Color,
+    val packThumbBg: Color,
+    val logoFrame: Color,
+    val logoAccent: Color,
+    val logoMain: Color,
+    val logoTicks: Color,
+    val copyrightFg: Color,
+    val dangerBorder: Color,
+    val dangerBg: Color,
+    val dangerFg: Color,
+    val dangerHoverBg: Color,
+    val dangerHoverFg: Color,
+    val tintedDropdownFg: Color,
+    val mapCardLabelPillBg: Color,
+    val mapCardLabelPillBorder: Color,
+    val mapCardLabelFg: Color,
+    val menuExtrudeAccent: Color,
+    val menuExtrudeStroke: Color,
+    val backdropWater: Color,
+    val backdropLow: Color,
+    val backdropMid: Color,
+    val backdropHigh: Color,
+    val backdropOre: Color,
+    val backdropGrid: Color,
+)
+
 data class UiThemeMetrics(
     val keyRadius: Float,
     val keyShadowHeight: Float,
@@ -69,6 +116,24 @@ data class UiThemeMetrics(
     val queueBadgeOffsetX: Float,
     val queueBadgeOffsetY: Float,
     val queueBadgeStrokeWidth: Float,
+    val tintedDropdownFillAlpha: Float = 0.34f,
+    val tintedDropdownBorderAlpha: Float = 0.78f,
+)
+
+data class UiThemePalettes(
+    val players: List<Color>,
+    val teams: List<Color>,
+) {
+    fun playerColor(slotZeroBased: Int): Color =
+        players[Math.floorMod(slotZeroBased, players.size)].cpy()
+
+    fun teamColor(teamIndexZeroBased: Int): Color =
+        teams[Math.floorMod(teamIndexZeroBased, teams.size)].cpy()
+}
+
+data class UiThemeFeatures(
+    /** True ONLY on default dark theme to render extruded diagonal hatched selected menu text (UI Supplement §3). */
+    val mainMenuExtrudeText: Boolean = false,
 )
 
 data class UiUnitIconTuning(
@@ -105,8 +170,11 @@ data class UiThemeAssets(
 data class UiTheme(
     val id: String,
     val colors: UiThemeColors,
+    val outGame: UiThemeOutGameColors,
     val metrics: UiThemeMetrics,
     val unitIconTuning: UiUnitIconTuning,
+    val palettes: UiThemePalettes,
+    val features: UiThemeFeatures,
     val assets: UiThemeAssets,
     val appliedLayers: List<String> = listOf(id),
 ) {
@@ -114,21 +182,36 @@ data class UiTheme(
         const val SCHEMA_VERSION: Int = 1
         const val DEFAULT_RESOURCE_PATH: String = "ui/theme.json"
 
-        /** Built-in constructivist default loaded from `reforge:base` classpath resource `ui/theme.json`. */
-        val DEFAULT: UiTheme by lazy { loadBuiltInDefault() }
+        /** Built-in constructivist dark default loaded from `reforge:base` classpath resource `ui/theme.json`. */
+        val DEFAULT: UiTheme by lazy { loadBuiltIn(BuiltInUiThemeId.DARK) }
 
-        fun loadBuiltInDefault(): UiTheme {
-            val stream = requireNotNull(UiTheme::class.java.getResourceAsStream("/$DEFAULT_RESOURCE_PATH")) {
-                "UI_THEME_INVALID: /$DEFAULT_RESOURCE_PATH: Missing built-in default theme"
+        /** Built-in polar white theme (`ui/themes/white.json`). */
+        val WHITE: UiTheme by lazy { loadBuiltIn(BuiltInUiThemeId.WHITE) }
+
+        /** Built-in constructivist warm stone bone theme (`ui/themes/bone.json`). */
+        val BONE: UiTheme by lazy { loadBuiltIn(BuiltInUiThemeId.BONE) }
+
+        fun builtIn(themeId: BuiltInUiThemeId): UiTheme = when (themeId) {
+            BuiltInUiThemeId.DARK -> DEFAULT
+            BuiltInUiThemeId.WHITE -> WHITE
+            BuiltInUiThemeId.BONE -> BONE
+        }
+
+        fun loadBuiltInDefault(): UiTheme = loadBuiltIn(BuiltInUiThemeId.DARK)
+
+        fun loadBuiltIn(themeId: BuiltInUiThemeId): UiTheme {
+            val resPath = themeId.classpathResource
+            val stream = requireNotNull(UiTheme::class.java.getResourceAsStream("/$resPath")) {
+                "UI_THEME_INVALID: /$resPath: Missing built-in theme ${themeId.code}"
             }
             val bytes = stream.use { it.readBytes() }
-            val patch = UiThemePatch.read(bytes, DEFAULT_RESOURCE_PATH, requireFull = true)
+            val patch = UiThemePatch.read(bytes, resPath, requireFull = true)
             return UiThemeComposer.compose(basePatch = patch, overridesHighToLow = emptyList())
         }
     }
 }
 
-/** Provider interface passed into HUD components so active theme swaps cleanly without static hardcoding. */
+/** Provider interface passed into UI/HUD components so active theme swaps cleanly without static hardcoding. */
 fun interface UiThemeProvider {
     fun currentTheme(): UiTheme
 }
@@ -200,12 +283,19 @@ private fun resolveSafeRegularFile(root: Path, relativePath: String, strictError
 data class UiThemePatch(
     val id: String?,
     val colors: Map<String, Color>,
+    val outGame: Map<String, Color> = emptyMap(),
     val metrics: Map<String, Float>,
     val unitIconTuning: Map<String, Float>,
+    val playerPalette: List<Color>? = null,
+    val teamPalette: List<Color>? = null,
+    val features: Map<String, Boolean> = emptyMap(),
     val assets: Map<String, String?>,
 ) {
     companion object {
-        private val TOP_KEYS = setOf("schemaVersion", "id", "colors", "metrics", "unitIconTuning", "assets")
+        private val TOP_KEYS = setOf(
+            "schemaVersion", "id", "colors", "outGame", "metrics",
+            "unitIconTuning", "palettes", "features", "assets",
+        )
 
         internal val COLOR_KEYS = setOf(
             "rail", "solid", "cell", "cellHover", "cellFlash", "consoleCellHover",
@@ -218,6 +308,21 @@ data class UiThemePatch(
             "debugBg", "debugText", "debugLegendHard", "debugLegendStalled", "debugLegendDetail",
         )
 
+        internal val OUTGAME_COLOR_KEYS = setOf(
+            "railSolid", "textStrong", "ally",
+            "primaryBg", "primaryBgHover", "primaryFg", "primaryBevel",
+            "segActiveBg", "segActiveFg",
+            "mapScrim", "mapScrimDeep", "modalScrim", "scaleAlertScrim",
+            "panelShadow", "rulerMajor", "selfRowBg", "hoverSoft",
+            "lockedPackBg", "packThumbBg",
+            "logoFrame", "logoAccent", "logoMain", "logoTicks", "copyrightFg",
+            "dangerBorder", "dangerBg", "dangerFg", "dangerHoverBg", "dangerHoverFg",
+            "tintedDropdownFg",
+            "mapCardLabelPillBg", "mapCardLabelPillBorder", "mapCardLabelFg",
+            "menuExtrudeAccent", "menuExtrudeStroke",
+            "backdropWater", "backdropLow", "backdropMid", "backdropHigh", "backdropOre", "backdropGrid",
+        )
+
         internal val METRIC_BOUNDS: Map<String, ClosedFloatingPointRange<Float>> = mapOf(
             "keyRadius" to 0f..12f,
             "keyShadowHeight" to 0f..6f,
@@ -225,6 +330,8 @@ data class UiThemePatch(
             "queueBadgeOffsetX" to -4f..8f,
             "queueBadgeOffsetY" to -4f..8f,
             "queueBadgeStrokeWidth" to 0f..3f,
+            "tintedDropdownFillAlpha" to 0f..1f,
+            "tintedDropdownBorderAlpha" to 0f..1f,
         )
 
         internal val TUNING_BOUNDS: Map<String, ClosedFloatingPointRange<Float>> = mapOf(
@@ -232,6 +339,14 @@ data class UiThemePatch(
             "brightnessLift" to -0.25f..0.40f,
             "saturationScale" to 0.5f..1.5f,
             "outlineLumaThreshold" to 0.0f..0.35f,
+        )
+
+        internal val FEATURE_KEYS = setOf(
+            "mainMenuExtrudeText",
+        )
+
+        internal val PALETTE_KEYS = setOf(
+            "players", "teams",
         )
 
         internal val REQUIRED_ASSET_KEYS = setOf(
@@ -287,21 +402,27 @@ data class UiThemePatch(
                 null
             }
 
-            val colors = LinkedHashMap<String, Color>()
-            root.get("colors")?.let { cVal ->
-                if (!cVal.isObject) bad("colors", "Expected an object")
-                val cObj = cVal.asObject()
-                val cSeen = mutableSetOf<String>()
-                for (m in cObj) {
-                    if (!cSeen.add(m.name)) bad("colors.${m.name}", "Duplicate color key")
-                    if (m.name !in COLOR_KEYS) bad("colors.${m.name}", "Unknown color token")
-                    if (!m.value.isString) bad("colors.${m.name}", "Expected #RRGGBB or #RRGGBBAA hex string")
-                    colors[m.name] = parseHexColor(m.value.asString()) { reason -> bad("colors.${m.name}", reason) }
+            fun parseColorSection(sectionName: String, allowedKeys: Set<String>): Map<String, Color> {
+                val out = LinkedHashMap<String, Color>()
+                root.get(sectionName)?.let { cVal ->
+                    if (!cVal.isObject) bad(sectionName, "Expected an object")
+                    val cObj = cVal.asObject()
+                    val cSeen = mutableSetOf<String>()
+                    for (m in cObj) {
+                        if (!cSeen.add(m.name)) bad("$sectionName.${m.name}", "Duplicate color key")
+                        if (m.name !in allowedKeys) bad("$sectionName.${m.name}", "Unknown color token")
+                        if (!m.value.isString) bad("$sectionName.${m.name}", "Expected #RRGGBB or #RRGGBBAA hex string")
+                        out[m.name] = parseHexColor(m.value.asString()) { reason -> bad("$sectionName.${m.name}", reason) }
+                    }
                 }
+                if (requireFull) {
+                    for (k in allowedKeys) if (k !in out) bad("$sectionName.$k", "Missing required base color token")
+                }
+                return out
             }
-            if (requireFull) {
-                for (k in COLOR_KEYS) if (k !in colors) bad("colors.$k", "Missing required base color token")
-            }
+
+            val colors = parseColorSection("colors", COLOR_KEYS)
+            val outGame = parseColorSection("outGame", OUTGAME_COLOR_KEYS)
 
             fun parseBoundedNumbers(
                 sectionName: String,
@@ -342,6 +463,45 @@ data class UiThemePatch(
                 emptyMap()
             }
 
+            var playerPalette: List<Color>? = null
+            var teamPalette: List<Color>? = null
+            root.get("palettes")?.let { pVal ->
+                if (!pVal.isObject) bad("palettes", "Expected an object")
+                val pObj = pVal.asObject()
+                val pSeen = mutableSetOf<String>()
+                for (m in pObj) {
+                    if (!pSeen.add(m.name)) bad("palettes.${m.name}", "Duplicate palette key")
+                    if (m.name !in PALETTE_KEYS) bad("palettes.${m.name}", "Unknown palette key")
+                    if (!m.value.isArray) bad("palettes.${m.name}", "Expected 10-element hex color array")
+                    val arr = m.value.asArray()
+                    if (arr.size() != 10) bad("palettes.${m.name}", "Expected exactly 10 colors, got ${arr.size()}")
+                    val parsedColors = arr.mapIndexed { idx, item ->
+                        if (!item.isString) bad("palettes.${m.name}[$idx]", "Expected hex string")
+                        parseHexColor(item.asString()) { reason -> bad("palettes.${m.name}[$idx]", reason) }
+                    }
+                    if (m.name == "players") playerPalette = parsedColors else teamPalette = parsedColors
+                }
+            }
+            if (requireFull && (playerPalette == null || teamPalette == null)) {
+                bad("palettes", "Missing required 10-color players and teams palettes")
+            }
+
+            val features = LinkedHashMap<String, Boolean>()
+            root.get("features")?.let { fVal ->
+                if (!fVal.isObject) bad("features", "Expected an object")
+                val fObj = fVal.asObject()
+                val fSeen = mutableSetOf<String>()
+                for (m in fObj) {
+                    if (!fSeen.add(m.name)) bad("features.${m.name}", "Duplicate feature key")
+                    if (m.name !in FEATURE_KEYS) bad("features.${m.name}", "Unknown feature key")
+                    if (!m.value.isBoolean) bad("features.${m.name}", "Expected boolean")
+                    features[m.name] = m.value.asBoolean()
+                }
+            }
+            if (requireFull) {
+                for (k in FEATURE_KEYS) if (k !in features) bad("features.$k", "Missing required base feature key")
+            }
+
             val assets = LinkedHashMap<String, String?>()
             root.get("assets")?.let { aVal ->
                 if (!aVal.isObject) bad("assets", "Expected an object")
@@ -366,7 +526,17 @@ data class UiThemePatch(
                 for (k in REQUIRED_ASSET_KEYS) if (k !in assets) bad("assets.$k", "Missing required base asset key")
             }
 
-            return UiThemePatch(id = id, colors = colors, metrics = metrics, unitIconTuning = tuning, assets = assets)
+            return UiThemePatch(
+                id = id,
+                colors = colors,
+                outGame = outGame,
+                metrics = metrics,
+                unitIconTuning = tuning,
+                playerPalette = playerPalette,
+                teamPalette = teamPalette,
+                features = features,
+                assets = assets,
+            )
         }
 
         internal fun parseHexColor(raw: String, onError: (String) -> Nothing): Color {
@@ -413,18 +583,13 @@ private fun validateRelativeAssetPath(path: String, field: String, source: Strin
  * Pure Kotlin layered partial theme composer (ADR-014).
  *
  * Follows the exact same high-to-low resource pack precedence as [ResourceImageComposer]:
- * highest-priority user pack -> lower-priority user packs -> built-in `reforge:base`.
- * Any omitted field automatically falls back layer-by-layer to the built-in constructivist default.
+ * highest-priority user pack -> lower-priority user packs -> built-in base theme (`dark` / `white` / `bone`).
+ * Any omitted field automatically falls back layer-by-layer to the selected built-in base theme.
  */
 object UiThemeComposer {
     const val PACK_THEME_FILE: String = "ui/theme.json"
     const val MAX_THEME_BYTES: Int = 512 * 1024
 
-    /**
-     * Strictly resolves a pack-relative file without following any symbolic link along any path segment.
-     * Returns null only when the relative path does not exist inside [root]; throws `UI_THEME_INVALID`
-     * if [root] or any existing segment is a symlink, escapes [root], or is not an ordinary regular file.
-     */
     fun resolveStrictPackFile(root: Path, relativePath: String): Path? {
         validateRelativeAssetPath(relativePath, "asset", root.toString())
         return resolveSafeRegularFile(root, relativePath, strictError = true)
@@ -443,21 +608,30 @@ object UiThemeComposer {
         overridesHighToLow: List<UiThemePatch>,
     ): UiTheme {
         val mergedColors = LinkedHashMap<String, Color>(basePatch.colors)
+        val mergedOutGame = LinkedHashMap<String, Color>(basePatch.outGame)
         val mergedMetrics = LinkedHashMap<String, Float>(basePatch.metrics)
         val mergedTuning = LinkedHashMap<String, Float>(basePatch.unitIconTuning)
+        var mergedPlayers = basePatch.playerPalette ?: MatchPlayerColors.PALETTE_RGB.map { MatchPlayerColors.rgbToColor(it) }
+        var mergedTeams = basePatch.teamPalette ?: MatchPlayerColors.TEAM_PALETTE_RGB.map { MatchPlayerColors.rgbToColor(it) }
+        val mergedFeatures = LinkedHashMap<String, Boolean>(basePatch.features)
         val mergedAssets = LinkedHashMap<String, String?>(basePatch.assets)
         val layers = mutableListOf(basePatch.id ?: "reforge:base")
 
         // Apply low-to-high so higher priority overrides win cleanly.
         for (patch in overridesHighToLow.asReversed()) {
             mergedColors.putAll(patch.colors)
+            mergedOutGame.putAll(patch.outGame)
             mergedMetrics.putAll(patch.metrics)
             mergedTuning.putAll(patch.unitIconTuning)
+            patch.playerPalette?.let { mergedPlayers = it }
+            patch.teamPalette?.let { mergedTeams = it }
+            mergedFeatures.putAll(patch.features)
             mergedAssets.putAll(patch.assets)
             patch.id?.let { layers += it }
         }
 
         fun c(k: String): Color = requireNotNull(mergedColors[k]) { "UI_THEME_INVALID: missing color '$k'" }.cpy()
+        fun og(k: String): Color = requireNotNull(mergedOutGame[k]) { "UI_THEME_INVALID: missing outGame color '$k'" }.cpy()
         fun m(k: String): Float = requireNotNull(mergedMetrics[k]) { "UI_THEME_INVALID: missing metric '$k'" }
         fun t(k: String): Float = requireNotNull(mergedTuning[k]) { "UI_THEME_INVALID: missing tuning '$k'" }
         fun a(k: String): String = requireNotNull(mergedAssets[k]) { "UI_THEME_INVALID: missing asset '$k'" }
@@ -506,6 +680,49 @@ object UiThemeComposer {
                 debugLegendStalled = c("debugLegendStalled"),
                 debugLegendDetail = c("debugLegendDetail"),
             ),
+            outGame = UiThemeOutGameColors(
+                railSolid = og("railSolid"),
+                textStrong = og("textStrong"),
+                ally = og("ally"),
+                primaryBg = og("primaryBg"),
+                primaryBgHover = og("primaryBgHover"),
+                primaryFg = og("primaryFg"),
+                primaryBevel = og("primaryBevel"),
+                segActiveBg = og("segActiveBg"),
+                segActiveFg = og("segActiveFg"),
+                mapScrim = og("mapScrim"),
+                mapScrimDeep = og("mapScrimDeep"),
+                modalScrim = og("modalScrim"),
+                scaleAlertScrim = og("scaleAlertScrim"),
+                panelShadow = og("panelShadow"),
+                rulerMajor = og("rulerMajor"),
+                selfRowBg = og("selfRowBg"),
+                hoverSoft = og("hoverSoft"),
+                lockedPackBg = og("lockedPackBg"),
+                packThumbBg = og("packThumbBg"),
+                logoFrame = og("logoFrame"),
+                logoAccent = og("logoAccent"),
+                logoMain = og("logoMain"),
+                logoTicks = og("logoTicks"),
+                copyrightFg = og("copyrightFg"),
+                dangerBorder = og("dangerBorder"),
+                dangerBg = og("dangerBg"),
+                dangerFg = og("dangerFg"),
+                dangerHoverBg = og("dangerHoverBg"),
+                dangerHoverFg = og("dangerHoverFg"),
+                tintedDropdownFg = og("tintedDropdownFg"),
+                mapCardLabelPillBg = og("mapCardLabelPillBg"),
+                mapCardLabelPillBorder = og("mapCardLabelPillBorder"),
+                mapCardLabelFg = og("mapCardLabelFg"),
+                menuExtrudeAccent = og("menuExtrudeAccent"),
+                menuExtrudeStroke = og("menuExtrudeStroke"),
+                backdropWater = og("backdropWater"),
+                backdropLow = og("backdropLow"),
+                backdropMid = og("backdropMid"),
+                backdropHigh = og("backdropHigh"),
+                backdropOre = og("backdropOre"),
+                backdropGrid = og("backdropGrid"),
+            ),
             metrics = UiThemeMetrics(
                 keyRadius = m("keyRadius"),
                 keyShadowHeight = m("keyShadowHeight"),
@@ -513,12 +730,21 @@ object UiThemeComposer {
                 queueBadgeOffsetX = m("queueBadgeOffsetX"),
                 queueBadgeOffsetY = m("queueBadgeOffsetY"),
                 queueBadgeStrokeWidth = m("queueBadgeStrokeWidth"),
+                tintedDropdownFillAlpha = m("tintedDropdownFillAlpha"),
+                tintedDropdownBorderAlpha = m("tintedDropdownBorderAlpha"),
             ),
             unitIconTuning = UiUnitIconTuning(
                 gamma = t("gamma"),
                 brightnessLift = t("brightnessLift"),
                 saturationScale = t("saturationScale"),
                 outlineLumaThreshold = t("outlineLumaThreshold"),
+            ),
+            palettes = UiThemePalettes(
+                players = mergedPlayers.map { it.cpy() },
+                teams = mergedTeams.map { it.cpy() },
+            ),
+            features = UiThemeFeatures(
+                mainMenuExtrudeText = mergedFeatures["mainMenuExtrudeText"] ?: false,
             ),
             assets = UiThemeAssets(
                 commandIconsJson = a("commandIconsJson"),
@@ -533,10 +759,6 @@ object UiThemeComposer {
         )
     }
 
-    /**
-     * Loads optional `ui/theme.json` overlays from enabled resource pack directories (high-to-low)
-     * and composes them over [base]. Packs without `ui/theme.json` are skipped cleanly.
-     */
     fun composeFromPackDirectories(
         packRootsHighToLow: List<Path>,
         base: UiTheme = UiTheme.DEFAULT,
@@ -596,6 +818,49 @@ object UiThemeComposer {
             "debugLegendStalled" to theme.colors.debugLegendStalled,
             "debugLegendDetail" to theme.colors.debugLegendDetail,
         ),
+        outGame = linkedMapOf(
+            "railSolid" to theme.outGame.railSolid,
+            "textStrong" to theme.outGame.textStrong,
+            "ally" to theme.outGame.ally,
+            "primaryBg" to theme.outGame.primaryBg,
+            "primaryBgHover" to theme.outGame.primaryBgHover,
+            "primaryFg" to theme.outGame.primaryFg,
+            "primaryBevel" to theme.outGame.primaryBevel,
+            "segActiveBg" to theme.outGame.segActiveBg,
+            "segActiveFg" to theme.outGame.segActiveFg,
+            "mapScrim" to theme.outGame.mapScrim,
+            "mapScrimDeep" to theme.outGame.mapScrimDeep,
+            "modalScrim" to theme.outGame.modalScrim,
+            "scaleAlertScrim" to theme.outGame.scaleAlertScrim,
+            "panelShadow" to theme.outGame.panelShadow,
+            "rulerMajor" to theme.outGame.rulerMajor,
+            "selfRowBg" to theme.outGame.selfRowBg,
+            "hoverSoft" to theme.outGame.hoverSoft,
+            "lockedPackBg" to theme.outGame.lockedPackBg,
+            "packThumbBg" to theme.outGame.packThumbBg,
+            "logoFrame" to theme.outGame.logoFrame,
+            "logoAccent" to theme.outGame.logoAccent,
+            "logoMain" to theme.outGame.logoMain,
+            "logoTicks" to theme.outGame.logoTicks,
+            "copyrightFg" to theme.outGame.copyrightFg,
+            "dangerBorder" to theme.outGame.dangerBorder,
+            "dangerBg" to theme.outGame.dangerBg,
+            "dangerFg" to theme.outGame.dangerFg,
+            "dangerHoverBg" to theme.outGame.dangerHoverBg,
+            "dangerHoverFg" to theme.outGame.dangerHoverFg,
+            "tintedDropdownFg" to theme.outGame.tintedDropdownFg,
+            "mapCardLabelPillBg" to theme.outGame.mapCardLabelPillBg,
+            "mapCardLabelPillBorder" to theme.outGame.mapCardLabelPillBorder,
+            "mapCardLabelFg" to theme.outGame.mapCardLabelFg,
+            "menuExtrudeAccent" to theme.outGame.menuExtrudeAccent,
+            "menuExtrudeStroke" to theme.outGame.menuExtrudeStroke,
+            "backdropWater" to theme.outGame.backdropWater,
+            "backdropLow" to theme.outGame.backdropLow,
+            "backdropMid" to theme.outGame.backdropMid,
+            "backdropHigh" to theme.outGame.backdropHigh,
+            "backdropOre" to theme.outGame.backdropOre,
+            "backdropGrid" to theme.outGame.backdropGrid,
+        ),
         metrics = linkedMapOf(
             "keyRadius" to theme.metrics.keyRadius,
             "keyShadowHeight" to theme.metrics.keyShadowHeight,
@@ -603,12 +868,19 @@ object UiThemeComposer {
             "queueBadgeOffsetX" to theme.metrics.queueBadgeOffsetX,
             "queueBadgeOffsetY" to theme.metrics.queueBadgeOffsetY,
             "queueBadgeStrokeWidth" to theme.metrics.queueBadgeStrokeWidth,
+            "tintedDropdownFillAlpha" to theme.metrics.tintedDropdownFillAlpha,
+            "tintedDropdownBorderAlpha" to theme.metrics.tintedDropdownBorderAlpha,
         ),
         unitIconTuning = linkedMapOf(
             "gamma" to theme.unitIconTuning.gamma,
             "brightnessLift" to theme.unitIconTuning.brightnessLift,
             "saturationScale" to theme.unitIconTuning.saturationScale,
             "outlineLumaThreshold" to theme.unitIconTuning.outlineLumaThreshold,
+        ),
+        playerPalette = theme.palettes.players.map { it.cpy() },
+        teamPalette = theme.palettes.teams.map { it.cpy() },
+        features = linkedMapOf(
+            "mainMenuExtrudeText" to theme.features.mainMenuExtrudeText,
         ),
         assets = linkedMapOf(
             "commandIconsJson" to theme.assets.commandIconsJson,

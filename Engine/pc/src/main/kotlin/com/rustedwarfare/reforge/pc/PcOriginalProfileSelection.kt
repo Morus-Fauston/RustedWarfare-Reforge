@@ -30,10 +30,8 @@ internal fun originalCertificateProfile(manifest: Path, name: String, inputs: Pc
 /** One frozen image/sound lineage. Hints select its full verifier; they never grant qualification. */
 internal object PcOriginalProfileVersions {
     const val CURRENT_VERSION = 8
-    private val versions = listOf(lazy { PcOriginalResourceProfile.versionOne() }, lazy { PcOriginalResourceProfile.versionTwo() },
-        lazy { PcOriginalResourceProfile.versionThree() }, lazy { PcOriginalResourceProfile.versionFour() },
-        lazy { PcOriginalResourceProfile.versionFive() }, lazy { PcOriginalResourceProfile.bundled() })
-    val supportedVersions = listOf(1, 2, 3, 4, 5, CURRENT_VERSION)
+    private val versions = listOf(lazy { PcOriginalResourceProfile.bundled() })
+    val supportedVersions = listOf(CURRENT_VERSION)
     fun version(number: Int): PcOriginalResourceProfile {
         val index = supportedVersions.indexOf(number)
         require(index >= 0)

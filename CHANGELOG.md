@@ -1,5 +1,326 @@
 # Changelog
 
+## v0.6.9 (2026-11-28 16:15)
+
+### 修复
+
+- **分盘原版安装目录同步与本地原版表现资源包开局闭环（`BootstrapScreen` / `VisualAssetSettingsSession`）**：当本地原版游戏安装于非默认目录（如独立盘符的 Steam 库）时，将自动探测到的有效原版根目录同步补入 `VisualAssetSettingsSession`（并在异步目录扫描与后台预览完成时保持），修复在「设置 → 资源包」启用 `本地原版表现资源包`（`reforge:original-android-1.15-176`）后因默认路径缺失触发 `SOURCE_ROOT_INVALID` 进而锁死「开始对局」按钮的问题；未配置且未探测到有效原版目录时禁用移入按钮并给出明确提示，遭遇战大厅、自由沙盒与设置页同步透出后台资源准备进度文案；补齐 `visualPanel` 临时 CLI 覆盖不写盘守卫、6 处资源包修改/导入入口统一取消 `Operation.PREVIEW`，并在启动 `Operation.CATALOG` 期间延后原版包状态对账以完整保留外部第三方资源包校验记录。
+
+### 技术
+
+- **原版直启与异步状态对账回归核验**：更新局外展示版本号至 `v0.6.9`；在 `PcOriginalDirectLaunchTest` 新增本机 Steam 65 单位直启核验及临时 CLI 零写盘、`Operation.PREVIEW` 目录保持与启动 `Operation.CATALOG` 外部包对账共存回归测试；客户端与 PC 单测、`public_batch.py --kind short`（`6/6` 套公开短测）、`:pc:installDist`、Android Debug APK 校验及双根 `workspace_layout.py` 全绿，经独立非作者 R02 定向复核 `APPROVE`（0 必修）。
+
+---
+
+## v0.6.8 (2026-11-28 15:11)
+
+### 新增
+
+- **资源包声明式表现变体选项与 `⚙` 包设置弹窗（`ResourcePackOptions` / `ResourcePackOptionsModal` / `PcAcceptedResourceStore`）**：在 `pack.json` 中扩展零脚本的声明式 `options`（仅支持 `enum` 与 `boolean` 静态变体覆写，严格拒绝滑块公式、路径穿越与保留的孤星主题），允许单个表现资源包按 `options` 声明顺序自上而下叠合包内多套 `uiTheme`、`images` 与 `sounds` 覆写层；桌面端导入器与 `PcAcceptedResourceStore` 在导入期全量静态审计并 HMAC 固化全部变体资产（含覆写同名声音 ID 的事件映射去重恢复），`UserSettingsStore` 在资源包移至「未启用」时保留变体记忆、对失效旧值静默回退 `default`、并在客户端跨重启异步目录扫描期间保持已存选项；左栏「已启用」中含可调项的资源包卡片右侧新增 4×4 超采样矢量齿轮 `⚙` 按钮与居中包设置弹窗，对局进行中支持纯 `UiTheme` 选项即时切换（且与内置主题切换互不冲掉）并只读锁定贴图/音效变体。
+- **真实实机可玩 `.tmx` 遭遇战地图库与原生缩略图接入（`OutGameMapCatalog` / `MapPickerScreen` / `SkirmishLobbyScreen`）**：自动探测并扫描已配置或本地原版安装目录下的 `assets/maps/skirmish/*.tmx` 官方遭遇战地图（同步支持用户私有 `maps/*.tmx`，严格隔离 `campaign / challenge / survival` 脚本图；无原版目录的公开环境自动回退包含新增 10 人图 `ring_atoll.tmx` 在内的 3 张随包自有可玩 `.tmx` 地图），剥离 `[pN]`、`[z;p10]`、`(Np)` 与 `[by ...]` 标签后按支持人数升序（`2P → 10P`）及名称排序；优先等比完整渲染随图原生 `*_map.png` 缩略图且不裁切四角基地、在选图卡片抑制重复出生点叠印，遭遇战大厅未手动改席位时切换 `2P / 3P` 地图自适应收敛默认席位数与出生点。
+
+### 调整
+
+- **构成主义测绘蓝图动态背景（`DynamicMapBackdrop` / `UiTheme`）**：移除原先将低分辨率 `.tmx` 碰撞网格线性拉伸放大的模糊背景，对齐八期界面演示稿 `mapSVG` 重绘 `80×45` 格（每格 `20px` 锐利 `1px` 网格线、双频平滑等高色块、正弦蜿蜒河道与 `2×2` 四点矿簇）的构成主义测绘蓝图，通过 `UiTheme.outGame` 新增的 6 项 `backdrop*` 令牌驱动 `暗黑 / 白色 / 骨白` 三套主题配色并以最近邻采样整数像素缓慢平移（零模拟开销）。
+- **内置三套主题单一真值收编与主菜单 65 单位开局闭环（`SettingsScreen` / `BootstrapScreen` / `WindowsLaunchOptions` / `TmxTilesetSupport`）**：移除「设置 → 画面」中重复的「界面主题」行与「设置 → 资源包」中的 3 个 `ui-theme:*` 虚拟包，将 `暗黑 / 白色 / 骨白` 统一收编为底部常驻 `内置基础资源包`（`reforge:base`）的 `界面主题` 选项；将非开发态正常启动的默认内容根从 19 单位 `phase-six-a-sandbox` 对齐至 65 单位 `phase-seven-sandbox/json/package`，并在 `.tmx` 开局构建器中改为先落位全部建筑再落位机动单位以消除建筑占地与初始单位重叠触发的 `invalid-spawn`，确保选定任意真实地图点击「开始对局」或「进入自由沙盒」即可直接进图实机游玩。
+
+### 技术
+
+- **全量原版地图初始化校验、变体托管回归与三主题实窗双审**：更新局外展示版本号至 `v0.6.8` 并在 `CONTEXT.md` 登记「表现变体选项」领域术语；新增 `UiP004PackOptionsAndRealMapsTest`（含本地存在原版目录时全量 48 张官方遭遇战 `.tmx` 地图与 3 张随包地图 `SimulationContext.initialize` 零拒绝核验）与 `PcPackVariantOptionsTest`（覆盖多选项叠层、同名声音覆写托管恢复、跨重启异步 `CATALOG` 保持、局内组合切主题及防篡改 HMAC 校验）；全套客户端与 PC 单测、`public_batch.py --kind short`（`6/6` 套公开短测）、`:pc:installDist`、Android 四架构 Debug APK 构建与宿主校验、双根 `workspace_layout.py` 全绿；`1920×1080` 三主题与 `960×640` 共 32 张真 GL 实窗截图及 4 张总览拼图经全新上下文独立视觉审查 `APPROVED`，代码与规格经独立非作者整审及 R02 复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `CONTEXT.md` | 新增「表现变体选项」领域术语定义与边界说明 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ResourcePackOptions.kt` | **新增** — 资源包声明式 `enum` / `boolean` 变体选项模型、校验器与包内覆写解析 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ResourcePackOptionsModal.kt` | **新增** — 资源包 `⚙` 设置居中模态弹窗（支持局内纯 `UiTheme` 即时切换与媒体项只读锁定） |
+| `Engine/client/src/main/resources/maps/skirmish/ring_atoll.tmx` | **新增** — 随包自有可玩 10 人环礁 `.tmx` 回退遭遇战地图 |
+| `Engine/client/src/main/resources/resource-packs/base/pack.json` | 为 `reforge:base` 声明内置 `dark / white / bone` 三套主题枚举选项 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiTheme.kt` | 新增 6 项 `backdrop*` 测绘蓝图颜色令牌解析与序列化 |
+| `Engine/client/src/main/resources/ui/theme.json` | 补齐暗黑主题演示稿同构 `backdrop*` 蓝图色值 |
+| `Engine/client/src/main/resources/ui/themes/white.json` | 补齐纯白主题演示稿同构 `backdrop*` 蓝图色值 |
+| `Engine/client/src/main/resources/ui/themes/bone.json` | 补齐骨白主题演示稿同构 `backdrop*` 蓝图色值 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DynamicMapBackdrop.kt` | 重写演示稿同款构成主义测绘蓝图背景渲染器与真实 `.tmx` 遭遇战地图扫描目录 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ResourcePackMetadata.kt` | 接入 `pack.json` `options` 字段解析与严格成员校验 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/PreparedImagePack.kt` | 扩展包级多变体覆写持有结构与按声明顺序解析接口 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/VisualAssetSelection.kt` | 纳入 `packOptions` 选择快照与单包选项辅助方法 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/VisualAssetSettingsSession.kt` | 支持跨重启异步目录检查保持 `packOptions` 及内存实时 `UiTheme` 叠层解析 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UserSettingsStore.kt` | 持久化 `resourcePackOptions`（禁用保留记忆）并与内置 `reforge:base` 主题选项双向同步 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DualColumnPackManagerView.kt` | 已启用且含 `options` 的资源包行渲染 4×4 超采样矢量齿轮 `⚙` 按钮 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SettingsScreen.kt` | 移除画面页重复主题行，挂载 `ResourcePackOptionsModal` 与局内媒体变体锁定提示 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MapPickerScreen.kt` | 支持原生 `*_map.png` 等比卡片缩略图渲染并抑制重复出生点叠印 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLaunchConfig.kt` | 未手动自定义席位时切换 `2P/3P` 地图自动匹配默认席位数 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLobbyScreen.kt` | 右栏大幅预览支持原生 `*_map.png` 完整等比贴合与额外出生点陆地吸附 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MatchLoadingScreen.kt` | 加载卡片 `1:1` 地图缩略图同步支持原生 `*_map.png` 等比渲染 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/TmxTilesetSupport.kt` | `.tmx` 开局构建先落位建筑再落位机动单位，消除建筑占地冲突 `invalid-spawn` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxLoader.kt` | 补充 `.tmx` 开局对 `phase-seven-sandbox/json/package` 的优先回退解析 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 移除虚拟主题包，接通包变体实时主题叠层与本地原版地图库自动探测 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 新增资源包变体设置弹窗与局内媒体项锁定中英双语文案 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.8` |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcResourcePackImporter.kt` | 导入期全量静态解析并审计资源包全部变体 `uiTheme / images / sounds` 文件 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcAcceptedResourceStore.kt` | 将全部变体资产纳入受管目录与 HMAC `receipt.json` 固化及同名声音去重恢复 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcVisualAssetSettings.kt` | 按 `options` 声明顺序合成激活变体并对非托管包执行运行时二次防篡改哈希校验 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcDiskAuditStore.kt` | 磁盘审计复用指纹纳入排序后的激活 `packOptions` |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/WindowsLaunchOptions.kt` | 非开发态正常启动默认输入根对齐 65 单位 `phase-seven-sandbox/json/package` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004MainMenuAndMapPickerTest.kt` | 适配真实 `.tmx` 地图目录与测绘蓝图背景令牌单测断言 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SettingsAndPacksTest.kt` | 适配去重后的画面设置、移除虚拟主题包与 `reforge:base` 齿轮选项单测 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004PackOptionsAndRealMapsTest.kt` | **新增** — 测绘蓝图背景、变体选项校验/局内锁定、真实地图库扫描与全量地图初始化单测 |
+| `Engine/pc/src/test/kotlin/com/rustedwarfare/reforge/pc/PcPackVariantOptionsTest.kt` | **新增** — 多变体包 HMAC 托管恢复、同名声音覆写、跨重启保持与默认 65 单位进图单测 |
+
+---
+
+## v0.6.7 (2026-11-28 06:33)
+
+### 修复
+
+- **局内设置覆盖层浅色主题顶栏可读性与底层 HUD 叠影（`SettingsScreen` / `BootstrapScreen`）**：此前对局内打开设置时，覆盖层固定铺设深暗色 `modalScrim` 且底层局内系统条与小地图保持显示，导致「白色」与「骨白」浅色主题下深色顶栏标题「设置」叠在暗底上对比度过低，同时小屏下左上 `← 返回` 与底层 `≡ 菜单 | 暂停` 系统条发生双层叠影；现将局内设置背景切换为与主题同极性的雾面遮罩 `mapScrimDeep`，并在局内设置开启期间隐藏底层 HUD 悬浮层（关闭设置后即刻完整恢复），同步固定内置基础资源包（`reforge:base`）在局内外统一呈现构成主义专属徽章。
+- **紧凑视口（`960×640`）右栏长副标题防碰撞与双行规则栏间距（`OutGameChrome` / `TestAndSandboxScreen` / `SkirmishLobbyScreen`）**：新增基于真实字宽二分收敛的中间省略工具 `OutGameDraw.ellipsizeMiddle`（自动适配 `…` 与 `...` 字形回退，保留前缀标识与末尾 `60×40` 地图尺寸），消除 `960×640` 窄右栏下「场景预览 / 战场地图」标题与长场景副标题的横向碰撞，并拉大紧凑双行回退时上下两行规则标签的纵向呼吸间距。
+
+### 技术
+
+- **八期首阶段整期多分辨率三主题终审、全套 PR 门禁与 Android 构建校验**：更新展示版本号至 `v0.6.7` 并补充中间省略单测；在最终固定候选上完成 `960×640 / 1920×1080 / 2560×1440` × `暗黑 / 白色 / 骨白` 全流程 12 态共 108 张真 GL 实窗截图与 9 张总览拼图重采、全套公开机制与短测门禁（`public_batch.py --kind pr`，含 7 套机制测试与 `6/6` 套共 163 条公开短场景全绿）、`:pc:installDist`、Android 四架构 Debug APK 构建与 `verify_apk.py`、`:android:verifySandboxHostChecks` 及 `android_host_check.py` 宿主校验、双根 `workspace_layout.py` 检查；经全新上下文独立视觉终审 R02 `APPROVED` 与整期代码及收据终审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/OutGameChrome.kt` | 新增保留首尾关键信息的字宽二分中间省略工具 `OutGameDraw.ellipsizeMiddle` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SettingsScreen.kt` | 将局内设置全屏遮罩切换为与主题同极性的 `mapScrimDeep` 以保障浅色主题顶栏高对比度 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 局内打开设置期间隐藏底层 HUD 悬浮层并在返回时恢复，统一 `reforge:base` 局内外构成主义徽章 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/TestAndSandboxScreen.kt` | 右栏顶行副标题接入 `ellipsizeMiddle` 防小屏碰撞并优化双行回退纵向间距 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLobbyScreen.kt` | 右栏地图摘要接入 `ellipsizeMiddle` 防超长名称碰撞并优化双行回退纵向间距 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.7` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SandboxAndLoadingTest.kt` | 新增 `960×640` 右栏副标题中间省略宽度与首尾保留单测 |
+
+---
+
+## v0.6.6 (2026-11-28 04:36)
+
+### 新增
+
+- **六期 B 剩余 49 单位自有俯视工业像素与残骸贴图集（`visuals/placeholder/phase6b/`）**：严格沿用既有俯视工业像素画风、轮廓辨识度与纯绿通道（`#00FF00`）玩家阵营着色规范，原创补绘陆军重装/火炮/激光等离子坦克、空军截击/重型炮艇/导弹飞艇、海军侦察/建造/重型潜艇与防空导弹舰、小型与大型四型机甲、防御炮塔/前哨/T3 采矿机及实验级悬浮坦克/蜘蛛/航母/炮艇/登陆舰等 49 个单位与共享部件的全部主体、炮塔、腿足、阴影、蓄能光效及损毁残骸贴图；同步完成 `placeholder/manifest.json` 49 项单位槽位绑定及桌面端 `--original-assets` 原版贴图路径双向映射。
+- **30 核心事件程序化合成占位音效与原版 `.ogg` 映射（`sounds/`）**：在保留既有 5 份基础音效的前提下，采用纯数学波形合成新增火炮/机炮/防空炮、等离子/电弧/激光充能、点防御拦截、大中小型爆炸、虫族攻击与死亡、移动与攻击指令确认、UI 点击/建造队列增删/错误/聊天提示及基地预警等 25 份 16-bit 单声道 PCM WAV 占位音（峰值严控 `< 0.95` 零削波且听感频谱区分清晰），补齐全部 30 个核心音效事件与 7 项衍生事件别名，并接通 `PcBaseSoundResources` 与原版 `.ogg` 覆盖映射。
+
+### 技术
+
+- **公开克隆自包含资源与波形合规单测、按产线拼图目视与独立双审**：更新展示版本号至 `v0.6.6`，新增零私有目录依赖的 `UiP004Phase6BAssetsAndSoundsTest`（逐项核验贴图尺寸/帧数/纯绿通道零误染、49 单位绑定闭环及全部 WAV 标准 PCM 头与非静音防削波峰值）并同步扩展 `PcOriginalDirectLaunchTest` 与 `VisualAssetPlaceholderTest`；`platform-basics` 机制套件与双根 `workspace_layout.py` 全绿；陆/空/海/机甲/建筑防御/实验级 6 张高清阵营染色与残骸对照拼图经全新上下文独立视觉审查 `APPROVED`，清单、代码与 100% 原创版权合规经独立非作者整审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/resources/visuals/placeholder/phase6b/*.png` | **新增** — 六期 B 剩余 49 单位与共享部件的 127 张自有俯视工业像素主体、炮塔、腿足、阴影与残骸贴图 |
+| `Engine/client/src/main/resources/visuals/placeholder/manifest.json` | 注册全部新增占位贴图元数据与 49 项单位视觉槽位绑定 |
+| `Engine/client/src/main/resources/sounds/*.wav` | **新增** — 25 份程序化数学合成 16-bit PCM WAV 占位音效 |
+| `Engine/client/src/main/resources/sounds/sounds.json` | 补齐全部 30 个核心音效定义、标准事件与 7 项衍生战斗事件映射 |
+| `Engine/client/src/main/resources/sounds/README.md` | 更新内置程序化合成音效清单、波形规格与事件映射说明 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcPlaceholderVisualAssets.kt` | 接入新增单位与部件占位贴图资源校验及槽位解析 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcBaseSoundResources.kt` | 扩展桌面端内置基础音效事件映射与原版资源覆盖绑定 |
+| `Engine/pc/src/main/resources/visuals/pc-original-images-profile.json` | 补齐新增单位贴图与残骸对应的原版路径映射 |
+| `Engine/pc/src/main/resources/visuals/pc-original-resources-profile.json` | 补齐新增单位视觉与 30 核心事件原版 `.ogg` 音频提取映射 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.6` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004Phase6BAssetsAndSoundsTest.kt` | **新增** — 自包含的贴图尺寸/纯绿通道、单位绑定与 30 事件 WAV 波形合规单测 |
+| `Engine/pc/src/test/kotlin/com/rustedwarfare/reforge/pc/PcOriginalDirectLaunchTest.kt` | 同步校验扩展后的原版视觉与音效资源映射集 |
+| `Engine/pc/src/test/kotlin/com/rustedwarfare/reforge/pc/VisualAssetPlaceholderTest.kt` | 同步校验扩展后的全量内置占位视觉清单完整性 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004Phase6BAssetsAndSoundsTest` |
+
+---
+
+## v0.6.5 (2026-11-28 04:21)
+
+### 架构改进
+
+- **核心 `Action` 移动诊断与追踪开放默认分支（`MotionDiagnosticCapture` / `MotionV2CoreTraceJson`）**：在完整保留 `MoveAction / StopAction / SelectAction` 精确映射与全部既有非移动 `Action` 子类诊断报错文案的前提下，引入开放默认分支并在提交模拟前补齐不支持动作前置拦截守卫，消除后续新增 `AttackMoveAction`、`GuardAction` 等核心指令引发的测试工程穷举编译中断。
+- **`TraceComparator` `UnitTask` 9 必需键与开放枚举兼容校验**：将硬编码的固定 9 键集合相等与 6 枚举锁死重构为核心 9 必需键强校验 + 大写枚举标识符（`^[A-Z][A-Z0-9_]*$`）与有限数值小驼峰扩展键开放准入，同时严格保持自动维修仅限 `CONSTRUCT`、额外作业射程、`target` 二维坐标及双边全键值漂移的精确判错。
+- **`PlatformSessionRunner` `unit-action` 数据驱动开放校验**：以规范动作名标识符配合实时客户端菜单 `groundTargeted` 元数据（无选中菜单时回退核心静态集合）替代硬编码动作名白名单，使后续新增单位技能可直接接入无头会话验证，并完整保留对空/非法动作名、缺失 `waitSteps`/`coreActionId`、未知额外字段、非布尔取消标志及缺失/多余目标坐标的严格拒绝。
+
+### 技术
+
+- **开放校验正反例单测、全套工具与公开短测验证及非作者整审**：新增 `TestUi004OpenValidationTest` 覆盖三处解耦点的正向兼容与负向拦截；`tooling` 机制套件（含 JUnit 与全部 Python 工具测试）、`public_batch.py --kind short`（6/6 公开短测）与双根 `workspace_layout.py` 全绿，经全新上下文独立非作者代码整审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/cross/MotionDiagnosticCapture.kt` | 解耦 `Action` 无 `else` 穷举并补齐 `submitAndRecord` 提交前动作类型拦截守卫 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/cross/MotionV2CoreTraceJson.kt` | 解耦 `Action` 无 `else` 穷举并保留全部既有移动诊断错误文案 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceComparator.kt` | 将 `UnitTask` 固定键数/6 枚举校验升级为 9 核心必需键 + 开放大写枚举与有限扩展键校验 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/PlatformSessionRunner.kt` | 将 `unit-action` 硬编码白名单重构为结合实时菜单元数据的数据驱动开放校验 |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/TestUi004OpenValidationTest.kt` | **新增** — 覆盖三处开放校验正向扩展准入与负向错误拦截的单测 |
+
+---
+
+## v0.6.4 (2026-11-28 03:52)
+
+### 新增
+
+- **7 分类构成主义双栏设置页与局内只读双包锁定（`SettingsScreen`）**：新增顶栏对齐的对称双栏设置页，左侧提供「常规 / 音频 / 画面 / 操作 / 资源包 / 内容包 / 关于」7 项分类导航（仅用左缘铁锈橙竖向指示条与底色区分选中态，无冗余第三栏摘要或行下解释小字，修改即时写入 `UserSettingsStore` 生效）；接通简体中文/English 双语即时切换、主音量/音效音量/静音滑块与 `SoundPlayback` 实时乘算（含前后台 `resume()` 重建持久绑定）、内置「暗黑 / 白色 / 骨白」三套主题切换、触控摇杆与镜头操作偏好持久化，以及含开源许可证、第三方声明查看弹窗与非官方项目声明的关于页；同时接入局内 `≡ 菜单 → 设置` 覆盖层，自动启用 `inMatchMode` 双重锁定资源包与内容包不可修改，并完整拦截底层战场热键、控制台与滚轮缩放穿透。
+- **类 Minecraft 左右双栏包管理器（`DualColumnPackManagerView`）**：新增供资源包与内容包共用的左「已启用」（自上而下覆盖）/ 右「未启用」双栏管理组件，配备 `44×44` `1:1` 正方形图标缩略图、`displayText_zh` 中文优先名称回退、超采样单一体实心几何矢量四向三角按钮（`▲ / ▼ / ◀ / ▶`）、双列独立滚轮滚动与按需展开目录路径导入入口；强制将 `内置基础资源包`（`reforge:base`）与基础玩法内容包锁定在左栏最底部（`基础常驻`），按 `ADR-014` 层级将外部表现资源包置于内置主题包之上，并在内容包启用栈变更及启动恢复时自动同步现行主包入口。
+- **UI 缩放全屏模态 10 秒自动还原弹窗（`UiScaleConfirmModal`）**：切换 UI 缩放倍率后立即实时预览新倍率并弹出最高模态全屏警示层（含动态 10 秒倒计时与铁锈橙进度条），在超时归零、点击「还原」或按下局内外 `Esc`/返回键时自动回滚原安全倍率且不污染落盘配置，点击「保留」方持久化生效。
+
+### 技术
+
+- **双栏包管理与模态回滚单测、三主题真 GL 实窗目视与独立双审**：更新展示版本号至 `v0.6.4`，新增 `UiP004SettingsAndPacksTest`（含双语键集合 100% 对等、局内外模态返回键优先级、`ADR-014` 层级门控与配置持久化校验）并纳入 `platform-basics` 套件，机制套件与双根 `workspace_layout.py` 全部通过；采集 `1920×1080` 暗黑、白色、骨白三套主题共 15 张真 GL 实窗截图，经全新上下文独立视觉审查 `APPROVED` 及独立非作者代码整审与 R02 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SettingsScreen.kt` | **新增** — 7 分类构成主义双栏设置页、`OutGameSlider`、关于声明查看弹窗与局内遮罩 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DualColumnPackManagerView.kt` | **新增** — 类 MC 左右双栏资源包/内容包管理器、四向矢量三角、双列滚轮滚动与底层常驻锁定 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiScaleConfirmModal.kt` | **新增** — UI 缩放全屏模态 10 秒倒计时自动还原确认弹窗 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/AppShell.kt` | 将活跃模态层拦截提至 `inMatch` 判定之前，统一保障局内外弹窗返回键最优先闭合 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 接入局内外 `SettingsScreen`、局内输入穿透屏蔽、音量倍率持久绑定、`ADR-014` 顺序与内容包主入口同步 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SoundPlayback.kt` | 新增 `volumeMultiplierProvider` 动态音量乘算钩子以联动主音量、音效音量与静音设置 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 补充开源许可证、第三方声明正文与包目录路径提示的中英双语文案键 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.4` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SettingsAndPacksTest.kt` | **新增** — 覆盖 7 分类即时持久化、双栏锁定与排序、局内外 10s 缩放回滚及零硬编码/双语对等单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004SettingsAndPacksTest` |
+
+---
+
+## v0.6.3 (2026-11-28 02:50)
+
+### 新增
+
+- **测试与沙盒双栏复用视图（`TestAndSandboxScreen`）**：直接复用遭遇战大厅的左窄右宽双栏几何骨架与统一顶栏，默认对全体构建开放「自由沙盒」态（非开发模式自动隐藏「模式」分段开关，顶行平铺默认无迷雾、无限初始资金与快速建造开关，左栏直接复用支持「沙盒靶机 · 待机」档位的 1–10 席 `MatchSlotTableView`，右栏复用大幅地图预览、共用全屏 `MapPicker` 选图、独立 `.tmx` 探针载入及「进入自由沙盒」主按钮并开放桌面局内沙盒布置）；开发模式（`--development true`）额外解锁「测试场景」态，提供跟随种子脚本/自由镜头切换、`SHA-256` 锁定场景列表（完整保留既有 `TestScenarioPanel` 自动化动作 ID）、带阵营开局单位点位的锁定地图预览与 `.json` 种子路径载入（自动隐藏选图入口防止篡改锁定地图）。
+- **构成主义对局加载画面（`MatchLoadingScreen`）**：在压暗动态地图背景中央渲染居中简报加载卡，顶部与底部配置无文字刻度尺细栏，中部左侧绘制带玩家色描边出生点编号的 `1:1` 正方形地图缩略图，右侧依次展示大号地图中文名与基线英文副标识、`01–05` 五格对局基本设置摘要（胜负/迷雾/资金/经济/禁核）及支持中英文混排自然折行的 `TIPS` 实战提示框；底部左上方固定锚点渲染加粗加大 `LOADING` 并在右侧循环追加动态点（字母本体 `0.0px` 零位移），右上方同步显示百分比进度，同时接通左上 `← 取消` 与 `Esc`/返回键安全回退来源页。
+
+### 修复
+
+- **高分辨率视口下 `action-layout` 自动化坐标越界与点击偏移**：此前 `DrawnActionLayout` 在非 `960×640` 窗口（如 `1200×800`、`1920×1080`）下直接写出原始 Stage 坐标，超出外部自动化驱动的 `960×640` 归一化边界；现先在真实 Stage 坐标完成命中遮挡校验，再按视口逻辑宽高线性归一化至 `[0..960] × [0..640]`，使任意分辨率下的物理像素点击中心精确对齐。
+- **开发态锁定种子迷雾契约与主菜单 `.tmx` 默认内容包解析**：修正从大厅启动已选锁定测试场景时被默认记忆迷雾覆写及 CLI `--inputs` 受控输入被默认 `.tmx` 劫持的问题，并为主菜单非开发模式启动下的 `.tmx` 开局补齐 `package/pack.json` 自动解析回退。
+
+### 技术
+
+- **双态兼容单测、三主题真 GL 实窗目视与独立双审**：更新展示版本号至 `v0.6.3`，新增 `UiP004SandboxAndLoadingTest` 并纳入 `platform-basics` 套件，客户端单测、`development_check.py --suite platform-basics` 与双根 `workspace_layout.py` 全部通过；采集 `1920×1080` 暗黑、白色、骨白三套主题下自由沙盒态、测试场景态与加载画面共 9 张真 GL 实窗截图，经全新上下文独立视觉审查 `APPROVED` 及独立非作者代码整审与 R02 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/TestAndSandboxScreen.kt` | **新增** — 复用双栏骨架的自由沙盒与开发测试场景双态视图及锁定场景阵型预览组件 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MatchLoadingScreen.kt` | **新增** — 带顶底刻度尺、`1:1` 出生点缩略图、`01–05` 摘要、`TIPS` 与本体零位移 `LOADING...` 的加载画面 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/OutGameChrome.kt` | 新增 `OutGameDraw.wrapTextCjk` 中英文混排自然折行工具 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DrawnActionLayout.kt` | 将上报的动作矩形线性归一化至 `960×640` 契约空间并保留真实 Stage 命中校验 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxLoader.kt` | 补充遭遇战 `.tmx` 加载对 `package/pack.json` 子目录的自动识别与回退 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 补充测试场景条目与加载取消按钮的中英双语文案键 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.3` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 接入 `TestAndSandboxScreen`、`MatchLoadingScreen`、锁定种子 `NO_FOG` 保护与 GL 纹理释放 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SandboxAndLoadingTest.kt` | **新增** — 覆盖非开发门控、双态与 `DrawnAction` 兼容、`LOADING` 零位移、跨分辨率坐标归一化及开局契约单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004SandboxAndLoadingTest` |
+
+---
+
+## v0.6.2 (2026-11-28 01:46)
+
+### 新增
+
+- **不可变遭遇战启动契约与大厅状态机（`SkirmishLaunchConfig` / `SkirmishLobbyState`）**：新增供八期后续阶段直接消费的强不可变对局配置契约 `SkirmishLaunchConfig`（内置 `List.copyOf` 席位冻结与出生点范围校验），完整表达所选地图、三档胜负模式（按原版 `.tmx` `winCondition` 自动映射初始值并对 `requiredObjectives` 给出暂未支持回退提示）、四档战争迷雾、五档初始资金、5 项低频规则及 1–10 席参战列表；往返主菜单或退出对局返厅时完整保留最近配置，并将当前已支持参数（地图、迷雾、共享视野、禁核、包配置）安全桥接至开局链路。
+- **左窄右宽遭遇战大厅与「更多设置」弹窗（`SkirmishLobbyScreen` / `MoreMatchSettingsModal`）**：实装左窄右宽双栏遭遇战大厅，左栏顶行单行紧凑平铺胜负模式、战争迷雾、初始资金与「更多设置」按钮（存在非默认低频规则时自动显示铁锈橙指示点），右栏渲染大幅实时地形与矿池预览（直接在出生点坐标绘制玩家色编号标记与空位虚线框）、共用全屏「选择地图」按钮、本地 `.tmx` 路径载入及内嵌全栏宽「开始对局」主按钮；居中模态弹窗收纳经济倍率、共享视野、出生点分配、开局单位与禁止核武 5 项低频规则，支持「恢复默认」与返回键优先关闭弹窗。
+- **可复用 1–10 席参战席位表与一体三角控件库（`MatchSlotTableView` / `OutGameControls`）**：新增供遭遇战与自由沙盒共用的紧凑席位表，支持 1–10 席动态增删（本机房主行保护、满 10 席自动隐藏添加行、缩减席位时自动收敛越界出生点）、10 色板点击循环与撞色互换、队伍与出生点语义染色下拉（撞位自动互换）、统一主文字色玩家名、AI 强度下拉占位及人类「踢出」/AI「移除」危险按钮，并提供「混战」与「双队平分」快捷分队；所有下拉框右侧展开三角均采用 4×4 超采样单一体实心倒三角形光栅绘制，彻底消除拼接裂纹，并支持 `Esc`/返回键优先收起展开菜单。
+
+### 技术
+
+- **状态机单测、三主题真 GL 实窗目视与独立双审**：更新展示版本号至 `v0.6.2`，补齐无外部输入目录时的遭遇战内容包回退与 `releasePresentation()` 局外纹理释放闭环；新增 `UiP004SkirmishLobbyTest` 并纳入 `platform-basics` 套件，客户端单测、`development_check.py --suite platform-basics` 与双根 `workspace_layout.py` 全部通过；采集 `1920×1080` 暗黑、白色、骨白三套主题下 4 席态、「更多设置」弹窗与 10 席满编态共 9 张真 GL 实窗截图，经全新上下文独立视觉审查 `APPROVED` 及独立非作者代码整审与 R02 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLaunchConfig.kt` | **新增** — 强不可变 `SkirmishLaunchConfig` 契约、`winCondition` 映射与 1–10 席 `SkirmishLobbyState` 状态机 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/OutGameControls.kt` | **新增** — 4×4 超采样单一体实心三角下拉 `UnifiedDropdown`、分段开关 `SegmentedControl`、多变体按钮与文本输入组件 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MatchSlotTableView.kt` | **新增** — 可复用 1–10 席紧凑参战席位表、10 色/出生点互换与快捷分队组件 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MoreMatchSettingsModal.kt` | **新增** — 居中「更多设置」5 项低频规则模态弹窗与默认值恢复逻辑 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLobbyScreen.kt` | **新增** — 左窄右宽遭遇战大厅页面与带玩家色出生点标记的 `TacticalBattlefieldPreviewActor` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.2` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxLoader.kt` | 为 `.tmx` 遭遇战加载补充无外部沙盒目录时的内置公开内容包回退 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 接入 `SkirmishLobbyScreen`、配置保留、下拉弹出层键盘/缩放协调与 GL 呈现释放 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SkirmishLobbyTest.kt` | **新增** — 覆盖胜负映射、1–10 席增删与互换、弹窗指示点、配置往返保留及一体三角零裂纹单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004SkirmishLobbyTest` |
+
+---
+
+## v0.6.1 (2026-11-28 00:48)
+
+### 新增
+
+- **构成主义动态地图背景与局外二级页通用外壳（`DynamicMapBackdrop` / `OutGameChrome`）**：新增不运行任何核心模拟的 `DynamicMapBackdrop`，基于当前选中或默认示范 `.tmx` 地图实时生成受 `UiTheme` 令牌驱动的 `1600×900` 构成主义蓝图地形与四点矿池标记，按路由自动切换主菜单/加载页浅压暗层（`mapScrim`）与二级页深压暗层（`mapScrimDeep`）并以 200 秒往复周期缓慢平移；同步确立二级页统一顶栏 `SubPageTopBar`（左上固定 `← 返回` 与正中标题）及主面板外壳 `OutGamePanelShell`。
+- **主菜单、`RWRE` 军械蓝图矢量标志与暗黑专属立体排线字效（`MainMenuScreen` / `RwreLogoDrawable` / `ReforgeVersion`）**：实装无外框悬浮主菜单，左中偏上渲染 4×4 超采样定制矢量标志 `RWRE`（左竖识别带、四角准星、平行断桥模具字与底边刻度线均经 `UiTheme` 取色），左下角提供细线分隔的「遭遇战 / 测试与沙盒 / 设置 / 退出」四项菜单并支持键盘方向键导航与触控二次确认退出模态框，右上角悬浮项目标题与版本号（`v0.6.1`）、右下角悬浮版权署名；仅默认暗黑主题（`features.mainMenuExtrudeText`）对当前选中项文字叠加右下 `-52°` 斜拉排线橙色棱柱立体字效，白色与骨白主题保持平面简洁样式。
+- **共用全屏正方形卡片选图器与 8 图遭遇战目录（`MapPickerScreen` / `OutGameMapCatalog`）**：新增暴露统一回调契约 `open(currentMapId, filter, extraEntries, onMapSelected)` 的全屏选图页，对称宽留白可滚动网格平铺 `1:1` 正方形战术地图缩略图卡片（绘制水岸等高线、矿池与玩家色出生点标记，暗黑主题采用底部平滑暗渐变托底、浅色主题采用描边胶囊铭牌，选中卡叠加 `2px` 铁锈橙高亮框），点击返回或按 `Esc` 取消时严格保留原选地图；内置目录在 2 张随包 `.tmx` 地图基础上补充含 10 人环礁（`ring_atoll`）在内的 6 张程序化标准 `.tmx` 地图（覆盖 `4P–10P`）。
+
+### 修复
+
+- **半透明遮罩叠加冲淡帧缓冲目标 Alpha 通道**：此前主 `SpriteBatch` 使用默认混合函数绘制半透明遮罩时会降低帧缓冲目标 Alpha 值，导致截帧 PNG 出现半透明灰雾；现切换为分离式 Alpha 混合（`GL_ONE, GL_ONE_MINUS_SRC_ALPHA`），在保持 RGB 混合完全一致的前提下确保输出帧缓冲完全不透明。
+
+### 技术
+
+- **无头单测、三主题真 GL 实窗目视与独立双审**：扩展 `UiFontSet` 局外大字号字阶与 `UiStrings` 地图双语键，新增 `UiP004MainMenuAndMapPickerTest` 并纳入 `platform-basics` 套件，客户端单测、`development_check.py --suite platform-basics` 与双根 `workspace_layout.py` 全部通过；采集 `1920×1080` 暗黑、白色、骨白三套主题主菜单与选图器共 6 张真 GL 实窗截图，经全新上下文独立视觉审查（含 R01 复核）`APPROVED` 及独立非作者代码整审（含 R02 定向复核）`APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/OutGameChrome.kt` | **新增** — 局外二级页统一顶栏 `SubPageTopBar`、面板外壳 `OutGamePanelShell` 与刻度尺绘制辅助 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/RwreLogoDrawable.kt` | **新增** — 4×4 超采样军械喷涂蓝图 `RWRE` 矢量标志光栅化与 `UiTheme` 令牌着色组件 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DynamicMapBackdrop.kt` | **新增** — 零模拟构成主义动态地图背景、纯缓冲区战术缩略图渲染器与 8 图 `OutGameMapCatalog` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MainMenuScreen.kt` | **新增** — 无外框主菜单、触控二次退出确认弹窗与暗黑专属 `-52°` 斜拉排线立体字效渲染器 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MapPickerScreen.kt` | **新增** — 共用全屏 `1:1` 正方形卡片选图器 `open(...)` 接口与深浅主题标签自适应 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | **新增** — 局外项目标题、展示版本号（`v0.6.1`）与版权署名常量 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiFontSet.kt` | 扩展主菜单、二级页标题与英雄等宽大字号原生 FreeType 字阶 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 补充内置 8 张遭遇战地图的中英双语名称键并统一 LF 换行 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 薄委托接入 `DynamicMapBackdrop`、`MainMenuScreen`、`MapPickerScreen` 与分离式 Alpha 混合 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004MainMenuAndMapPickerTest.kt` | **新增** — 覆盖主菜单路由、触控二次退出、立体字效门控、动态背景零模拟与选图器往返单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 纳入 `UiP004MainMenuAndMapPickerTest` |
+
+---
+
+## v0.6.0 (2026-11-27 23:09)
+
+### 新增
+
+- **轻量局外页面栈外壳（`AppShell`）**：建立独立于局内模拟宿主的局外路由栈与模态层管理器，统一管理主菜单、遭遇战大厅、测试与沙盒、设置、全屏选图器与加载页的压栈、祖先截断弹栈、同级叶子页替换及进出局来源页恢复，支持弹窗优先拦截与移动端主菜单二次确认退出，并以最小侵入方式接入 `BootstrapScreen`。
+- **跨平台用户设置持久化与命令行覆写隔离（`UserSettingsStore`）**：新增落位于平台私有目录（Windows `%LOCALAPPDATA%\RustedWarfare-Reforge\settings.json`、Android 应用私有目录）的原子 JSON 设置存储，覆盖语言、主音量与音效音量、静音、UI 手动缩放倍率、触控摇杆、镜头灵敏度、边缘滚屏、界面主题及资源包/内容包优先级栈（自动将基础包固定于栈底）；损坏或不兼容配置安全回退默认值，桌面启动参数新增 `--lang` 与 `--theme` 临时覆写且绝不回写污染落盘文件。
+- **默认简体中文双语基建与包元数据本地化（`UiStrings` / `LocalizedMetadata`）**：首次启动默认语言改为简体中文（不随系统区域浮动），扩充完备的中英双语键值表并对未映射键提供本地化通用兜底文案，正式运行隐藏未映射原始拒绝码（仅开发模式或 `F3` 调试层开启时附带）；支持资源包 `pack.json`、内容包 `mod-info.txt` / `pack-i18n.json` 及内置综合试玩包的 `displayText_zh` 与 `description_zh` 优先读取及原文回退。
+- **三套内置界面样式主题与 10 色对局色板（`UiTheme` / `MatchPlayerColors`）**：扩展 `ADR-014` 局外语义配色、色板与特性开关，正式提供 **暗黑**（默认，含主菜单斜拉排线立体字效开关）、**白色**、**骨白**（去黄暖石白 `#F2F1EC` / `#E5E4DF`）三套内置主题并支持在任意内置基底上叠加表现资源包局部覆写；对局玩家与队伍色板同步扩展至 10 色（新增 `P9` 靛蓝 `#6366F1`、`P10` 银白 `#E2E8F0`）并与中立灰 `#9AA3A8` 严格区分。
+
+### 架构改进
+
+- **清理旧同步 AWT 字体桥接与历史提取配置**：移除 `VisualAssetSettings` 及局外旧面板对 `PcVisualAssetFont` 的同步 AWT 像素字体构造依赖，统一由 FreeType `UiFontSet` 承担多语言矢量字形渲染；物理删除 `Engine/pc/src/main/resources/visuals/` 下 14 份不再使用的 `v1..v5` 历史提取配置 JSON 与对应旧版读取分支。
+
+### 技术
+
+- **单测、字形覆盖校验与独立代码整审**：新增 `UiP004ShellSettingsThemeTest`（含 `NotoSansSC` Regular/Bold OpenType `cmap` 全字符零缺字校验、路由往返同步、设置损坏恢复、CLI 防污染与三主题局部覆写合成），同步更新 `platform-basics` 套件注册并通过客户端/PC 单测、`development_check.py --suite platform-basics`、`test_public_check.py` 与双根 `workspace_layout.py` 检查；经全新上下文独立非作者代码整审及 R01 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/AppShell.kt` | **新增** — 局外路由栈、模态栈拦截、加载取消回退与主菜单二次确认退出状态机 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UserSettingsStore.kt` | **新增** — 跨平台私有目录 `settings.json` 原子读写、损坏回退、基础包置底与 CLI 只读覆写视图 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/LocalizedMetadata.kt` | **新增** — 资源包与内容包 `displayText_zh` / `description_zh` 多源解析与原文回退 |
+| `Engine/client/src/main/resources/ui/themes/white.json` | **新增** — 内置「白色」（`reforge:polar-white`）主题令牌定义 |
+| `Engine/client/src/main/resources/ui/themes/bone.json` | **新增** — 内置「骨白」（`reforge:constructivist-bone`）去黄暖石白主题令牌定义 |
+| `Engine/client/src/main/resources/ui/theme.json` | 扩展默认「暗黑」主题局外语义令牌、10 色玩家/队伍色板与特性开关 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiTheme.kt` | 扩展 `outGame`、`palettes`、`features` 解析与任意内置基底上的局部覆写合成 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 切换默认简体中文、补齐局外全页双语文案、通用兜底与拒绝码开发态门控 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MatchPlayerColors.kt` | 扩展固定对局玩家色板与队伍色板至 10 色 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiScale.kt` | 支持叠加用户手动 UI 缩放倍率（`0.75..1.50`） |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/PreparedVisualAssets.kt` | 保留表现资源包主题补丁以支持切换内置基底主题时动态重合成 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ResourcePackMetadata.kt` | 支持读取可选双语名称与描述元数据字段 |
+| `Engine/client/src/main/resources/resource-packs/*/pack.json` | 为内置基础包与原版提取包补充简体中文名称与描述 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 薄委托局外路由至 `AppShell` 并接入 `UserSettingsStore`、主题/语言/缩放热切与拒绝码门控 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/WindowsLaunchOptions.kt` | 新增 `--lang` 与 `--theme` 命令行参数解析与校验 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/WindowsLauncher.kt` | 注入桌面端 `UserSettingsStore` 与命令行临时覆写 |
+| `Engine/android/src/main/kotlin/com/rustedwarfare/reforge/android/AndroidLauncher.kt` | 注入 Android 私有目录 `UserSettingsStore` |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcVisualAssetFont.kt` | **删除** — 移除旧同步 AWT 像素字体构造器及关联面板钩子 |
+| `Engine/pc/src/main/resources/visuals/*-v1..v5.json` | **删除** — 清理 14 份不再使用的历史提取配置 JSON 及旧版读取分支 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004ShellSettingsThemeTest.kt` | **新增** — 覆盖壳层路由、设置持久化、双语元数据、三套主题与 OpenType `cmap` 零缺字单测 |
+| `SimulationTest/public/suites/platform-basics.json` | 同步移除 `VisualAssetFontTest` 并纳入 `UiP004ShellSettingsThemeTest` |
+
+---
+
 ## v0.5.91 (2026-11-28 16:15)
 
 ### 性能优化

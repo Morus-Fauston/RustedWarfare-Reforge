@@ -11,7 +11,8 @@ internal data class DrawnAction(val actionId: String, val actor: Actor, val text
 
 internal data class ActionLayoutFrame(val generation: Long, val selectionRevision: Long,
     val selectedIds: List<String>, val selectedTypes: Map<String, String>, val menuEpoch: Long,
-    val viewport: Map<String, Int>, val projection: Map<String, Double>? = null)
+    val viewport: Map<String, Int>, val projection: Map<String, Double>? = null,
+    val stageWidth: Float = 960f, val stageHeight: Float = 640f)
 
 /** Observe the actors actually submitted by this Stage; never dispatch an action. */
 internal class DrawnActionLayout {
@@ -21,6 +22,10 @@ internal class DrawnActionLayout {
     fun invalidate() { previous = null }
 
     fun afterDraw(root: Group, frame: ActionLayoutFrame, entries: List<DrawnAction>, drawnNanos: Long): Map<String, Any?>? {
+        val effStageW = frame.stageWidth.takeIf { it.isFinite() && it > 0f } ?: root.stage?.viewport?.worldWidth?.takeIf { it > 0f } ?: 960f
+        val effStageH = frame.stageHeight.takeIf { it.isFinite() && it > 0f } ?: root.stage?.viewport?.worldHeight?.takeIf { it > 0f } ?: 640f
+        val normX = 960f / effStageW
+        val normY = 640f / effStageH
         val actions = entries.mapNotNull { entry ->
             var parent: Actor? = entry.actor
             var attached = false
@@ -43,9 +48,14 @@ internal class DrawnActionLayout {
             val center = root.stageToLocalCoordinates(Vector2(x + width / 2, y + height / 2))
             var hit = root.hit(center.x, center.y, true)
             while (hit != null && hit !== actor) hit = hit.parent
+            val bx = (x * normX).coerceIn(0f, 960f)
+            val by = (y * normY).coerceIn(0f, 640f)
+            val bw = ((x + width) * normX - bx).coerceAtMost(960f - bx)
+            val bh = ((y + height) * normY - by).coerceAtMost(640f - by)
+            if (bw <= 0f || bh <= 0f) return@mapNotNull null
             mapOf("actionId" to entry.actionId, "button" to entry.button, "text" to entry.text,
                 "enabled" to (entry.enabled && actor.touchable != Touchable.disabled && hit === actor),
-                "bounds" to mapOf("x" to x, "y" to y, "width" to width, "height" to height))
+                "bounds" to mapOf("x" to bx, "y" to by, "width" to bw, "height" to bh))
         }
         val snapshot = mapOf("layoutVersion" to 1, "generation" to frame.generation,
             "selectionRevision" to frame.selectionRevision, "selectedIds" to frame.selectedIds.sorted(),

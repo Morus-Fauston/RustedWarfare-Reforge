@@ -1,7 +1,6 @@
 package com.rustedwarfare.reforge.client
 
 import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.math.Rectangle
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Group
@@ -11,7 +10,7 @@ import java.nio.file.Path
 
 /** Menu-only, independent of the fixed sandbox folder and visual-source settings. */
 class ContentPackPanel(private val state: ContentPackSelectionSession, skin: Skin,
-    private val fontFactory: ((String) -> BitmapFont?)? = null, private val changed: () -> Unit) : Group(), AutoCloseable {
+    private val changed: () -> Unit) : Group(), AutoCloseable {
     private val directory: TextField
     private val inspect: TextButton
     private val cancel: TextButton
@@ -24,8 +23,6 @@ class ContentPackPanel(private val state: ContentPackSelectionSession, skin: Ski
     private var editable = true
     private var updating = false
     private var status: String? = null
-    private var platformFont: BitmapFont? = null
-    private var fontCharacters = emptySet<Char>()
     private var previousMessage: String? = null
 
     init {
@@ -144,16 +141,6 @@ class ContentPackPanel(private val state: ContentPackSelectionSession, skin: Ski
             }
         notice.setText(message)
         notice.color = if (state.error != null || state.compositionError != null || status != null) Color(1f, .65f, .58f, 1f) else Color(.82f, .88f, .83f, 1f)
-        val characters = fontCharacters + directory.text.toSet() + summary.text.toString().toSet() + message.toSet()
-        if (fontFactory != null && (platformFont == null || characters != fontCharacters)) {
-            fontFactory.invoke(characters.joinToString(""))?.let { next ->
-                val old = platformFont
-                directory.style = TextField.TextFieldStyle(directory.style).apply { font = next }
-                summary.style = Label.LabelStyle(summary.style).apply { font = next }
-                notice.style = Label.LabelStyle(notice.style).apply { font = next }
-                platformFont = next; fontCharacters = characters; old?.dispose()
-            }
-        }
         if (message != previousMessage) { messages.scrollY = 0f; previousMessage = message }
     }
 
@@ -162,5 +149,5 @@ class ContentPackPanel(private val state: ContentPackSelectionSession, skin: Ski
         super.act(delta)
     }
 
-    override fun close() { platformFont?.dispose(); platformFont = null }
+    override fun close() = Unit
 }

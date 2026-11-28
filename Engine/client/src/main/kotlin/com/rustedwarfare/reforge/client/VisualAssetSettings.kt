@@ -37,6 +37,4 @@ interface VisualAssetSettings {
     fun extractAndCheckOriginalResources(path: Path): PreparedImagePack = checkImagePack(extractOriginalPreparedResourcePack(path).manifest)
     /** Worker-only read; restoration still validates this choice against the current content. */
     fun loadSavedSelection(): VisualAssetSelection = initialSelection
-    /** Optional local-platform font; called and disposed only on the render thread. */
-    fun createUiFont(characters: String): com.badlogic.gdx.graphics.g2d.BitmapFont? = null
 }

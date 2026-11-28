@@ -4,5 +4,7 @@
   "id": "reforge:original-android-1.15-176",
   "name": "Original pictures (Android 1.15 / 176)",
   "description": "Validated pictures from your local original directory.",
+  "displayText_zh": "本地原版表现资源包",
+  "description_zh": "经客户端校验的本地原版单位贴图与音效资源。",
   "icon": "reforge:units/c_tank/body"
 }

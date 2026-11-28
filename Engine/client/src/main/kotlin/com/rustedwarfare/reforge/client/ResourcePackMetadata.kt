@@ -7,8 +7,25 @@ import org.hjson.JsonValue
 import org.hjson.ParseException
 
 /** Declarative presentation metadata. This reader performs no file, image or renderer access. */
-class ResourcePackMetadata private constructor(val id: ResourceId, val name: String, val description: String,
-    val icon: ResourceId, val formatVersion: Int, val requiresResourceFormat: Int) {
+class ResourcePackMetadata private constructor(
+    val id: ResourceId,
+    val name: String,
+    val description: String,
+    val icon: ResourceId,
+    val formatVersion: Int,
+    val requiresResourceFormat: Int,
+    val displayTextZh: String? = null,
+    val descriptionZh: String? = null,
+    val displayTextEn: String? = null,
+    val descriptionEn: String? = null,
+    val options: List<ResourcePackOption> = emptyList(),
+) {
+    fun localizedName(language: UiLanguage = UiStrings.currentLanguage): String =
+        LocalizedMetadata.resourcePackName(this, language)
+
+    fun localizedDescription(language: UiLanguage = UiStrings.currentLanguage): String =
+        LocalizedMetadata.resourcePackDescription(this, language)
+
     companion object {
         const val CURRENT_RESOURCE_FORMAT = 4
         fun read(bytes: ByteArray, source: String): ResourcePackMetadata {
@@ -25,7 +42,10 @@ class ResourcePackMetadata private constructor(val id: ResourceId, val name: Str
             } catch (failure: ParseException) { bad("syntax", "${failure.line}:${failure.column}: ${failure.message}") }
             if (!parsed.isObject) bad("metadata", "Expected an object")
             val metadata = parsed.asObject()
-            val allowed = setOf("formatVersion", "requiresResourceFormat", "id", "name", "description", "icon")
+            val allowed = setOf(
+                "formatVersion", "requiresResourceFormat", "id", "name", "description", "icon",
+                "displayText_zh", "description_zh", "displayText_en", "description_en", "options",
+            )
             val seen = mutableSetOf<String>()
             for (member in metadata) {
                 if (!seen.add(member.name)) bad(member.name, "Duplicate metadata member")
@@ -48,11 +68,30 @@ class ResourcePackMetadata private constructor(val id: ResourceId, val name: Str
                     bad(field, "Expected nonblank text without control characters")
                 return value.asString()
             }
+            fun optionalString(field: String): String? {
+                val value = metadata.get(field) ?: return null
+                if (!value.isString || value.asString().isBlank() || value.asString().any(Char::isISOControl))
+                    bad(field, "Expected nonblank text without control characters")
+                return value.asString()
+            }
             fun resource(field: String): ResourceId = try { ResourceId.parse(string(field)) }
             catch (failure: IllegalArgumentException) { bad(field, failure.message ?: "Invalid resource ID") }
             val format = version("formatVersion")
             val requires = version("requiresResourceFormat", CURRENT_RESOURCE_FORMAT)
-            return ResourcePackMetadata(resource("id"), string("name"), string("description"), resource("icon"), format, requires)
+            val parsedOptions = ResourcePackOption.parseList(metadata.get("options"), source)
+            return ResourcePackMetadata(
+                id = resource("id"),
+                name = string("name"),
+                description = string("description"),
+                icon = resource("icon"),
+                formatVersion = format,
+                requiresResourceFormat = requires,
+                displayTextZh = optionalString("displayText_zh"),
+                descriptionZh = optionalString("description_zh"),
+                displayTextEn = optionalString("displayText_en"),
+                descriptionEn = optionalString("description_en"),
+                options = java.util.Collections.unmodifiableList(ArrayList(parsedOptions)),
+            )
         }
     }
 }

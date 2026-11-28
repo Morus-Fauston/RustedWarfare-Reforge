@@ -1,6 +1,5 @@
 package com.rustedwarfare.reforge.client
 
-import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.ui.*
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
@@ -10,15 +9,13 @@ import java.nio.file.Path
 /** A normal menu choice; resources are still selected in the existing resource tab. */
 internal class TestScenarioPanel(private val state: TestScenarioMenu, private val seed: Path?,
     private val alternateStart: Path?, private val cameraSeed: Path?, skin: Skin,
-    private val fontFactory: ((String) -> BitmapFont?)?, private val changed: () -> Unit) : Group(), AutoCloseable {
+    private val changed: () -> Unit) : Group(), AutoCloseable {
     private val summary = Label("", skin)
     private val notice = Label("", skin)
     private val choose = TextButton(if (alternateStart == null) "Use this scene" else "Command center", skin)
     private val spider = TextButton("Modular Spider", skin)
     private val custom = TextButton("Custom content", skin)
     private val camera = TextButton("Camera demo", skin)
-    private var font: BitmapFont? = null
-    private var characters = emptySet<Char>()
     private var editable = true
 
     init {
@@ -58,13 +55,6 @@ internal class TestScenarioPanel(private val state: TestScenarioMenu, private va
         spider.isDisabled = !editable || alternateStart == null
         custom.isDisabled = !editable || !state.selected
         camera.isDisabled = !editable || cameraSeed == null
-        val nextCharacters = (summary.text.toString() + notice.text.toString()).toSet()
-        if (nextCharacters != characters) fontFactory?.invoke(nextCharacters.joinToString(""))?.let { next ->
-            val old = font; font = next; characters = nextCharacters
-            summary.style = Label.LabelStyle(summary.style).apply { font = next }
-            notice.style = Label.LabelStyle(notice.style).apply { font = next }
-            old?.dispose()
-        }
     }
 
     fun setEditable(value: Boolean) { editable = value }
@@ -74,5 +64,5 @@ internal class TestScenarioPanel(private val state: TestScenarioMenu, private va
         else add(DrawnAction("test-scene-spider", spider, spider.text.toString(), enabled = !spider.isDisabled))
         if (cameraSeed != null) add(DrawnAction("test-scene-camera", camera, camera.text.toString(), enabled = !camera.isDisabled))
     }
-    override fun close() { font?.dispose(); font = null }
+    override fun close() = Unit
 }

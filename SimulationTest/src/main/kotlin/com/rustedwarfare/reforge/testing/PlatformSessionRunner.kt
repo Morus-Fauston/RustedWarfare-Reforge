@@ -154,30 +154,14 @@ object PlatformSessionRunner {
                         "move" -> session.move(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "stop" -> session.stop()
                         "unit-action" -> {
-                            val name = intent.id("actionName")
-                            val nuclear = name in setOf("buildNuke", "launchNuke", "buildAntiNuke")
-                            val targeted = name in setOf("launchNuke", "launchScoutBot", "blink")
-                            val slotOrder = name in setOf("buildGun", "buildSmallLaser", "buildAntiair", "buildLightning",
-                                "buildArtillery", "buildFabricator", "buildShieldGen", "buildSpeed", "upgradeT2", "upgradeFlak",
-                                "buildLaserdefense", "buildAntinuke", "buildBlink", "reclaim")
-                            val spider = slotOrder || name in setOf("selectSlotBuild", "cancel", "isEnabled", "isDisabled") ||
-                                name.matches(Regex("selectSlot[1-6]"))
-                            val cancel = intent["cancelQueued"]?.let { value ->
-                                value.jsonPrimitive.booleanOrNull ?: throw InputError("Expected action cancellation boolean")
-                            } ?: false
-                            val keys = setOf("intentId", "kind", "actionName", "waitSteps") +
-                                (if ("testScene" in document) setOf("coreActionId") else emptySet()) +
-                                (if ("cancelQueued" in intent && (nuclear || targeted || slotOrder || name == "addBlink")) setOf("cancelQueued") else emptySet()) +
-                                (if (targeted && !cancel) setOf("target") else emptySet())
-                            if (intent.keys != keys ||
-                                !nuclear && !targeted && !spider &&
-                                    name !in setOf("afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive", "addBlink"))
-                                throw InputError("Expected a finite normal unit action and explicit waitSteps")
-                            val point = intent["target"]?.jsonObject?.let {
-                                if (it.keys != setOf("x", "y")) throw InputError("Expected finite ground point")
-                                Position(it.number("x"), it.number("y"))
-                            }
-                            session.unitAction(name, cancel, point)
+                            val parsed = parseOpenUnitActionIntent(
+                                intent = intent,
+                                isTestScene = "testScene" in document,
+                                liveGroundTargeted = session.actionMenu.unitActions
+                                    .singleOrNull { it.name == (intent["actionName"] as? JsonPrimitive)?.content }
+                                    ?.groundTargeted,
+                            )
+                            session.unitAction(parsed.actionName, parsed.cancelQueued, parsed.target)
                         }
                         "load" -> session.command(intent.objectAt("position").let { Position(it.number("x"), it.number("y")) })
                         "unload" -> {
@@ -351,6 +335,77 @@ object PlatformSessionRunner {
             is ContentResult.Failure -> throw InputError(result.error.describe())
         }
         return ContentPackChoice(content, selection.text("unitId"))
+    }
+
+    internal data class ParsedUnitActionIntent(
+        val actionName: String,
+        val cancelQueued: Boolean,
+        val target: Position?,
+    )
+
+    private val OPEN_ACTION_NAME_REGEX = Regex("^[A-Za-z][A-Za-z0-9._:-]*$")
+    private val KNOWN_CORE_TARGETED_UNIT_ACTIONS = setOf("launchNuke", "launchScoutBot", "blink", "setRally")
+    private val KNOWN_CORE_NON_TARGETED_UNIT_ACTIONS = setOf(
+        "buildNuke", "buildAntiNuke", "afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive", "addBlink",
+        "buildGun", "buildSmallLaser", "buildAntiair", "buildLightning", "buildArtillery", "buildFabricator",
+        "buildShieldGen", "buildSpeed", "upgradeT2", "upgradeFlak", "buildLaserdefense", "buildAntinuke",
+        "buildBlink", "reclaim", "selectSlotBuild", "cancel", "isEnabled", "isDisabled",
+    )
+    private val KNOWN_CORE_NON_CANCELLABLE_UNIT_ACTIONS = setOf(
+        "afterBurn", "cancelBurn", "deploy", "undeploy", "surface", "dive",
+        "selectSlotBuild", "cancel", "isEnabled", "isDisabled",
+    )
+    private val SELECT_SLOT_REGEX = Regex("^selectSlot[1-6]$")
+
+    internal fun parseOpenUnitActionIntent(
+        intent: JsonObject,
+        isTestScene: Boolean,
+        liveGroundTargeted: Boolean? = null,
+    ): ParsedUnitActionIntent {
+        val name = intent.id("actionName")
+        if (!OPEN_ACTION_NAME_REGEX.matches(name)) {
+            throw InputError("Invalid unit action identifier: $name")
+        }
+        val cancel = intent["cancelQueued"]?.let { value ->
+            val prim = value as? JsonPrimitive
+            if (prim == null || prim.isString || prim.booleanOrNull == null) {
+                throw InputError("Expected action cancellation boolean")
+            }
+            prim.boolean
+        } ?: false
+
+        val requiredBaseKeys = setOf("intentId", "kind", "actionName", "waitSteps") +
+            (if (isTestScene) setOf("coreActionId") else emptySet())
+        if (!intent.keys.containsAll(requiredBaseKeys)) {
+            throw InputError("Expected a finite normal unit action and explicit waitSteps")
+        }
+        if (isTestScene) intent.id("coreActionId")
+        val extraKeys = intent.keys - requiredBaseKeys
+        if (extraKeys.any { it !in setOf("cancelQueued", "target") }) {
+            throw InputError("Expected a finite normal unit action and explicit waitSteps")
+        }
+        if (cancel && "target" in intent) {
+            throw InputError("Expected a finite normal unit action and explicit waitSteps")
+        }
+        if ("cancelQueued" in intent && (name in KNOWN_CORE_NON_CANCELLABLE_UNIT_ACTIONS || SELECT_SLOT_REGEX.matches(name))) {
+            throw InputError("Expected a finite normal unit action and explicit waitSteps")
+        }
+
+        val requiresTarget = liveGroundTargeted ?: (name in KNOWN_CORE_TARGETED_UNIT_ACTIONS)
+        val forbidsTarget = (liveGroundTargeted == false) || (name in KNOWN_CORE_NON_TARGETED_UNIT_ACTIONS || SELECT_SLOT_REGEX.matches(name))
+        if (requiresTarget && !cancel && "target" !in intent) {
+            throw InputError("Expected a finite normal unit action and explicit waitSteps")
+        }
+        if (forbidsTarget && "target" in intent) {
+            throw InputError("Expected a finite normal unit action and explicit waitSteps")
+        }
+
+        val point = intent["target"]?.let { rawTarget ->
+            val targetObj = rawTarget as? JsonObject ?: throw InputError("Expected finite ground point")
+            if (targetObj.keys != setOf("x", "y")) throw InputError("Expected finite ground point")
+            Position(targetObj.number("x"), targetObj.number("y"))
+        }
+        return ParsedUnitActionIntent(name, cancel, point)
     }
 
     private fun encode(value: Any?): JsonElement = when (value) {

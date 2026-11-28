@@ -158,12 +158,23 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                 mapOf("id" to it.metadata.id.value, "identity" to it.identity, "manifest" to it.manifest.toString())
             }
             preparationStatus = "Checking picture and sound qualifications..."
-            val layers = users.associate { pack -> pack.metadata.id.value to
-                ResourceImageLayer(pack.metadata, pack.images, pack.identity, pack.sources) { if (key == null) pack.verifySources() else verifyAuditedInputs() }
-                    .withSounds(pack.sounds, pack.soundEvents)
-                    .withStaticBaseContracts(if (pack.clientHeld) pack.staticBaseContracts else restoredContracts[pack.metadata.id.value] ?: if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-"))
-                        pcResourceExtractor.staticBaseContracts(pack, builtinImages, inputs, reviewedOutputs(pack, inputs))
-                        else pcImageExtractor.staticBaseContracts(pack, builtinImages, inputs)) }.toMutableMap()
+            val resolvedVariantsByPackId = users.associate { pack ->
+                pack.metadata.id.value to pack.resolveActiveVariant(resolved.optionsFor(pack.metadata.id.value))
+            }
+            val layers = users.associate { pack ->
+                val activeVar = resolvedVariantsByPackId.getValue(pack.metadata.id.value)
+                pack.metadata.id.value to
+                    ResourceImageLayer(pack.metadata, activeVar.images, pack.identity, pack.sources) {
+                        if (key == null) pack.verifySources() else verifyAuditedInputs()
+                    }
+                        .withSounds(activeVar.sounds, activeVar.soundEvents)
+                        .withStaticBaseContracts(
+                            if (pack.clientHeld) pack.staticBaseContracts else restoredContracts[pack.metadata.id.value]
+                                ?: if (pack.metadata.id.value.startsWith("reforge:pc-original-resources-"))
+                                    pcResourceExtractor.staticBaseContracts(pack, builtinImages, inputs, reviewedOutputs(pack, inputs))
+                                else pcImageExtractor.staticBaseContracts(pack, builtinImages, inputs)
+                        )
+            }.toMutableMap()
             original?.let { layers[VisualAssetSource.ORIGINAL.resourcePackId] =
                 ResourceImagePreparation.baseLayer(it, BuiltInResourcePacks.forSource(VisualAssetSource.ORIGINAL)) }
             val images = ResourceImageComposer.compose(baseImages.withSounds(baseSounds.sounds, baseSounds.events),
@@ -180,8 +191,48 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
             }.also {
                 require(it.size <= limit) { "UI_THEME_INVALID: $file: File exceeds $limit byte limit" }
             }
+            fun recordUnmanagedPatchAssets(root: Path, relThemeFile: String, themeBytes: ByteArray, patch: com.rustedwarfare.reforge.client.UiThemePatch) {
+                val themeLimit = com.rustedwarfare.reforge.client.UiThemeComposer.MAX_THEME_BYTES
+                unmanagedThemeHashes[root to relThemeFile] =
+                    Triple(themeLimit, themeBytes.size.toLong(), visualHash(themeBytes))
+                for (relAsset in patch.assets.values.filterNotNull().distinct()) {
+                    val assetFile = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(root, relAsset) ?: continue
+                    val assetLimit = 16 * 1024 * 1024
+                    val assetBytes = if (inputs != null) inputs.read(assetFile, assetLimit) else readBoundedFile(assetFile, assetLimit)
+                    unmanagedThemeHashes[root to relAsset] = Triple(assetLimit, assetBytes.size.toLong(), visualHash(assetBytes))
+                }
+            }
             for (pack in users) {
                 val root = pack.manifest.parent ?: continue
+                val activeVar = resolvedVariantsByPackId.getValue(pack.metadata.id.value)
+                if (activeVar.uiThemePatchesLowToHigh.isNotEmpty()) {
+                    // Within a single pack, later options override earlier options and base `ui/theme.json`;
+                    // `themePatches` is ordered high-to-low across and within packs.
+                    themePatches.addAll(activeVar.uiThemePatchesLowToHigh.asReversed())
+                    if (!pack.clientHeld) {
+                        val bPatch = pack.baseUiThemePatch
+                        val bBytes = pack.baseUiThemeRawBytes
+                        if (bPatch != null && bBytes != null) {
+                            recordUnmanagedPatchAssets(
+                                root,
+                                com.rustedwarfare.reforge.client.UiThemeComposer.PACK_THEME_FILE,
+                                bBytes,
+                                bPatch,
+                            )
+                        }
+                        for (opt in pack.metadata.options) {
+                            val chosen = opt.resolveValueOrDefault(resolved.optionsFor(pack.metadata.id.value)[opt.id])
+                            val varOverlay = pack.variants[com.rustedwarfare.reforge.client.PackVariantKey(opt.id, chosen)]
+                            val vPatch = varOverlay?.uiThemePatch
+                            val vBytes = varOverlay?.uiThemeRawBytes
+                            val vRel = varOverlay?.uiThemeSourceRelPath
+                            if (vPatch != null && vBytes != null && vRel != null) {
+                                recordUnmanagedPatchAssets(root, vRel, vBytes, vPatch)
+                            }
+                        }
+                    }
+                    continue
+                }
                 val themeFile = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(
                     root,
                     com.rustedwarfare.reforge.client.UiThemeComposer.PACK_THEME_FILE,
@@ -199,17 +250,17 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                 val patch = com.rustedwarfare.reforge.client.UiThemePatch.read(themeBytes, themeFile.toString(), requireFull = false)
                 themePatches += patch
                 if (!pack.clientHeld) {
-                    unmanagedThemeHashes[root to com.rustedwarfare.reforge.client.UiThemeComposer.PACK_THEME_FILE] =
-                        Triple(themeLimit, themeBytes.size.toLong(), visualHash(themeBytes))
-                    for (relAsset in patch.assets.values.filterNotNull().distinct()) {
-                        val assetFile = com.rustedwarfare.reforge.client.UiThemeComposer.resolveStrictPackFile(root, relAsset) ?: continue
-                        val assetLimit = 16 * 1024 * 1024
-                        val assetBytes = if (inputs != null) inputs.read(assetFile, assetLimit) else readBoundedFile(assetFile, assetLimit)
-                        unmanagedThemeHashes[root to relAsset] = Triple(assetLimit, assetBytes.size.toLong(), visualHash(assetBytes))
-                    }
+                    recordUnmanagedPatchAssets(root, com.rustedwarfare.reforge.client.UiThemeComposer.PACK_THEME_FILE, themeBytes, patch)
                 }
             }
-            val composedTheme = com.rustedwarfare.reforge.client.UiThemeComposer.compose(overridesHighToLow = themePatches)
+            val baseThemeChoice = com.rustedwarfare.reforge.client.BuiltInUiThemeId.fromCodeOrDefault(
+                resolved.optionsFor(VisualAssetSource.PLACEHOLDER.resourcePackId)[com.rustedwarfare.reforge.client.UserSettings.BASE_THEME_OPTION_ID],
+                com.rustedwarfare.reforge.client.BuiltInUiThemeId.DARK,
+            )
+            val composedTheme = com.rustedwarfare.reforge.client.UiThemeComposer.compose(
+                overridesHighToLow = themePatches,
+                base = com.rustedwarfare.reforge.client.UiTheme.builtIn(baseThemeChoice),
+            )
             val themeAssetResolver = com.rustedwarfare.reforge.client.UiThemeAssetResolver(userPackRootsHighToLow)
             fun verifyUnmanagedThemes() {
                 for (absentRoot in unmanagedAbsentThemes) {
@@ -238,7 +289,7 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
                     verifyUnmanagedThemes()
                 }
                 .withResourceSounds(sounds)
-                .withUiTheme(composedTheme, themeAssetResolver)
+                .withUiTheme(composedTheme, themeAssetResolver, themePatches)
                 .also { it.verifyForPublication() }
             if (key != null && inputs != null && trustedOutputs.identity != null) {
                 val records = users.mapNotNull { pack ->
@@ -392,6 +443,4 @@ internal class PcVisualAssetSettings @JvmOverloads constructor(private val store
         return saved.copy(originalDirectory = saved.originalDirectory ?: applicationRoot.resolve("Rusted Warfare").toAbsolutePath().normalize(),
             temporary = options.hasVisualOverride)
     }
-
-    override fun createUiFont(characters: String) = PcVisualAssetFont.create(characters)
 }

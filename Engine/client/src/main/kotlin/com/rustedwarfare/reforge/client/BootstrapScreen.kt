@@ -47,6 +47,7 @@ class BootstrapScreen(
     private val initialSkirmishMap: Path? = null,
     private val initialUiThemePacks: List<Path> = emptyList(),
     private val initialCatalogSceneId: String? = null,
+    val userSettingsStore: UserSettingsStore? = null,
     private val hotspotSummaryPath: Path? = null,
 ) : ApplicationAdapter() {
     private enum class StartupPage { HOME, SETUP, CONTENT, RESOURCES, DEVELOPMENT, MAPS }
@@ -62,9 +63,21 @@ class BootstrapScreen(
     private lateinit var hudGroupBar: HudControlGroupBar
     private lateinit var hudDebugOverlay: HudDebugOverlay
     private lateinit var hudConsole: HudSandboxConsole
-    private var activeUiTheme: UiTheme = if (initialUiThemePacks.isEmpty()) UiTheme.DEFAULT else UiThemeComposer.composeFromPackDirectories(initialUiThemePacks)
+    private val effectiveSettingsStore: UserSettingsStore by lazy {
+        userSettingsStore ?: UserSettingsStore(
+            java.nio.file.Files.createTempDirectory("rwre-ephemeral-settings-")
+                .also { it.toFile().deleteOnExit() }
+                .resolve("settings.json"),
+        )
+    }
+    private var activeBuiltInThemeId: BuiltInUiThemeId = userSettingsStore?.effective?.themeId ?: BuiltInUiThemeId.DARK
+    private var userScaleMultiplier: Float = userSettingsStore?.effective?.uiScaleMultiplier ?: 1.0f
+    private var activeUiTheme: UiTheme = UiTheme.builtIn(activeBuiltInThemeId)
     private var activeThemeAssetResolver: UiThemeAssetResolver = UiThemeAssetResolver(initialUiThemePacks)
     private val uiThemeProvider: UiThemeProvider = UiThemeProvider { activeUiTheme }
+    val currentBuiltInThemeId: BuiltInUiThemeId get() = activeBuiltInThemeId
+    val currentUiTheme: UiTheme get() = activeUiTheme
+    val currentUserScaleMultiplier: Float get() = userScaleMultiplier
     private var commandIcons: HudCommandIconAtlas? = null
     private val hudEvents = HudEventStream()
     private var hudMenuOpen = false
@@ -73,7 +86,7 @@ class BootstrapScreen(
     private var lastArrivalNoticeKey: String? = null
     private var lastHudSnapshot: HudSnapshot? = null
     private val viewport = ScreenViewport()
-    private var uiMetrics: UiMetrics = UiScale.metrics(960, 640, touchControls)
+    private var uiMetrics: UiMetrics = UiScale.metrics(960, 640, touchControls, userScaleMultiplier = userScaleMultiplier)
     private var fontSet: UiFontSet? = null
     private var fallbackFont: BitmapFont? = null
     private val fontDebouncer = FontRebuildDebouncer()
@@ -181,8 +194,11 @@ class BootstrapScreen(
     private lateinit var mapInput: SandboxInput
     private lateinit var contentLabel: Label
     private val groupButtons = mutableListOf<TextButton>()
-    private val visualState = visualSettings?.let(::VisualAssetSettingsSession)
+    private val visualState = visualSettings?.let {
+        VisualAssetSettingsSession(it, userSettingsStore?.effective?.allEffectivePackOptions().orEmpty())
+    }
     private var visualPanel: VisualAssetSettingsPanel? = null
+    private var pendingStartupPackReconcile = false
     private val packState = ContentPackSelectionSession()
     private var packPanel: ContentPackPanel? = null
     private lateinit var visualsTab: TextButton
@@ -197,8 +213,51 @@ class BootstrapScreen(
     private lateinit var startupNotice: ScrollPane
     private lateinit var startupFrame: Image
     private lateinit var mapPreview: Actor
+    private lateinit var dynamicMapBackdrop: DynamicMapBackdrop
+    private var outGameControlIcons: OutGameControlIcons? = null
+    val skirmishLobbyState: SkirmishLobbyState = SkirmishLobbyState()
+    val freeSandboxLobbyState: SkirmishLobbyState = SkirmishLobbyState(freeSandboxMode = true)
+    var lastSkirmishLaunchConfig: SkirmishLaunchConfig? = null
+        private set
+    private var lobbyExplicitMapChosen: Boolean = false
+    private var loadingTipCounter: Int = 0
+    private var loadingStartedNanos: Long = 0L
+    private var nextLoadFollowScriptedCamera: Boolean = true
+    private val holdLoadingProgressOverride: Float? =
+        System.getProperty("reforge.ui.holdLoadingProgress")?.toFloatOrNull()?.coerceIn(0f, 1f)
+    lateinit var mainMenuScreen: MainMenuScreen
+        private set
+    lateinit var mapPickerScreen: MapPickerScreen
+        private set
+    lateinit var skirmishLobbyScreen: SkirmishLobbyScreen
+        private set
+    lateinit var testAndSandboxScreen: TestAndSandboxScreen
+        private set
+    lateinit var matchLoadingScreen: MatchLoadingScreen
+        private set
+    lateinit var settingsScreen: SettingsScreen
+        private set
+    private lateinit var devTestScenesRelay: Actor
+    private var inMatchSettingsOpen: Boolean = false
+    private var pendingAutoEnableContentPackId: String? = null
     private var startupPage = if (openSetup) StartupPage.SETUP else StartupPage.HOME
     private var settingsBack = startupPage
+    private var activeSettingsPage: StartupPage = StartupPage.RESOURCES
+    private var syncingShellRoute = false
+    internal val currentStartupPageNameForTest: String get() = startupPage.name
+    val appShell: AppShell = AppShell(
+        initialRoute = if (openSetup) OutGameRoute.SKIRMISH_LOBBY else OutGameRoute.MAIN_MENU,
+        onRouteChanged = { route -> syncStartupPageFromShell(route) },
+        onCancelLoading = { if (loading) leaveMatch() },
+        onRequestExitApp = { Gdx.app?.exit() },
+    )
+    init {
+        userSettingsStore?.effective?.let { effective ->
+            UiStrings.currentLanguage = effective.language
+            visualState?.syncPackOptions(effective.allEffectivePackOptions())
+        }
+        activeUiTheme = composeUiThemeForBuiltIn(activeBuiltInThemeId, null)
+    }
     private val qualification = SandboxLoader()
     private var contentInput: String? = null
     private var contentCandidate: ContentCandidate? = null
@@ -213,7 +272,19 @@ class BootstrapScreen(
     private lateinit var skirmishMapTab: TextButton
     private var matchStartupNotices: List<String> = emptyList()
     private var customRootText = if (initialContent) initialRoot.toAbsolutePath().normalize().toString() else ""
-    private val launch = SandboxLaunchState(SandboxConfiguration(initialRoot.toAbsolutePath().normalize(), SandboxOptions(deploymentEnabled = development && !touchControls), visualState?.selection ?: VisualAssetSelection()))
+    private val launch = SandboxLaunchState(
+        SandboxConfiguration(
+            initialRoot.toAbsolutePath().normalize(),
+            SandboxOptions(
+                deploymentEnabled = development && !touchControls,
+                cameraJoystickEnabled = userSettingsStore?.effective?.touchCameraJoystick ?: true,
+            ),
+            visualState?.selection ?: VisualAssetSelection(),
+        ),
+    )
+    init {
+        syncOutGameMapCatalogDirectories()
+    }
     private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
     private var loading = false
@@ -250,7 +321,7 @@ class BootstrapScreen(
         val workerQueueText: String?, val menu: ActionMenuView?,
         val hudMenuOpen: Boolean, val simPaused: Boolean, val simRate: OfflineRate, val language: UiLanguage,
         val constructionTypeId: String?, val placementState: PlacementState?, val groundActionName: String?, val sandboxPick: SandboxPick?,
-        val debugLayerState: HudDebugLayerState = HudDebugLayerState())
+        val debugLayerState: HudDebugLayerState = HudDebugLayerState(), val inMatchSettingsOpen: Boolean = false)
     private var lastHudState: HudState? = null
     private val drawnActionLayout = DrawnActionLayout()
 
@@ -260,6 +331,7 @@ class BootstrapScreen(
     }
 
     private fun createPresentation() {
+        syncOutGameMapCatalogDirectories()
         lastHudState = null
         drawnActionLayout.invalidate()
         val created = mutableListOf<() -> Unit>()
@@ -268,11 +340,19 @@ class BootstrapScreen(
         val initH = Gdx.graphics?.height?.takeIf { it > 0 } ?: 640
         val initPpc = Gdx.graphics?.ppcY?.takeIf { it > 0f } ?: 0f
         val initPpi = Gdx.graphics?.ppiY?.takeIf { it > 0f } ?: 0f
-        uiMetrics = UiScale.metricsFromDensity(initW, initH, touchControls, initPpc, initPpi)
+        uiMetrics = UiScale.metricsFromDensity(initW, initH, touchControls, initPpc, initPpi, userScaleMultiplier)
         viewport.unitsPerPixel = 1f / uiMetrics.scale
         viewport.update(initW, initH, true)
         battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
-        batch = SpriteBatch(8191).also { created += { it.dispose() } }
+        batch = SpriteBatch(8191).also {
+            it.setBlendFunctionSeparate(
+                GL20.GL_SRC_ALPHA,
+                GL20.GL_ONE_MINUS_SRC_ALPHA,
+                GL20.GL_ONE,
+                GL20.GL_ONE_MINUS_SRC_ALPHA,
+            )
+            created += { it.dispose() }
+        }
         shapes = ShapeRenderer().also { created += { it.dispose() } }
         val createdFonts = createSafeFontSet(uiMetrics.scale, collectFontPreloadStrings())
         fontSet = createdFonts
@@ -531,6 +611,383 @@ class BootstrapScreen(
             stage.addActor(it)
             it.zIndex = 0
         }
+        dynamicMapBackdrop = DynamicMapBackdrop(
+            skin = skin,
+            themeProvider = uiThemeProvider,
+            activeMapProvider = {
+                val selectedTmx = skirmishMapState.selected
+                val selectedCat = skirmishMapState.selectedCatalog
+                when {
+                    appShell.currentRoute == OutGameRoute.LOADING && ::matchLoadingScreen.isInitialized && matchLoadingScreen.currentSummary != null -> {
+                        val s = checkNotNull(matchLoadingScreen.currentSummary)
+                        s.mapId to s.mapDefinition
+                    }
+                    appShell.currentRoute == OutGameRoute.TEST_AND_SANDBOX && ::testAndSandboxScreen.isInitialized -> {
+                        if (testAndSandboxScreen.currentMode == TestSandboxMode.TEST_SCENES && testScenes.choice != null) {
+                            val ch = checkNotNull(testScenes.choice)
+                            ch.id to ch.scenario.map
+                        } else {
+                            freeSandboxLobbyState.selectedMap.id to freeSandboxLobbyState.selectedMap.mapDefinition
+                        }
+                    }
+                    selectedTmx != null -> selectedTmx.path.toString() to selectedTmx.map
+                    selectedCat != null -> selectedCat.entry.id to selectedCat.map
+                    else -> skirmishLobbyState.selectedMap.id to skirmishLobbyState.selectedMap.mapDefinition
+                }
+            },
+            deepScrimProvider = {
+                appShell.currentRoute != OutGameRoute.MAIN_MENU && appShell.currentRoute != OutGameRoute.LOADING
+            },
+        ).also {
+            stage.addActor(it)
+            it.zIndex = 0
+            created += { it.close() }
+        }
+        mainMenuScreen = MainMenuScreen(
+            skin = skin,
+            appShell = appShell,
+            themeProvider = uiThemeProvider,
+            assetResolverProvider = { activeThemeAssetResolver },
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            scaleProvider = { uiMetrics.scale },
+            touchControls = touchControls,
+            onSelectSkirmish = { showStartupPage(StartupPage.SETUP) },
+            onSelectSandbox = {
+                showStartupPage(StartupPage.DEVELOPMENT)
+            },
+            onSelectSettings = {
+                if (::settingsScreen.isInitialized) {
+                    settingsScreen.inMatchMode = false
+                    settingsScreen.selectCategory(SettingsCategory.GENERAL)
+                    settingsScreen.syncControlsFromStore()
+                }
+                openSettingsPage(StartupPage.RESOURCES)
+            },
+            onSelectQuit = {
+                if (touchControls) {
+                    appShell.handleBackKey(requireMainMenuExitConfirm = true)
+                    mainMenuScreen.syncModalInteractiveState()
+                    lastHudState = null
+                    if (presentationReady) updateHud()
+                } else {
+                    Gdx.app?.exit()
+                }
+            },
+        ).also {
+            stage.addActor(it)
+            created += { it.close() }
+        }
+        val createdControlIcons = OutGameControlIcons()
+        outGameControlIcons = createdControlIcons
+        created += {
+            createdControlIcons.close()
+            if (outGameControlIcons === createdControlIcons) outGameControlIcons = null
+        }
+        mapPickerScreen = MapPickerScreen(
+            skin = skin,
+            themeProvider = uiThemeProvider,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            onNavigateOpen = { showStartupPage(StartupPage.MAPS) },
+            onNavigateClose = {
+                appShell.handleBackKey(requireMainMenuExitConfirm = false)
+            },
+        ).also {
+            stage.addActor(it)
+            created += { it.close() }
+        }
+        skirmishLobbyScreen = SkirmishLobbyScreen(
+            skin = skin,
+            appShell = appShell,
+            lobbyState = skirmishLobbyState,
+            themeProvider = uiThemeProvider,
+            iconsProvider = { outGameControlIcons },
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            canStartProvider = { canStartFromSkirmishLobby() },
+            statusMessageProvider = {
+                loadError
+                    ?: skirmishMapState.error
+                    ?: packState.error
+                    ?: packState.compositionError
+                    ?: visualState?.error
+                    ?: (if (visualState?.canStart == false) visualState.operationLabel else null)
+            },
+            onNavigateBack = {
+                appShell.handleBackKey(requireMainMenuExitConfirm = false)
+            },
+            onOpenMapPicker = { currentId, onChosen ->
+                openMapPicker(currentId, MapPickerFilter.SKIRMISH) { chosen ->
+                    lobbyExplicitMapChosen = true
+                    chosen.tmxPath?.let { tmx ->
+                        skirmishMapState.select(
+                            tmx,
+                            currentOriginalDirectory(),
+                            chosen.localizedTitle(),
+                        )
+                    }
+                    onChosen(chosen)
+                }
+            },
+            onLoadCustomTmxPath = { rawPath ->
+                val origDir = currentOriginalDirectory()
+                if (skirmishMapState.selectPath(rawPath, origDir)) {
+                    lobbyExplicitMapChosen = true
+                    val sel = checkNotNull(skirmishMapState.selected)
+                    OutGameMapCatalog.findByIdOrPath(sel.path.toString())
+                        ?: OutGameMapCatalog.entryFromCustomTmx(sel.path, sel.displayName, sel.map)
+                } else {
+                    null
+                }
+            },
+            onStartMatch = { config ->
+                launchFromSkirmishLobby(config)
+            },
+            onConfigMutated = {
+                loadError = null
+                lastHudState = null
+                if (presentationReady) updateHud()
+            },
+        ).also {
+            stage.addActor(it)
+            created += { it.close() }
+        }
+        testAndSandboxScreen = TestAndSandboxScreen(
+            skin = skin,
+            freeSandboxState = freeSandboxLobbyState,
+            testScenes = testScenes,
+            development = development,
+            testScenarioSeed = testScenarioSeed,
+            alternateStartSeed = alternateStartSeed,
+            cameraStartSeed = cameraStartSeed,
+            themeProvider = uiThemeProvider,
+            iconsProvider = { outGameControlIcons },
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            canStartBaseProvider = { visualState?.canStart != false && packState.canStart },
+            canStartTestSceneProvider = { visualState?.canStart != false },
+            statusMessageProvider = {
+                loadError
+                    ?: skirmishMapState.error
+                    ?: packState.error
+                    ?: packState.compositionError
+                    ?: visualState?.error
+                    ?: (if (visualState?.canStart == false) visualState.operationLabel else null)
+            },
+            onNavigateBack = {
+                appShell.handleBackKey(requireMainMenuExitConfirm = false)
+            },
+            onOpenMapPicker = { currentId, onChosen ->
+                openMapPicker(currentId, MapPickerFilter.FREE_SANDBOX, onChosen)
+            },
+            onLoadCustomTmxPath = { rawPath ->
+                val origDir = currentOriginalDirectory()
+                val probe = SkirmishMapSelectionState()
+                if (probe.selectPath(rawPath, origDir)) {
+                    val sel = checkNotNull(probe.selected)
+                    OutGameMapCatalog.findByIdOrPath(sel.path.toString())
+                        ?: OutGameMapCatalog.entryFromCustomTmx(sel.path, sel.displayName, sel.map)
+                } else {
+                    loadError = probe.error
+                    null
+                }
+            },
+            onTestSceneMutated = {
+                if (visualState?.busy == true) visualState.cancel()
+                if (testScenes.selected) {
+                    lobbyExplicitMapChosen = false
+                    skirmishMapState.clear()
+                    if (::rootField.isInitialized && !rootField.isDisabled) customRootText = rootField.text
+                    testScenes.choice?.let { if (::rootField.isInitialized) rootField.text = it.root.toString() }
+                } else if (::rootField.isInitialized) {
+                    rootField.text = customRootText
+                }
+                val selected = testScenes.choice
+                evidence.record(
+                    "test-scenario-choice",
+                    mapOf(
+                        "selected" to testScenes.selected,
+                        "id" to selected?.id,
+                        "seed" to selected?.seed?.toString(),
+                        "inputRoot" to selected?.root?.toString(),
+                        "unitId" to selected?.content?.unitId,
+                        "error" to testScenes.error,
+                    ),
+                )
+                loadError = null
+                lastHudState = null
+                if (presentationReady) updateHud()
+            },
+            onEnterFreeSandbox = { config ->
+                launchFromFreeSandbox(config)
+            },
+            onLoadTestScene = { followScriptedCamera ->
+                launchFromTestScenes(followScriptedCamera)
+            },
+            onStateMutated = {
+                loadError = null
+                lastHudState = null
+                if (presentationReady) updateHud()
+            },
+        ).also {
+            stage.addActor(it)
+            created += { it.close() }
+        }
+        matchLoadingScreen = MatchLoadingScreen(
+            skin = skin,
+            themeProvider = uiThemeProvider,
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            onCancelLoading = { leaveMatch() },
+        ).also {
+            it.isVisible = false
+            stage.addActor(it)
+            created += { it.close() }
+        }
+        settingsScreen = SettingsScreen(
+            skin = skin,
+            appShell = appShell,
+            settingsStore = effectiveSettingsStore,
+            themeProvider = uiThemeProvider,
+            iconsProvider = { outGameControlIcons },
+            fontsProvider = { fontSet },
+            fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
+            showExtractOriginalButton = visualState?.supportsOriginalResourceExtraction == true || visualState?.supportsOriginalImageExtraction == true,
+            resourcePacksProvider = { buildSettingsResourcePackEntries() },
+            contentPacksProvider = { buildSettingsContentPackEntries() },
+            resourceStatusProvider = {
+                val err = visualState?.error
+                val msg = err ?: (if (visualState?.busy == true && !visualState.isPreviewBusy) visualState.operationLabel else null)
+                msgOrNull(msg) to (err != null)
+            },
+            contentStatusProvider = {
+                val err = packState.error ?: packState.compositionError
+                msgOrNull(err) to (err != null)
+            },
+            onNavigateBack = {
+                if (inMatchSettingsOpen) {
+                    closeInMatchSettings()
+                } else {
+                    appShell.handleBackKey(requireMainMenuExitConfirm = false)
+                }
+            },
+            onLanguageChanged = { lang ->
+                setLanguage(lang, persist = false)
+            },
+            onThemeChanged = { themeId ->
+                setBuiltInTheme(themeId, persist = false)
+            },
+            onPreviewUiScale = { mult ->
+                setUserScaleMultiplier(mult, persist = false)
+            },
+            onCommitUiScale = { mult ->
+                setUserScaleMultiplier(mult, persist = false)
+            },
+            onRevertUiScale = { mult ->
+                setUserScaleMultiplier(mult, persist = false)
+            },
+            onAudioOrControlsChanged = { updated ->
+                if (touchControls && launch.canEdit) {
+                    launch.configure(
+                        launch.configuration.copy(
+                            options = launch.configuration.options.copy(cameraJoystickEnabled = updated.touchCameraJoystick),
+                        ),
+                    )
+                    if (::cameraJoystickBox.isInitialized) cameraJoystickBox.isChecked = updated.touchCameraJoystick
+                }
+                lastHudState = null
+                if (presentationReady) updateHud()
+            },
+            onOpenResourceFolder = {
+                val dir = effectiveSettingsStore.file.parent?.resolve("resource-packs")
+                    ?: Paths.get("resource-packs").toAbsolutePath().normalize()
+                runCatching { java.nio.file.Files.createDirectories(dir) }
+                dir.toString()
+            },
+            onOpenContentFolder = {
+                val dir = effectiveSettingsStore.file.parent?.resolve("content-packs")
+                    ?: activeRoot.toAbsolutePath().normalize()
+                runCatching { java.nio.file.Files.createDirectories(dir) }
+                dir.toString()
+            },
+            onMoveResourcePack = { packId, delta ->
+                moveSettingsResourcePack(packId, delta)
+            },
+            onSetResourcePackEnabled = { packId, enabled ->
+                setSettingsResourcePackEnabled(packId, enabled)
+            },
+            onGetResourcePackOptionValues = { packId ->
+                effectiveSettingsStore.effective.optionsForPack(packId)
+            },
+            onSetResourcePackOption = { packId, optionId, value ->
+                setSettingsResourcePackOption(packId, optionId, value)
+            },
+            onResetResourcePackOptions = { packId ->
+                resetSettingsResourcePackOptions(packId)
+            },
+            onImportResourcePackPath = { rawPath ->
+                val vs = visualState
+                if (vs != null) {
+                    vs.cancelPreviewIfRunning()
+                    if (!vs.busy) {
+                        runCatching { vs.importImagePack(Path.of(rawPath)) }
+                            .onFailure { vs.reportImportError(it.message ?: it.toString()) }
+                    }
+                }
+            },
+            onExtractOriginalResourcePath = { rawPath ->
+                val vs = visualState
+                if (vs != null) {
+                    vs.cancelPreviewIfRunning()
+                    if (!vs.busy) {
+                        runCatching {
+                            if (vs.supportsOriginalResourceExtraction) vs.extractOriginalResources(Path.of(rawPath))
+                            else vs.extractOriginalImages(Path.of(rawPath))
+                        }.onFailure { vs.reportImportError(it.message ?: it.toString()) }
+                    }
+                }
+            },
+            onMoveContentPack = { packId, delta ->
+                moveSettingsContentPack(packId, delta)
+            },
+            onSetContentPackEnabled = { packId, enabled ->
+                setSettingsContentPackEnabled(packId, enabled)
+            },
+            onImportContentPackPath = { rawPath ->
+                if (!packState.busy) {
+                    runCatching {
+                        val p = Path.of(rawPath).toAbsolutePath().normalize()
+                        pendingAutoEnableContentPackId = "*"
+                        packState.edit(p)
+                        packState.checkPackage()
+                    }.onFailure {
+                        pendingAutoEnableContentPackId = null
+                        packState.fail(it.message ?: it.toString())
+                    }
+                }
+            },
+        ).also {
+            it.isVisible = false
+            stage.addActor(it)
+            created += { it.close() }
+        }
+        devTestScenesRelay = object : Actor() {
+            override fun draw(batch: Batch, parentAlpha: Float) = Unit
+        }.also { relay ->
+            relay.isVisible = false
+            relay.touchable = Touchable.enabled
+            relay.addListener(object : InputListener() {
+                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean = pointer == 0
+                override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
+                    if (pointer == 0 && x in 0f..relay.width && y in 0f..relay.height) {
+                        testAndSandboxScreen.selectMode(TestSandboxMode.TEST_SCENES)
+                        openSettingsPage(StartupPage.DEVELOPMENT)
+                    }
+                }
+            })
+            stage.addActor(relay)
+        }
         startupTitle = label("", 130f, 616f, 700f, 52f).apply { setAlignment(Align.center); setFontScale(1.9f) }
         previewHeading = label("", 178f, 449f, 256f, 52f).apply { setAlignment(Align.topLeft) }
         mapPreview = object : Actor() {
@@ -586,17 +1043,56 @@ class BootstrapScreen(
         }.apply { height = 34f }
         setupButton = button("Skirmish", 346f, 359f, 268f) { showStartupPage(StartupPage.SETUP) }
         menuBackButton = button("Back", 146f, 76f, 136f) {
-            showStartupPage(if (startupPage == StartupPage.SETUP) StartupPage.HOME else settingsBack)
+            appShell.handleBackKey(requireMainMenuExitConfirm = false)
         }
         quitButton = button("Quit", 346f, 187f, 268f) { Gdx.app.exit() }
         startButton = button("Start", 752f, 96f, 176f) { requestLoad() }
-        visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin, visualSettings?.let { it::createUiFont },
+        visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin,
             contentChoice = { testScenes.choice?.content ?: packState.choice() }) {
+            state.syncPackOptions(effectiveSettingsStore.effective.allEffectivePackOptions())
+            if (pendingStartupPackReconcile && !state.busy) {
+                reconcileSavedResourcePacksOnStartup()
+            }
+            if (!state.busy && state.error == null && !state.selection.temporary) {
+                val sessionNonBase = state.selection.packs.enabled.filter { it != UserSettings.BASE_RESOURCE_PACK_ID }
+                val nextSaved = sessionNonBase + UserSettings.BASE_RESOURCE_PACK_ID
+                if (effectiveSettingsStore.effective.enabledResourcePacks != nextSaved) {
+                    effectiveSettingsStore.update { it.copy(enabledResourcePacks = nextSaved) }
+                }
+            }
             evidence.recordVisualAssetMenu(state)
+            syncOutGameMapCatalogDirectories()
+            if (initialUiThemePacks.isEmpty()) {
+                val prepared = state.latestPreparedAssets
+                if (prepared != null) {
+                    applyLoadedUiTheme(composeUiThemeForBuiltIn(activeBuiltInThemeId, prepared), prepared.uiThemeAssetResolver)
+                } else {
+                    refreshLiveUiThemeFromSession()
+                }
+            }
+            if (::settingsScreen.isInitialized) settingsScreen.refreshPackLists()
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) } }
-        packPanel = ContentPackPanel(packState, skin, visualSettings?.let { it::createUiFont }) {
+        packPanel = ContentPackPanel(packState, skin) {
             if (visualState?.busy == true) visualState.cancel()
+            packState.checked?.let { checked ->
+                effectiveSettingsStore.update { cur ->
+                    cur.copy(knownContentPackPaths = cur.knownContentPackPaths + (checked.id to checked.root.toString()))
+                }
+                val wantedAuto = pendingAutoEnableContentPackId
+                if ((wantedAuto == "*" || wantedAuto == checked.id) && packState.canEnable && !packState.enabled) {
+                    pendingAutoEnableContentPackId = null
+                    packState.enable(true)
+                    effectiveSettingsStore.update { cur ->
+                        val filtered = cur.enabledContentPacks.filter { it != UserSettings.DEFAULT_BASE_CONTENT_PACK_ID && it != checked.id }
+                        cur.copy(enabledContentPacks = listOf(checked.id) + filtered + UserSettings.DEFAULT_BASE_CONTENT_PACK_ID)
+                    }
+                }
+            }
+            if (!packState.busy && packState.error != null) {
+                pendingAutoEnableContentPackId = null
+            }
+            if (::settingsScreen.isInitialized) settingsScreen.refreshPackLists()
             evidence.recordWhenEnabled("content-pack-menu") { mapOf("busy" to packState.busy,
                 "enabled" to packState.enabled, "canEnable" to packState.canEnable, "canStart" to packState.canStart,
                 "input" to packState.inputPath?.toString(), "checkedId" to packState.checked?.id,
@@ -621,7 +1117,34 @@ class BootstrapScreen(
             openSettingsPage(StartupPage.DEVELOPMENT)
         }
         skirmishMapTab = button("Maps & Scenes", 424f, 568f, 128f) {
-            openSettingsPage(StartupPage.MAPS)
+            openMapPicker(
+                currentMapId = skirmishMapState.selected?.path?.fileName?.toString()?.removeSuffix(".tmx")
+                    ?: OutGameMapCatalog.defaultEntry().id,
+                filter = MapPickerFilter.SKIRMISH,
+            ) { chosen ->
+                val tmx = chosen.tmxPath
+                if (tmx != null) {
+                    skirmishMapState.select(
+                        tmx,
+                        currentOriginalDirectory(),
+                        chosen.localizedTitle(),
+                    )
+                    if (skirmishMapState.hasSelection && testScenes.selected) {
+                        testScenes.useCustomContent()
+                        rootField.text = customRootText
+                    }
+                    evidence.record("skirmish-map-choice", mapOf(
+                        "selected" to skirmishMapState.hasSelection,
+                        "path" to skirmishMapState.selected?.path?.toString(),
+                        "catalogSceneId" to skirmishMapState.selectedCatalog?.entry?.id,
+                        "displayName" to skirmishMapState.activeDisplayName,
+                        "error" to skirmishMapState.error,
+                    ))
+                    loadError = null
+                    lastHudState = null
+                    updateHud()
+                }
+            }
         }
         val discoveredSandboxSeeds = buildList {
             testScenarioSeed?.let { add("Command Center" to it) }
@@ -631,7 +1154,7 @@ class BootstrapScreen(
         skirmishMapPanel = SkirmishMapPanel(
             skirmishMapState,
             skin,
-            originalDirectoryProvider = { visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory },
+            originalDirectoryProvider = { currentOriginalDirectory() },
             themeProvider = uiThemeProvider,
             sandboxPresetSeeds = discoveredSandboxSeeds,
             onSelectSandboxSeed = { seed ->
@@ -664,7 +1187,14 @@ class BootstrapScreen(
             it.setBounds(150f, 114f, 660f, 440f)
             stage.addActor(it)
             initialSkirmishMap?.let { preselected ->
-                if (skirmishMapState.select(preselected, visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory)) {
+                if (skirmishMapState.select(preselected, currentOriginalDirectory())) {
+                    lobbyExplicitMapChosen = true
+                    skirmishMapState.selected?.let { sel ->
+                        val entry = OutGameMapCatalog.findByIdOrPath(sel.path.toString())
+                            ?: OutGameMapCatalog.entryFromCustomTmx(sel.path, sel.displayName, sel.map)
+                        skirmishLobbyState.selectMapEntry(entry)
+                        if (::skirmishLobbyScreen.isInitialized) skirmishLobbyScreen.syncControlsFromState()
+                    }
                     it.refresh()
                 }
             }
@@ -674,10 +1204,10 @@ class BootstrapScreen(
                 }
             }
         }
-        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, cameraStartSeed, skin,
-            visualSettings?.let { it::createUiFont }) {
+        testScenePanel = TestScenarioPanel(testScenes, testScenarioSeed, alternateStartSeed, cameraStartSeed, skin) {
             if (visualState?.busy == true) visualState.cancel()
             if (testScenes.selected) {
+                lobbyExplicitMapChosen = false
                 skirmishMapState.clear()
                 if (!rootField.isDisabled) customRootText = rootField.text
                 testScenes.choice?.let { rootField.text = it.root.toString() }
@@ -691,7 +1221,7 @@ class BootstrapScreen(
         mapInput = SandboxInput({ session }, { graphics?.projection }, { x, y ->
             battlefieldPoint(x, y, Gdx.graphics.height, viewport.screenX, viewport.screenY,
                 viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
-        }, { !paused && session != null && !hudMenuOpen && !stepClock.isPaused }, { stage.keyboardFocus is TextField },
+        }, { !paused && session != null && !hudMenuOpen && !inMatchSettingsOpen && !stepClock.isPaused }, { stage.keyboardFocus is TextField },
             { Gdx.input.isKeyPressed(it) }, { updateHud() }, evidence, touchControls, { x, y ->
                 val bottom = Gdx.graphics.height - y
                 x >= viewport.screenX && x < viewport.screenX + viewport.screenWidth &&
@@ -761,9 +1291,7 @@ class BootstrapScreen(
                 }
                 override fun onMenuSettings() {
                     hudMenuOpen = false
-                    hudEvents.pushWarning(UiStrings.get("unsupported.settings"))
-                    lastHudState = null
-                    updateHud()
+                    openInMatchSettings()
                 }
                     override fun onToggleDebug() {
                     if (development && touchControls && session?.isOpen == true && !loading && !paused && !hudMenuOpen && !stepClock.isPaused) {
@@ -941,7 +1469,7 @@ class BootstrapScreen(
             },
             hasSelection = { session?.selectedIds?.isNotEmpty() == true },
             allowTouchHold = {
-                !paused && !hudMenuOpen && !stepClock.isPaused &&
+                !paused && !hudMenuOpen && !inMatchSettingsOpen && !stepClock.isPaused &&
                     mapInput.constructionTypeId == null && !mapInput.reclaimMode &&
                     !mapInput.repairMode && !mapInput.patrolMode && mapInput.groundActionName == null
             },
@@ -1061,11 +1589,11 @@ class BootstrapScreen(
                         if (bfPt != null) lastCursorWorld = proj.toWorld(bfPt.x, bfPt.y)
                     }
                 }
-                return !hudMenuOpen && !stepClock.isPaused && pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
+                return !hudMenuOpen && !inMatchSettingsOpen && !stepClock.isPaused && pointer == 0 && button == Input.Buttons.RIGHT && mapInput.cancelSandboxPick()
             }
 
             override fun mouseMoved(screenX: Int, screenY: Int): Boolean {
-                if (!touchControls && session != null) {
+                if (!touchControls && session != null && !inMatchSettingsOpen) {
                     graphics?.projection?.let { proj ->
                         val bfPt = battlefieldPoint(screenX, screenY, Gdx.graphics.height, viewport.screenX, viewport.screenY,
                             viewport.screenWidth, viewport.screenHeight, battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
@@ -1081,7 +1609,7 @@ class BootstrapScreen(
             }
 
             override fun keyDown(keycode: Int): Boolean {
-                if (development && !touchControls && session?.isOpen == true && !loading && !paused && !hudMenuOpen && !stepClock.isPaused) {
+                if (development && !touchControls && session?.isOpen == true && !loading && !paused && !hudMenuOpen && !inMatchSettingsOpen && !stepClock.isPaused) {
                     if (keycode == Input.Keys.F3) {
                         if (!f3Held) {
                             f3Held = true
@@ -1105,7 +1633,7 @@ class BootstrapScreen(
                         commandConsoleOpen = commandConsoleOpen,
                         appPaused = paused,
                         loading = loading,
-                        hudMenuOpen = hudMenuOpen,
+                        hudMenuOpen = hudMenuOpen || inMatchSettingsOpen,
                         touchControls = touchControls,
                         canDeploy = session?.canDeploy == true,
                         textFieldFocused = stage.keyboardFocus is TextField,
@@ -1116,10 +1644,31 @@ class BootstrapScreen(
                 if (!commandConsoleOpen) {
                     if (keycode == Input.Keys.ESCAPE || touchControls && keycode == Input.Keys.BACK) {
                         if (session == null) {
-                            if (loading) leaveMatch()
-                            else if (startupPage == StartupPage.SETUP) showStartupPage(StartupPage.HOME)
-                            else if (startupPage != StartupPage.HOME) showStartupPage(settingsBack)
-                            else return false
+                            if (::stage.isInitialized && UnifiedDropdown.closeAllOpenDropdowns(stage)) {
+                                lastHudState = null
+                                if (presentationReady) updateHud()
+                                return true
+                            }
+                            val action = appShell.handleBackKey(requireMainMenuExitConfirm = touchControls)
+                            if (presentationReady) {
+                                lastHudState = null
+                                updateHud()
+                            }
+                            return action != BackKeyAction.NONE
+                        }
+                        if (inMatchSettingsOpen) {
+                            if (::stage.isInitialized && UnifiedDropdown.closeAllOpenDropdowns(stage)) {
+                                lastHudState = null
+                                updateHud()
+                                return true
+                            }
+                            if (appShell.hasActiveModal) {
+                                appShell.closeModal()
+                            } else {
+                                closeInMatchSettings()
+                            }
+                            lastHudState = null
+                            updateHud()
                             return true
                         }
                         if (hudMenuOpen) {
@@ -1146,6 +1695,13 @@ class BootstrapScreen(
                             return true
                         }
                     }
+                    if (session == null && !loading && ::mainMenuScreen.isInitialized && mainMenuScreen.isVisible) {
+                        if (mainMenuScreen.handleKeyDown(keycode)) {
+                            lastHudState = null
+                            updateHud()
+                            return true
+                        }
+                    }
                     return false
                 }
                 if (keycode == Input.Keys.ESCAPE) {
@@ -1164,7 +1720,7 @@ class BootstrapScreen(
                     val usedCombo = f3ComboUsed
                     f3Held = false
                     f3ComboUsed = false
-                    if (!usedCombo && development && !touchControls && session?.isOpen == true && !loading && !paused && !hudMenuOpen && !stepClock.isPaused) {
+                    if (!usedCombo && development && !touchControls && session?.isOpen == true && !loading && !paused && !hudMenuOpen && !inMatchSettingsOpen && !stepClock.isPaused) {
                         toggleDebugLayer()
                     }
                     return true
@@ -1181,7 +1737,7 @@ class BootstrapScreen(
                         commandConsoleOpen = commandConsoleOpen,
                         appPaused = paused,
                         loading = loading,
-                        hudMenuOpen = hudMenuOpen,
+                        hudMenuOpen = hudMenuOpen || inMatchSettingsOpen,
                         touchControls = touchControls,
                         canDeploy = session?.canDeploy == true,
                         textFieldFocused = stage.keyboardFocus is TextField,
@@ -1194,11 +1750,21 @@ class BootstrapScreen(
         }, stage, object : InputAdapter() {
             override fun keyDown(keycode: Int): Boolean {
                 if (!touchControls || keycode != Input.Keys.BACK) return false
-                if (session != null) leaveMatch() else Gdx.app.exit()
-                return true
+                if (session != null) {
+                    leaveMatch()
+                    return true
+                }
+                if (::stage.isInitialized && UnifiedDropdown.closeAllOpenDropdowns(stage)) {
+                    return true
+                }
+                return appShell.handleBackKey(requireMainMenuExitConfirm = true) != BackKeyAction.NONE
             }
         }, mapInput)
         if (touchControls) Gdx.input.setCatchKey(Input.Keys.BACK, true)
+        if (userSettingsStore != null && !initialContent && !selectDefaultTestScenario) {
+            syncPrimaryContentPackFromSettingsStack()
+            reconcileSavedResourcePacksOnStartup()
+        }
         resize(Gdx.graphics.width, Gdx.graphics.height)
         presentationReady = true
         } catch (failure: Exception) {
@@ -1207,6 +1773,129 @@ class BootstrapScreen(
                 try { cleanup() } catch (error: Exception) { failure.addSuppressed(error) }
             }
             throw failure
+        }
+    }
+
+    private fun currentOriginalDirectory(): Path? {
+        val explicit = visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+        if (explicit != null && java.nio.file.Files.isDirectory(explicit)) {
+            return explicit
+        }
+        if (Gdx.app != null && userSettingsStore != null) {
+            discoveredSteamOriginalDir?.let { return it }
+        }
+        return explicit
+    }
+
+    private fun currentUserMapsDirectory(): Path? =
+        userSettingsStore?.file?.parent?.resolve("maps")
+
+    private fun syncOutGameMapCatalogDirectories() {
+        val origDir = currentOriginalDirectory()
+        visualState?.ensureOriginalDirectoryIfMissing(origDir)
+        OutGameMapCatalog.configureDirectories(origDir, currentUserMapsDirectory())
+        if (!lobbyExplicitMapChosen && skirmishMapState.selected == null && skirmishMapState.selectedCatalog == null) {
+            val catalogEntries = OutGameMapCatalog.entries(MapPickerFilter.SKIRMISH)
+            val realDefault = catalogEntries.firstOrNull() ?: return
+            if (catalogEntries.none { it.id == skirmishLobbyState.selectedMap.id }) {
+                skirmishLobbyState.selectMapEntry(realDefault)
+                if (::skirmishLobbyScreen.isInitialized) skirmishLobbyScreen.syncControlsFromState()
+            }
+            if (catalogEntries.none { it.id == freeSandboxLobbyState.selectedMap.id }) {
+                freeSandboxLobbyState.selectMapEntry(realDefault)
+                if (::testAndSandboxScreen.isInitialized) testAndSandboxScreen.syncControlsFromState()
+            }
+        }
+    }
+
+    private fun composeUiThemeForBuiltIn(
+        themeId: BuiltInUiThemeId,
+        visuals: PreparedVisualAssets? = activeVisuals ?: visualState?.latestPreparedAssets,
+    ): UiTheme {
+        val base = UiTheme.builtIn(themeId)
+        if (initialUiThemePacks.isNotEmpty()) {
+            return UiThemeComposer.composeFromPackDirectories(initialUiThemePacks, base = base)
+        }
+        val liveOptions = effectiveSettingsStore.effective.allEffectivePackOptions()
+        if (visuals != null && visuals.selection.packOptions == liveOptions) {
+            return visuals.composeUiTheme(base)
+        }
+        val vs = visualState
+        if (vs != null) {
+            val (livePatches, _) = vs.resolveLiveUiThemePatches(liveOptions)
+            val allEnabledChecked = vs.selection.packs.enabled
+                .filter { it != VisualAssetSource.ORIGINAL.resourcePackId }
+                .all { id -> vs.rows.any { r -> r.id == id && r.metadata != null } }
+            if (livePatches.isNotEmpty() || visuals == null || allEnabledChecked) {
+                return if (livePatches.isNotEmpty()) UiThemeComposer.compose(overridesHighToLow = livePatches, base = base) else base
+            }
+        }
+        if (visuals != null) {
+            return visuals.composeUiTheme(base)
+        }
+        return base
+    }
+
+    private fun refreshLiveUiThemeFromSession() {
+        if (initialUiThemePacks.isNotEmpty()) return
+        val vs = visualState
+        if (vs != null) {
+            val (patches, resolver) = vs.resolveLiveUiThemePatches(effectiveSettingsStore.effective.allEffectivePackOptions())
+            val nextTheme = if (patches.isNotEmpty()) {
+                UiThemeComposer.compose(overridesHighToLow = patches, base = UiTheme.builtIn(activeBuiltInThemeId))
+            } else {
+                UiTheme.builtIn(activeBuiltInThemeId)
+            }
+            applyLoadedUiTheme(nextTheme, resolver)
+        } else {
+            applyLoadedUiTheme(UiTheme.builtIn(activeBuiltInThemeId), activeThemeAssetResolver)
+        }
+    }
+
+    fun setBuiltInTheme(themeId: BuiltInUiThemeId, persist: Boolean = true) {
+        activeBuiltInThemeId = themeId
+        if (persist) {
+            userSettingsStore?.update {
+                it.withPackOption(UserSettings.BASE_RESOURCE_PACK_ID, UserSettings.BASE_THEME_OPTION_ID, themeId.code)
+            }
+        }
+        val liveOptions = effectiveSettingsStore.effective.allEffectivePackOptions()
+        visualState?.syncPackOptions(liveOptions)
+        if (::settingsScreen.isInitialized) {
+            settingsScreen.refreshPackLists()
+            if (settingsScreen.packOptionsModal.isOpen) {
+                settingsScreen.packOptionsModal.syncSelectionsFromStore()
+            }
+        }
+        val currentVisuals = activeVisuals ?: visualState?.latestPreparedAssets
+        val resolver = when {
+            initialUiThemePacks.isNotEmpty() -> UiThemeAssetResolver(initialUiThemePacks)
+            currentVisuals != null && currentVisuals.selection.packOptions == liveOptions -> currentVisuals.uiThemeAssetResolver
+            visualState != null -> visualState.resolveLiveUiThemePatches(liveOptions).second
+            else -> currentVisuals?.uiThemeAssetResolver ?: activeThemeAssetResolver
+        }
+        applyLoadedUiTheme(composeUiThemeForBuiltIn(themeId), resolver)
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    fun setLanguage(language: UiLanguage, persist: Boolean = true) {
+        UiStrings.currentLanguage = language
+        if (persist) {
+            userSettingsStore?.update { it.copy(language = language) }
+        }
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    fun setUserScaleMultiplier(multiplier: Float, persist: Boolean = true) {
+        val clamped = multiplier.coerceIn(UserSettings.MIN_UI_SCALE_MULTIPLIER, UserSettings.MAX_UI_SCALE_MULTIPLIER)
+        userScaleMultiplier = clamped
+        if (persist) {
+            userSettingsStore?.update { it.copy(uiScaleMultiplier = clamped) }
+        }
+        if (presentationReady && Gdx.graphics != null) {
+            resize(Gdx.graphics.width, Gdx.graphics.height)
         }
     }
 
@@ -1411,20 +2100,790 @@ class BootstrapScreen(
             stage.addActor(button)
         }
 
+    private fun msgOrNull(raw: String?): String? = raw?.takeIf { it.isNotBlank() }
+
+    private fun effectiveAudioVolumeMultiplier(): Float {
+        val eff = effectiveSettingsStore.effective
+        return if (eff.muted) 0f else (eff.masterVolume * eff.sfxVolume).coerceIn(0f, 1f)
+    }
+
+    private fun openInMatchSettings() {
+        if (session == null) return
+        closeCommandConsole()
+        cancelInput()
+        inMatchSettingsOpen = true
+        if (::settingsScreen.isInitialized) {
+            settingsScreen.inMatchMode = true
+            settingsScreen.syncControlsFromStore()
+        }
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    private fun closeInMatchSettings() {
+        if (!inMatchSettingsOpen) return
+        if (::settingsScreen.isInitialized) {
+            settingsScreen.dismissAllModals()
+            settingsScreen.inMatchMode = false
+        }
+        inMatchSettingsOpen = false
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    private fun buildSettingsResourcePackEntries(): List<DualColumnPackEntry> {
+        val lang = UiStrings.currentLanguage
+        val eff = effectiveSettingsStore.effective
+
+        val sessionRowsById = visualState?.rows.orEmpty().associateBy { it.id }
+        val nonBaseSavedEnabled = eff.enabledResourcePacks.filter {
+            it != UserSettings.BASE_RESOURCE_PACK_ID && !it.startsWith("ui-theme:")
+        }
+        val sessionEnabled = visualState?.selection?.packs?.enabled.orEmpty().filter {
+            it != UserSettings.BASE_RESOURCE_PACK_ID && !it.startsWith("ui-theme:")
+        }
+        val mergedUserEnabled = (nonBaseSavedEnabled + sessionEnabled).distinct()
+
+        fun formatOptionsSummary(packId: String, options: List<ResourcePackOption>): String? {
+            if (options.isEmpty()) return null
+            val activeMap = eff.optionsForPack(packId)
+            return options.joinToString(" · ") { opt ->
+                "${opt.localizedLabel(lang)}：${opt.localizedValueLabel(activeMap[opt.id], lang)}"
+            }
+        }
+
+        val result = ArrayList<DualColumnPackEntry>()
+        // ADR-014 layering: external user resource packs on top (reorderable), with `reforge:base`
+        // (hosting the 3 built-in UI themes via its declarative `theme` option) locked at bottom.
+        for (id in mergedUserEnabled) {
+            val row = sessionRowsById[id]
+            val meta = row?.metadata
+            val packOpts = meta?.options.orEmpty()
+            val title = if (meta != null) {
+                LocalizedMetadata.resourcePackName(meta, lang)
+            } else if (id == VisualAssetSource.ORIGINAL.resourcePackId) {
+                if (lang == UiLanguage.ZH) "本地原版表现资源包" else "Local Original Visual & Sound Pack"
+            } else {
+                id
+            }
+            val baseSub = if (meta != null) {
+                LocalizedMetadata.resourcePackDescription(meta, lang)
+            } else {
+                id
+            }
+            val optSummary = formatOptionsSummary(id, packOpts)
+            val sub = if (optSummary != null) "$baseSub · $optSummary" else baseSub
+            result += DualColumnPackEntry(
+                id = id,
+                title = title,
+                subtitle = sub,
+                enabled = true,
+                lockedBottom = false,
+                canReorder = true,
+                canDisable = true,
+                canEnable = row?.canEnable ?: true,
+                badgeStyle = if (id == VisualAssetSource.ORIGINAL.resourcePackId) PackIconBadgeStyle.ORIGINAL_RESOURCE else PackIconBadgeStyle.CUSTOM_RESOURCE,
+                customIconPath = row?.icon?.path,
+                errorText = row?.error,
+                options = packOpts,
+            )
+        }
+
+        val baseRow = sessionRowsById[UserSettings.BASE_RESOURCE_PACK_ID]
+        val baseMeta = baseRow?.metadata ?: BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER)
+        val baseOptSummary = formatOptionsSummary(UserSettings.BASE_RESOURCE_PACK_ID, baseMeta.options)
+        val baseDesc = LocalizedMetadata.resourcePackDescription(baseMeta, lang)
+        result += DualColumnPackEntry(
+            id = UserSettings.BASE_RESOURCE_PACK_ID,
+            title = LocalizedMetadata.resourcePackName(baseMeta, lang),
+            subtitle = if (baseOptSummary != null) "$baseDesc · $baseOptSummary" else baseDesc,
+            enabled = true,
+            lockedBottom = true,
+            canReorder = false,
+            canDisable = false,
+            canEnable = false,
+            badgeStyle = PackIconBadgeStyle.BASE_RESOURCE,
+            options = baseMeta.options,
+        )
+
+        // Available (`未启用`) column: disabled resource packs (retaining saved `resourcePackOptions` in `settings.json`)
+        val hasValidOriginalDir = currentOriginalDirectory()?.let { java.nio.file.Files.isDirectory(it) } == true
+        for (row in sessionRowsById.values) {
+            if (row.id != UserSettings.BASE_RESOURCE_PACK_ID && row.id !in mergedUserEnabled) {
+                val meta = row.metadata
+                val isOrigRow = row.id == VisualAssetSource.ORIGINAL.resourcePackId
+                val title = if (meta != null) {
+                    LocalizedMetadata.resourcePackName(meta, lang)
+                } else if (isOrigRow) {
+                    if (lang == UiLanguage.ZH) "本地原版表现资源包" else "Local Original Visual & Sound Pack"
+                } else {
+                    row.id
+                }
+                val sub = if (isOrigRow && !hasValidOriginalDir) {
+                    if (lang == UiLanguage.ZH) "未检测到本地原版安装目录" else "Local original game directory not detected"
+                } else if (meta != null) {
+                    LocalizedMetadata.resourcePackDescription(meta, lang)
+                } else if (isOrigRow) {
+                    if (lang == UiLanguage.ZH) "原版贴图与音效提取包" else "Extracted original sprites & sounds"
+                } else {
+                    row.id
+                }
+                result += DualColumnPackEntry(
+                    id = row.id,
+                    title = title,
+                    subtitle = sub,
+                    enabled = false,
+                    lockedBottom = false,
+                    canEnable = row.canEnable && (!isOrigRow || hasValidOriginalDir),
+                    badgeStyle = if (isOrigRow) PackIconBadgeStyle.ORIGINAL_RESOURCE else PackIconBadgeStyle.CUSTOM_RESOURCE,
+                    customIconPath = row.icon?.path,
+                    errorText = row.error,
+                    options = meta?.options.orEmpty(),
+                )
+            }
+        }
+        return result
+    }
+
+    private fun setSettingsResourcePackOption(packId: String, optionId: String, value: String) {
+        if (packId == UserSettings.BASE_RESOURCE_PACK_ID && optionId == UserSettings.BASE_THEME_OPTION_ID) {
+            effectiveSettingsStore.update { it.withPackOption(packId, optionId, value) }
+            setBuiltInTheme(BuiltInUiThemeId.fromCodeOrDefault(value), persist = false)
+            return
+        }
+        val rowMeta = visualState?.rows?.firstOrNull { it.id == packId }?.metadata
+        val optionMeta = rowMeta?.options?.firstOrNull { it.id == optionId }
+        if (inMatchSettingsOpen && optionMeta?.affectsMediaAssets == true) {
+            return
+        }
+        val vs = visualState
+        if (vs != null && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy && optionMeta?.affectsMediaAssets == true) {
+                return
+            }
+        }
+        val updated = effectiveSettingsStore.update { it.withPackOption(packId, optionId, value) }
+        if (vs != null) {
+            if (!vs.busy && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
+                runCatching {
+                    vs.setPackOption(packId, optionId, value)
+                    vs.apply(testScenes.choice?.content ?: packState.choice())
+                }
+            } else {
+                vs.syncPackOptions(updated.allEffectivePackOptions())
+            }
+        }
+        refreshLiveUiThemeFromSession()
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    fun applyResourcePackOptionForTest(packId: String, optionId: String, value: String, inMatch: Boolean = false, matchVisuals: PreparedVisualAssets? = null) {
+        if (matchVisuals != null) {
+            activeVisuals = matchVisuals
+        }
+        inMatchSettingsOpen = inMatch
+        setSettingsResourcePackOption(packId, optionId, value)
+    }
+
+    fun moveResourcePackForTest(packId: String, delta: Int) {
+        moveSettingsResourcePack(packId, delta)
+    }
+
+    fun reconcileSavedResourcePacksForTest() {
+        reconcileSavedResourcePacksOnStartup()
+    }
+
+    val currentVisualSelectionForTest: VisualAssetSelection?
+        get() = visualState?.selection
+
+    val currentVisualRowsForTest: List<ResourcePackMenuRow>
+        get() = visualState?.rows.orEmpty()
+
+    fun pollVisualStateForTest(): Boolean {
+        val vs = visualState ?: return false
+        val changed = vs.poll()
+        if (changed) {
+            vs.syncPackOptions(effectiveSettingsStore.effective.allEffectivePackOptions())
+            if (pendingStartupPackReconcile && !vs.busy) {
+                reconcileSavedResourcePacksOnStartup()
+            }
+            if (!vs.busy && vs.error == null && !vs.selection.temporary) {
+                val sessionNonBase = vs.selection.packs.enabled.filter { it != UserSettings.BASE_RESOURCE_PACK_ID }
+                val nextSaved = sessionNonBase + UserSettings.BASE_RESOURCE_PACK_ID
+                if (effectiveSettingsStore.effective.enabledResourcePacks != nextSaved) {
+                    effectiveSettingsStore.update { it.copy(enabledResourcePacks = nextSaved) }
+                }
+            }
+        }
+        return changed
+    }
+
+    private fun resetSettingsResourcePackOptions(packId: String) {
+        if (packId == UserSettings.BASE_RESOURCE_PACK_ID) {
+            effectiveSettingsStore.update { it.resetPackOptions(packId) }
+            setBuiltInTheme(BuiltInUiThemeId.DARK, persist = false)
+            return
+        }
+        val rowMeta = visualState?.rows?.firstOrNull { it.id == packId }?.metadata
+        val vs = visualState
+        if (vs != null && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy && rowMeta?.options?.any { it.affectsMediaAssets } == true) {
+                return
+            }
+        }
+        val updated = if (inMatchSettingsOpen && rowMeta != null) {
+            effectiveSettingsStore.update { cur ->
+                var acc = cur
+                for (opt in rowMeta.options) {
+                    if (!opt.affectsMediaAssets) {
+                        acc = acc.withPackOption(packId, opt.id, opt.defaultValue)
+                    }
+                }
+                acc
+            }
+        } else {
+            effectiveSettingsStore.update { it.resetPackOptions(packId) }
+        }
+        if (vs != null) {
+            vs.syncPackOptions(updated.allEffectivePackOptions())
+            if (!vs.busy && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
+                runCatching { vs.apply(testScenes.choice?.content ?: packState.choice()) }
+            }
+        }
+        refreshLiveUiThemeFromSession()
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    private fun moveSettingsResourcePack(packId: String, delta: Int) {
+        if (inMatchSettingsOpen || packId == UserSettings.BASE_RESOURCE_PACK_ID) return
+        val vs = visualState
+        if (!packId.startsWith("ui-theme:") && vs != null) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy || packId !in vs.selection.packs.enabled) return
+            val moved = runCatching {
+                vs.movePack(packId, delta)
+                vs.apply(testScenes.choice?.content ?: packState.choice())
+                true
+            }.getOrDefault(false)
+            if (!moved) return
+        }
+        effectiveSettingsStore.update { cur ->
+            val list = cur.enabledResourcePacks.filter { it != UserSettings.BASE_RESOURCE_PACK_ID }.toMutableList()
+            val idx = list.indexOf(packId)
+            val target = idx + delta
+            if (idx >= 0 && target in list.indices) {
+                java.util.Collections.swap(list, idx, target)
+            }
+            cur.copy(enabledResourcePacks = list + UserSettings.BASE_RESOURCE_PACK_ID)
+        }
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    private fun reconcileSavedResourcePacksOnStartup() {
+        val vs = visualState ?: return
+        if (vs.selection.temporary) {
+            pendingStartupPackReconcile = false
+            return
+        }
+        val origDir = currentOriginalDirectory()
+        vs.ensureOriginalDirectoryIfMissing(origDir)
+        val origPackId = VisualAssetSource.ORIGINAL.resourcePackId
+        val savedWantsOriginal = origPackId in effectiveSettingsStore.effective.enabledResourcePacks
+        val sessionHasOriginal = origPackId in vs.selection.packs.enabled
+        if (!savedWantsOriginal || sessionHasOriginal) {
+            pendingStartupPackReconcile = false
+            return
+        }
+        if (origDir != null && java.nio.file.Files.isDirectory(origDir)) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy) {
+                pendingStartupPackReconcile = true
+                return
+            }
+            pendingStartupPackReconcile = false
+            runCatching {
+                vs.ensureOriginalDirectoryIfMissing(origDir)
+                vs.setEnabled(origPackId, true)
+                vs.apply(testScenes.choice?.content ?: packState.choice())
+            }.onFailure {
+                effectiveSettingsStore.update { cur ->
+                    cur.copy(enabledResourcePacks = cur.enabledResourcePacks.filter { it != origPackId })
+                }
+            }
+        } else {
+            pendingStartupPackReconcile = false
+            effectiveSettingsStore.update { cur ->
+                cur.copy(enabledResourcePacks = cur.enabledResourcePacks.filter { it != origPackId })
+            }
+        }
+    }
+
+    private fun setSettingsResourcePackEnabled(packId: String, enabled: Boolean) {
+        if (inMatchSettingsOpen || packId == UserSettings.BASE_RESOURCE_PACK_ID) return
+        if (packId.startsWith("ui-theme:")) {
+            if (enabled) {
+                val nextTheme = BuiltInUiThemeId.fromCodeOrDefault(packId.removePrefix("ui-theme:"), BuiltInUiThemeId.DARK)
+                setBuiltInTheme(nextTheme, persist = true)
+            } else if (activeBuiltInThemeId != BuiltInUiThemeId.DARK) {
+                setBuiltInTheme(BuiltInUiThemeId.DARK, persist = true)
+            }
+            return
+        }
+        val vs = visualState
+        if (vs != null) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy) return
+            vs.ensureOriginalDirectoryIfMissing(currentOriginalDirectory())
+            val row = vs.rows.firstOrNull { it.id == packId }
+            if (row != null && (!enabled || row.canEnable)) {
+                val ok = runCatching {
+                    vs.setEnabled(packId, enabled)
+                    vs.apply(testScenes.choice?.content ?: packState.choice())
+                    true
+                }.getOrDefault(false)
+                if (!ok && enabled) return
+            } else if (enabled) {
+                return
+            }
+        }
+        effectiveSettingsStore.update { cur ->
+            val filtered = cur.enabledResourcePacks.filter { it != UserSettings.BASE_RESOURCE_PACK_ID && it != packId }
+            val next = if (enabled) listOf(packId) + filtered else filtered
+            cur.copy(enabledResourcePacks = next + UserSettings.BASE_RESOURCE_PACK_ID)
+        }
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    private fun resolveSixAPackRoot(): Path? = listOf(
+        Paths.get("SimulationTest/public/inputs/phase-six-a-sandbox/json/package"),
+        Paths.get("test-scenarios/inputs/phase-six-a-sandbox/json/package"),
+        Paths.get("../SimulationTest/public/inputs/phase-six-a-sandbox/json/package"),
+    ).firstOrNull { java.nio.file.Files.isRegularFile(it.resolve("pack.json")) }?.toAbsolutePath()?.normalize()
+
+    private fun buildSettingsContentPackEntries(): List<DualColumnPackEntry> {
+        val lang = UiStrings.currentLanguage
+        val eff = effectiveSettingsStore.effective
+        val baseId = UserSettings.DEFAULT_BASE_CONTENT_PACK_ID
+
+        val sixAId = "phase-six-a.json"
+        val sixARoot = resolveSixAPackRoot()
+
+        val checkedById = packState.packages.associateBy { it.id }
+        val allKnownNonBase = LinkedHashSet<String>().apply {
+            eff.enabledContentPacks.filter { it != baseId }.forEach(::add)
+            checkedById.keys.filter { it != baseId }.forEach(::add)
+            eff.knownContentPackPaths.keys.filter { it != baseId }.forEach(::add)
+            if (sixARoot != null) add(sixAId)
+        }
+
+        val enabledSet = eff.enabledContentPacks.filter { it != baseId }.toSet()
+        val result = ArrayList<DualColumnPackEntry>()
+
+        for (id in eff.enabledContentPacks) {
+            if (id == baseId) continue
+            val pkg = checkedById[id]
+            val root = pkg?.root ?: eff.knownContentPackPaths[id]?.let(Path::of) ?: (if (id == sixAId) sixARoot else null)
+            result += DualColumnPackEntry(
+                id = id,
+                title = LocalizedMetadata.contentPackName(id, pkg?.name ?: id, root, lang),
+                subtitle = LocalizedMetadata.contentPackDescription(id, id, root, lang),
+                enabled = true,
+                lockedBottom = false,
+                canEnable = true,
+                badgeStyle = PackIconBadgeStyle.CUSTOM_CONTENT,
+            )
+        }
+
+        result += DualColumnPackEntry(
+            id = baseId,
+            title = LocalizedMetadata.contentPackName(baseId, "Phase VII Sandbox Pack", null, lang),
+            subtitle = LocalizedMetadata.contentPackDescription(baseId, baseId, null, lang),
+            enabled = true,
+            lockedBottom = true,
+            canEnable = false,
+            badgeStyle = PackIconBadgeStyle.BASE_CONTENT,
+        )
+
+        for (id in allKnownNonBase) {
+            if (id !in enabledSet) {
+                val pkg = checkedById[id]
+                val root = pkg?.root ?: eff.knownContentPackPaths[id]?.let(Path::of) ?: (if (id == sixAId) sixARoot else null)
+                result += DualColumnPackEntry(
+                    id = id,
+                    title = LocalizedMetadata.contentPackName(id, pkg?.name ?: id, root, lang),
+                    subtitle = LocalizedMetadata.contentPackDescription(id, id, root, lang),
+                    enabled = false,
+                    lockedBottom = false,
+                    canEnable = true,
+                    badgeStyle = PackIconBadgeStyle.CUSTOM_CONTENT,
+                )
+            }
+        }
+        return result
+    }
+
+    private fun moveSettingsContentPack(packId: String, delta: Int) {
+        if (inMatchSettingsOpen || packId == UserSettings.DEFAULT_BASE_CONTENT_PACK_ID) return
+        effectiveSettingsStore.update { cur ->
+            val list = cur.enabledContentPacks.filter { it != UserSettings.DEFAULT_BASE_CONTENT_PACK_ID }.toMutableList()
+            val idx = list.indexOf(packId)
+            val target = idx + delta
+            if (idx >= 0 && target in list.indices) {
+                java.util.Collections.swap(list, idx, target)
+            }
+            cur.copy(enabledContentPacks = list + UserSettings.DEFAULT_BASE_CONTENT_PACK_ID)
+        }
+        syncPrimaryContentPackFromSettingsStack()
+    }
+
+    private fun setSettingsContentPackEnabled(packId: String, enabled: Boolean) {
+        if (inMatchSettingsOpen || packId == UserSettings.DEFAULT_BASE_CONTENT_PACK_ID) return
+        effectiveSettingsStore.update { cur ->
+            val filtered = cur.enabledContentPacks.filter { it != UserSettings.DEFAULT_BASE_CONTENT_PACK_ID && it != packId }
+            val next = if (enabled) listOf(packId) + filtered else filtered
+            cur.copy(enabledContentPacks = next + UserSettings.DEFAULT_BASE_CONTENT_PACK_ID)
+        }
+        syncPrimaryContentPackFromSettingsStack()
+    }
+
+    private fun syncPrimaryContentPackFromSettingsStack() {
+        val eff = effectiveSettingsStore.effective
+        val baseId = UserSettings.DEFAULT_BASE_CONTENT_PACK_ID
+        val topId = eff.enabledContentPacks.firstOrNull() ?: baseId
+        if (topId == baseId) {
+            pendingAutoEnableContentPackId = null
+            if (!packState.busy && packState.enabledPackages.isNotEmpty()) {
+                packState.disableAll()
+            }
+            val defaultRoot = initialRoot.toAbsolutePath().normalize()
+            customRootText = if (initialContent) defaultRoot.toString() else ""
+            if (::rootField.isInitialized && !testScenes.selected) {
+                rootField.text = customRootText
+            }
+            if (launch.canEdit) {
+                launch.configure(launch.configuration.copy(root = defaultRoot))
+            }
+            resetContentQualification()
+            return
+        }
+
+        val resolvedRoot = packState.packages.firstOrNull { it.id == topId }?.root
+            ?: eff.knownContentPackPaths[topId]?.let { runCatching { Path.of(it) }.getOrNull() }?.takeIf { java.nio.file.Files.exists(it) }
+            ?: (if (topId == "phase-six-a.json") resolveSixAPackRoot() else null)
+            ?: return
+        val normRoot = resolvedRoot.toAbsolutePath().normalize()
+        customRootText = normRoot.toString()
+        if (::rootField.isInitialized && !testScenes.selected) {
+            rootField.text = customRootText
+        }
+        if (launch.canEdit) {
+            launch.configure(launch.configuration.copy(root = normRoot))
+        }
+        if (!packState.busy) {
+            if (packState.packages.any { it.id == topId }) {
+                runCatching {
+                    packState.disableAll()
+                    packState.selectPackage(topId)
+                    if (packState.canEnable) packState.enable(true)
+                }
+            } else {
+                runCatching {
+                    pendingAutoEnableContentPackId = topId
+                    packState.edit(normRoot)
+                    packState.checkPackage()
+                }.onFailure {
+                    pendingAutoEnableContentPackId = null
+                }
+            }
+        }
+        resetContentQualification()
+    }
+
+    private fun syncStartupPageFromShell(route: OutGameRoute) {
+        if (route != OutGameRoute.MAP_PICKER && ::mapPickerScreen.isInitialized) {
+            mapPickerScreen.clearPendingSelectionCallback()
+        }
+        if (syncingShellRoute) return
+        val mapped = when (route) {
+            OutGameRoute.MAIN_MENU -> StartupPage.HOME
+            OutGameRoute.SKIRMISH_LOBBY -> StartupPage.SETUP
+            OutGameRoute.TEST_AND_SANDBOX -> StartupPage.DEVELOPMENT
+            OutGameRoute.SETTINGS -> activeSettingsPage
+            OutGameRoute.MAP_PICKER -> StartupPage.MAPS
+            OutGameRoute.LOADING -> startupPage
+        }
+        startupPage = mapped
+        if (mapped == StartupPage.HOME || mapped == StartupPage.SETUP || mapped == StartupPage.DEVELOPMENT) {
+            settingsBack = mapped
+        }
+        if (presentationReady && ::stage.isInitialized) {
+            UnifiedDropdown.closeAllOpenDropdowns(stage)
+            if (::modeBox.isInitialized) modeBox.hideList()
+            packPanel?.closeLists()
+            if (mapped == StartupPage.SETUP && ::skirmishLobbyScreen.isInitialized) {
+                skirmishLobbyScreen.syncControlsFromState()
+            } else if (mapped == StartupPage.DEVELOPMENT && ::testAndSandboxScreen.isInitialized) {
+                testAndSandboxScreen.syncControlsFromState()
+            } else if ((mapped == StartupPage.RESOURCES || mapped == StartupPage.CONTENT) && ::settingsScreen.isInitialized) {
+                settingsScreen.inMatchMode = false
+                settingsScreen.syncControlsFromStore()
+            }
+            stage.cancelTouchFocus()
+            stage.unfocusAll()
+            lastHudState = null
+            updateHud()
+        }
+    }
+
+    internal fun navigateStartupPageForTest(pageName: String) {
+        showStartupPage(StartupPage.valueOf(pageName))
+    }
+
+    internal fun cancelOrLeaveMatchForTest() {
+        leaveMatch()
+    }
+
+    internal val currentLaunchOptionsForTest: SandboxOptions
+        get() = launch.configuration.options
+
+    internal val currentLaunchRootForTest: Path
+        get() = launch.configuration.root
+
+    internal val currentSelectedSkirmishMapPathForTest: Path?
+        get() = skirmishMapState.selected?.path
+
+    internal fun recordSkirmishLaunchForTest(config: SkirmishLaunchConfig) {
+        lastSkirmishLaunchConfig = config
+        if (launch.canEdit) {
+            val updatedOpts = config.applyToSandboxOptions(
+                launch.configuration.options,
+                allowSandboxDeployment = (config.isFreeSandbox || development) && !touchControls,
+            )
+            launch.configure(launch.configuration.copy(options = updatedOpts))
+            if (::modeBox.isInitialized) modeBox.selectedIndex = updatedOpts.mode.ordinal
+            if (::shareBox.isInitialized) shareBox.isChecked = updatedOpts.shareAlliedVision
+            if (::noNukesBox.isInitialized) noNukesBox.isChecked = !updatedOpts.nukesEnabled
+            if (::deploymentBox.isInitialized) deploymentBox.isChecked = updatedOpts.deploymentEnabled
+        }
+    }
+
+    internal fun selectTestSceneSeedForTest(seed: Path) {
+        testScenes.choose(seed)
+        if (testScenes.selected) {
+            lobbyExplicitMapChosen = false
+            skirmishMapState.clear()
+        }
+    }
+
+    internal fun markLobbyExplicitMapChosenForTest(entry: MapPickerEntry) {
+        lobbyExplicitMapChosen = true
+        skirmishLobbyState.selectMapEntry(entry)
+    }
+
+    internal fun prepareSkirmishLobbyLaunchOptionsForTest(config: SkirmishLaunchConfig = skirmishLobbyState.buildLaunchConfig()): Boolean {
+        val preserveSelectedSeed = testScenes.selected && !lobbyExplicitMapChosen && skirmishMapState.selected == null
+        if (preserveSelectedSeed && testScenes.choice != null) {
+            applyCleanTestSceneLaunchOptions(followScriptedCamera = true)
+            return true
+        }
+        recordSkirmishLaunchForTest(config)
+        val preserveControlledInputs = initialContent && !lobbyExplicitMapChosen && skirmishMapState.selected == null && skirmishMapState.selectedCatalog == null
+        if (!preserveControlledInputs && skirmishMapState.selectedCatalog == null && config.tmxPath != null) {
+            val origDir = currentOriginalDirectory()
+            skirmishMapState.select(config.tmxPath, origDir, config.mapDisplayName)
+            if (skirmishMapState.hasSelection && testScenes.selected) {
+                testScenes.useCustomContent()
+                if (::rootField.isInitialized) rootField.text = customRootText
+            }
+        }
+        return false
+    }
+
+    private fun applyCleanTestSceneLaunchOptions(followScriptedCamera: Boolean) {
+        nextLoadFollowScriptedCamera = followScriptedCamera
+        lastSkirmishLaunchConfig = null
+        skirmishMapState.clear()
+        if (launch.canEdit) {
+            val opts = launch.configuration.options.copy(
+                mode = SandboxMode.NO_FOG,
+                shareAlliedVision = false,
+                deploymentEnabled = development && !touchControls,
+                nukesEnabled = true,
+            )
+            launch.configure(launch.configuration.copy(options = opts))
+            if (::modeBox.isInitialized) modeBox.selectedIndex = opts.mode.ordinal
+            if (::shareBox.isInitialized) shareBox.isChecked = opts.shareAlliedVision
+            if (::noNukesBox.isInitialized) noNukesBox.isChecked = !opts.nukesEnabled
+            if (::deploymentBox.isInitialized) deploymentBox.isChecked = opts.deploymentEnabled
+        }
+    }
+
+    private fun canStartFromSkirmishLobby(): Boolean {
+        if (visualState?.canStart == false || !packState.canStart) return false
+        if (skirmishMapState.selectedCatalog != null || testScenes.selected) return true
+        return skirmishLobbyState.selectedMap.tmxPath != null || canStartMatch()
+    }
+
+    private fun launchFromSkirmishLobby(config: SkirmishLaunchConfig) {
+        nextLoadFollowScriptedCamera = true
+        val delegatedToTestSeed = prepareSkirmishLobbyLaunchOptionsForTest(config)
+        if (delegatedToTestSeed) {
+            requestLoad()
+            return
+        }
+        evidence.recordWhenEnabled("skirmish-launch-config") {
+            mapOf(
+                "mapId" to config.mapId,
+                "winMode" to config.winMode.name,
+                "fogMode" to config.fogMode.name,
+                "startingCredits" to config.startingCredits.amount,
+                "incomeMultiplier" to config.moreRules.incomeMultiplier.factor,
+                "sharedVision" to config.moreRules.sharedVision,
+                "spawnAssignment" to config.moreRules.spawnAssignment.name,
+                "startingUnits" to config.moreRules.startingUnits.name,
+                "noNukes" to config.moreRules.noNukes,
+                "seatCount" to config.immutableSeats.size,
+                "isFreeSandbox" to config.isFreeSandbox,
+                "fastBuild" to config.fastBuild,
+            )
+        }
+        requestLoad()
+    }
+
+    private fun launchFromFreeSandbox(config: SkirmishLaunchConfig) {
+        nextLoadFollowScriptedCamera = true
+        recordSkirmishLaunchForTest(config)
+        if (config.tmxPath != null) {
+            val origDir = currentOriginalDirectory()
+            skirmishMapState.select(config.tmxPath, origDir, config.mapDisplayName)
+            if (skirmishMapState.hasSelection && testScenes.selected) {
+                testScenes.useCustomContent()
+                if (::rootField.isInitialized) rootField.text = customRootText
+            }
+        }
+        evidence.recordWhenEnabled("skirmish-launch-config") {
+            mapOf(
+                "mapId" to config.mapId,
+                "winMode" to config.winMode.name,
+                "fogMode" to config.fogMode.name,
+                "startingCredits" to config.startingCredits.amount,
+                "incomeMultiplier" to config.moreRules.incomeMultiplier.factor,
+                "sharedVision" to config.moreRules.sharedVision,
+                "spawnAssignment" to config.moreRules.spawnAssignment.name,
+                "startingUnits" to config.moreRules.startingUnits.name,
+                "noNukes" to config.moreRules.noNukes,
+                "seatCount" to config.immutableSeats.size,
+                "isFreeSandbox" to true,
+                "fastBuild" to config.fastBuild,
+            )
+        }
+        requestLoad()
+    }
+
+    private fun launchFromTestScenes(followScriptedCamera: Boolean) {
+        if (!development || !testScenes.selected || testScenes.choice == null) return
+        applyCleanTestSceneLaunchOptions(followScriptedCamera)
+        requestLoad()
+    }
+
     private fun showStartupPage(value: StartupPage) {
         if (loading || session != null) return
-        modeBox.hideList()
+        if (::modeBox.isInitialized) modeBox.hideList()
         packPanel?.closeLists()
+        if (value == StartupPage.CONTENT || value == StartupPage.RESOURCES) {
+            activeSettingsPage = value
+        }
+        val targetRoute = when (value) {
+            StartupPage.HOME -> OutGameRoute.MAIN_MENU
+            StartupPage.SETUP -> OutGameRoute.SKIRMISH_LOBBY
+            StartupPage.DEVELOPMENT -> OutGameRoute.TEST_AND_SANDBOX
+            StartupPage.MAPS -> OutGameRoute.MAP_PICKER
+            StartupPage.CONTENT, StartupPage.RESOURCES -> OutGameRoute.SETTINGS
+        }
+        val isLeafSubpage = targetRoute == OutGameRoute.SETTINGS || targetRoute == OutGameRoute.MAP_PICKER
+        val currentIsLeafSubpage = appShell.currentRoute == OutGameRoute.SETTINGS || appShell.currentRoute == OutGameRoute.MAP_PICKER
+        if (value != StartupPage.MAPS && ::mapPickerScreen.isInitialized) {
+            mapPickerScreen.clearPendingSelectionCallback()
+        }
         startupPage = value
-        stage.cancelTouchFocus()
-        stage.unfocusAll()
-        lastHudState = null
-        updateHud()
+        syncingShellRoute = true
+        try {
+            when {
+                targetRoute == OutGameRoute.MAIN_MENU -> appShell.resetTo(OutGameRoute.MAIN_MENU)
+                isLeafSubpage && currentIsLeafSubpage -> appShell.replace(targetRoute)
+                else -> appShell.popToOrPush(targetRoute)
+            }
+        } finally {
+            syncingShellRoute = false
+        }
+        if (presentationReady && ::stage.isInitialized) {
+            stage.cancelTouchFocus()
+            stage.unfocusAll()
+            lastHudState = null
+            updateHud()
+        }
+    }
+
+    fun openMapPicker(
+        currentMapId: String?,
+        filter: MapPickerFilter = MapPickerFilter.SKIRMISH,
+        onMapSelected: (MapPickerEntry) -> Unit,
+    ) {
+        val extraCustom = skirmishMapState.selected?.let { sel ->
+            val known = OutGameMapCatalog.findByIdOrPath(sel.path.toString())
+            if (known == null) listOf(OutGameMapCatalog.entryFromCustomTmx(sel.path, sel.displayName, sel.map)) else emptyList()
+        }.orEmpty()
+        mapPickerScreen.open(currentMapId, filter, extraCustom, onMapSelected)
     }
 
     private fun openSettingsPage(value: StartupPage) {
-        if (startupPage == StartupPage.HOME || startupPage == StartupPage.SETUP) settingsBack = startupPage
+        if (startupPage == StartupPage.HOME || startupPage == StartupPage.SETUP || startupPage == StartupPage.DEVELOPMENT) {
+            settingsBack = startupPage
+        }
         showStartupPage(value)
+    }
+
+    private fun buildCurrentLoadingSummary(request: SandboxLoad): MatchLoadingSummary {
+        loadingTipCounter = (loadingTipCounter % 5) + 1
+        val testScene = request.configuration.testScenario
+        if (testScene != null) {
+            return MatchLoadingSummary.fromTestScenario(testScene, request.configuration.options, tipIndex = loadingTipCounter)
+        }
+        val cfg = lastSkirmishLaunchConfig
+        if (cfg != null) {
+            val mapEntry = if (cfg.isFreeSandbox) {
+                freeSandboxLobbyState.selectedMap
+            } else {
+                skirmishLobbyState.selectedMap
+            }
+            return MatchLoadingSummary.fromLaunchConfig(cfg, mapEntry, tipIndex = loadingTipCounter)
+        }
+        val selTmx = skirmishMapState.selected
+        val fallbackEntry = if (selTmx != null) {
+            OutGameMapCatalog.findByIdOrPath(selTmx.path.toString())
+                ?: OutGameMapCatalog.entryFromCustomTmx(selTmx.path, selTmx.displayName, selTmx.map)
+        } else {
+            skirmishLobbyState.selectedMap
+        }
+        val synthesized = skirmishLobbyState.buildLaunchConfig()
+        return MatchLoadingSummary.fromLaunchConfig(synthesized, fallbackEntry, tipIndex = loadingTipCounter)
+    }
+
+    private fun computeLiveLoadProgress(): Float {
+        if (!loading) return 0f
+        val elapsedSec = ((System.nanoTime() - loadingStartedNanos).coerceAtLeast(0L) / 1_000_000_000.0).toFloat()
+        val timeRamp = (0.14f + elapsedSec * 0.55f).coerceAtMost(0.88f)
+        val stageFloor = when {
+            visualState?.preparationStatus != null -> 0.58f
+            else -> 0.18f
+        }
+        return maxOf(stageFloor, timeRamp)
     }
 
     private fun resetContentQualification() {
@@ -1461,7 +2920,7 @@ class BootstrapScreen(
     private fun canStartMatch(): Boolean = visualState?.canStart != false &&
         when {
             skirmishMapState.selectedCatalog != null -> true
-            skirmishMapState.selected != null -> packState.canStart && (packState.choice() != null || qualifiedContent?.isSuccess == true || rootField.text.trim().takeIf { it.isNotEmpty() }?.let { raw -> runCatching { java.nio.file.Files.isRegularFile(java.nio.file.Paths.get(raw).resolve("pack.json")) }.getOrDefault(false) } == true)
+            skirmishMapState.selected != null -> packState.canStart
             testScenes.selected -> testScenes.choice != null
             else -> packState.canStart && qualifiedContent?.isSuccess == true
         }
@@ -1496,9 +2955,17 @@ class BootstrapScreen(
             pendingLoad = request
             generation = request.generation
             activeRoot = request.configuration.root
+            loadingStartedNanos = acceptedNanos
             loading = true
             loadingDrawn = false
             loadError = null
+            appShell.beginLoading()
+            if (::matchLoadingScreen.isInitialized) {
+                matchLoadingScreen.beginLoading(
+                    summary = buildCurrentLoadingSummary(request),
+                    initialProgress = holdLoadingProgressOverride ?: 0.14f,
+                )
+            }
             evidence.record("load-request", mapOf("generation" to generation, "root" to activeRoot.toString(),
                 "acceptedNanos" to acceptedNanos, "menuEpoch" to menuEpoch,
                 "mode" to request.configuration.options.mode.name,
@@ -1518,7 +2985,8 @@ class BootstrapScreen(
             if (catalogEntry != null) {
                 loader.requestCatalogScenario(catalogEntry, activeRoot, contentPack, prepare)
             } else if (skirmishMapPath != null) {
-                val origDir = request.configuration.visuals.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                val origDir = request.configuration.visuals.originalDirectory?.takeIf { java.nio.file.Files.isDirectory(it) }
+                    ?: currentOriginalDirectory()
                 loader.requestSkirmishMap(skirmishMapPath, activeRoot, contentPack, origDir, request.configuration.skirmishMapName, prepare)
             } else if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
             else if (contentPack == null) loader.request(activeRoot, prepare)
@@ -1536,8 +3004,8 @@ class BootstrapScreen(
         launch.configure(launch.configuration.copy(options = launch.configuration.options.copy(deploymentEnabled = false)))
         if (::deploymentBox.isInitialized) deploymentBox.isChecked = false
         if (visualState?.busy == true) visualState.cancel()
-        startupPage = StartupPage.SETUP
-        settingsBack = StartupPage.SETUP
+        if (cancelled) appShell.cancelLoading() else appShell.returnToLobby()
+        syncStartupPageFromShell(appShell.currentRoute)
         lastHudState = null
         menuDrawn = false
         if (presentationReady) { stage.unfocusAll(); updateHud() }
@@ -1560,6 +3028,10 @@ class BootstrapScreen(
         f3Held = false
         f3ComboUsed = false
         lastCursorWorld = null
+        inMatchSettingsOpen = false
+        if (::settingsScreen.isInitialized) {
+            settingsScreen.inMatchMode = false
+        }
         hudMenuOpen = false
         hudEvents.clear()
         lastObservedEventSampleId = null
@@ -1597,7 +3069,8 @@ class BootstrapScreen(
         pendingLoad = null
         loading = false
         resetContentQualification()
-        startupPage = StartupPage.SETUP
+        appShell.cancelLoading()
+        syncStartupPageFromShell(appShell.currentRoute)
         loadError = failure.message ?: failure.toString()
         preserveFailure(failure) {
             evidence.recordWhenEnabled("load-error") { mapOf("generation" to generation, "message" to loadError) }
@@ -1609,7 +3082,11 @@ class BootstrapScreen(
     override fun render() {
         if (!presentationReady || disposed) return
         refreshContentQualification()
-        if (loading && loadingDrawn) loader.pollPrepared()?.fold(onSuccess = { loaded ->
+        if (loading && ::matchLoadingScreen.isInitialized) {
+            matchLoadingScreen.stepAnimation(Gdx.graphics.deltaTime.coerceAtLeast(0f))
+            matchLoadingScreen.progress = holdLoadingProgressOverride ?: computeLiveLoadProgress()
+        }
+        if (loading && loadingDrawn && holdLoadingProgressOverride == null) loader.pollPrepared()?.fold(onSuccess = { loaded ->
             val scenario = loaded.scenario
             val request = pendingLoad ?: return@fold
             var pendingGraphics: SandboxGraphics? = null
@@ -1622,7 +3099,8 @@ class BootstrapScreen(
                     "visualsPreparedNanos" to timing.visualsPreparedNanos, "completedNanos" to timing.completedNanos,
                     "observedNanos" to System.nanoTime())) }
                 val graphicsStartedNanos = System.nanoTime()
-                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = true, uiTheme = if (initialUiThemePacks.isEmpty()) loaded.visuals?.uiTheme ?: activeUiTheme else activeUiTheme)
+                val resolvedMatchTheme = composeUiThemeForBuiltIn(activeBuiltInThemeId, loaded.visuals)
+                pendingGraphics = SandboxGraphics.load(loaded, activeRoot, fullBattlefield = true, uiTheme = resolvedMatchTheme)
                 pendingGraphics.projection.resizeBattlefield(battlefieldWidth.toDouble(), battlefieldHeight.toDouble())
                 evidence.record("load-graphics-ready", mapOf("generation" to generation,
                     "startedNanos" to graphicsStartedNanos, "completedNanos" to System.nanoTime(),
@@ -1652,12 +3130,19 @@ class BootstrapScreen(
                         "visualLayerCount" to scenario.map.visualLayers.size,
                     ))
                 }
-                val camera = if (cameraCues.isEmpty()) null else OfflineCameraController(pendingGraphics.projection, generationEvidence)
+                val camera = if (cameraCues.isEmpty() || !nextLoadFollowScriptedCamera) null else OfflineCameraController(pendingGraphics.projection, generationEvidence)
                 pendingSounds = loaded.visuals?.resolvedSounds?.let { resources -> SoundPlayback(
                     pendingSession.consumeSounds(pendingGraphics.projection.soundListener()), resources,
-                    soundFactory, evidence.withGeneration(runGeneration)) }
+                    soundFactory, evidence.withGeneration(runGeneration)).also {
+                        it.volumeMultiplierProvider = ::effectiveAudioVolumeMultiplier
+                    } }
                 matchStartupNotices = loaded.startupNotices
                 hudEvents.clear()
+                inMatchSettingsOpen = false
+                if (::settingsScreen.isInitialized) {
+                    settingsScreen.dismissAllModals()
+                    settingsScreen.inMatchMode = false
+                }
                 hudMenuOpen = false
                 lastObservedEventSampleId = null
                 lastObservedActionResultIds.clear()
@@ -1678,10 +3163,11 @@ class BootstrapScreen(
                 activeVisuals = loaded.visuals
                 if (initialUiThemePacks.isEmpty()) {
                     loaded.visuals?.let { visuals ->
-                        applyLoadedUiTheme(visuals.uiTheme, visuals.uiThemeAssetResolver)
+                        applyLoadedUiTheme(composeUiThemeForBuiltIn(activeBuiltInThemeId, visuals), visuals.uiThemeAssetResolver)
                     }
                 }
                 session = pendingSession
+                appShell.enterMatch()
                 scriptedCamera = camera
                 if (touchControls) recordCameraJoystick("opened", null)
                 sounds = pendingSounds
@@ -1885,14 +3371,16 @@ class BootstrapScreen(
             } finally { ScissorStack.popScissors() }
             batch.projectionMatrix = viewport.camera.combined
             shapes.projectionMatrix = viewport.camera.combined
-            val miniStart = if (profilingMatchFrame) System.nanoTime() else 0L
-            graphics.drawMinimap(shapes, current.frame, batch)
-            if (profilingMatchFrame) hotspotProfiler.addClientStageNanos(HotspotStage.RENDER_MINIMAP, System.nanoTime() - miniStart)
-            if (cameraJoystickActive()) drawCameraJoystick()
+            if (!inMatchSettingsOpen) {
+                val miniStart = if (profilingMatchFrame) System.nanoTime() else 0L
+                graphics.drawMinimap(shapes, current.frame, batch)
+                if (profilingMatchFrame) hotspotProfiler.addClientStageNanos(HotspotStage.RENDER_MINIMAP, System.nanoTime() - miniStart)
+                if (cameraJoystickActive()) drawCameraJoystick()
+            }
         }
         val hudDrawStart = if (profilingMatchFrame) System.nanoTime() else 0L
         stage.act(Gdx.graphics.deltaTime); stage.draw()
-        if (current != null && ::hudOverlay.isInitialized && (hudMenuOpen || stepClock.isPaused)) {
+        if (current != null && !inMatchSettingsOpen && ::hudOverlay.isInitialized && (hudMenuOpen || stepClock.isPaused)) {
             batch.projectionMatrix = viewport.camera.combined
             batch.begin()
             hudOverlay.drawModalLayer(batch, 1f)
@@ -1916,7 +3404,18 @@ class BootstrapScreen(
         loadingDrawn = loading
         val drawnNanos = System.nanoTime()
         if (current == null && !loading && launch.canEdit) {
-            val available = startButton.isVisible && !startButton.isDisabled
+            val lobbyActive = startupPage == StartupPage.SETUP && ::skirmishLobbyScreen.isInitialized && skirmishLobbyScreen.isVisible
+            val sandboxActive = startupPage == StartupPage.DEVELOPMENT && ::testAndSandboxScreen.isInitialized && testAndSandboxScreen.isVisible
+            val startActor: Actor = when {
+                lobbyActive -> skirmishLobbyScreen.startMatchButton
+                sandboxActive -> testAndSandboxScreen.primaryLaunchButton
+                else -> startButton
+            }
+            val available = when {
+                lobbyActive -> skirmishLobbyScreen.startMatchButton.isVisible && skirmishLobbyScreen.startMatchButton.enabled
+                sandboxActive -> testAndSandboxScreen.primaryLaunchButton.isVisible && testAndSandboxScreen.primaryLaunchButton.enabled
+                else -> startButton.isVisible && !startButton.isDisabled
+            }
             if (!menuDrawn) {
                 menuEpoch++
                 evidence.record("startup-menu-drawn", mapOf("menuEpoch" to menuEpoch, "drawnNanos" to drawnNanos,
@@ -1925,10 +3424,11 @@ class BootstrapScreen(
                 menuDrawn = true; lastStartAvailable = null
             }
             if (lastStartAvailable != available) {
+                val stageBottomLeft = startActor.localToStageCoordinates(Vector2(0f, 0f))
                 evidence.record("start-availability", mapOf("menuEpoch" to menuEpoch, "drawnNanos" to drawnNanos,
                     "canStart" to available, "visualBusy" to visualState?.busy,
-                    "actionId" to "start-match", "bounds" to mapOf("x" to startButton.x, "y" to startButton.y,
-                        "width" to startButton.width, "height" to startButton.height)))
+                    "actionId" to "start-match", "bounds" to mapOf("x" to stageBottomLeft.x, "y" to stageBottomLeft.y,
+                        "width" to startActor.width, "height" to startActor.height)))
                 lastStartAvailable = available
             }
         } else if (current != null && !loading && firstDrawnGeneration != generation) {
@@ -1948,29 +3448,72 @@ class BootstrapScreen(
             entries += DrawnAction(id, actor, actor.text.toString(), enabled = !actor.isDisabled)
         }
         if (::hudOverlay.isInitialized && current != null) entries += hudOverlay.drawnActions()
-        if (current == null) { button("start-match", startButton); button("exit-match", exitButton) }
-        button("skirmish-setup", setupButton); button("startup-back", menuBackButton)
-        button("check-start-content", retryContentButton)
-        button("skirmish-maps", skirmishMapTab)
+        val lobbyVisible = current == null && !loading && ::skirmishLobbyScreen.isInitialized && skirmishLobbyScreen.isVisible
+        val sandboxVisible = current == null && !loading && ::testAndSandboxScreen.isInitialized && testAndSandboxScreen.isVisible
+        val settingsVisible = ::settingsScreen.isInitialized && settingsScreen.isVisible
+        val loadingVisible = current == null && loading && ::matchLoadingScreen.isInitialized && matchLoadingScreen.isVisible
+        val modernDualColVisible = lobbyVisible || sandboxVisible || settingsVisible
+        if (settingsVisible && current != null) {
+            entries += settingsScreen.drawnActions()
+        }
         if (current == null) {
+            if (!modernDualColVisible && !loadingVisible) button("start-match", startButton)
+            if (loadingVisible) {
+                entries += matchLoadingScreen.drawnActions()
+            } else if (!settingsVisible) {
+                button("exit-match", exitButton)
+            }
+        }
+        if (current == null && !loading && ::mainMenuScreen.isInitialized && mainMenuScreen.isVisible) {
+            entries += mainMenuScreen.drawnActions()
+        } else if (!loadingVisible && !settingsVisible) {
+            button("skirmish-setup", setupButton)
+        }
+        if (lobbyVisible) {
+            entries += skirmishLobbyScreen.drawnActions()
+            if (development && ::devTestScenesRelay.isInitialized && devTestScenesRelay.isVisible) {
+                entries += DrawnAction("test-scenes-tab", devTestScenesRelay, UiStrings.get("sandbox.mode.scenes"), enabled = true)
+            }
+        } else if (sandboxVisible) {
+            entries += testAndSandboxScreen.drawnActions()
+        } else if (current == null && settingsVisible) {
+            entries += settingsScreen.drawnActions()
+        } else if (current == null && !loading && ::mapPickerScreen.isInitialized && mapPickerScreen.isVisible) {
+            entries += mapPickerScreen.drawnActions()
+        } else if (!loadingVisible) {
+            button("startup-back", menuBackButton)
+        }
+        button("check-start-content", retryContentButton)
+        if (!modernDualColVisible && !loadingVisible) button("skirmish-maps", skirmishMapTab)
+        if (current == null && !loadingVisible) {
             rateButtons.forEach { (rate, actor) -> button("set-speed:${rate.multiplier}", actor) }
             button("pause-simulation", simulationPauseButton)
         }
         if (::hudDebugOverlay.isInitialized && development && debugLayerState.enabled) entries += hudDebugOverlay.drawnActions()
-        button("content-tab", packTab)
-        button("resource-tab", visualsTab)
-        button("test-scenes-tab", testSceneTab)
-        entries += DrawnAction("match-vision-mode", modeBox, modeBox.selected, enabled = !modeBox.isDisabled)
-        entries += DrawnAction("match-shared-vision", shareBox, shareBox.text.toString(), enabled = !shareBox.isDisabled)
+        if (!settingsVisible) {
+            button("content-tab", packTab)
+            button("resource-tab", visualsTab)
+        }
+        if (!sandboxVisible && !(lobbyVisible && development && ::devTestScenesRelay.isInitialized && devTestScenesRelay.isVisible)) {
+            button("test-scenes-tab", testSceneTab)
+        }
+        if (!modernDualColVisible && !loadingVisible) {
+            entries += DrawnAction("match-vision-mode", modeBox, modeBox.selected, enabled = !modeBox.isDisabled)
+            entries += DrawnAction("match-shared-vision", shareBox, shareBox.text.toString(), enabled = !shareBox.isDisabled)
+        }
         entries += DrawnAction("content-root", rootField, rootField.text, enabled = !rootField.isDisabled)
-        testScenePanel?.let { entries += it.drawnActions() }
+        if (!sandboxVisible) {
+            testScenePanel?.let { entries += it.drawnActions() }
+        }
         visualPanel?.let { entries += it.drawnActions() }
         entries += DrawnAction("sandbox-deployment", deploymentBox, deploymentBox.text.toString(),
             enabled = !deploymentBox.isDisabled)
         entries += DrawnAction("camera-joystick-enable", cameraJoystickBox, cameraJoystickBox.text.toString(),
             enabled = !cameraJoystickBox.isDisabled)
         entries += DrawnAction("camera-joystick-area", cameraJoystickArea, "Camera joystick", enabled = cameraJoystickActive())
-        entries += DrawnAction("no-nukes", noNukesBox, noNukesBox.text.toString(), enabled = !noNukesBox.isDisabled)
+        if (!modernDualColVisible && !loadingVisible) {
+            entries += DrawnAction("no-nukes", noNukesBox, noNukesBox.text.toString(), enabled = !noNukesBox.isDisabled)
+        }
         if (development && ::hudConsole.isInitialized && commandConsoleOpen && current?.canDeploy == true) {
             entries += hudConsole.drawnActions()
         }
@@ -2042,7 +3585,8 @@ class BootstrapScreen(
             current?.observation?.units.orEmpty().filter { it.unitId in selected }.associate { it.unitId to it.typeId },
             menuEpoch, mapOf("width" to Gdx.graphics.width, "height" to Gdx.graphics.height,
                 "screenX" to viewport.screenX, "screenY" to viewport.screenY,
-                "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight), projection)
+                "screenWidth" to viewport.screenWidth, "screenHeight" to viewport.screenHeight),
+            projection, viewport.worldWidth, viewport.worldHeight)
         drawnActionLayout.afterDraw(stage.root, frame, entries, drawnNanos)?.let { evidence.record("action-layout", it) }
     }
 
@@ -2122,7 +3666,7 @@ class BootstrapScreen(
                 if (result is com.rustedwarfare.reforge.core.sim.ActionResult.Rejected) {
                     val key = "${result.actionId}:${result.error.code}"
                     if (lastObservedActionResultIds.add(key)) {
-                        hudEvents.pushRejectionCode(result.error.code)
+                        hudEvents.pushRejectionCode(result.error.code, showRawCode = development || debugLayerState.enabled)
                     }
                 }
             }
@@ -2424,7 +3968,7 @@ class BootstrapScreen(
             launch.canEdit, loading, visualState?.preparationStatus, loadError, current != null, menu?.balance, menu?.factoryQueue,
             mapInput.patrolMode, mapInput.patrolPointCount, mapInput.reclaimMode, mapInput.repairMode, menu?.workerQueueText, menu,
             hudMenuOpen, stepClock.isPaused, stepClock.rate, UiStrings.currentLanguage,
-            mapInput.constructionTypeId, mapInput.constructionPreview?.state, mapInput.groundActionName, mapInput.sandboxPick, debugLayerState)
+            mapInput.constructionTypeId, mapInput.constructionPreview?.state, mapInput.groundActionName, mapInput.sandboxPick, debugLayerState, inMatchSettingsOpen)
         if (state == lastHudState) {
             if (current != null && ::hudOverlay.isInitialized) {
                 refreshDebugOverlay(current)
@@ -2638,14 +4182,64 @@ class BootstrapScreen(
     ) {
         val setup = current == null && !loading && startupPage == StartupPage.SETUP
         val home = current == null && !loading && startupPage == StartupPage.HOME
-        val managing = current == null && !loading && !setup && !home
+        val mapPicking = current == null && !loading && startupPage == StartupPage.MAPS
+        val sandboxPage = current == null && !loading && startupPage == StartupPage.DEVELOPMENT
+        val loadingActive = current == null && loading
+        val settingsPage = current == null && !loading && !setup && !home && !mapPicking && !sandboxPage
+        val managing = false
         val editable = launch.canEdit && !loading
         val sxOff = ((viewport.worldWidth - 960f) * 0.5f).coerceAtLeast(0f)
         val syOff = ((viewport.worldHeight - 640f) * 0.5f).coerceAtLeast(0f)
-        startupFrame.isVisible = current == null
-        if (home) startupFrame.setBounds(sxOff + 286f, syOff + 159f, 388f, 280f)
-        else startupFrame.setBounds(sxOff + 124f, syOff + 60f, 712f, 493f)
-        startupTitle.isVisible = current == null
+        dynamicMapBackdrop.isVisible = current == null
+        dynamicMapBackdrop.setBounds(0f, 0f, viewport.worldWidth, viewport.worldHeight)
+        dynamicMapBackdrop.zIndex = 0
+        mainMenuScreen.isVisible = home
+        if (home) {
+            mainMenuScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
+            mainMenuScreen.toFront()
+        }
+        mapPickerScreen.isVisible = mapPicking
+        if (mapPicking) {
+            mapPickerScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
+            mapPickerScreen.toFront()
+        }
+        skirmishLobbyScreen.isVisible = setup
+        if (setup) {
+            skirmishLobbyScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
+            skirmishLobbyScreen.toFront()
+            UnifiedDropdown.bringOpenDropdownsToFront(stage)
+        }
+        devTestScenesRelay.isVisible = setup && development && evidence !== ClientEvidence.NONE
+        if (devTestScenesRelay.isVisible) {
+            devTestScenesRelay.setBounds(viewport.worldWidth - 18f, viewport.worldHeight - 18f, 14f, 14f)
+            devTestScenesRelay.toFront()
+        }
+        testAndSandboxScreen.isVisible = sandboxPage
+        if (sandboxPage) {
+            testAndSandboxScreen.editable = editable
+            testAndSandboxScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
+            testAndSandboxScreen.toFront()
+            UnifiedDropdown.bringOpenDropdownsToFront(stage)
+        }
+        matchLoadingScreen.isVisible = loadingActive
+        if (loadingActive) {
+            matchLoadingScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
+            matchLoadingScreen.toFront()
+        }
+        val showSettingsOverlay = settingsPage || (current != null && inMatchSettingsOpen)
+        settingsScreen.isVisible = showSettingsOverlay
+        if (showSettingsOverlay) {
+            settingsScreen.inMatchMode = current != null
+            settingsScreen.resourcePackManager.busy = visualState?.let { it.busy && !it.isPreviewBusy } == true
+            settingsScreen.contentPackManager.busy = packState.busy
+            settingsScreen.refreshPackLists()
+            settingsScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
+            settingsScreen.toFront()
+            UnifiedDropdown.bringOpenDropdownsToFront(stage)
+        }
+        val legacySetup = false
+        startupFrame.isVisible = false
+        startupTitle.isVisible = false
         startupTitle.setBounds(sxOff + 130f, syOff + 564f, 700f, 52f)
         previewHeading.setBounds(sxOff + 178f, syOff + 397f, 256f, 52f)
         mapPreview.setBounds(sxOff + 178f, syOff + 213f, 256f, 174f)
@@ -2660,18 +4254,16 @@ class BootstrapScreen(
         testScenePanel?.setBounds(sxOff + 150f, syOff + 114f, 660f, 440f)
         startupTitle.setText(when {
             loading -> "Loading match"
-            home -> "RustedWarfare-Reforge"
             setup -> "Skirmish setup"
             startupPage == StartupPage.DEVELOPMENT -> "Development"
-            startupPage == StartupPage.MAPS -> "Maps & Scenarios"
             else -> "RustedWarfare-Reforge"
         })
-        setupButton.isVisible = home
-        retryContentButton.isVisible = setup && !testScenes.selected && !skirmishMapState.hasSelection && qualifiedContent?.isFailure == true
-        quitButton.isVisible = home
-        menuBackButton.isVisible = setup || managing
-        previewHeading.isVisible = setup
-        mapPreview.isVisible = setup
+        setupButton.isVisible = false
+        retryContentButton.isVisible = legacySetup && !testScenes.selected && !skirmishMapState.hasSelection && qualifiedContent?.isFailure == true
+        quitButton.isVisible = false
+        menuBackButton.isVisible = legacySetup || managing
+        previewHeading.isVisible = legacySetup
+        mapPreview.isVisible = legacySetup
         val selectedSummary = skirmishMapState.activePreviewSummary
         val prepared = testScenes.choice?.scenario ?: qualifiedContent?.getOrNull()?.scenario
         previewHeading.setText(when {
@@ -2697,53 +4289,51 @@ class BootstrapScreen(
             else "Choose a checked content folder and enable any content packs you want to use."
             else -> skirmishMapState.selectedCatalog?.entry?.knownLimitation ?: ""
         }.orEmpty()
-        startupNotice.isVisible = (loading || setup) && startupMessage.isNotEmpty()
+        startupNotice.isVisible = legacySetup && startupMessage.isNotEmpty()
         if (!startupStatus.textEquals(startupMessage)) {
             startupStatus.setText(startupMessage)
             startupNotice.scrollY = 0f
         }
         val packageOpening = contentCandidate?.content?.content?.openingPack != null
-        contentLabel.isVisible = setup && !packageOpening
+        contentLabel.isVisible = legacySetup && !packageOpening
         contentLabel.setBounds(sxOff + 488f, syOff + 420f, 296f, 24f)
-        rootField.isVisible = setup && !packageOpening
+        rootField.isVisible = legacySetup && !packageOpening
         rootField.setBounds(sxOff + 488f, syOff + 379f, 296f, 36f)
         rootField.isDisabled = touchControls || !editable || testScenes.selected
-        modeBox.isVisible = setup
+        modeBox.isVisible = legacySetup
         modeBox.setBounds(sxOff + 488f, syOff + 323f, 296f, 40f)
         modeBox.isDisabled = !editable
-        shareBox.isVisible = setup
+        shareBox.isVisible = legacySetup
         shareBox.setBounds(sxOff + 488f, syOff + 268f, 296f, 40f)
         shareBox.isDisabled = !editable
-        noNukesBox.isVisible = setup
+        noNukesBox.isVisible = legacySetup
         noNukesBox.setBounds(sxOff + 488f, syOff + 220f, 296f, 36f)
         noNukesBox.isDisabled = !editable
-        deploymentBox.isVisible = setup && development && !touchControls
+        deploymentBox.isVisible = legacySetup && development && !touchControls
         deploymentBox.setBounds(sxOff + 488f, syOff + 174f, 296f, 36f)
         deploymentBox.isDisabled = !editable || !development || touchControls
-        cameraJoystickBox.isVisible = setup && touchControls
+        cameraJoystickBox.isVisible = legacySetup && touchControls
         cameraJoystickBox.setBounds(sxOff + 488f, syOff + 174f, 296f, 36f)
         cameraJoystickBox.isDisabled = !editable || !touchControls
-        startButton.isVisible = setup || current != null
-        startButton.setText(if (setup) "Start" else "Reopen")
-        startButton.isDisabled = loading || setup && !canStartMatch()
-        if (setup) startButton.setBounds(sxOff + 666f, syOff + 76f, 148f, 40f)
-        exitButton.isVisible = loading || current != null
-        exitButton.setText(if (loading) "Cancel" else "Return")
-        if (loading) exitButton.setBounds(sxOff + 406f, syOff + 76f, 148f, 40f)
-        packTab.isVisible = setup || home
-        packTab.setBounds(sxOff + (if (home) 346f else 290f), syOff + (if (home) 305f else 76f), if (home) 268f else 108f, 40f)
-        visualsTab.isVisible = (setup || home) && visualPanel != null
-        visualsTab.setBounds(sxOff + (if (home) 346f else 404f), syOff + (if (home) 251f else 76f), if (home) 268f else 108f, 40f)
-        skirmishMapTab.isVisible = setup
+        startButton.isVisible = legacySetup || current != null
+        startButton.setText(if (legacySetup) "Start" else "Reopen")
+        startButton.isDisabled = loading || legacySetup && !canStartMatch()
+        if (legacySetup) startButton.setBounds(sxOff + 666f, syOff + 76f, 148f, 40f)
+        exitButton.isVisible = current != null
+        exitButton.setText("Return")
+        packTab.isVisible = legacySetup
+        packTab.setBounds(sxOff + 290f, syOff + 76f, 108f, 40f)
+        visualsTab.isVisible = legacySetup && visualPanel != null
+        visualsTab.setBounds(sxOff + 404f, syOff + 76f, 108f, 40f)
+        skirmishMapTab.isVisible = legacySetup
         skirmishMapTab.setBounds(sxOff + (if (retryContentButton.isVisible) 326f else 178f), syOff + 174f, 128f, 34f)
-        testSceneTab.isVisible = (setup || home) && development && testScenarioSeed != null && !touchControls
-        testSceneTab.setBounds(sxOff + (if (home) 346f else 520f), syOff + (if (home) 132f else 76f), if (home) 268f else 118f, 40f)
+        testSceneTab.isVisible = legacySetup && development && testScenarioSeed != null && !touchControls
+        testSceneTab.setBounds(sxOff + 520f, syOff + 76f, 118f, 40f)
         skirmishMapPanel?.let {
-            it.isVisible = managing && startupPage == StartupPage.MAPS
-            if (it.isVisible) it.refresh()
+            it.isVisible = false
         }
         testScenePanel?.let {
-            it.isVisible = managing && startupPage == StartupPage.DEVELOPMENT
+            it.isVisible = false
             it.setEditable(launch.canEdit && !loading)
             it.refresh(if (loading) state.preparationStatus ?: "Preparing scene..." else loadError)
         }
@@ -2770,15 +4360,16 @@ class BootstrapScreen(
     }
 
     private fun updateModernMatchHud(current: SandboxSession?, showConsole: Boolean) {
-        minimapActor.isVisible = current != null
-        val hudSnap = current?.let {
+        val hudChromeVisible = current != null && !inMatchSettingsOpen
+        minimapActor.isVisible = hudChromeVisible
+        val hudSnap = if (current != null && !inMatchSettingsOpen) {
             HudSidebarProjection.project(
-                session = it,
+                session = current,
                 menuOpen = hudMenuOpen,
                 simPaused = stepClock.isPaused,
                 activeRate = stepClock.rate,
             )
-        }
+        } else null
         lastHudSnapshot = hudSnap
         val worldW = graphics?.projection?.worldWidth ?: 1000.0
         val worldH = graphics?.projection?.worldHeight ?: 1000.0
@@ -2795,7 +4386,7 @@ class BootstrapScreen(
         )
         val railLayout = hudOverlay.layout
         battleActions.update(null, null, emptyList())
-        val actionListSnap = if (current != null && !paused) {
+        val actionListSnap = if (current != null && !inMatchSettingsOpen && !paused) {
             HudActionProjection.projectActionList(
                 session = current,
                 activeConstructionTypeId = mapInput.constructionTypeId,
@@ -2806,7 +4397,7 @@ class BootstrapScreen(
                 touchControls = touchControls,
             )
         } else null
-        val targetModeCard = if (current != null && !paused && !hudMenuOpen && !stepClock.isPaused) {
+        val targetModeCard = if (current != null && !inMatchSettingsOpen && !paused && !hudMenuOpen && !stepClock.isPaused) {
             HudActionProjection.projectTargetModeCard(
                 session = current,
                 constructionTypeId = mapInput.constructionTypeId,
@@ -2835,13 +4426,14 @@ class BootstrapScreen(
             language = UiStrings.currentLanguage,
         )
         hudGroupBar.update(
-            visible = current != null && !paused && !hudMenuOpen && !stepClock.isPaused,
-            joystickVisible = cameraJoystickActive(),
+            visible = hudChromeVisible && !paused && !hudMenuOpen && !stepClock.isPaused,
+            joystickVisible = !inMatchSettingsOpen && cameraJoystickActive(),
             countOf = { idx -> current?.groupCount(idx) ?: 0 },
             lang = UiStrings.currentLanguage,
         )
-        val showTouchDebugBtn = development && touchControls && current != null
-        val debugOpen = development && debugLayerState.enabled && current != null
+        val showTouchDebugBtn = development && touchControls && hudChromeVisible
+        val debugOpen = development && debugLayerState.enabled && hudChromeVisible
+        // Update debug overlay first so we know its leftColumnBottomY for notice shift
         refreshDebugOverlay(current)
         val noticesBelowY = if (debugOpen && ::hudDebugOverlay.isInitialized) hudDebugOverlay.leftColumnBottomY else null
         hudOverlay.update(
@@ -2867,6 +4459,9 @@ class BootstrapScreen(
                 if (showConsole && ::hudConsole.isInitialized) {
                     hudConsole.toFront()
                 }
+            }
+            if (inMatchSettingsOpen && ::settingsScreen.isInitialized && settingsScreen.isVisible) {
+                settingsScreen.toFront()
             }
         }
 
@@ -3141,7 +4736,7 @@ class BootstrapScreen(
         if (width > 0 && height > 0) {
             val ppc = Gdx.graphics?.ppcY?.takeIf { it > 0f } ?: 0f
             val ppi = Gdx.graphics?.ppiY?.takeIf { it > 0f } ?: 0f
-            uiMetrics = UiScale.metricsFromDensity(width, height, touchControls, ppc, ppi)
+            uiMetrics = UiScale.metricsFromDensity(width, height, touchControls, ppc, ppi, userScaleMultiplier)
             viewport.unitsPerPixel = 1f / uiMetrics.scale
             viewport.update(width, height, true)
             battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
@@ -3200,7 +4795,7 @@ class BootstrapScreen(
                 createPresentation()
                 graphics = session?.let {
                     val origRoot = TmxSkirmishScenarioBuilder.tilesetFallbackRoots(
-                        visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                        currentOriginalDirectory()
                     ).firstOrNull()
                     val bound = activeVisuals?.let { v -> it.renderResources.bindVisuals(v, originalTilesetRoot = origRoot) }
                         ?: it.renderResources.resolveTileAtlases(null, origRoot)
@@ -3227,7 +4822,9 @@ class BootstrapScreen(
             val current = session
             if (current != null && sounds == null) sounds = activeVisuals?.resolvedSounds?.let { resources -> SoundPlayback(
                 current.consumeSounds(checkNotNull(graphics).projection.soundListener()), resources,
-                soundFactory, evidence.withGeneration(generation)) }
+                soundFactory, evidence.withGeneration(generation)).also {
+                    it.volumeMultiplierProvider = ::effectiveAudioVolumeMultiplier
+                } }
         } catch (failure: Exception) {
             paused = true
             loadError = failure.message ?: failure.toString()
@@ -3252,8 +4849,14 @@ class BootstrapScreen(
         closing?.close()
     }
 
-    private fun cameraJoystickActive() =
-        touchControls && !paused && session?.options?.cameraJoystickEnabled == true
+    private fun cameraJoystickActive(): Boolean {
+        if (!touchControls || paused || hudMenuOpen || inMatchSettingsOpen || session == null) return false
+        return if (userSettingsStore != null) {
+            effectiveSettingsStore.effective.touchCameraJoystick
+        } else {
+            session?.options?.cameraJoystickEnabled == true
+        }
+    }
 
     private fun takeOverCamera(reason: String) {
         scriptedCamera?.takeOver(reason)
@@ -3315,9 +4918,27 @@ class BootstrapScreen(
         Gdx.input.inputProcessor = null
         val closingGraphics = graphics; graphics = null
         val closingCommandIcons = commandIcons; commandIcons = null
+        val closingControlIcons = outGameControlIcons; outGameControlIcons = null
         val closingFonts = fontSet; fontSet = null
         val closingFallback = fallbackFont; fallbackFont = null
-        listOf<() -> Unit>({ releaseSounds() }, { closingGraphics?.close() }, { closingCommandIcons?.close() }, { visualPanel?.close() }, { packPanel?.close() }, { testScenePanel?.close() }, { skirmishMapPanel?.close() }, { stage.dispose() }, {
+        listOf<() -> Unit>(
+            { releaseSounds() },
+            { closingGraphics?.close() },
+            { closingCommandIcons?.close() },
+            { closingControlIcons?.close() },
+            { if (::dynamicMapBackdrop.isInitialized) dynamicMapBackdrop.close() },
+            { if (::mainMenuScreen.isInitialized) mainMenuScreen.close() },
+            { if (::mapPickerScreen.isInitialized) mapPickerScreen.close() },
+            { if (::skirmishLobbyScreen.isInitialized) skirmishLobbyScreen.close() },
+            { if (::testAndSandboxScreen.isInitialized) testAndSandboxScreen.close() },
+            { if (::matchLoadingScreen.isInitialized) matchLoadingScreen.close() },
+            { if (::settingsScreen.isInitialized) settingsScreen.close() },
+            { visualPanel?.close() },
+            { packPanel?.close() },
+            { testScenePanel?.close() },
+            { skirmishMapPanel?.close() },
+            { stage.dispose() },
+            {
             if (::skin.isInitialized && skin.has("default-font", BitmapFont::class.java)) {
                 skin.remove("default-font", BitmapFont::class.java)
             }
@@ -3353,16 +4974,65 @@ class BootstrapScreen(
         if (::hudGroupBar.isInitialized) hudGroupBar.cancelHold()
         if (::hudActionPanel.isInitialized) hudActionPanel.clearTouchPreview()
         if (::mapInput.isInitialized) mapInput.cancel()
-        if (::stage.isInitialized) { stage.cancelTouchFocus(); stage.unfocusAll() }
+        if (::stage.isInitialized) {
+            UnifiedDropdown.closeAllOpenDropdowns(stage)
+            stage.cancelTouchFocus()
+            stage.unfocusAll()
+        }
     }
 
     override fun dispose() {
         if (disposed) return
         disposed = true
-        Gdx.input.inputProcessor = null
+        Gdx.input?.inputProcessor = null
         listOf<() -> Unit>({ leaveMatch() }, { loader.close() }, { qualification.close() }, { visualState?.close() }, { packState.close() }, { releasePresentation() }).forEach { cleanup ->
-            try { cleanup() } catch (failure: Exception) { Gdx.app.error("p001-dispose", "Cleanup failed", failure) }
+            try { cleanup() } catch (failure: Exception) { Gdx.app?.error("p001-dispose", "Cleanup failed", failure) }
         }
         evidence.record("application-disposed", emptyMap())
+    }
+
+    companion object {
+        private val discoveredSteamOriginalDir: Path? by lazy {
+            discoverLocalSteamRustedWarfareDir()
+        }
+
+        private fun discoverLocalSteamRustedWarfareDir(): Path? {
+            System.getProperty("reforge.original.dir")?.trim()?.takeIf { it.isNotEmpty() }?.let { prop ->
+                val p = runCatching { Path.of(prop).toAbsolutePath().normalize() }.getOrNull()
+                if (p != null && java.nio.file.Files.isDirectory(p.resolve("assets/maps/skirmish"))) return p
+            }
+            val candidateRoots = LinkedHashSet<Path>()
+            for (envName in listOf("ProgramFiles(x86)", "ProgramFiles")) {
+                System.getenv(envName)?.let { base ->
+                    runCatching { Path.of(base, "Steam") }.getOrNull()?.let { candidateRoots.add(it) }
+                }
+            }
+            for (drive in java.io.File.listRoots().orEmpty()) {
+                val dPath = runCatching { drive.toPath() }.getOrNull() ?: continue
+                for (sub in listOf("SteamLibrary", "Steam", "Program Files/Steam", "Program Files (x86)/Steam", "Games/Steam")) {
+                    runCatching { dPath.resolve(sub) }.getOrNull()?.let { candidateRoots.add(it) }
+                }
+            }
+            val libraryDirs = LinkedHashSet<Path>()
+            val vdfPathRegex = Regex(""""path"\s+"([^"]+)"""")
+            for (steamRoot in candidateRoots) {
+                libraryDirs.add(steamRoot)
+                val vdf = steamRoot.resolve("steamapps/libraryfolders.vdf")
+                if (java.nio.file.Files.isRegularFile(vdf)) {
+                    val text = runCatching { java.nio.file.Files.readString(vdf) }.getOrNull().orEmpty()
+                    for (m in vdfPathRegex.findAll(text)) {
+                        val rawLib = m.groupValues[1].replace("\\\\", "\\")
+                        runCatching { Path.of(rawLib).toAbsolutePath().normalize() }.getOrNull()?.let { libraryDirs.add(it) }
+                    }
+                }
+            }
+            for (lib in libraryDirs) {
+                val rw = lib.resolve("steamapps/common/Rusted Warfare")
+                if (java.nio.file.Files.isDirectory(rw.resolve("assets/maps/skirmish"))) {
+                    return rw
+                }
+            }
+            return null
+        }
     }
 }
