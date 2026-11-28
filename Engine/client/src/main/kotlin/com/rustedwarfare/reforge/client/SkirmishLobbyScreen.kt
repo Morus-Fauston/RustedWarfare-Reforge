@@ -33,6 +33,7 @@ class TacticalBattlefieldPreviewActor(
 
     private data class PreviewTexKey(
         val mapId: String,
+        val thumbnailPath: Path?,
         val themeId: String,
         val wellBits: Int,
         val boneHiBits: Int,
@@ -57,28 +58,42 @@ class TacticalBattlefieldPreviewActor(
         OutGameDraw.fillRect(batch, white, x, y, width, height, theme.colors.well, parentAlpha)
 
         val tex = ensureTexture(entry, theme)
+        val mapWorldW = (entry.mapDefinition.widthTiles * entry.mapDefinition.tileWidth).coerceAtLeast(1).toFloat()
+        val mapWorldH = (entry.mapDefinition.heightTiles * entry.mapDefinition.tileHeight).coerceAtLeast(1).toFloat()
+        val srcW = tex?.width?.takeIf { it > 0 }?.toFloat() ?: mapWorldW
+        val srcH = tex?.height?.takeIf { it > 0 }?.toFloat() ?: mapWorldH
+        val fitScale = min(width / srcW, height / srcH)
+        val fitW = (srcW * fitScale).roundToInt().toFloat().coerceIn(1f, width)
+        val fitH = (srcH * fitScale).roundToInt().toFloat().coerceIn(1f, height)
+        val fitX = (x + (width - fitW) * 0.5f).roundToInt().toFloat()
+        val fitY = (y + (height - fitH) * 0.5f).roundToInt().toFloat()
+
         if (tex != null) {
             batch.setColor(1f, 1f, 1f, parentAlpha)
-            batch.draw(tex, x, y, width, height)
+            batch.draw(tex, fitX, fitY, fitW, fitH)
         }
 
-        // Resolve normalized spawn coordinates for `1..maxSpawns`
+        // Resolve normalized spawn coordinates for `1..maxSpawns` inside aspect-fitted map rect
         val totalSpawns = maxSpawnsProvider().coerceIn(2, MatchSeatConfig.MAX_SEATS)
         val baseSpawns = entry.spawnPointsNormalized
         val seatsBySpawn = seatsProvider().associateBy { it.spawnPoint }
-        val pinSize = if (min(width, height) >= 340f) 24f else 20f
+        val pinSize = if (min(fitW, fitH) >= 300f) 24f else 20f
         val font = fontsProvider()?.keyBold ?: fontsProvider()?.smallMono ?: fallbackFontProvider()
 
         for (spawnIdx in 1..totalSpawns) {
             val (nx, ny) = if (spawnIdx - 1 < baseSpawns.size) {
                 baseSpawns[spawnIdx - 1]
             } else {
-                // Smooth fallback ring coordinates when seats exceed base map's declared spawn count
+                // Smooth fallback ring coordinates snapped to nearest walkable land tile when seats exceed base map's spawn count
                 val angle = -PI * 0.5 + (2.0 * PI * (spawnIdx - 1).toDouble() / totalSpawns.toDouble())
-                (0.50f + 0.34f * cos(angle).toFloat()) to (0.50f + 0.34f * sin(angle).toFloat())
+                snapNormalizedToWalkableLand(
+                    entry.mapDefinition,
+                    (0.50f + 0.34f * cos(angle).toFloat()).coerceIn(0.08f, 0.92f),
+                    (0.50f + 0.34f * sin(angle).toFloat()).coerceIn(0.08f, 0.92f),
+                )
             }
-            val px = (x + nx * width - pinSize * 0.5f).roundToInt().toFloat()
-            val py = (y + (1f - ny) * height - pinSize * 0.5f).roundToInt().toFloat()
+            val px = (fitX + nx * fitW - pinSize * 0.5f).roundToInt().toFloat()
+            val py = (fitY + (1f - ny) * fitH - pinSize * 0.5f).roundToInt().toFloat()
             val holder = seatsBySpawn[spawnIdx]
 
             if (holder != null) {
@@ -119,8 +134,10 @@ class TacticalBattlefieldPreviewActor(
 
     private fun ensureTexture(entry: MapPickerEntry, theme: UiTheme): Texture? {
         if (com.badlogic.gdx.Gdx.gl == null) return null
+        val thumbPath = entry.thumbnailPath?.takeIf { java.nio.file.Files.isRegularFile(it) }
         val key = PreviewTexKey(
             mapId = entry.id,
+            thumbnailPath = thumbPath,
             themeId = theme.id,
             wellBits = Color.rgba8888(theme.colors.well),
             boneHiBits = Color.rgba8888(theme.colors.boneHi),
@@ -128,15 +145,50 @@ class TacticalBattlefieldPreviewActor(
         )
         if (cachedKey == key && cachedTexture != null) return cachedTexture
         cachedTexture?.let { runCatching { it.dispose() } }
-        val pm = OutGameMapPreviewRenderer.renderTacticalPixmap(entry.mapDefinition, 512, 384, theme)
-        val tex = try {
-            Texture(pm).also { it.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest) }
-        } finally {
-            pm.dispose()
+        val tex = if (thumbPath != null) {
+            runCatching {
+                Texture(com.badlogic.gdx.Gdx.files.absolute(thumbPath.toString())).also {
+                    it.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
+                }
+            }.getOrNull()
+        } else {
+            val mw = entry.mapDefinition.widthTiles.coerceAtLeast(1)
+            val mh = entry.mapDefinition.heightTiles.coerceAtLeast(1)
+            val scale = 512f / max(mw, mh).toFloat()
+            val tw = (mw * scale).roundToInt().coerceIn(128, 512)
+            val th = (mh * scale).roundToInt().coerceIn(128, 512)
+            val pm = OutGameMapPreviewRenderer.renderTacticalPixmap(entry.mapDefinition, tw, th, theme)
+            try {
+                Texture(pm).also { it.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest) }
+            } finally {
+                pm.dispose()
+            }
         }
         cachedKey = key
         cachedTexture = tex
         return tex
+    }
+
+    private fun snapNormalizedToWalkableLand(map: com.rustedwarfare.reforge.core.content.MapDefinition, nx: Float, ny: Float): Pair<Float, Float> {
+        val w = map.widthTiles.coerceAtLeast(1)
+        val h = map.heightTiles.coerceAtLeast(1)
+        val c0 = (nx * w).toInt().coerceIn(0, w - 1)
+        val r0 = (ny * h).toInt().coerceIn(0, h - 1)
+        if (!map.blocking.isBlocked(c0, r0)) return nx to ny
+        val maxR = max(w, h)
+        for (rad in 1..maxR step 2) {
+            for (dy in -rad..rad step 2) {
+                for (dx in -rad..rad step 2) {
+                    if (kotlin.math.abs(dx) < rad - 1 && kotlin.math.abs(dy) < rad - 1) continue
+                    val cc = c0 + dx
+                    val rr = r0 + dy
+                    if (cc in 2 until (w - 2) && rr in 2 until (h - 2) && !map.blocking.isBlocked(cc, rr)) {
+                        return ((cc + 0.5f) / w).coerceIn(0.06f, 0.94f) to ((rr + 0.5f) / h).coerceIn(0.06f, 0.94f)
+                    }
+                }
+            }
+        }
+        return nx to ny
     }
 
     override fun close() {
@@ -432,7 +484,7 @@ class SkirmishLobbyScreen(
         localErrorNotice = null
         lobbyState.selectMapEntry(entry)
         winModeSegmented.setSelectedSilently(lobbyState.winMode)
-        slotTableView.syncRows(forceRebuild = false)
+        slotTableView.syncRows(forceRebuild = true)
         onConfigMutated()
     }
 
@@ -454,7 +506,7 @@ class SkirmishLobbyScreen(
         winModeSegmented.setOptionsAndSelection(SkirmishWinMode.entries, lobbyState.winMode)
         fogModeSegmented.setOptionsAndSelection(SkirmishFogMode.entries, lobbyState.fogMode)
         startingCreditsDropdown.setOptionsAndSelection(SkirmishStartingCredits.SKIRMISH_OPTIONS, lobbyState.startingCredits)
-        slotTableView.syncRows(forceRebuild = false)
+        slotTableView.syncRows(forceRebuild = true)
         if (moreSettingsModal.isVisible) {
             moreSettingsModal.syncFromState()
         }

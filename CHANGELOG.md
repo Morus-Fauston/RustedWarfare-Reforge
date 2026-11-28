@@ -1,5 +1,63 @@
 # Changelog
 
+## v0.6.8 (2026-11-28 15:11)
+
+### 新增
+
+- **资源包声明式表现变体选项与 `⚙` 包设置弹窗（`ResourcePackOptions` / `ResourcePackOptionsModal` / `PcAcceptedResourceStore`）**：在 `pack.json` 中扩展零脚本的声明式 `options`（仅支持 `enum` 与 `boolean` 静态变体覆写，严格拒绝滑块公式、路径穿越与保留的孤星主题），允许单个表现资源包按 `options` 声明顺序自上而下叠合包内多套 `uiTheme`、`images` 与 `sounds` 覆写层；桌面端导入器与 `PcAcceptedResourceStore` 在导入期全量静态审计并 HMAC 固化全部变体资产（含覆写同名声音 ID 的事件映射去重恢复），`UserSettingsStore` 在资源包移至「未启用」时保留变体记忆、对失效旧值静默回退 `default`、并在客户端跨重启异步目录扫描期间保持已存选项；左栏「已启用」中含可调项的资源包卡片右侧新增 4×4 超采样矢量齿轮 `⚙` 按钮与居中包设置弹窗，对局进行中支持纯 `UiTheme` 选项即时切换（且与内置主题切换互不冲掉）并只读锁定贴图/音效变体。
+- **真实实机可玩 `.tmx` 遭遇战地图库与原生缩略图接入（`OutGameMapCatalog` / `MapPickerScreen` / `SkirmishLobbyScreen`）**：自动探测并扫描已配置或本地原版安装目录下的 `assets/maps/skirmish/*.tmx` 官方遭遇战地图（同步支持用户私有 `maps/*.tmx`，严格隔离 `campaign / challenge / survival` 脚本图；无原版目录的公开环境自动回退包含新增 10 人图 `ring_atoll.tmx` 在内的 3 张随包自有可玩 `.tmx` 地图），剥离 `[pN]`、`[z;p10]`、`(Np)` 与 `[by ...]` 标签后按支持人数升序（`2P → 10P`）及名称排序；优先等比完整渲染随图原生 `*_map.png` 缩略图且不裁切四角基地、在选图卡片抑制重复出生点叠印，遭遇战大厅未手动改席位时切换 `2P / 3P` 地图自适应收敛默认席位数与出生点。
+
+### 调整
+
+- **构成主义测绘蓝图动态背景（`DynamicMapBackdrop` / `UiTheme`）**：移除原先将低分辨率 `.tmx` 碰撞网格线性拉伸放大的模糊背景，对齐八期界面演示稿 `mapSVG` 重绘 `80×45` 格（每格 `20px` 锐利 `1px` 网格线、双频平滑等高色块、正弦蜿蜒河道与 `2×2` 四点矿簇）的构成主义测绘蓝图，通过 `UiTheme.outGame` 新增的 6 项 `backdrop*` 令牌驱动 `暗黑 / 白色 / 骨白` 三套主题配色并以最近邻采样整数像素缓慢平移（零模拟开销）。
+- **内置三套主题单一真值收编与主菜单 65 单位开局闭环（`SettingsScreen` / `BootstrapScreen` / `WindowsLaunchOptions` / `TmxTilesetSupport`）**：移除「设置 → 画面」中重复的「界面主题」行与「设置 → 资源包」中的 3 个 `ui-theme:*` 虚拟包，将 `暗黑 / 白色 / 骨白` 统一收编为底部常驻 `内置基础资源包`（`reforge:base`）的 `界面主题` 选项；将非开发态正常启动的默认内容根从 19 单位 `phase-six-a-sandbox` 对齐至 65 单位 `phase-seven-sandbox/json/package`，并在 `.tmx` 开局构建器中改为先落位全部建筑再落位机动单位以消除建筑占地与初始单位重叠触发的 `invalid-spawn`，确保选定任意真实地图点击「开始对局」或「进入自由沙盒」即可直接进图实机游玩。
+
+### 技术
+
+- **全量原版地图初始化校验、变体托管回归与三主题实窗双审**：更新局外展示版本号至 `v0.6.8` 并在 `CONTEXT.md` 登记「表现变体选项」领域术语；新增 `UiP004PackOptionsAndRealMapsTest`（含本地存在原版目录时全量 48 张官方遭遇战 `.tmx` 地图与 3 张随包地图 `SimulationContext.initialize` 零拒绝核验）与 `PcPackVariantOptionsTest`（覆盖多选项叠层、同名声音覆写托管恢复、跨重启异步 `CATALOG` 保持、局内组合切主题及防篡改 HMAC 校验）；全套客户端与 PC 单测、`public_batch.py --kind short`（`6/6` 套公开短测）、`:pc:installDist`、Android 四架构 Debug APK 构建与宿主校验、双根 `workspace_layout.py` 全绿；`1920×1080` 三主题与 `960×640` 共 32 张真 GL 实窗截图及 4 张总览拼图经全新上下文独立视觉审查 `APPROVED`，代码与规格经独立非作者整审及 R02 复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `CONTEXT.md` | 新增「表现变体选项」领域术语定义与边界说明 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ResourcePackOptions.kt` | **新增** — 资源包声明式 `enum` / `boolean` 变体选项模型、校验器与包内覆写解析 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ResourcePackOptionsModal.kt` | **新增** — 资源包 `⚙` 设置居中模态弹窗（支持局内纯 `UiTheme` 即时切换与媒体项只读锁定） |
+| `Engine/client/src/main/resources/maps/skirmish/ring_atoll.tmx` | **新增** — 随包自有可玩 10 人环礁 `.tmx` 回退遭遇战地图 |
+| `Engine/client/src/main/resources/resource-packs/base/pack.json` | 为 `reforge:base` 声明内置 `dark / white / bone` 三套主题枚举选项 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiTheme.kt` | 新增 6 项 `backdrop*` 测绘蓝图颜色令牌解析与序列化 |
+| `Engine/client/src/main/resources/ui/theme.json` | 补齐暗黑主题演示稿同构 `backdrop*` 蓝图色值 |
+| `Engine/client/src/main/resources/ui/themes/white.json` | 补齐纯白主题演示稿同构 `backdrop*` 蓝图色值 |
+| `Engine/client/src/main/resources/ui/themes/bone.json` | 补齐骨白主题演示稿同构 `backdrop*` 蓝图色值 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DynamicMapBackdrop.kt` | 重写演示稿同款构成主义测绘蓝图背景渲染器与真实 `.tmx` 遭遇战地图扫描目录 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ResourcePackMetadata.kt` | 接入 `pack.json` `options` 字段解析与严格成员校验 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/PreparedImagePack.kt` | 扩展包级多变体覆写持有结构与按声明顺序解析接口 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/VisualAssetSelection.kt` | 纳入 `packOptions` 选择快照与单包选项辅助方法 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/VisualAssetSettingsSession.kt` | 支持跨重启异步目录检查保持 `packOptions` 及内存实时 `UiTheme` 叠层解析 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UserSettingsStore.kt` | 持久化 `resourcePackOptions`（禁用保留记忆）并与内置 `reforge:base` 主题选项双向同步 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/DualColumnPackManagerView.kt` | 已启用且含 `options` 的资源包行渲染 4×4 超采样矢量齿轮 `⚙` 按钮 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SettingsScreen.kt` | 移除画面页重复主题行，挂载 `ResourcePackOptionsModal` 与局内媒体变体锁定提示 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MapPickerScreen.kt` | 支持原生 `*_map.png` 等比卡片缩略图渲染并抑制重复出生点叠印 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLaunchConfig.kt` | 未手动自定义席位时切换 `2P/3P` 地图自动匹配默认席位数 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SkirmishLobbyScreen.kt` | 右栏大幅预览支持原生 `*_map.png` 完整等比贴合与额外出生点陆地吸附 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/MatchLoadingScreen.kt` | 加载卡片 `1:1` 地图缩略图同步支持原生 `*_map.png` 等比渲染 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/TmxTilesetSupport.kt` | `.tmx` 开局构建先落位建筑再落位机动单位，消除建筑占地冲突 `invalid-spawn` |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/SandboxLoader.kt` | 补充 `.tmx` 开局对 `phase-seven-sandbox/json/package` 的优先回退解析 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/BootstrapScreen.kt` | 移除虚拟主题包，接通包变体实时主题叠层与本地原版地图库自动探测 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/UiStrings.kt` | 新增资源包变体设置弹窗与局内媒体项锁定中英双语文案 |
+| `Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client/ReforgeVersion.kt` | 更新局外展示版本号至 `v0.6.8` |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcResourcePackImporter.kt` | 导入期全量静态解析并审计资源包全部变体 `uiTheme / images / sounds` 文件 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcAcceptedResourceStore.kt` | 将全部变体资产纳入受管目录与 HMAC `receipt.json` 固化及同名声音去重恢复 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcVisualAssetSettings.kt` | 按 `options` 声明顺序合成激活变体并对非托管包执行运行时二次防篡改哈希校验 |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/PcDiskAuditStore.kt` | 磁盘审计复用指纹纳入排序后的激活 `packOptions` |
+| `Engine/pc/src/main/kotlin/com/rustedwarfare/reforge/pc/WindowsLaunchOptions.kt` | 非开发态正常启动默认输入根对齐 65 单位 `phase-seven-sandbox/json/package` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004MainMenuAndMapPickerTest.kt` | 适配真实 `.tmx` 地图目录与测绘蓝图背景令牌单测断言 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004SettingsAndPacksTest.kt` | 适配去重后的画面设置、移除虚拟主题包与 `reforge:base` 齿轮选项单测 |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/UiP004PackOptionsAndRealMapsTest.kt` | **新增** — 测绘蓝图背景、变体选项校验/局内锁定、真实地图库扫描与全量地图初始化单测 |
+| `Engine/pc/src/test/kotlin/com/rustedwarfare/reforge/pc/PcPackVariantOptionsTest.kt` | **新增** — 多变体包 HMAC 托管恢复、同名声音覆写、跨重启保持与默认 65 单位进图单测 |
+
+---
+
 ## v0.6.7 (2026-11-28 06:33)
 
 ### 修复

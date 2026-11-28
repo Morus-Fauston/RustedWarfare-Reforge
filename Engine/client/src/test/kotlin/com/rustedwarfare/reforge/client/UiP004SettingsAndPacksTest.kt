@@ -68,6 +68,7 @@ class UiP004SettingsAndPacksTest {
                 lockedBottom = true,
                 canEnable = false,
                 badgeStyle = PackIconBadgeStyle.BASE_RESOURCE,
+                options = BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER).options,
             )
             for (id in knownResIds) {
                 if (id !in enabledNonBase) {
@@ -209,11 +210,18 @@ class UiP004SettingsAndPacksTest {
         assertEquals(0.40f, reloadedAudio.sfxVolume, 1e-3f)
         assertTrue(reloadedAudio.muted)
 
-        // 3. Video -> built-in theme switch (`DARK -> BONE -> WHITE`, strictly no `nasa`)
+        // 3. Video -> contains ONLY `UI 缩放` (zero duplicate `settings-theme` row); built-in themes live in `reforge:base` options!
         screen.selectCategory(SettingsCategory.VIDEO)
-        assertEquals(listOf(BuiltInUiThemeId.DARK, BuiltInUiThemeId.WHITE, BuiltInUiThemeId.BONE), screen.themeSegmented.options)
-        screen.themeSegmented.select(BuiltInUiThemeId.BONE)
+        assertFalse(screen.drawnActions().any { it.actionId == "settings-theme" }, "Duplicate theme row in VIDEO must be removed")
+        screen.selectCategory(SettingsCategory.RESOURCE_PACKS)
+        assertTrue(screen.resourcePackManager.triggerPackActionForTest(UserSettings.BASE_RESOURCE_PACK_ID, "options"))
+        assertTrue(screen.packOptionsModal.isOpen)
+        assertEquals(ResourcePackOptionsModal.MODAL_ID, appShell.activeModalId)
+        assertTrue(screen.packOptionsModal.selectOptionForTest(UserSettings.BASE_THEME_OPTION_ID, BuiltInUiThemeId.BONE.code))
         assertEquals(BuiltInUiThemeId.BONE, UserSettingsStore(settingsFile).effective.themeId)
+        assertEquals("bone", UserSettingsStore(settingsFile).effective.optionsForPack(UserSettings.BASE_RESOURCE_PACK_ID)["theme"])
+        screen.packOptionsModal.confirmButton.triggerClick()
+        assertFalse(screen.packOptionsModal.isOpen)
 
         // 4. Controls -> joystick, edge scroll, pan & zoom sensitivities
         screen.selectCategory(SettingsCategory.CONTROLS)
@@ -283,11 +291,18 @@ class UiP004SettingsAndPacksTest {
             UserSettingsStore(settingsFile).effective.enabledContentPacks,
         )
 
-        // Enable `inMatchMode = true`: BOTH resource packs and content packs lock mutations, while language still switches live!
+        // Enable `inMatchMode = true`: BOTH resource packs and content packs lock add/remove/reorder,
+        // while `reforge:base`'s pure-UiTheme `options` modal AND language still switch live!
         screen.inMatchMode = true
         assertFalse(screen.resourcePackManager.triggerPackActionForTest("pack:alpha", "disable"))
         assertFalse(screen.contentPackManager.triggerPackActionForTest("mod:mech", "disable"))
         assertFalse(screen.openFolderButton.enabled)
+        screen.selectCategory(SettingsCategory.RESOURCE_PACKS)
+        assertTrue(screen.resourcePackManager.triggerPackActionForTest(UserSettings.BASE_RESOURCE_PACK_ID, "options"))
+        assertTrue(screen.packOptionsModal.isOpen)
+        assertTrue(screen.packOptionsModal.selectOptionForTest(UserSettings.BASE_THEME_OPTION_ID, BuiltInUiThemeId.WHITE.code))
+        assertEquals(BuiltInUiThemeId.WHITE, UserSettingsStore(settingsFile).effective.themeId)
+        screen.packOptionsModal.dismiss()
 
         screen.selectCategory(SettingsCategory.GENERAL)
         screen.languageSegmented.select(UiLanguage.EN)
@@ -374,13 +389,13 @@ class UiP004SettingsAndPacksTest {
     }
 
     @Test
-    fun `ADR-014 layering keeps non-reorderable built-in UI theme below user resource packs and syncs BootstrapScreen content root`() {
+    fun `ADR-014 layering eliminates virtual ui-theme packs, locks reforge base at bottom with gear options, and syncs BootstrapScreen content root`() {
         assertEquals(UiStrings.keysZh(), UiStrings.keysEn(), "Bilingual string table keys must be 100% identical")
 
-        val appShell = AppShell(initialRoute = OutGameRoute.SETTINGS)
         val store = UserSettingsStore(tempDir.resolve("adr014-settings.json"))
         var moves = 0
         var disables = 0
+        var openedOptionsFor: String? = null
         val mgr = DualColumnPackManagerView(
             skin = skin,
             kind = PackManagerKind.RESOURCE_PACKS,
@@ -389,20 +404,23 @@ class UiP004SettingsAndPacksTest {
             fallbackFontProvider = { dummyFont },
             onMovePriority = { _, _ -> moves++ },
             onSetPackEnabled = { _, _ -> disables++ },
+            onOpenPackOptions = { entry -> openedOptionsFor = entry.id },
         )
         mgr.setBounds(0f, 0f, 700f, 180f)
+        val baseOptions = BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER).options
         mgr.setEntries(
             listOf(
                 DualColumnPackEntry("pack:user1", "用户资源包 1", "v1", enabled = true, canReorder = true, canDisable = true, badgeStyle = PackIconBadgeStyle.CUSTOM_RESOURCE),
                 DualColumnPackEntry("pack:user2", "用户资源包 2", "v1", enabled = true, canReorder = true, canDisable = true, badgeStyle = PackIconBadgeStyle.CUSTOM_RESOURCE),
-                DualColumnPackEntry("ui-theme:dark", "高对比工业暗黑样式包", "v1", enabled = true, canReorder = false, canDisable = false, badgeStyle = PackIconBadgeStyle.CUSTOM_RESOURCE),
-                DualColumnPackEntry(UserSettings.BASE_RESOURCE_PACK_ID, "内置基础资源包", "base", enabled = true, lockedBottom = true, canReorder = false, canDisable = false, canEnable = false, badgeStyle = PackIconBadgeStyle.BASE_RESOURCE),
+                DualColumnPackEntry(UserSettings.BASE_RESOURCE_PACK_ID, "内置基础资源包", "base", enabled = true, lockedBottom = true, canReorder = false, canDisable = false, canEnable = false, badgeStyle = PackIconBadgeStyle.BASE_RESOURCE, options = baseOptions),
             ),
         )
-        // `pack:user2` cannot move down past non-reorderable `ui-theme:dark`; `ui-theme:dark` cannot reorder or disable
+        // `pack:user2` cannot move down past locked `reforge:base`; `reforge:base` cannot reorder or disable, but opens `options`!
         assertFalse(mgr.triggerPackActionForTest("pack:user2", "down"))
-        assertFalse(mgr.triggerPackActionForTest("ui-theme:dark", "up"))
-        assertFalse(mgr.triggerPackActionForTest("ui-theme:dark", "disable"))
+        assertFalse(mgr.triggerPackActionForTest(UserSettings.BASE_RESOURCE_PACK_ID, "up"))
+        assertFalse(mgr.triggerPackActionForTest(UserSettings.BASE_RESOURCE_PACK_ID, "disable"))
+        assertTrue(mgr.triggerPackActionForTest(UserSettings.BASE_RESOURCE_PACK_ID, "options"))
+        assertEquals(UserSettings.BASE_RESOURCE_PACK_ID, openedOptionsFor)
         assertTrue(mgr.triggerPackActionForTest("pack:user2", "up"))
         assertEquals(1, moves)
         assertEquals(0, disables)
@@ -434,7 +452,7 @@ class UiP004SettingsAndPacksTest {
             Paths.get("Engine/client/src/main/kotlin/com/rustedwarfare/reforge/client"),
         ).first { Files.isDirectory(it) }
 
-        val targetFiles = listOf("SettingsScreen.kt", "DualColumnPackManagerView.kt", "UiScaleConfirmModal.kt")
+        val targetFiles = listOf("SettingsScreen.kt", "DualColumnPackManagerView.kt", "UiScaleConfirmModal.kt", "ResourcePackOptionsModal.kt")
         val hexColorRegex = Regex("""Color\.valueOf\(|#[0-9A-Fa-f]{6,8}|0x[0-9A-Fa-f]{6,8}""")
         val colorCtorRegex = Regex("""\bColor\s*\(""")
         val defaultThemeRegex = Regex("""\bUiTheme\.DEFAULT\b""")

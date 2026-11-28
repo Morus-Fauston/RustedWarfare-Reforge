@@ -12,18 +12,16 @@ import com.badlogic.gdx.utils.GdxNativesLoader
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.content.MapDefinition
-import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Base64
-import java.util.zip.GZIPOutputStream
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.floor
-import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -37,7 +35,7 @@ enum class MapPickerFilter {
 }
 
 /**
- * Immutable map entry consumed by [MapPickerScreen], Skirmish Lobby, Free Sandbox, and Match Loading card.
+ * Immutable playable `.tmx` map entry consumed by [MapPickerScreen], Skirmish Lobby, Free Sandbox, and Match Loading card.
  */
 data class MapPickerEntry(
     val id: String,
@@ -48,137 +46,91 @@ data class MapPickerEntry(
     val catalogSceneId: String? = null,
     val mapDefinition: MapDefinition,
     val spawnPointsNormalized: List<Pair<Float, Float>>,
+    val thumbnailPath: Path? = null,
+    val explicitMaxPlayers: Int? = null,
 ) {
     val maxPlayers: Int
-        get() = spawnPointsNormalized.size.coerceIn(2, 10)
+        get() = (explicitMaxPlayers ?: spawnPointsNormalized.size).coerceIn(2, 10)
 
     fun localizedTitle(language: UiLanguage = UiStrings.currentLanguage): String =
         if (isTranslationKey) UiStrings.get(titleKeyOrRaw, language) else titleKeyOrRaw
 }
 
 /**
- * Self-owned built-in skirmish map catalog & deterministic Tiled `.tmx` generator for [MapPickerScreen]
- * and [DynamicMapBackdrop].
- *
- * Includes the 2 packaged `.tmx` maps (`river_crossing`, `volcanic_archipelago`) plus 6 procedural
- * standard `.tmx` skirmish maps (`4P..10P`, including 10-seat `ring_atoll`) so 1–10 player skirmish
- * and free-sandbox flows work out-of-the-box without touching `TilesetAtlasResolver.builtInSkirmishMaps()`.
+ * Real playable `.tmx` skirmish map catalog (UI Supplement §4.3 & `UI-P004-008`):
+ * - Scans configured original installation `assets/maps/skirmish/` `.tmx` files (48 official skirmish maps with native `*_map.png` thumbnails),
+ *   isolating campaign/challenge/survival script maps;
+ * - Scans user-private `maps/` `.tmx` directory when present;
+ * - Falls back to packaged self-owned playable `.tmx` maps ONLY when no original skirmish maps are present (public clone / CI);
+ * - Sorts ascending by player count (`2P -> 3P -> 4P -> ... -> 10P`), then alphabetically by title.
  */
 object OutGameMapCatalog {
     private val lock = Any()
 
+    private data class CatalogCacheKey(
+        val originalDir: Path?,
+        val userMapsDir: Path?,
+    )
+
+    @Volatile
+    private var cachedKey: CatalogCacheKey? = null
+
     @Volatile
     private var cachedEntries: List<MapPickerEntry>? = null
 
-    private enum class SynthKind { RIVER, ARCH, RING, OASIS }
+    @Volatile
+    var defaultOriginalDirectory: Path? = null
 
-    private data class SynthSpec(
-        val id: String,
-        val titleKey: String,
-        val widthTiles: Int,
-        val heightTiles: Int,
-        val seed: Int,
-        val kind: SynthKind,
-        val spawns: List<Pair<Float, Float>>,
-        val ores: List<Pair<Float, Float>>,
-    )
+    @Volatile
+    var defaultUserMapsDirectory: Path? = null
 
-    private val packagedSpawns: Map<String, List<Pair<Float, Float>>> = mapOf(
-        "river_crossing" to listOf(0.19f to 0.24f, 0.81f to 0.76f, 0.81f to 0.24f, 0.19f to 0.76f),
-        "volcanic_archipelago" to listOf(0.18f to 0.26f, 0.82f to 0.74f, 0.82f to 0.26f, 0.18f to 0.74f),
-    )
+    private val bracketPlayerRegex = Regex("""\[(?:[a-zA-Z0-9_]+;)*p(\d+)]""", RegexOption.IGNORE_CASE)
+    private val parenPlayerRegex = Regex("""\((\d+)p\)""", RegexOption.IGNORE_CASE)
+    private val trailingAuthorRegex = Regex("""\[by[_\s][^\]]+]""", RegexOption.IGNORE_CASE)
+    private val leadingBracketTagRegex = Regex("""^\[[^\]]+]\s*""")
 
-    private val extraSpecs: List<SynthSpec> = listOf(
-        SynthSpec(
-            id = "ring_atoll",
-            titleKey = "map.ring_atoll",
-            widthTiles = 64,
-            heightTiles = 64,
-            seed = 89,
-            kind = SynthKind.RING,
-            spawns = listOf(
-                0.16f to 0.18f, 0.12f to 0.40f, 0.12f to 0.62f, 0.18f to 0.84f, 0.38f to 0.86f,
-                0.84f to 0.18f, 0.88f to 0.40f, 0.88f to 0.62f, 0.82f to 0.84f, 0.62f to 0.14f,
-            ),
-            ores = listOf(
-                0.50f to 0.50f, 0.42f to 0.44f, 0.58f to 0.56f,
-                0.30f to 0.30f, 0.70f to 0.70f, 0.70f to 0.30f, 0.30f to 0.70f,
-            ),
-        ),
-        SynthSpec(
-            id = "twin_bridge_canyon",
-            titleKey = "map.twin_bridge_canyon",
-            widthTiles = 52,
-            heightTiles = 44,
-            seed = 29,
-            kind = SynthKind.RIVER,
-            spawns = listOf(0.16f to 0.20f, 0.84f to 0.80f, 0.84f to 0.20f, 0.16f to 0.80f),
-            ores = listOf(0.26f to 0.48f, 0.74f to 0.52f, 0.46f to 0.22f, 0.54f to 0.78f),
-        ),
-        SynthSpec(
-            id = "desert_oasis",
-            titleKey = "map.desert_oasis",
-            widthTiles = 56,
-            heightTiles = 52,
-            seed = 63,
-            kind = SynthKind.OASIS,
-            spawns = listOf(
-                0.20f to 0.20f, 0.80f to 0.80f, 0.80f to 0.20f,
-                0.20f to 0.80f, 0.50f to 0.14f, 0.50f to 0.86f,
-            ),
-            ores = listOf(0.46f to 0.46f, 0.54f to 0.54f, 0.34f to 0.50f, 0.66f to 0.50f),
-        ),
-        SynthSpec(
-            id = "polar_outpost",
-            titleKey = "map.polar_outpost",
-            widthTiles = 48,
-            heightTiles = 44,
-            seed = 105,
-            kind = SynthKind.ARCH,
-            spawns = listOf(0.22f to 0.24f, 0.78f to 0.76f, 0.78f to 0.24f, 0.22f to 0.76f),
-            ores = listOf(0.50f to 0.36f, 0.50f to 0.64f, 0.30f to 0.50f, 0.70f to 0.50f),
-        ),
-        SynthSpec(
-            id = "shattered_highland",
-            titleKey = "map.shattered_highland",
-            widthTiles = 56,
-            heightTiles = 48,
-            seed = 137,
-            kind = SynthKind.RIVER,
-            spawns = listOf(
-                0.15f to 0.30f, 0.85f to 0.70f, 0.85f to 0.30f,
-                0.15f to 0.70f, 0.48f to 0.16f, 0.52f to 0.84f,
-            ),
-            ores = listOf(0.36f to 0.36f, 0.64f to 0.64f, 0.64f to 0.36f, 0.36f to 0.64f, 0.50f to 0.50f),
-        ),
-        SynthSpec(
-            id = "rusted_bay",
-            titleKey = "map.rusted_bay",
-            widthTiles = 60,
-            heightTiles = 56,
-            seed = 173,
-            kind = SynthKind.RING,
-            spawns = listOf(
-                0.18f to 0.22f, 0.18f to 0.78f, 0.82f to 0.22f, 0.82f to 0.78f,
-                0.50f to 0.16f, 0.50f to 0.84f, 0.14f to 0.50f, 0.86f to 0.50f,
-            ),
-            ores = listOf(0.44f to 0.44f, 0.56f to 0.56f, 0.44f to 0.56f, 0.56f to 0.44f),
+    private val packagedFallbackFiles: List<Pair<String, List<Pair<Float, Float>>>> = listOf(
+        "river_crossing.tmx" to listOf(0.19f to 0.24f, 0.81f to 0.76f, 0.81f to 0.24f, 0.19f to 0.76f),
+        "volcanic_archipelago.tmx" to listOf(0.18f to 0.26f, 0.82f to 0.74f, 0.82f to 0.26f, 0.18f to 0.74f),
+        "ring_atoll.tmx" to listOf(
+            0.16f to 0.18f, 0.12f to 0.40f, 0.12f to 0.62f, 0.18f to 0.84f, 0.38f to 0.86f,
+            0.84f to 0.18f, 0.88f to 0.40f, 0.88f to 0.62f, 0.82f to 0.84f, 0.62f to 0.14f,
         ),
     )
 
-    fun entries(filter: MapPickerFilter = MapPickerFilter.SKIRMISH): List<MapPickerEntry> {
-        val all = ensureEntries()
+    fun configureDirectories(originalDirectory: Path?, userMapsDirectory: Path?) {
+        val normOrig = originalDirectory?.toAbsolutePath()?.normalize()
+        val normUser = userMapsDirectory?.toAbsolutePath()?.normalize()
+        if (defaultOriginalDirectory != normOrig || defaultUserMapsDirectory != normUser) {
+            defaultOriginalDirectory = normOrig
+            defaultUserMapsDirectory = normUser
+        }
+    }
+
+    fun entries(
+        filter: MapPickerFilter = MapPickerFilter.SKIRMISH,
+        originalDirectory: Path? = defaultOriginalDirectory,
+        userMapsDirectory: Path? = defaultUserMapsDirectory,
+    ): List<MapPickerEntry> {
+        val all = ensureEntries(originalDirectory, userMapsDirectory)
         return when (filter) {
             MapPickerFilter.SKIRMISH, MapPickerFilter.FREE_SANDBOX, MapPickerFilter.ALL -> all
         }
     }
 
-    fun defaultEntry(): MapPickerEntry = entries().first()
+    fun defaultEntry(
+        originalDirectory: Path? = defaultOriginalDirectory,
+        userMapsDirectory: Path? = defaultUserMapsDirectory,
+    ): MapPickerEntry = entries(MapPickerFilter.SKIRMISH, originalDirectory, userMapsDirectory).first()
 
-    fun findByIdOrPath(idOrPath: String?): MapPickerEntry? {
+    fun findByIdOrPath(
+        idOrPath: String?,
+        originalDirectory: Path? = defaultOriginalDirectory,
+        userMapsDirectory: Path? = defaultUserMapsDirectory,
+    ): MapPickerEntry? {
         if (idOrPath.isNullOrBlank()) return null
         val norm = idOrPath.trim()
-        val list = ensureEntries()
+        val list = ensureEntries(originalDirectory, userMapsDirectory)
         list.firstOrNull { it.id.equals(norm, ignoreCase = true) || it.slug.equals(norm, ignoreCase = true) }
             ?.let { return it }
         val asPath = runCatching { Path.of(norm).toAbsolutePath().normalize() }.getOrNull()
@@ -188,264 +140,235 @@ object OutGameMapCatalog {
         return null
     }
 
-    fun entryFromCustomTmx(path: Path, displayName: String, map: MapDefinition): MapPickerEntry {
-        val slug = path.fileName.toString().removeSuffix(".tmx")
-        val derivedSpawns = extractNormalizedSpawns(map)
+    fun entryFromCustomTmx(
+        path: Path,
+        displayName: String,
+        map: MapDefinition,
+        thumbnailPath: Path? = resolveSiblingMapThumbnail(path),
+    ): MapPickerEntry {
+        val stem = path.fileName.toString().removeSuffix(".tmx")
+        val parsedMeta = parseMapStemMetadata(stem)
+        val cleanTitle = if (displayName == stem) parsedMeta.cleanTitle else displayName
+        val derivedSpawns = extractNormalizedSpawns(map, parsedMeta.playerCountHint)
         return MapPickerEntry(
-            id = "custom:$slug:${path.toAbsolutePath().normalize()}",
-            slug = slug,
-            titleKeyOrRaw = displayName,
+            id = "custom:${parsedMeta.slug}:${path.toAbsolutePath().normalize()}",
+            slug = parsedMeta.slug,
+            titleKeyOrRaw = cleanTitle,
             isTranslationKey = false,
             tmxPath = path.toAbsolutePath().normalize(),
             mapDefinition = map,
             spawnPointsNormalized = derivedSpawns,
+            thumbnailPath = thumbnailPath,
+            explicitMaxPlayers = parsedMeta.playerCountHint,
         )
     }
 
-    fun extractNormalizedSpawns(map: MapDefinition): List<Pair<Float, Float>> {
+    data class ParsedMapStem(
+        val cleanTitle: String,
+        val slug: String,
+        val playerCountHint: Int?,
+    )
+
+    /**
+     * Parses Rusted Warfare skirmish `.tmx` stem conventions such as:
+     * - `[p2]Beach landing (2p) [by hxyy]` -> `cleanTitle = "Beach landing"`, `playerCountHint = 2`
+     * - `[z;p10]Valley Arena (10p) [by_uber]` -> `cleanTitle = "Valley Arena"`, `playerCountHint = 10`
+     */
+    fun parseMapStemMetadata(rawStem: String): ParsedMapStem {
+        val trimmed = rawStem.trim()
+        val pBracket = bracketPlayerRegex.find(trimmed)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        val pParen = parenPlayerRegex.find(trimmed)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        val playerHint = (pBracket ?: pParen)?.coerceIn(2, 10)
+
+        var cleaned = trimmed
+            .replace(leadingBracketTagRegex, "")
+            .replace(trailingAuthorRegex, "")
+            .replace('_', ' ')
+            .trim()
+        cleaned = cleaned.replace(parenPlayerRegex, "").trim()
+        cleaned = cleaned.replace(Regex("""\s{2,}"""), " ").trim(' ', '-', '_')
+        if (cleaned.isEmpty()) cleaned = trimmed
+
+        val slug = cleaned.lowercase(Locale.ROOT)
+            .replace(Regex("""[^a-z0-9]+"""), "_")
+            .trim('_')
+            .ifEmpty { "skirmish_map" }
+
+        return ParsedMapStem(
+            cleanTitle = cleaned,
+            slug = slug,
+            playerCountHint = playerHint,
+        )
+    }
+
+    fun resolveSiblingMapThumbnail(tmxPath: Path): Path? {
+        val abs = tmxPath.toAbsolutePath().normalize()
+        val stem = abs.fileName?.toString()?.removeSuffix(".tmx") ?: return null
+        val sibling = abs.resolveSibling("${stem}_map.png")
+        return sibling.takeIf { Files.isRegularFile(it) }
+    }
+
+    fun extractNormalizedSpawns(map: MapDefinition, expectedPlayerCount: Int? = null): List<Pair<Float, Float>> {
         val worldW = (map.widthTiles * map.tileWidth).coerceAtLeast(1).toFloat()
         val worldH = (map.heightTiles * map.tileHeight).coerceAtLeast(1).toFloat()
-        val byTeam = LinkedHashMap<Int, Pair<Float, Float>>()
+        val byTeam = LinkedHashMap<Int, MutableList<Pair<Float, Float>>>()
         for (u in map.startingUnits) {
             val teamIdx = u.team?.trim()?.toIntOrNull() ?: continue
-            if (teamIdx < 0 || teamIdx in byTeam) continue
-            val nx = (u.worldX.toFloat() / worldW).coerceIn(0.08f, 0.92f)
-            val ny = (u.worldY.toFloat() / worldH).coerceIn(0.08f, 0.92f)
-            byTeam[teamIdx] = nx to ny
+            if (teamIdx < 0) continue
+            val nx = (u.worldX.toFloat() / worldW).coerceIn(0.06f, 0.94f)
+            val ny = (u.worldY.toFloat() / worldH).coerceIn(0.06f, 0.94f)
+            // Prioritize commandCenter / builder if multiple units belong to the same team
+            val list = byTeam.getOrPut(teamIdx) { ArrayList() }
+            if (u.unitType.equals("commandCenter", ignoreCase = true)) {
+                list.add(0, nx to ny)
+            } else {
+                list.add(nx to ny)
+            }
         }
         if (byTeam.size >= 2) {
-            return byTeam.entries.sortedBy { it.key }.map { it.value }.take(10)
+            val extracted = byTeam.entries.sortedBy { it.key }.map { it.value.first() }.take(10).toMutableList()
+            val target = (expectedPlayerCount ?: extracted.size).coerceIn(extracted.size, 10)
+            while (extracted.size < target) {
+                val idx = extracted.size
+                val angle = -PI * 0.5 + (2.0 * PI * idx.toDouble() / target.toDouble())
+                extracted += (0.50f + 0.36f * cos(angle).toFloat()).coerceIn(0.10f, 0.90f) to
+                    (0.50f + 0.36f * sin(angle).toFloat()).coerceIn(0.10f, 0.90f)
+            }
+            return extracted
         }
-        return listOf(0.20f to 0.24f, 0.80f to 0.76f, 0.80f to 0.24f, 0.20f to 0.76f)
+        val count = (expectedPlayerCount ?: 4).coerceIn(2, 10)
+        return if (count == 2) {
+            listOf(0.20f to 0.24f, 0.80f to 0.76f)
+        } else if (count == 4) {
+            listOf(0.20f to 0.24f, 0.80f to 0.76f, 0.80f to 0.24f, 0.20f to 0.76f)
+        } else {
+            List(count) { idx ->
+                val angle = -PI * 0.5 + (2.0 * PI * idx.toDouble() / count.toDouble())
+                (0.50f + 0.36f * cos(angle).toFloat()).coerceIn(0.10f, 0.90f) to
+                    (0.50f + 0.36f * sin(angle).toFloat()).coerceIn(0.10f, 0.90f)
+            }
+        }
     }
 
-    private fun ensureEntries(): List<MapPickerEntry> {
-        cachedEntries?.let { return it }
-        synchronized(lock) {
+    private fun resolveOriginalSkirmishDir(originalDirectory: Path?): Path? {
+        if (originalDirectory == null) return null
+        val norm = originalDirectory.toAbsolutePath().normalize()
+        val candidates = listOf(
+            norm.resolve("assets/maps/skirmish"),
+            norm.resolve("maps/skirmish"),
+        )
+        return candidates.firstOrNull { Files.isDirectory(it) }
+    }
+
+    private fun scanTmxDirectory(
+        dir: Path,
+        fallbackRoots: List<Path>,
+        idPrefix: String,
+    ): List<MapPickerEntry> {
+        if (!Files.isDirectory(dir)) return emptyList()
+        val tmxFiles = Files.list(dir).use { stream ->
+            stream.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".tmx", ignoreCase = true) }
+                .sorted(Comparator.comparing { it.fileName.toString().lowercase(Locale.ROOT) })
+                .toList()
+        }
+        val out = ArrayList<MapPickerEntry>(tmxFiles.size)
+        val usedIds = HashSet<String>()
+        for (tmx in tmxFiles) {
+            val normPath = tmx.toAbsolutePath().normalize()
+            val loaded = when (val res = ContentLoader.loadMap(normPath, fallbackRoots)) {
+                is ContentResult.Success -> res.value
+                is ContentResult.Failure -> continue
+            }
+            val stem = normPath.fileName.toString().removeSuffix(".tmx")
+            val meta = parseMapStemMetadata(stem)
+            val spawns = extractNormalizedSpawns(loaded, meta.playerCountHint)
+            val maxP = (meta.playerCountHint ?: spawns.size).coerceIn(2, 10)
+            var candidateId = "$idPrefix:${meta.slug}"
+            var suffix = 2
+            while (!usedIds.add(candidateId)) {
+                candidateId = "$idPrefix:${meta.slug}_${suffix++}"
+            }
+            out += MapPickerEntry(
+                id = candidateId,
+                slug = meta.slug,
+                titleKeyOrRaw = meta.cleanTitle,
+                isTranslationKey = false,
+                tmxPath = normPath,
+                mapDefinition = loaded,
+                spawnPointsNormalized = spawns,
+                thumbnailPath = resolveSiblingMapThumbnail(normPath),
+                explicitMaxPlayers = maxP,
+            )
+        }
+        return out
+    }
+
+    private fun ensureEntries(originalDirectory: Path?, userMapsDirectory: Path?): List<MapPickerEntry> {
+        val key = CatalogCacheKey(
+            originalDir = originalDirectory?.toAbsolutePath()?.normalize(),
+            userMapsDir = userMapsDirectory?.toAbsolutePath()?.normalize(),
+        )
+        if (cachedKey == key) {
             cachedEntries?.let { return it }
-            val tilesetDir = TilesetAtlasResolver.placeholderTilesetDir()
-            val extractedRoot = tilesetDir.parent.parent
-            val mapsDir = Files.createDirectories(extractedRoot.resolve("maps/skirmish"))
-            val fallbackRoots = listOf(tilesetDir)
-            val built = mutableListOf<MapPickerEntry>()
+        }
+        synchronized(lock) {
+            if (cachedKey == key) {
+                cachedEntries?.let { return it }
+            }
+            val fallbackRoots = TmxSkirmishScenarioBuilder.tilesetFallbackRoots(key.originalDir)
+            val discovered = ArrayList<MapPickerEntry>()
 
-            for (demo in TilesetAtlasResolver.builtInSkirmishMaps()) {
-                val loaded = when (val res = ContentLoader.loadMap(demo.path, fallbackRoots)) {
-                    is ContentResult.Success -> res.value
-                    is ContentResult.Failure -> error("Failed to load built-in skirmish map ${demo.id}: ${res.error.describe()}")
-                }
-                val key = "map.${demo.id}"
-                val spawns = packagedSpawns[demo.id] ?: extractNormalizedSpawns(loaded)
-                built += MapPickerEntry(
-                    id = demo.id,
-                    slug = demo.id,
-                    titleKeyOrRaw = key,
-                    isTranslationKey = true,
-                    tmxPath = demo.path.toAbsolutePath().normalize(),
-                    mapDefinition = loaded,
-                    spawnPointsNormalized = spawns,
-                )
+            resolveOriginalSkirmishDir(key.originalDir)?.let { skDir ->
+                discovered += scanTmxDirectory(skDir, fallbackRoots, idPrefix = "orig")
+            }
+            key.userMapsDir?.let { uDir ->
+                discovered += scanTmxDirectory(uDir, fallbackRoots, idPrefix = "user")
             }
 
-            for (spec in extraSpecs) {
-                val targetTmx = mapsDir.resolve("${spec.id}.tmx")
-                if (!Files.isRegularFile(targetTmx)) {
-                    Files.writeString(targetTmx, generateTmxXml(spec))
-                    targetTmx.toFile().deleteOnExit()
-                }
-                val loaded = when (val res = ContentLoader.loadMap(targetTmx, fallbackRoots)) {
-                    is ContentResult.Success -> res.value
-                    is ContentResult.Failure -> error("Failed to load generated skirmish map ${spec.id}: ${res.error.describe()}")
-                }
-                built += MapPickerEntry(
-                    id = spec.id,
-                    slug = spec.id,
-                    titleKeyOrRaw = spec.titleKey,
-                    isTranslationKey = true,
-                    tmxPath = targetTmx.toAbsolutePath().normalize(),
-                    mapDefinition = loaded,
-                    spawnPointsNormalized = spec.spawns,
-                )
-            }
-
-            cachedEntries = built
-            return built
-        }
-    }
-
-    private fun hash2(x: Int, y: Int, s: Int): Float {
-        var n = x * 374761393 + y * 668265263 + s * 1442695041
-        n = (n xor (n ushr 13)) * 1274126177
-        val unsigned = (n xor (n ushr 16)).toLong() and 0xFFFFFFFFL
-        return (unsigned.toDouble() / 4294967296.0).toFloat()
-    }
-
-    private fun valueNoise(x: Float, y: Float, s: Int): Float {
-        val xi = floor(x).toInt()
-        val yi = floor(y).toInt()
-        val xf = x - xi
-        val yf = y - yi
-        val u = xf * xf * (3f - 2f * xf)
-        val v = yf * yf * (3f - 2f * yf)
-        return hash2(xi, yi, s) * (1f - u) * (1f - v) +
-            hash2(xi + 1, yi, s) * u * (1f - v) +
-            hash2(xi, yi + 1, s) * (1f - u) * v +
-            hash2(xi + 1, yi + 1, s) * u * v
-    }
-
-    private fun fbm(x: Float, y: Float, s: Int): Float =
-        valueNoise(x, y, s) * 0.58f +
-            valueNoise(x * 2.1f + 5f, y * 2.1f + 3f, s + 11) * 0.28f +
-            valueNoise(x * 4.3f, y * 4.3f, s + 29) * 0.14f
-
-    private fun encodeLayerGzipBase64(gids: IntArray): String {
-        val byteBuf = ByteBuffer.allocate(gids.size * 4).order(ByteOrder.LITTLE_ENDIAN)
-        for (gid in gids) byteBuf.putInt(gid)
-        val bos = ByteArrayOutputStream()
-        GZIPOutputStream(bos).use { gzip -> gzip.write(byteBuf.array()) }
-        return Base64.getEncoder().encodeToString(bos.toByteArray())
-    }
-
-    private fun generateTmxXml(spec: SynthSpec): String {
-        val w = spec.widthTiles
-        val h = spec.heightTiles
-        val ground = IntArray(w * h) { 1 }
-        val details = IntArray(w * h)
-        val items = IntArray(w * h)
-        val units = IntArray(w * h)
-
-        for (r in 0 until h) {
-            for (c in 0 until w) {
-                val u = (c + 0.5f) / w.toFloat()
-                val v = (r + 0.5f) / h.toFloat()
-                val n = fbm(u * 6.5f, v * 4.2f, spec.seed)
-                val gid = when (spec.kind) {
-                    SynthKind.RIVER -> {
-                        val rc = 0.50f + 0.055f * sin((v * PI * 2.1 + 0.4).toFloat()) + (fbm(1.7f, v * 3f, spec.seed + 5) - 0.5f) * 0.08f
-                        val d = abs(u - rc)
-                        val ford = abs(v - 0.28f) < 0.055f || abs(v - 0.72f) < 0.055f
-                        when {
-                            d < 0.032f && !ford -> 6 // deep water
-                            d < 0.052f -> if (ford) 12 else 5 // bridge or shallow water
-                            d < 0.072f -> 3 // sand
-                            n > 0.73f -> 15 // cliff ridge
-                            n > 0.60f -> 2 // high ground
-                            else -> 1
-                        }
+            if (discovered.isEmpty()) {
+                val tilesetDir = TilesetAtlasResolver.placeholderTilesetDir()
+                val extractedRoot = tilesetDir.parent.parent
+                val mapsDir = Files.createDirectories(extractedRoot.resolve("maps/skirmish"))
+                for ((fileName, fallbackSpawns) in packagedFallbackFiles) {
+                    val targetTmx = mapsDir.resolve(fileName)
+                    if (!Files.isRegularFile(targetTmx)) {
+                        val stream = OutGameMapCatalog::class.java.getResourceAsStream("/maps/skirmish/$fileName") ?: continue
+                        stream.use { Files.write(targetTmx, it.readBytes()) }
+                        targetTmx.toFile().deleteOnExit()
                     }
-                    SynthKind.ARCH -> {
-                        var isl = 0f
-                        for ((px, py) in (spec.spawns + (0.5f to 0.5f))) {
-                            isl = max(isl, 1f - hypot((u - px) * 1.25f, v - py) * 3.1f)
-                        }
-                        val e = n * 0.52f + isl * 0.68f
-                        when {
-                            e < 0.40f -> 6
-                            e < 0.48f -> 5
-                            e < 0.54f -> 3
-                            e > 0.80f -> 15
-                            else -> 1
-                        }
+                    val loaded = when (val res = ContentLoader.loadMap(targetTmx, listOf(tilesetDir))) {
+                        is ContentResult.Success -> res.value
+                        is ContentResult.Failure -> error("Failed to load packaged skirmish map $fileName: ${res.error.describe()}")
                     }
-                    SynthKind.OASIS -> {
-                        val d = hypot(u - 0.5f, v - 0.5f)
-                        when {
-                            d < 0.10f -> 6
-                            d < 0.15f -> 5
-                            d < 0.24f -> 1
-                            n > 0.72f -> 15
-                            else -> 3
-                        }
-                    }
-                    SynthKind.RING -> {
-                        val d = hypot((u - 0.5f) * 1.15f, v - 0.5f)
-                        when {
-                            d > 0.48f || (d < 0.15f && d > 0.05f) -> 6
-                            d > 0.44f || d < 0.19f -> 5
-                            n > 0.72f -> 15
-                            else -> 1
-                        }
-                    }
-                }
-                ground[r * w + c] = gid
-            }
-        }
-
-        // Carve guaranteed walkable flat pads around every spawn point and resource pool
-        fun clearPad(normX: Float, normY: Float, radius: Int) {
-            val cx = (normX * w).roundToInt().coerceIn(radius + 1, w - radius - 2)
-            val cy = (normY * h).roundToInt().coerceIn(radius + 1, h - radius - 2)
-            for (dy in -radius..radius) {
-                for (dx in -radius..radius) {
-                    ground[(cy + dy) * w + (cx + dx)] = 1
+                    val id = fileName.removeSuffix(".tmx")
+                    val spawns = extractNormalizedSpawns(loaded, fallbackSpawns.size).ifEmpty { fallbackSpawns }
+                    discovered += MapPickerEntry(
+                        id = id,
+                        slug = id,
+                        titleKeyOrRaw = "map.$id",
+                        isTranslationKey = true,
+                        tmxPath = targetTmx.toAbsolutePath().normalize(),
+                        mapDefinition = loaded,
+                        spawnPointsNormalized = if (spawns.size >= fallbackSpawns.size) spawns else fallbackSpawns,
+                        explicitMaxPlayers = max(spawns.size, fallbackSpawns.size),
+                    )
                 }
             }
-        }
 
-        for ((sx, sy) in spec.spawns) clearPad(sx, sy, radius = 3)
-        for ((ox, oy) in spec.ores) {
-            clearPad(ox, oy, radius = 2)
-            val cx = (ox * w).roundToInt().coerceIn(2, w - 3)
-            val cy = (oy * h).roundToInt().coerceIn(2, h - 3)
-            items[cy * w + cx] = 19 // res_pool
+            val sorted = discovered.sortedWith(
+                compareBy<MapPickerEntry> { it.maxPlayers }
+                    .thenBy { it.localizedTitle(UiLanguage.EN).lowercase(Locale.ROOT) }
+                    .thenBy { it.id },
+            )
+            cachedKey = key
+            cachedEntries = sorted
+            return sorted
         }
-
-        // Place default p1 and p2 starting Command Center + Builder markers
-        if (spec.spawns.isNotEmpty()) {
-            val (s0x, s0y) = spec.spawns[0]
-            val c0 = (s0x * w).roundToInt().coerceIn(3, w - 4)
-            val r0 = (s0y * h).roundToInt().coerceIn(3, h - 4)
-            units[r0 * w + c0] = 31
-            units[r0 * w + (c0 + 2).coerceAtMost(w - 2)] = 32
-        }
-        if (spec.spawns.size >= 2) {
-            val (s1x, s1y) = spec.spawns[1]
-            val c1 = (s1x * w).roundToInt().coerceIn(3, w - 4)
-            val r1 = (s1y * h).roundToInt().coerceIn(3, h - 4)
-            units[r1 * w + c1] = 33
-            units[r1 * w + (c1 - 2).coerceAtLeast(1)] = 34
-        }
-
-        val gData = encodeLayerGzipBase64(ground)
-        val dData = encodeLayerGzipBase64(details)
-        val iData = encodeLayerGzipBase64(items)
-        val uData = encodeLayerGzipBase64(units)
-
-        return """<?xml version='1.0' encoding='UTF-8'?>
-<map version="1.2" tiledversion="1.4.3" orientation="orthogonal" renderorder="right-down" width="$w" height="$h" tilewidth="20" tileheight="20" infinite="0">
- <tileset firstgid="1" source="../../visuals/placeholder/tilesets/base_terrain.tsx" />
- <tileset firstgid="31" source="../../visuals/placeholder/tilesets/units_markers.tsx" />
- <layer name="Ground" width="$w" height="$h">
-  <data encoding="base64" compression="gzip">$gData</data>
- </layer>
- <layer name="GroundDetails" width="$w" height="$h">
-  <data encoding="base64" compression="gzip">$dData</data>
- </layer>
- <layer name="Items" width="$w" height="$h">
-  <data encoding="base64" compression="gzip">$iData</data>
- </layer>
- <layer name="Units" width="$w" height="$h">
-  <data encoding="base64" compression="gzip">$uData</data>
- </layer>
- <objectgroup name="Triggers">
-  <object id="1" name="map_info" x="20" y="20" width="100" height="60">
-   <properties>
-    <property name="type" value="skirmish" />
-    <property name="fog" value="los" />
-   </properties>
-  </object>
- </objectgroup>
-</map>"""
     }
 }
 
 /**
- * Pure [UiTheme]-token map preview & blueprint backdrop renderer (zero hardcoded color literals).
- *
- * Shared by:
- * - [DynamicMapBackdrop] (theme-harmonized blueprint terrain under `mapScrim` / `mapScrimDeep`)
- * - [MapPickerScreen] `1:1` square map cards
- * - Skirmish Lobby, Free Sandbox, and Match Loading `1:1` map previews
+ * Pure [UiTheme]-token map preview, native thumbnail adapter & HTML Demo `mapSVG` constructivist blueprint renderer.
  */
 object OutGameMapPreviewRenderer {
     init {
@@ -458,7 +381,6 @@ object OutGameMapPreviewRenderer {
         val waterPassable = !map.waterBlocking.isBlocked(col, row)
         val landBlocked = map.blocking.isBlocked(col, row)
         if (waterPassable && landBlocked) {
-            // Distinguish coastal shallow water from deeper interior water
             val nearShore = (-1..1).any { dy ->
                 (-1..1).any { dx ->
                     val nc = (col + dx).coerceIn(0, map.widthTiles - 1)
@@ -503,9 +425,19 @@ object OutGameMapPreviewRenderer {
         }
     }
 
-    /**
-     * Pure Kotlin tactical map preview `RGBA8888` buffer (zero JNI dependency, zero static `UiTheme.DEFAULT` coupling).
-     */
+    private fun blendOverRgba(dstRgba: Int, src: Color): Int {
+        val a = src.a.coerceIn(0f, 1f)
+        if (a <= 0.001f) return dstRgba
+        if (a >= 0.999f) return Color.rgba8888(src.r, src.g, src.b, 1f)
+        val dr = ((dstRgba ushr 24) and 0xFF) / 255f
+        val dg = ((dstRgba ushr 16) and 0xFF) / 255f
+        val db = ((dstRgba ushr 8) and 0xFF) / 255f
+        val or = (dr * (1f - a) + src.r * a).coerceIn(0f, 1f)
+        val og = (dg * (1f - a) + src.g * a).coerceIn(0f, 1f)
+        val ob = (db * (1f - a) + src.b * a).coerceIn(0f, 1f)
+        return Color.rgba8888(or, og, ob, 1f)
+    }
+
     fun renderTacticalRgbaBuffer(
         map: MapDefinition,
         targetWidthPx: Int = 256,
@@ -587,10 +519,6 @@ object OutGameMapPreviewRenderer {
         return buf
     }
 
-    /**
-     * Renders a crisp tactical preview [Pixmap] (water, shore, elevation contours, subtle grid, and ore pools)
-     * using colors derived strictly from [UiTheme] semantic tokens.
-     */
     fun renderTacticalPixmap(
         map: MapDefinition,
         targetWidthPx: Int = 256,
@@ -610,104 +538,185 @@ object OutGameMapPreviewRenderer {
     }
 
     /**
-     * Pure Kotlin constructivist blueprint map `RGBA8888` buffer (`80x45` cells at `20px` = `1600x900` crisp 1px grid
-     * with `2x2` quad ore markers, matching `Docs/规格/八期界面演示稿` `mapSVG` fidelity with zero JNI dependency).
+     * Loads a real `*_map.png` thumbnail when available (aspect-fitted onto `theme.colors.well` so no corner bases
+     * are cropped), or falls back to [renderTacticalPixmap].
      */
-    fun renderBackdropBlueprintRgbaBuffer(
-        map: MapDefinition,
+    fun loadOrRenderSquareCardPixmap(
+        entry: MapPickerEntry,
+        sizePx: Int,
         theme: UiTheme,
-        widthPx: Int = 1600,
-        heightPx: Int = 900,
+    ): Pixmap {
+        val thumb = entry.thumbnailPath?.takeIf { Files.isRegularFile(it) }
+        if (thumb != null) {
+            val raw = runCatching { Pixmap(com.badlogic.gdx.files.FileHandle(thumb.toFile())) }.getOrNull()
+            if (raw != null) {
+                try {
+                    val out = Pixmap(sizePx, sizePx, Pixmap.Format.RGBA8888)
+                    out.blending = Pixmap.Blending.None
+                    out.filter = Pixmap.Filter.BiLinear
+                    out.setColor(theme.colors.well.r, theme.colors.well.g, theme.colors.well.b, 1f)
+                    out.fill()
+                    val scale = min(sizePx.toFloat() / raw.width.coerceAtLeast(1).toFloat(), sizePx.toFloat() / raw.height.coerceAtLeast(1).toFloat())
+                    val dw = (raw.width * scale).roundToInt().coerceIn(1, sizePx)
+                    val dh = (raw.height * scale).roundToInt().coerceIn(1, sizePx)
+                    val dx = (sizePx - dw) / 2
+                    val dy = (sizePx - dh) / 2
+                    out.drawPixmap(raw, 0, 0, raw.width, raw.height, dx, dy, dw, dh)
+                    return out
+                } finally {
+                    raw.dispose()
+                }
+            }
+        }
+        return renderTacticalPixmap(entry.mapDefinition, sizePx, sizePx, theme)
+    }
+
+    // Exact port of `八期界面演示稿.html` `hSvg` + `vnSvg` + `mapSVG` (`{cols:80, rows:45, t:20, seed:3.1, rw:2.2, sc:9, ore:26}`)
+    private fun hSvg(x: Int, y: Int, s: Double): Double {
+        val v = sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453
+        return v - floor(v)
+    }
+
+    private fun vnSvg(x: Double, y: Double, s: Double): Double {
+        val xi = floor(x).toInt()
+        val yi = floor(y).toInt()
+        val xf = x - xi
+        val yf = y - yi
+        val u = xf * xf * (3.0 - 2.0 * xf)
+        val v = yf * yf * (3.0 - 2.0 * yf)
+        val a = hSvg(xi, yi, s)
+        val b = hSvg(xi + 1, yi, s)
+        val c = hSvg(xi, yi + 1, s)
+        val d = hSvg(xi + 1, yi + 1, s)
+        return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
+    }
+
+    /**
+     * Renders the exact `八期界面演示稿.html` `mapSVG` procedural constructivist blueprint tile (`80×45` cells of `20px`
+     * = `1600×900` repeatable unit, or arbitrary `cols × rows` at `cellPx`), driven strictly by [UiTheme.outGame]
+     * blueprint tokens (`backdropWater / backdropLow / backdropMid / backdropHigh / backdropOre / backdropGrid`).
+     */
+    fun renderDemoMapSvgBlueprintRgbaBuffer(
+        theme: UiTheme,
+        cols: Int = 80,
+        rows: Int = 45,
+        cellPx: Int = 20,
+        seed: Double = 3.1,
+        riverWidth: Double = 2.2,
+        scale: Double = 9.0,
+        oreCount: Int = 26,
     ): IntArray {
-        val wPx = widthPx.coerceIn(160, 1920)
-        val hPx = heightPx.coerceIn(90, 1080)
+        val safeCols = cols.coerceIn(16, 200)
+        val safeRows = rows.coerceIn(9, 120)
+        val t = cellPx.coerceIn(4, 32)
+        val wPx = safeCols * t
+        val hPx = safeRows * t
         val buf = IntArray(wPx * hPx)
 
-        val c = theme.colors
-        val isDark = c.solid.r < 0.35f
-        val waterCol = if (isDark) c.well.cpy().lerp(c.ink, 0.35f) else c.well.cpy().lerp(c.line, 0.28f)
-        val lowCol = if (isDark) c.solid.cpy().lerp(c.cell, 0.45f) else c.cell.cpy()
-        val midCol = if (isDark) c.cell.cpy().lerp(c.line, 0.38f) else c.well.cpy().lerp(c.cell, 0.45f)
-        val highCol = if (isDark) c.line.cpy().lerp(c.dim, 0.22f) else c.well.cpy().lerp(c.line, 0.48f)
-        val oreCol = if (isDark) c.bone.cpy().lerp(c.dim, 0.25f) else c.line.cpy().lerp(c.dim, 0.35f)
+        val og = theme.outGame
+        val waterRgba = Color.rgba8888(og.backdropWater.r, og.backdropWater.g, og.backdropWater.b, 1f)
+        val lowRgba = Color.rgba8888(og.backdropLow.r, og.backdropLow.g, og.backdropLow.b, 1f)
+        val midRgba = Color.rgba8888(og.backdropMid.r, og.backdropMid.g, og.backdropMid.b, 1f)
+        val highRgba = Color.rgba8888(og.backdropHigh.r, og.backdropHigh.g, og.backdropHigh.b, 1f)
+        val oreRgba = Color.rgba8888(og.backdropOre.r, og.backdropOre.g, og.backdropOre.b, 1f)
+        val gridColor = og.backdropGrid
 
-        val water = Color.rgba8888(waterCol.apply { a = 1f })
-        val low = Color.rgba8888(lowCol.apply { a = 1f })
-        val mid = Color.rgba8888(midCol.apply { a = 1f })
-        val high = Color.rgba8888(highCol.apply { a = 1f })
-        val ore = Color.rgba8888(oreCol.apply { a = 1f })
-
-        val cellPx = (wPx / 80).coerceIn(4, 24)
-        val gridCols = (wPx + cellPx - 1) / cellPx
-        val gridRows = (hPx + cellPx - 1) / cellPx
-        val mapW = map.widthTiles.coerceAtLeast(1)
-        val mapH = map.heightTiles.coerceAtLeast(1)
-
-        val cellColors = Array(gridRows) { gr ->
-            val mRow = ((gr.toLong() * mapH) / gridRows).toInt().coerceIn(0, mapH - 1)
-            IntArray(gridCols) { gc ->
-                val mCol = ((gc.toLong() * mapW) / gridCols).toInt().coerceIn(0, mapW - 1)
-                when (classifyTile(map, mCol, mRow)) {
-                    CellTerrain.DEEP_WATER, CellTerrain.SHALLOW_WATER -> water
-                    CellTerrain.SAND, CellTerrain.LOW_LAND -> low
-                    CellTerrain.MID_LAND -> mid
-                    CellTerrain.HIGH_LAND, CellTerrain.RIDGE -> high
+        // 0 = water, 1 = low, 2 = mid, 3 = high
+        val grid = Array(safeRows) { y ->
+            IntArray(safeCols) { x ->
+                val n = vnSvg(x / scale, y / scale, seed) * 0.65 +
+                    vnSvg(x / (scale * 0.4), y / (scale * 0.4), seed + 9.0) * 0.35
+                // Periodic meandering river across 80x45 reference tiles so larger viewports stay naturally proportioned
+                val localX = (x % 80).toDouble()
+                val localY = (y % 45).toDouble()
+                val riverCenterY = 45.0 * 0.5 + sin((localX / 80.0) * PI * 3.0 + seed) * (45.0 * 0.22)
+                val d = abs(localY - riverCenterY)
+                when {
+                    d < riverWidth || n < 0.20 -> 0
+                    n > 0.70 -> 3
+                    n > 0.42 -> 2
+                    else -> 1
                 }
             }
         }
 
-        for (py in 0 until hPx) {
-            val gr = (py / cellPx).coerceAtMost(gridRows - 1)
-            val isGridY = py % cellPx == 0
-            val rowOff = py * wPx
-            for (px in 0 until wPx) {
-                val gc = (px / cellPx).coerceAtMost(gridCols - 1)
-                val baseRgba = cellColors[gr][gc]
-                if (isGridY || px % cellPx == 0) {
-                    // Subtle 1px constructivist grid line blended over cell color
-                    val tmp = Color()
-                    Color.rgba8888ToColor(tmp, baseRgba)
-                    tmp.lerp(if (isDark) c.ink else c.line, if (isDark) 0.36f else 0.16f)
-                    tmp.a = 1f
-                    buf[rowOff + px] = Color.rgba8888(tmp)
-                } else {
-                    buf[rowOff + px] = baseRgba
+        for (gy in 0 until safeRows) {
+            for (gx in 0 until safeCols) {
+                val fill = when (grid[gy][gx]) {
+                    0 -> waterRgba
+                    3 -> highRgba
+                    2 -> midRgba
+                    else -> lowRgba
                 }
+                fillBufRect(buf, wPx, hPx, gx * t, gy * t, t, t, fill)
             }
         }
 
-        // Draw crisp 2x2 quad ore cluster icons matching the mockup blueprint style
-        val subDot = (cellPx * 0.38f).roundToInt().coerceIn(2, 8)
-        val subPad = ((cellPx - subDot) / 2).coerceAtLeast(1)
-        for (row in 0 until mapH) {
-            for (col in 0 until mapW) {
-                if (!map.isResourcePool(col, row)) continue
-                val baseGc = ((col.toLong() * gridCols) / mapW).toInt().coerceIn(0, (gridCols - 2).coerceAtLeast(0))
-                val baseGr = ((row.toLong() * gridRows) / mapH).toInt().coerceIn(0, (gridRows - 2).coerceAtLeast(0))
-                for (dy in 0..1) {
-                    for (dx in 0..1) {
-                        val px = (baseGc + dx) * cellPx + subPad
-                        val py = (baseGr + dy) * cellPx + subPad
-                        fillBufRect(buf, wPx, hPx, px, py, subDot, subDot, ore)
+        // 2x2 quad ore clusters (`x*t + t*0.28`, `t*0.44`) tiled per 80x45 sector
+        val dotOff = (t * 0.28f).roundToInt().coerceAtLeast(1)
+        val dotSz = (t * 0.44f).roundToInt().coerceAtLeast(2)
+        val sectorCols = ceil(safeCols / 80.0).toInt().coerceAtLeast(1)
+        val sectorRows = ceil(safeRows / 45.0).toInt().coerceAtLeast(1)
+        for (sy in 0 until sectorRows) {
+            for (sx in 0 until sectorCols) {
+                val secSeed = seed + sx * 5.3 + sy * 11.7
+                for (k in 0 until oreCount) {
+                    val cx = sx * 80 + floor(hSvg(k, 1, secSeed) * 80.0).toInt()
+                    val cy = sy * 45 + floor(hSvg(k, 2, secSeed) * 45.0).toInt()
+                    for (j in 0 until 4) {
+                        val ox = cx + (j and 1)
+                        val oy = cy + (j shr 1)
+                        if (oy in 0 until safeRows && ox in 0 until safeCols && grid[oy][ox] != 0) {
+                            fillBufRect(buf, wPx, hPx, ox * t + dotOff, oy * t + dotOff, dotSz, dotSz, oreRgba)
+                        }
                     }
+                }
+            }
+        }
+
+        // Crisp 1px blueprint grid lines (`stroke-width="1"`, `shape-rendering="crispEdges"`)
+        for (py in 0 until hPx) {
+            val rowOff = py * wPx
+            if (py % t == 0) {
+                for (px in 0 until wPx) {
+                    buf[rowOff + px] = blendOverRgba(buf[rowOff + px], gridColor)
+                }
+            } else {
+                var px = 0
+                while (px < wPx) {
+                    buf[rowOff + px] = blendOverRgba(buf[rowOff + px], gridColor)
+                    px += t
                 }
             }
         }
         return buf
     }
 
-    /**
-     * Renders a theme-harmonized constructivist blueprint map [Pixmap] for [DynamicMapBackdrop].
-     */
-    fun renderBackdropBlueprintPixmap(
-        map: MapDefinition,
+    /** Retains compatible overload signature for tests while delegating to HTML Demo `mapSVG` blueprint generator. */
+    fun renderBackdropBlueprintRgbaBuffer(
+        @Suppress("UNUSED_PARAMETER") map: MapDefinition? = null,
         theme: UiTheme,
         widthPx: Int = 1600,
         heightPx: Int = 900,
+    ): IntArray {
+        val cellPx = 20
+        val cols = ((widthPx.coerceIn(160, 3200) + cellPx - 1) / cellPx).coerceAtLeast(8)
+        val rows = ((heightPx.coerceIn(90, 2000) + cellPx - 1) / cellPx).coerceAtLeast(5)
+        return renderDemoMapSvgBlueprintRgbaBuffer(theme = theme, cols = cols, rows = rows, cellPx = cellPx)
+    }
+
+    fun renderBackdropBlueprintPixmap(
+        theme: UiTheme,
+        cols: Int = 96,
+        rows: Int = 56,
+        cellPx: Int = 20,
     ): Pixmap {
-        val wPx = widthPx.coerceIn(160, 1920)
-        val hPx = heightPx.coerceIn(90, 1080)
-        val buf = renderBackdropBlueprintRgbaBuffer(map, theme, wPx, hPx)
+        val safeCols = cols.coerceIn(16, 200)
+        val safeRows = rows.coerceIn(9, 120)
+        val t = cellPx.coerceIn(4, 32)
+        val wPx = safeCols * t
+        val hPx = safeRows * t
+        val buf = renderDemoMapSvgBlueprintRgbaBuffer(theme = theme, cols = safeCols, rows = safeRows, cellPx = t)
         val pm = Pixmap(wPx, hPx, Pixmap.Format.RGBA8888)
         pm.blending = Pixmap.Blending.None
         for (py in 0 until hPx) {
@@ -719,24 +728,28 @@ object OutGameMapPreviewRenderer {
 }
 
 /**
- * Shared out-game slowly panning darkened map backdrop (UI Supplement §2):
- * - Renders the active selected skirmish map (or built-in default `river_crossing` when none selected);
+ * Shared out-game slowly panning constructivist blueprint backdrop (`八期界面演示稿.html` `mapSVG` & UI Supplement §2.2):
+ * - Renders 1:1 unstretched `20px` crisp blueprint grid + meandering river + `2x2` quad ore markers via `TextureFilter.Nearest`;
  * - Applies `theme.outGame.mapScrim` on `MAIN_MENU` / `LOADING` and `theme.outGame.mapScrimDeep` on secondary pages;
  * - Slowly pans over a 200-second alternate cycle with **zero simulation running**.
  */
 class DynamicMapBackdrop(
     private val skin: Skin,
     private val themeProvider: UiThemeProvider,
-    private val activeMapProvider: () -> Pair<String, MapDefinition>?,
+    @Suppress("UNUSED_PARAMETER") private val activeMapProvider: () -> Pair<String, MapDefinition>? = { null },
     private val deepScrimProvider: () -> Boolean,
 ) : Actor(), AutoCloseable {
 
     private data class TextureCacheKey(
-        val mapKey: String,
         val themeId: String,
-        val wellBits: Int,
-        val cellBits: Int,
-        val lineBits: Int,
+        val cols: Int,
+        val rows: Int,
+        val waterBits: Int,
+        val lowBits: Int,
+        val midBits: Int,
+        val highBits: Int,
+        val oreBits: Int,
+        val gridBits: Int,
     )
 
     private var cachedKey: TextureCacheKey? = null
@@ -744,7 +757,6 @@ class DynamicMapBackdrop(
     private var backdropRegion: TextureRegion? = null
     private var elapsedSeconds: Float = 0f
 
-    /** Exposes current normalized `[0..1]` pan phase for deterministic headless assertions. */
     val panProgress: Float
         get() {
             val cycle = (elapsedSeconds / PAN_HALF_PERIOD_SECONDS) % 2f
@@ -769,23 +781,34 @@ class DynamicMapBackdrop(
         if (stageW <= 0f || stageH <= 0f) return
 
         val theme = themeProvider.currentTheme()
-        val (mapKey, mapDef) = activeMapProvider() ?: run {
-            val fallback = OutGameMapCatalog.defaultEntry()
-            fallback.id to fallback.mapDefinition
-        }
+        val og = theme.outGame
+        val cellPx = 20
+        val panSpanX = 160f
+        val panSpanY = 110f
+        val neededCols = ceil((stageW + panSpanX + 40f) / cellPx.toFloat()).toInt().coerceIn(80, 160)
+        val neededRows = ceil((stageH + panSpanY + 40f) / cellPx.toFloat()).toInt().coerceIn(45, 96)
 
         val key = TextureCacheKey(
-            mapKey = mapKey,
             themeId = theme.id,
-            wellBits = Color.rgba8888(theme.colors.well),
-            cellBits = Color.rgba8888(theme.colors.cell),
-            lineBits = Color.rgba8888(theme.colors.line),
+            cols = neededCols,
+            rows = neededRows,
+            waterBits = Color.rgba8888(og.backdropWater),
+            lowBits = Color.rgba8888(og.backdropLow),
+            midBits = Color.rgba8888(og.backdropMid),
+            highBits = Color.rgba8888(og.backdropHigh),
+            oreBits = Color.rgba8888(og.backdropOre),
+            gridBits = Color.rgba8888(og.backdropGrid),
         )
         if (cachedKey != key || backdropTexture == null) {
             backdropTexture?.dispose()
-            val pm = OutGameMapPreviewRenderer.renderBackdropBlueprintPixmap(mapDef, theme)
+            val pm = OutGameMapPreviewRenderer.renderBackdropBlueprintPixmap(
+                theme = theme,
+                cols = neededCols,
+                rows = neededRows,
+                cellPx = cellPx,
+            )
             val tex = try {
-                Texture(pm).also { it.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear) }
+                Texture(pm).also { it.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest) }
             } finally {
                 pm.dispose()
             }
@@ -796,19 +819,20 @@ class DynamicMapBackdrop(
 
         val savedColor = batch.packedColor
         val white = skin.getRegion("white")
-        OutGameDraw.fillRect(batch, white, 0f, 0f, stageW, stageH, theme.colors.well, parentAlpha)
+        OutGameDraw.fillRect(batch, white, 0f, 0f, stageW, stageH, og.backdropWater, parentAlpha)
 
         backdropRegion?.let { region ->
-            val overscanW = max(stageW * 1.25f, stageW + 240f)
-            val overscanH = max(stageH * 1.25f, stageH + 140f)
+            val texW = region.regionWidth.toFloat()
+            val texH = region.regionHeight.toFloat()
             val phase = panProgress
-            val drawX = -(overscanW - stageW) * phase
-            val drawY = -(overscanH - stageH) * phase
+            // Snap to integer logical coordinates so 1px blueprint grid lines remain 100% razor-sharp!
+            val drawX = (-panSpanX * phase).roundToInt().toFloat()
+            val drawY = (-panSpanY * phase).roundToInt().toFloat()
             batch.setColor(1f, 1f, 1f, parentAlpha)
-            batch.draw(region, drawX, drawY, overscanW, overscanH)
+            batch.draw(region, drawX, drawY, texW, texH)
         }
 
-        val scrim = if (deepScrimProvider()) theme.outGame.mapScrimDeep else theme.outGame.mapScrim
+        val scrim = if (deepScrimProvider()) og.mapScrimDeep else og.mapScrim
         OutGameDraw.fillRect(batch, white, 0f, 0f, stageW, stageH, scrim, parentAlpha)
         batch.packedColor = savedColor
     }

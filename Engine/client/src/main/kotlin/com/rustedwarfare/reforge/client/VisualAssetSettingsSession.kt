@@ -10,7 +10,10 @@ data class ResourcePackMenuRow(val id: String, val metadata: ResourcePackMetadat
     val manifest: Path?, val enabled: Boolean, val canEnable: Boolean, val error: String?)
 
 /** UI-thread state. Only the current operation may publish; importing never enables or saves. */
-class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : AutoCloseable {
+class VisualAssetSettingsSession(
+    private val backend: VisualAssetSettings,
+    initialPackOptions: Map<String, Map<String, String>> = emptyMap(),
+) : AutoCloseable {
     private enum class Operation { APPLY, IMPORT, EXTRACT, EXTRACT_RESOURCES, CATALOG, RESTORE, PREVIEW }
     private data class Checked(val entry: ResourcePackCatalogEntry, val pack: PreparedImagePack?, val error: String?)
     private sealed interface Completed {
@@ -26,9 +29,13 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     private val known = linkedMapOf<String, Checked>()
     private var lastPrepared: PreparedVisualAssets? = null
     private var lastPreparedContent: ContentPackChoice? = null
+    val latestPreparedAssets: PreparedVisualAssets? get() = lastPrepared
     private var previewsRequested = false
     private var dirty = false
-    var selection: VisualAssetSelection = backend.initialSelection
+    private var latestPackOptions: Map<String, Map<String, String>> =
+        if (initialPackOptions.isNotEmpty()) initialPackOptions else backend.initialSelection.packOptions
+    var selection: VisualAssetSelection =
+        if (initialPackOptions.isNotEmpty()) backend.initialSelection.copy(packOptions = initialPackOptions) else backend.initialSelection
         private set
     var error: String? = backend.initialError
         private set
@@ -87,6 +94,7 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     fun edit(value: VisualAssetSelection) {
         check(!busy) { "Cancel preparation before editing" }
         hasUnsavedCatalog = hasUnsavedCatalog || value.packs.catalog != selection.packs.catalog
+        latestPackOptions = value.packOptions
         selection = value; dirty = true; error = null; diagnostic = null; revision++
     }
 
@@ -120,6 +128,41 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
         if (target !in order.indices) return
         Collections.swap(order, index, target)
         edit(selection.copy(packs = ResourcePackSelection(selection.packs.catalog, order)))
+    }
+
+    fun setPackOption(packId: String, optionId: String, value: String) {
+        check(!busy) { "Cancel the current resource operation first" }
+        edit(selection.withPackOption(packId, optionId, value))
+    }
+
+    fun syncPackOptions(allOptions: Map<String, Map<String, String>>) {
+        latestPackOptions = allOptions
+        if (selection.packOptions == allOptions) return
+        if (!busy || operation == Operation.CATALOG || operation == Operation.PREVIEW) {
+            selection = selection.copy(packOptions = allOptions)
+            revision++
+        }
+    }
+
+    /**
+     * Resolves active [UiThemePatch] list (ordered `high-to-low` for [UiThemeComposer.compose])
+     * directly from already-checked packs in memory, allowing instant live `UiTheme` option switching
+     * (including during an active match when media assets remain locked).
+     */
+    fun resolveLiveUiThemePatches(
+        overrideOptions: Map<String, Map<String, String>> = selection.packOptions,
+    ): Pair<List<UiThemePatch>, UiThemeAssetResolver> {
+        val patchesHighToLow = ArrayList<UiThemePatch>()
+        val rootsHighToLow = ArrayList<Path>()
+        for (id in selection.packs.enabled) {
+            if (id == VisualAssetSource.ORIGINAL.resourcePackId) continue
+            val entry = selection.packs.catalog.singleOrNull { it.id == id } ?: continue
+            val checkedPack = known[id]?.takeIf { it.entry == entry }?.pack ?: continue
+            checkedPack.manifest.parent?.let(rootsHighToLow::add)
+            val activeVar = checkedPack.resolveActiveVariant(overrideOptions[id].orEmpty())
+            patchesHighToLow.addAll(activeVar.uiThemePatchesLowToHigh.asReversed())
+        }
+        return patchesHighToLow to UiThemeAssetResolver(rootsHighToLow)
     }
 
     fun fail(message: String) { dirty = true; error = message; revision++ }
@@ -193,8 +236,10 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
     }
 
     fun restoreSaved(content: ContentPackChoice? = null) {
+        val opts = latestPackOptions
         begin(Operation.RESTORE) {
-            val saved = backend.loadSavedSelection()
+            val rawSaved = backend.loadSavedSelection()
+            val saved = if (opts.isNotEmpty()) rawSaved.copy(packOptions = opts) else rawSaved
             val checks = checkCatalog(saved.packs.catalog)
             Completed.Prepared(backend.prepareForContent(saved, content), save = false, checks = checks, content = content)
         }
@@ -254,14 +299,26 @@ class VisualAssetSettingsSession(private val backend: VisualAssetSettings) : Aut
                 is Completed.Imported -> acceptImport(result.pack, extracted = kind == Operation.EXTRACT || kind == Operation.EXTRACT_RESOURCES)
                 is Completed.Catalog -> {
                     install(result.checks)
+                    if (selection.packOptions != latestPackOptions) {
+                        selection = selection.copy(packOptions = latestPackOptions)
+                    }
                     error = result.checks.firstOrNull { it.entry.id in selection.packs.enabled && it.error != null }?.error
                     if (result.checks.any { it.error != null }) diagnostic = "Some saved packs are unavailable. Disabled entries are not used."
                 }
                 is Completed.Prepared -> {
                     if (result.save) backend.applyPrepared(result.assets)
-                    selection = result.assets.selection
-                    lastPrepared = result.assets
-                    lastPreparedContent = result.content
+                    selection = if (kind == Operation.PREVIEW && result.assets.selection.packOptions != latestPackOptions) {
+                        result.assets.selection.copy(packOptions = latestPackOptions)
+                    } else {
+                        latestPackOptions = result.assets.selection.packOptions
+                        result.assets.selection
+                    }
+                    if (result.assets.selection == selection) {
+                        lastPrepared = result.assets
+                        lastPreparedContent = result.content
+                    } else {
+                        previewsRequested = false
+                    }
                     result.checks?.let(::install)
                     dirty = false; error = null
                     if (result.save || kind == Operation.RESTORE) hasUnsavedCatalog = false

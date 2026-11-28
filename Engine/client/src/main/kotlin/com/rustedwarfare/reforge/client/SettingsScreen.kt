@@ -157,6 +157,7 @@ class SettingsScreen(
     private val appShell: AppShell,
     val settingsStore: UserSettingsStore,
     private val themeProvider: UiThemeProvider,
+    private val iconsProvider: () -> OutGameControlIcons? = { null },
     private val fontsProvider: () -> UiFontSet?,
     private val fallbackFontProvider: () -> BitmapFont,
     private val showExtractOriginalButton: Boolean = false,
@@ -175,6 +176,21 @@ class SettingsScreen(
     private val onOpenContentFolder: () -> String? = { null },
     private val onMoveResourcePack: (packId: String, delta: Int) -> Unit = { _, _ -> },
     private val onSetResourcePackEnabled: (packId: String, enabled: Boolean) -> Unit = { _, _ -> },
+    private val onGetResourcePackOptionValues: (packId: String) -> Map<String, String> = { packId ->
+        settingsStore.effective.optionsForPack(packId)
+    },
+    private val onSetResourcePackOption: (packId: String, optionId: String, value: String) -> Unit = { packId, optionId, value ->
+        settingsStore.update { it.withPackOption(packId, optionId, value) }
+        if (packId == UserSettings.BASE_RESOURCE_PACK_ID && optionId == UserSettings.BASE_THEME_OPTION_ID) {
+            onThemeChanged(BuiltInUiThemeId.fromCodeOrDefault(value))
+        }
+    },
+    private val onResetResourcePackOptions: (packId: String) -> Unit = { packId ->
+        settingsStore.update { it.resetPackOptions(packId) }
+        if (packId == UserSettings.BASE_RESOURCE_PACK_ID) {
+            onThemeChanged(BuiltInUiThemeId.DARK)
+        }
+    },
     private val onImportResourcePackPath: (rawPath: String) -> Unit = {},
     private val onExtractOriginalResourcePath: (rawPath: String) -> Unit = {},
     private val onMoveContentPack: (packId: String, delta: Int) -> Unit = { _, _ -> },
@@ -192,6 +208,7 @@ class SettingsScreen(
             field = value
             resourcePackManager.inMatchMode = value
             contentPackManager.inMatchMode = value
+            packOptionsModal.inMatchMode = value
             openFolderButton.enabled = !value
         }
 
@@ -210,6 +227,8 @@ class SettingsScreen(
         onBack = {
             if (uiScaleModal.isOpen) {
                 uiScaleModal.revertAndClose()
+            } else if (packOptionsModal.isOpen) {
+                packOptionsModal.dismiss()
             } else if (aboutDocModalTitleKey != null) {
                 closeAboutDocModal()
             } else {
@@ -334,23 +353,21 @@ class SettingsScreen(
         )
     }
 
-    val themeSegmented = SegmentedControl(
+    val packOptionsModal = ResourcePackOptionsModal(
         skin = skin,
+        appShell = appShell,
         themeProvider = themeProvider,
+        iconsProvider = iconsProvider,
         fontsProvider = fontsProvider,
         fallbackFontProvider = fallbackFontProvider,
-        options = BuiltInUiThemeId.entries,
-        initialSelected = settingsStore.effective.themeId,
-        labelOf = { id ->
-            when (id) {
-                BuiltInUiThemeId.DARK -> UiStrings.get("settings.theme.dark")
-                BuiltInUiThemeId.WHITE -> UiStrings.get("settings.theme.white")
-                BuiltInUiThemeId.BONE -> UiStrings.get("settings.theme.bone")
-            }
+        optionValuesProvider = onGetResourcePackOptionValues,
+        onSelectOption = { packId, optId, value ->
+            onSetResourcePackOption(packId, optId, value)
+            refreshPackLists()
         },
-        onSelected = { id ->
-            settingsStore.update { it.copy(themeId = id) }
-            onThemeChanged(id)
+        onResetDefaults = { packId ->
+            onResetResourcePackOptions(packId)
+            refreshPackLists()
         },
     )
 
@@ -465,6 +482,10 @@ class SettingsScreen(
         onSetPackEnabled = { id, enabled ->
             onSetResourcePackEnabled(id, enabled)
             refreshPackLists()
+        },
+        onOpenPackOptions = { entry ->
+            packOptionsModal.open(entry, inMatchMode)
+            if (width > 0f && height > 0f) updateLayout(width, height)
         },
         onImportPath = { raw ->
             onImportResourcePackPath(raw)
@@ -720,7 +741,6 @@ class SettingsScreen(
         panelShell.addActor(sfxVolumeSlider)
         panelShell.addActor(muteSegmented)
         panelShell.addActor(uiScaleSegmented)
-        panelShell.addActor(themeSegmented)
         panelShell.addActor(touchJoystickSegmented)
         panelShell.addActor(edgeScrollSegmented)
         panelShell.addActor(panSensitivitySlider)
@@ -736,6 +756,7 @@ class SettingsScreen(
         addActor(topBar)
         addActor(aboutDocModalActor)
         addActor(closeAboutDocButton)
+        addActor(packOptionsModal)
         addActor(uiScaleModal)
 
         aboutDocModalActor.isVisible = false
@@ -766,7 +787,9 @@ class SettingsScreen(
         if (!uiScaleModal.isOpen) {
             uiScaleSegmented.setOptionsAndSelection(UserSettings.STANDARD_UI_SCALE_PRESETS, nearestPresetScale(eff.uiScaleMultiplier))
         }
-        themeSegmented.setOptionsAndSelection(BuiltInUiThemeId.entries, eff.themeId)
+        if (packOptionsModal.isOpen) {
+            packOptionsModal.syncSelectionsFromStore()
+        }
         touchJoystickSegmented.setOptionsAndSelection(listOf(false, true), eff.touchCameraJoystick)
         edgeScrollSegmented.setOptionsAndSelection(listOf(false, true), eff.windowEdgeScroll)
         panSensitivitySlider.setValueSilently(eff.cameraPanSensitivity)
@@ -812,6 +835,9 @@ class SettingsScreen(
         if (uiScaleModal.isOpen) {
             uiScaleModal.revertAndClose()
         }
+        if (packOptionsModal.isOpen) {
+            packOptionsModal.dismiss()
+        }
         if (aboutDocModalTitleKey != null) {
             closeAboutDocModal()
         }
@@ -824,7 +850,6 @@ class SettingsScreen(
             sfxVolumeSlider,
             muteSegmented,
             uiScaleSegmented,
-            themeSegmented,
             touchJoystickSegmented,
             edgeScrollSegmented,
             panSensitivitySlider,
@@ -853,9 +878,7 @@ class SettingsScreen(
             }
             SettingsCategory.VIDEO -> {
                 uiScaleSegmented.isVisible = true
-                themeSegmented.isVisible = true
                 currentRowSpecs += "settings.uiScale" to uiScaleSegmented
-                currentRowSpecs += "settings.theme" to themeSegmented
             }
             SettingsCategory.CONTROLS -> {
                 touchJoystickSegmented.isVisible = true
@@ -891,6 +914,7 @@ class SettingsScreen(
 
         topBar.updateBounds(stageWidth, stageHeight)
         panelShell.updateShellBounds(stageWidth, stageHeight)
+        packOptionsModal.updateModalBounds(stageWidth, stageHeight)
         uiScaleModal.updateModalBounds(stageWidth, stageHeight)
 
         aboutDocModalActor.setBounds(0f, 0f, stageWidth, stageHeight)
@@ -960,6 +984,9 @@ class SettingsScreen(
         if (uiScaleModal.isOpen) {
             return uiScaleModal.drawnActions()
         }
+        if (packOptionsModal.isOpen) {
+            return packOptionsModal.drawnActions()
+        }
         if (aboutDocModalTitleKey != null) {
             return listOf(DrawnAction("settings-about-doc-close", closeAboutDocButton, UiStrings.get("common.confirm"), enabled = true))
         }
@@ -979,7 +1006,6 @@ class SettingsScreen(
             }
             SettingsCategory.VIDEO -> {
                 out += DrawnAction("settings-ui-scale", uiScaleSegmented, UiScaleConfirmModal.formatPercent(uiScaleSegmented.selected), enabled = true)
-                out += DrawnAction("settings-theme", themeSegmented, themeSegmented.selected.code, enabled = true)
             }
             SettingsCategory.CONTROLS -> {
                 out += DrawnAction("settings-touch-joystick", touchJoystickSegmented, UiStrings.get(if (touchJoystickSegmented.selected) "common.on" else "common.off"), enabled = true)
@@ -1077,17 +1103,21 @@ class SettingsScreen(
         fun nearestPresetScale(raw: Float): Float =
             UserSettings.STANDARD_UI_SCALE_PRESETS.minByOrNull { abs(it - raw) } ?: 1.0f
 
-        fun defaultBuiltInResourceEntries(language: UiLanguage = UiStrings.currentLanguage): List<DualColumnPackEntry> = listOf(
-            DualColumnPackEntry(
-                id = UserSettings.BASE_RESOURCE_PACK_ID,
-                title = if (language == UiLanguage.ZH) "内置基础资源包" else "Built-in Base Resource Pack",
-                subtitle = "${UserSettings.BASE_RESOURCE_PACK_ID} · ${if (language == UiLanguage.ZH) "兜底表现资源" else "Base fallback visuals & sounds"}",
-                enabled = true,
-                lockedBottom = true,
-                canEnable = false,
-                badgeStyle = PackIconBadgeStyle.BASE_RESOURCE,
-            ),
-        )
+        fun defaultBuiltInResourceEntries(language: UiLanguage = UiStrings.currentLanguage): List<DualColumnPackEntry> {
+            val baseMeta = BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER)
+            return listOf(
+                DualColumnPackEntry(
+                    id = UserSettings.BASE_RESOURCE_PACK_ID,
+                    title = LocalizedMetadata.resourcePackName(baseMeta, language),
+                    subtitle = LocalizedMetadata.resourcePackDescription(baseMeta, language),
+                    enabled = true,
+                    lockedBottom = true,
+                    canEnable = false,
+                    badgeStyle = PackIconBadgeStyle.BASE_RESOURCE,
+                    options = baseMeta.options,
+                ),
+            )
+        }
 
         fun defaultBuiltInContentEntries(language: UiLanguage = UiStrings.currentLanguage): List<DualColumnPackEntry> {
             val baseId = UserSettings.DEFAULT_BASE_CONTENT_PACK_ID

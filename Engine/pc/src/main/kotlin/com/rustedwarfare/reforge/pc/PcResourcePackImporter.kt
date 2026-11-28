@@ -14,9 +14,11 @@ import java.util.concurrent.CancellationException
 import javax.imageio.ImageIO
 import javax.imageio.stream.MemoryCacheImageInputStream
 
-/** Bounded local import around the existing PNG validator and visual cache publisher. */
-internal class PcResourcePackImporter(private val cacheRoot: Path,
-    private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically) {
+/** Bounded local import around the existing PNG/WAV/UiTheme validator and visual cache publisher. */
+internal class PcResourcePackImporter(
+    private val cacheRoot: Path,
+    private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically,
+) {
     fun load(input: Path): PreparedImagePack = load(input, null)
 
     fun load(input: Path, inputs: PcFrozenResourceInputs?): PreparedImagePack {
@@ -53,28 +55,34 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
                 }
                 if (!Files.isRegularFile(path, NOFOLLOW_LINKS)) bad(path, "Expected an ordinary input file")
             }
-            fun read(path: Path, frozen: Boolean = true): ByteArray {
-                if (frozen && inputs != null) return inputs.read(path, 16 * 1024 * 1024)
+
+            fun read(path: Path, frozen: Boolean = true, limitBytes: Int = 16 * 1024 * 1024): ByteArray {
+                if (frozen && inputs != null) return inputs.read(path, limitBytes)
                 try {
                     checkVisualCancellation(); ordinary(path)
                     fun attributes() = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
                         .let { Triple(it.size(), it.lastModifiedTime(), it.fileKey()) }
                     val before = attributes()
-                    if (before.first > 16L * 1024 * 1024) bad(path, "Input exceeds existing 16 MiB read bound")
-                    val bytes = Files.newInputStream(path).use { it.readNBytes(16 * 1024 * 1024 + 1) }
-                    if (bytes.size > 16 * 1024 * 1024 || before.first != bytes.size.toLong() || attributes() != before)
+                    if (before.first > limitBytes.toLong()) bad(path, "Input exceeds $limitBytes byte read bound")
+                    val bytes = Files.newInputStream(path).use { it.readNBytes(limitBytes + 1) }
+                    if (bytes.size > limitBytes || before.first != bytes.size.toLong() || attributes() != before)
                         bad(path, "Input changed during reading or exceeds existing bound")
                     return bytes
-                } catch (failure: java.io.IOException) { bad(path, "Cannot recheck package input: ${failure.message}") }
-                catch (failure: SecurityException) { bad(path, "Cannot access package input: ${failure.message}") }
+                } catch (failure: java.io.IOException) {
+                    bad(path, "Cannot recheck package input: ${failure.message}")
+                } catch (failure: SecurityException) {
+                    bad(path, "Cannot access package input: ${failure.message}")
+                }
             }
+
             val captured = linkedMapOf<Path, ByteArray>()
-            fun capture(path: Path): ByteArray {
-                val bytes = read(path)
+            fun capture(path: Path, limitBytes: Int = 16 * 1024 * 1024): ByteArray {
+                val bytes = read(path, limitBytes = limitBytes)
                 val earlier = captured.putIfAbsent(path, bytes)
                 if (earlier != null && !earlier.contentEquals(bytes)) bad(path, "Source changed between declarations")
                 return earlier ?: bytes
             }
+
             val metadata = ResourcePackMetadata.read(capture(manifest), manifest.toString())
             pack = metadata.id.value
             if (VisualAssetSource.entries.any { it.resourcePackId == pack }) bad(manifest, "User pack claims a built-in ID")
@@ -89,49 +97,149 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
             if (soundDeclarations != null && metadata.requiresResourceFormat < soundDeclarations.requiredResourceFormat)
                 audioBad(soundLists.single(), "Sound declaration format ${soundDeclarations.formatVersion} requires resource capability ${soundDeclarations.requiredResourceFormat}")
             if (metadata.icon !in declarations.images) bad(manifest, "Pack must provide its own icon ${metadata.icon}")
-            data class Image(val id: ResourceId, val declaration: ResourceImageDeclaration, val source: Path, val width: Int, val height: Int)
-            val decodedImages = linkedMapOf<Path, com.rustedwarfare.reforge.core.content.PngImageDimensions>()
-            val images = declarations.images.toSortedMap(compareBy { it.value }).map { (id, declaration) ->
-                val file = root.resolve(declaration.file).normalize()
+
+            data class StagedImage(val source: Path, val width: Int, val height: Int)
+            data class BoundImageSpec(val id: ResourceId, val declaration: ResourceImageDeclaration, val source: Path, val width: Int, val height: Int)
+            data class BoundSoundSpec(val id: ResourceId, val source: Path, val pcm: PcmAudio)
+            data class RawVariantSpec(
+                val uiThemePatch: UiThemePatch?,
+                val uiThemeBytes: ByteArray?,
+                val uiThemeRelPath: String?,
+                val images: List<BoundImageSpec>,
+                val sounds: List<BoundSoundSpec>,
+                val soundEvents: Map<ResourceId, ResourceSoundEvent>,
+            )
+
+            val decodedImages = linkedMapOf<Path, StagedImage>()
+            val decodedSounds = linkedMapOf<Path, PcmAudio>()
+
+            fun resolveMediaFile(manifestDir: Path, declaredFile: String): Path {
+                if (manifestDir != root) {
+                    val sibling = manifestDir.resolve(declaredFile).normalize()
+                    if (sibling.startsWith(root) && sibling != root && Files.exists(sibling, NOFOLLOW_LINKS)) {
+                        return sibling
+                    }
+                }
+                return root.resolve(declaredFile).normalize()
+            }
+
+            fun validateAndStageImage(id: ResourceId, declaration: ResourceImageDeclaration, manifestDir: Path = root): BoundImageSpec {
+                val file = resolveMediaFile(manifestDir, declaration.file)
                 try {
                     val bytes = capture(file)
-                    val dimensions = decodedImages.getOrPut(file) {
-                        PngImages.inspect(bytes).also { dimensions ->
+                    val staged = decodedImages.getOrPut(file) {
+                        val dimensions = PngImages.inspect(bytes).also { dims ->
                             MemoryCacheImageInputStream(ByteArrayInputStream(bytes)).use { stream ->
                                 val reader = ImageIO.getImageReadersByFormatName("png").next()
                                 try {
                                     reader.input = stream
                                     val decoded = reader.read(0)
-                                    require(decoded.width == dimensions.width && decoded.height == dimensions.height) { "Decoded PNG dimensions differ" }
-                                } finally { reader.dispose() }
+                                    require(decoded.width == dims.width && decoded.height == dims.height) { "Decoded PNG dimensions differ" }
+                                } finally {
+                                    reader.dispose()
+                                }
                             }
                         }
+                        StagedImage(file, dimensions.width, dimensions.height)
                     }
-                    val width = dimensions.width; val height = dimensions.height
+                    val width = staged.width
+                    val height = staged.height
                     require(width % declaration.totalFrames == 0) { "Frame count does not divide PNG width" }
                     require((width / declaration.totalFrames).toLong() * declaration.frameHeight == height.toLong() * declaration.frameWidth) {
                         "PNG frame aspect differs from declared logical layout"
                     }
-                    Image(id, declaration, file, width, height)
-                } catch (failure: CancellationException) { throw failure }
-                catch (failure: Exception) { bad(file, "$id: ${failure.message}") }
+                    return BoundImageSpec(id, declaration, file, width, height)
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: Exception) {
+                    bad(file, "$id: ${failure.message}")
+                }
             }
-            data class Sound(val id: ResourceId, val source: Path, val pcm: PcmAudio)
-            val decodedSounds = linkedMapOf<Path, PcmAudio>()
-            val sounds = soundDeclarations?.sounds.orEmpty().toSortedMap(compareBy { it.value }).map { (id, declaration) ->
-                val file = root.resolve(declaration.file).normalize()
+
+            fun validateAndStageSound(id: ResourceId, declaration: ResourceSoundDeclaration, manifestDir: Path = root): BoundSoundSpec {
+                val file = resolveMediaFile(manifestDir, declaration.file)
                 try {
                     val bytes = capture(file)
                     val pcm = decodedSounds.getOrPut(file) { PcmAudioDecoder.decode(bytes, file.toString()) }
-                    if (metadata.requiresResourceFormat == 4) require(file.toString().endsWith(".wav", true) && bytes.contentEquals(pcm.wavBytes())) {
-                        "Finished resource capability 4 requires canonical PCM16 WAV bytes"
+                    if (metadata.requiresResourceFormat == 4) {
+                        require(file.toString().endsWith(".wav", true) && bytes.contentEquals(pcm.wavBytes())) {
+                            "Finished resource capability 4 requires canonical PCM16 WAV bytes"
+                        }
                     }
-                    Sound(id, file, pcm)
-                } catch (failure: CancellationException) { throw failure }
-                catch (failure: Exception) { audioBad(file, "$id: ${failure.message}") }
+                    return BoundSoundSpec(id, file, pcm)
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: Exception) {
+                    audioBad(file, "$id: ${failure.message}")
+                }
             }
+
+            fun loadAndCaptureThemeFile(relPath: String): Pair<UiThemePatch, ByteArray> {
+                val themeFile = UiThemeComposer.resolveStrictPackFile(root, relPath)
+                    ?: throw IllegalArgumentException("UI_THEME_INVALID: $root / $relPath: Missing declared UI theme file")
+                val bytes = capture(themeFile, limitBytes = UiThemeComposer.MAX_THEME_BYTES)
+                val patch = UiThemePatch.read(bytes, themeFile.toString(), requireFull = false)
+                for (relAsset in patch.assets.values.filterNotNull().distinct()) {
+                    val assetFile = UiThemeComposer.resolveStrictPackFile(root, relAsset) ?: continue
+                    capture(assetFile)
+                }
+                return patch to bytes
+            }
+
+            val baseImages = declarations.images.toSortedMap(compareBy { it.value }).map { (id, decl) ->
+                validateAndStageImage(id, decl)
+            }
+            val baseSounds = soundDeclarations?.sounds.orEmpty().toSortedMap(compareBy { it.value }).map { (id, decl) ->
+                validateAndStageSound(id, decl)
+            }
+
+            val baseThemeCandidate = UiThemeComposer.resolveStrictPackFile(root, UiThemeComposer.PACK_THEME_FILE)
+            val baseThemePair = if (metadata.options.isNotEmpty() && baseThemeCandidate != null) {
+                loadAndCaptureThemeFile(UiThemeComposer.PACK_THEME_FILE)
+            } else null
+
+            val rawVariants = LinkedHashMap<PackVariantKey, RawVariantSpec>()
+            for (opt in metadata.options) {
+                for ((choiceVal, spec) in opt.nonEmptyOverlays()) {
+                    val themePair = spec.uiTheme?.let(::loadAndCaptureThemeFile)
+                    val varImgList = if (spec.images != null) {
+                        val imgManifestFile = root.resolve(spec.images).normalize()
+                        val imgDecl = ResourceImageManifest.read(capture(imgManifestFile), imgManifestFile.toString())
+                        imgDecl.images.toSortedMap(compareBy { it.value }).map { (id, decl) ->
+                            validateAndStageImage(id, decl, imgManifestFile.parent ?: root)
+                        }
+                    } else emptyList()
+                    val (varSndList, varEvents) = if (spec.sounds != null) {
+                        val sndManifestFile = root.resolve(spec.sounds).normalize()
+                        if (metadata.requiresResourceFormat < 2) {
+                            audioBad(sndManifestFile, "Variant sound declarations require resource capability 2")
+                        }
+                        val sndDecl = ResourceSoundManifest.read(capture(sndManifestFile), sndManifestFile.toString())
+                        if (metadata.requiresResourceFormat < sndDecl.requiredResourceFormat) {
+                            audioBad(sndManifestFile, "Sound declaration format ${sndDecl.formatVersion} requires resource capability ${sndDecl.requiredResourceFormat}")
+                        }
+                        val sndItems = sndDecl.sounds.toSortedMap(compareBy { it.value }).map { (id, decl) ->
+                            validateAndStageSound(id, decl, sndManifestFile.parent ?: root)
+                        }
+                        sndItems to sndDecl.events
+                    } else emptyList<BoundSoundSpec>() to emptyMap()
+
+                    rawVariants[PackVariantKey(opt.id, choiceVal)] = RawVariantSpec(
+                        uiThemePatch = themePair?.first,
+                        uiThemeBytes = themePair?.second,
+                        uiThemeRelPath = spec.uiTheme,
+                        images = varImgList,
+                        sounds = varSndList,
+                        soundEvents = varEvents,
+                    )
+                }
+            }
+
+            val imageList = decodedImages.values.toList()
+            val imageIndices = imageList.withIndex().associate { (index, item) -> item.source to index }
             val canonicalSounds = decodedSounds.mapValues { (_, pcm) -> pcm.wavBytes() }
             val soundIndices = decodedSounds.keys.withIndex().associate { (index, file) -> file to index }
+
             val sources = captured.entries.sortedBy { it.key.toString() }.map { (path, bytes) ->
                 ContentSourceIdentity(path, bytes.size.toLong(), inputs?.sha256(path) ?: visualHash(bytes))
             }
@@ -140,24 +248,34 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
                 "{\"path\":${quote(it.path.toString())},\"bytes\":${it.bytes},\"sha256\":${quote(it.sha256)}}"
             }
             val identity = visualHash(sourceJson.toByteArray(Charsets.UTF_8))
+
             fun verifySources() {
                 val currentLists = listOf("images.json", "images.hjson").map(root::resolve).filter { Files.exists(it, NOFOLLOW_LINKS) }
                 if (currentLists != lists) bad(root, "Image declaration discovery changed after checking: $currentLists")
                 val currentSoundLists = listOf("sounds.json", "sounds.hjson").map(root::resolve).filter { Files.exists(it, NOFOLLOW_LINKS) }
                 if (currentSoundLists != soundLists) audioBad(root, "Sound declaration discovery changed after checking: $currentSoundLists")
                 for (source in sources) {
-                    val current = try { read(source.path, frozen = false) } catch (failure: CancellationException) { throw failure }
-                    catch (failure: Exception) {
+                    val isThemeSource = source.path == baseThemeCandidate || rawVariants.values.any {
+                        it.uiThemeRelPath != null && root.resolve(it.uiThemeRelPath).normalize() == source.path
+                    }
+                    val limit = if (isThemeSource) UiThemeComposer.MAX_THEME_BYTES else 16 * 1024 * 1024
+                    val current = try {
+                        read(source.path, frozen = false, limitBytes = limit)
+                    } catch (failure: CancellationException) {
+                        throw failure
+                    } catch (failure: Exception) {
                         if (source.path in decodedSounds || source.path in soundLists) audioBad(source.path, failure.message ?: "Cannot recheck sound source")
                         throw failure
                     }
-                    if (current.size.toLong() != source.bytes || visualHash(current) != source.sha256)
+                    if (current.size.toLong() != source.bytes || visualHash(current) != source.sha256) {
                         if (source.path in decodedSounds || source.path in soundLists) audioBad(source.path, "Source changed after checking; check this pack again")
                         else bad(source.path, "Source changed after checking; check this pack again")
+                    }
                 }
             }
+
             val sourceHashes = sources.associate { it.path to it.sha256 }
-            val outputs = images.mapIndexed { index, image ->
+            val outputs = imageList.mapIndexed { index, image ->
                 "\"image$index\":{\"file\":\"images/$index.png\",\"target\":[${image.width},${image.height}]," +
                     "\"sha256\":\"${sourceHashes.getValue(image.source)}\"}"
             }.joinToString(",")
@@ -169,7 +287,7 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
             val prepared = publisher.locked {
                 publisher.prepare(beforePublish = ::verifySources) { staging ->
                     Files.createDirectory(staging.resolve("images"))
-                    images.forEachIndexed { index, image ->
+                    imageList.forEachIndexed { index, image ->
                         checkVisualCancellation()
                         Files.write(staging.resolve("images/$index.png"), captured.getValue(image.source), CREATE_NEW)
                     }
@@ -180,22 +298,65 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
                     }
                 }
             }
-            return PreparedImagePack(metadata, manifest, identity, images.mapIndexed { index, image ->
-                image.id to PreparedResourceImage(prepared.outputs.getValue("image$index"), image.declaration, image.width, image.height)
-            }.toMap(), sources, prepared::verify, ::verifySources, sounds.associate { sound ->
-                val output = prepared.outputs.getValue("sound${soundIndices.getValue(sound.source)}")
-                val bytes = canonicalSounds.getValue(sound.source)
-                sound.id to PreparedResourceSound(output, sound.pcm.channels, sound.pcm.sampleRate, sound.pcm.frames, bytes.size, visualHash(bytes))
-            }, soundDeclarations?.events.orEmpty())
-        } catch (failure: CancellationException) { throw failure }
-        catch (failure: IllegalArgumentException) {
-            if (failure.message.orEmpty().startsWith("RESOURCE_PACK")) throw failure
+
+            fun resolvePreparedImage(item: BoundImageSpec) = PreparedResourceImage(
+                prepared.outputs.getValue("image${imageIndices.getValue(item.source)}"),
+                item.declaration,
+                item.width,
+                item.height,
+            )
+
+            fun resolvePreparedSound(item: BoundSoundSpec): PreparedResourceSound {
+                val output = prepared.outputs.getValue("sound${soundIndices.getValue(item.source)}")
+                val bytes = canonicalSounds.getValue(item.source)
+                return PreparedResourceSound(output, item.pcm.channels, item.pcm.sampleRate, item.pcm.frames, bytes.size, visualHash(bytes))
+            }
+
+            val preparedVariants = rawVariants.mapValues { (_, raw) ->
+                PreparedPackVariantOverlay(
+                    uiThemePatch = raw.uiThemePatch,
+                    uiThemeRawBytes = raw.uiThemeBytes,
+                    uiThemeSourceRelPath = raw.uiThemeRelPath,
+                    images = raw.images.associate { it.id to resolvePreparedImage(it) },
+                    sounds = raw.sounds.associate { it.id to resolvePreparedSound(it) },
+                    soundEvents = raw.soundEvents,
+                )
+            }
+
+            return PreparedImagePack(
+                metadata = metadata,
+                manifest = manifest,
+                identity = identity,
+                images = baseImages.associate { it.id to resolvePreparedImage(it) },
+                sources = sources,
+                verifyPrepared = prepared::verify,
+                recheckSources = ::verifySources,
+                sounds = baseSounds.associate { it.id to resolvePreparedSound(it) },
+                soundEvents = soundDeclarations?.events.orEmpty(),
+                baseUiThemePatch = baseThemePair?.first,
+                baseUiThemeRawBytes = baseThemePair?.second,
+                variants = preparedVariants,
+            )
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (failure: IllegalArgumentException) {
+            if (
+                failure.message.orEmpty().startsWith("RESOURCE_PACK") ||
+                failure.message.orEmpty().startsWith("UI_THEME_INVALID")
+            ) throw failure
             bad(absolute, failure.message ?: "Invalid package input")
-        } catch (failure: java.io.IOException) { bad(absolute, "Cannot read package input: ${failure.message}") }
+        } catch (failure: java.io.IOException) {
+            bad(absolute, "Cannot read package input: ${failure.message}")
+        }
     }
+
     /** A fixed-generation read, admitted only by independent distribution facts and current source hashes. */
-    fun restoreReviewed(manifest: Path, inputs: PcFrozenResourceInputs, facts: PcTrustedOutputVersion,
-        generation: Path): PreparedImagePack {
+    fun restoreReviewed(
+        manifest: Path,
+        inputs: PcFrozenResourceInputs,
+        facts: PcTrustedOutputVersion,
+        generation: Path,
+    ): PreparedImagePack {
         checkVisualCancellation()
         val root = requireNotNull(manifest.parent)
         require(manifest.isAbsolute && manifest == manifest.normalize() && manifest.fileName.toString() in setOf("pack.json", "pack.hjson"))
@@ -272,5 +433,4 @@ internal class PcResourcePackImporter(private val cacheRoot: Path,
             "\"identity\":{\"packId\":${quote(pack)},\"sourceDigest\":${quote(identity)}},\"sources\":$sourceJson," +
             "\"unitOutputs\":{$images},\"terrainOutputs\":{}$soundProfile}").toByteArray(Charsets.UTF_8))
     }
-
 }

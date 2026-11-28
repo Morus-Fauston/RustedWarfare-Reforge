@@ -17,16 +17,25 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /** Supplied only after the platform's independent complete original audit, never parsed from a package. */
-internal class PcAcceptedOriginalQualification(val profile: String, val basis: String, val sourceTree: String,
-    val imageCertificate: String, val resourceCertificate: String,
-    val contracts: Map<ResourceId, ResourceImageDeclaration>, val verifyCurrent: () -> Unit)
+internal class PcAcceptedOriginalQualification(
+    val profile: String,
+    val basis: String,
+    val sourceTree: String,
+    val imageCertificate: String,
+    val resourceCertificate: String,
+    val contracts: Map<ResourceId, ResourceImageDeclaration>,
+    val verifyCurrent: () -> Unit,
+)
 
-/** Accepted versions belong to this client. External JSON never constitutes an acceptance receipt.
- * The local authentication key separates receipts from editable packages/cache locator records;
- * it does not claim protection against an attacker controlling the user's entire account. */
-internal class PcAcceptedResourceStore(cache: Path,
+/**
+ * Accepted versions belong to this client. External JSON never constitutes an acceptance receipt.
+ * Authenticates base media, `ui/theme.json`, and all declarative `options` variant overlays (ADR-008 & ADR-014).
+ */
+internal class PcAcceptedResourceStore(
+    cache: Path,
     private val atomicMove: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically,
-    private val originalBasis: (String) -> String? = { null }) {
+    private val originalBasis: (String) -> String? = { null },
+) {
     private val root = cache.toAbsolutePath().normalize().resolve("accepted-resources")
     private val versions = root.resolve("versions")
 
@@ -77,9 +86,11 @@ internal class PcAcceptedResourceStore(cache: Path,
         pack.verify(); pack.verifySources()
         original?.verifyCurrent?.invoke()
         val originalId = pack.metadata.id.value.startsWith("reforge:pc-original-")
-        require(if (originalId) pack.metadata.id.value.startsWith("reforge:pc-original-resources-") &&
-            pack.metadata.requiresResourceFormat in setOf(2, 4) && original != null && original.basis == originalBasis(original.profile)
-            else pack.metadata.requiresResourceFormat == 4 && original == null) {
+        require(
+            if (originalId) pack.metadata.id.value.startsWith("reforge:pc-original-resources-") &&
+                pack.metadata.requiresResourceFormat in setOf(2, 4) && original != null && original.basis == originalBasis(original.profile)
+            else pack.metadata.requiresResourceFormat in setOf(1, 2, 3, 4) && original == null
+        ) {
             "RESOURCE_PACK_ACCEPTANCE_INVALID: Original packages require their independent qualification adapter"
         }
         val stage = Files.createDirectory(versions.resolve("pending-${UUID.randomUUID()}"))
@@ -90,6 +101,13 @@ internal class PcAcceptedResourceStore(cache: Path,
         metadata.descriptionZh?.let { meta.add("description_zh", it) }
         metadata.displayTextEn?.let { meta.add("displayText_en", it) }
         metadata.descriptionEn?.let { meta.add("description_en", it) }
+        if (metadata.options.isNotEmpty()) {
+            val optsArr = JsonValue(JsonValue.ValueType.array)
+            for (opt in metadata.options) {
+                optsArr.add(JsonReader().parse(opt.toPlainJsonString()))
+            }
+            meta.add("options", optsArr)
+        }
         val receipt = JsonObject().add("rules", RULES).add("metadata", meta)
         if (original != null) {
             val contracts = JsonObject()
@@ -126,19 +144,13 @@ internal class PcAcceptedResourceStore(cache: Path,
             event.candidates.forEach { candidates.add(JsonObject().add("sound", it.sound.value).add("weight", it.weight)) }
             events.add(id.value, JsonObject().add("candidates", candidates).add("append", event.append))
         }
-        // Preserve optional validated ui/theme.json and any pack-local assets it references under client custody (ADR-014 & ADR-008)
+
         val uiMembers = JsonValue(JsonValue.ValueType.array)
+        val reservedTopNames = setOf("pack.json", "pack.hjson", "receipt.json", "receipt.mac", "images.json", "images.hjson", "sounds.json", "sounds.hjson")
         val sourceRoot = pack.manifest.parent
-        val themeSource = sourceRoot?.let { UiThemeComposer.resolveStrictPackFile(it, UiThemeComposer.PACK_THEME_FILE) }
-        if (sourceRoot != null && themeSource != null) {
-            val themeBytes = read(themeSource, UiThemeComposer.MAX_THEME_BYTES)
-            val parsedPatch = UiThemePatch.read(themeBytes, themeSource.toString(), requireFull = false)
-            val destTheme = stage.resolve(UiThemeComposer.PACK_THEME_FILE)
-            Files.createDirectories(destTheme.parent)
-            Files.write(destTheme, themeBytes, CREATE_NEW)
-            members.add(UiThemeComposer.PACK_THEME_FILE, JsonObject().add("bytes", themeBytes.size).add("sha256", visualHash(themeBytes)))
-            uiMembers.add(JsonValue(UiThemeComposer.PACK_THEME_FILE))
-            val reservedTopNames = setOf("pack.json", "pack.hjson", "receipt.json", "receipt.mac", "images.json", "images.hjson", "sounds.json", "sounds.hjson")
+
+        fun stageThemeAssets(parsedPatch: UiThemePatch) {
+            if (sourceRoot == null) return
             for (relAsset in parsedPatch.assets.values.filterNotNull().distinct()) {
                 if (relAsset in reservedTopNames || relAsset.matches(Regex("media-[0-9]+\\.(png|wav)"))) {
                     throw IllegalArgumentException("UI_THEME_INVALID: $relAsset: Conflicts with reserved resource pack file")
@@ -155,6 +167,68 @@ internal class PcAcceptedResourceStore(cache: Path,
                 }
             }
         }
+
+        val themeSource = sourceRoot?.let { UiThemeComposer.resolveStrictPackFile(it, UiThemeComposer.PACK_THEME_FILE) }
+        if (sourceRoot != null && themeSource != null) {
+            val themeBytes = read(themeSource, UiThemeComposer.MAX_THEME_BYTES)
+            val parsedPatch = UiThemePatch.read(themeBytes, themeSource.toString(), requireFull = false)
+            val destTheme = stage.resolve(UiThemeComposer.PACK_THEME_FILE)
+            Files.createDirectories(destTheme.parent)
+            Files.write(destTheme, themeBytes, CREATE_NEW)
+            members.add(UiThemeComposer.PACK_THEME_FILE, JsonObject().add("bytes", themeBytes.size).add("sha256", visualHash(themeBytes)))
+            uiMembers.add(JsonValue(UiThemeComposer.PACK_THEME_FILE))
+            stageThemeAssets(parsedPatch)
+        }
+
+        if (pack.variants.isNotEmpty()) {
+            val variantsJson = JsonObject()
+            var varThemeIdx = 0
+            for ((vKey, overlay) in pack.variants.entries.sortedWith(compareBy({ it.key.optionId }, { it.key.choiceValue }))) {
+                val vObj = JsonObject().add("optionId", vKey.optionId).add("choiceValue", vKey.choiceValue)
+                val varThemePatch = overlay.uiThemePatch
+                val varThemeBytes = overlay.uiThemeRawBytes
+                if (varThemePatch != null && varThemeBytes != null) {
+                    val relThemeName = "ui/variants/theme-${varThemeIdx++}.json"
+                    val destVarTheme = stage.resolve(relThemeName)
+                    Files.createDirectories(destVarTheme.parent)
+                    Files.write(destVarTheme, varThemeBytes, CREATE_NEW)
+                    members.add(relThemeName, JsonObject().add("bytes", varThemeBytes.size).add("sha256", visualHash(varThemeBytes)))
+                    uiMembers.add(JsonValue(relThemeName))
+                    stageThemeAssets(varThemePatch)
+                    vObj.add("uiThemeFile", relThemeName)
+                }
+                if (overlay.images.isNotEmpty()) {
+                    val vImgs = JsonObject()
+                    for ((id, image) in overlay.images.toSortedMap(compareBy { it.value })) {
+                        val layout = image.declaration
+                        vImgs.add(id.value, JsonObject().add("file", copy(image.path, "png"))
+                            .add("frameWidth", layout.frameWidth).add("frameHeight", layout.frameHeight).add("totalFrames", layout.totalFrames)
+                            .add("pixelWidth", image.pixelWidth).add("pixelHeight", image.pixelHeight))
+                    }
+                    vObj.add("images", vImgs)
+                }
+                if (overlay.sounds.isNotEmpty()) {
+                    val vSnds = JsonObject()
+                    for ((id, sound) in overlay.sounds.toSortedMap(compareBy { it.value })) {
+                        vSnds.add(id.value, JsonObject().add("file", copy(sound.path, "wav"))
+                            .add("channels", sound.channels).add("sampleRate", sound.sampleRate).add("frames", sound.frames))
+                    }
+                    vObj.add("sounds", vSnds)
+                }
+                if (overlay.soundEvents.isNotEmpty()) {
+                    val vEvts = JsonObject()
+                    for ((id, event) in overlay.soundEvents.toSortedMap(compareBy { it.value })) {
+                        val candidates = JsonValue(JsonValue.ValueType.array)
+                        event.candidates.forEach { candidates.add(JsonObject().add("sound", it.sound.value).add("weight", it.weight)) }
+                        vEvts.add(id.value, JsonObject().add("candidates", candidates).add("append", event.append))
+                    }
+                    vObj.add("events", vEvts)
+                }
+                variantsJson.add("${vKey.optionId}=${vKey.choiceValue}", vObj)
+            }
+            receipt.add("variants", variantsJson)
+        }
+
         receipt.add("images", images).add("sounds", sounds).add("events", events).add("members", members)
         if (uiMembers.size > 0) receipt.add("uiMembers", uiMembers)
         val bytes = receipt.toJson(OutputType.json).toByteArray(Charsets.UTF_8)
@@ -163,7 +237,6 @@ internal class PcAcceptedResourceStore(cache: Path,
         Files.write(stage.resolve("receipt.mac"), authenticate(bytes), CREATE_NEW)
         Files.writeString(stage.resolve("pack.json"), meta.toJson(OutputType.json), CREATE_NEW)
         pack.verify(); pack.verifySources(); original?.verifyCurrent?.invoke(); checkVisualCancellation()
-        // Reimport can repair a damaged version without overwriting its evidence or a running match.
         val target = versions.resolve("$identity-${UUID.randomUUID()}")
         atomicMove(stage, target, false)
         original?.verifyCurrent?.invoke()
@@ -194,7 +267,9 @@ internal class PcAcceptedResourceStore(cache: Path,
                 "RESOURCE_PACK_ACCEPTANCE_INVALID: Independent original qualification differs; reimport"
             }
             layouts(original.get("contracts").asObject())
-        } else { require(original == null); emptyMap() }
+        } else {
+            require(original == null); emptyMap()
+        }
         val members = receipt.get("members").asObject()
         val uiKeysToCheck = linkedSetOf<String>()
         var uiNode = receipt.get("uiMembers")?.child
@@ -214,23 +289,82 @@ internal class PcAcceptedResourceStore(cache: Path,
             require(file.matches(Regex("media-[0-9]+\\.(png|wav)")) && members.get(file) != null)
             return directory.resolve(file)
         }
-        val layouts = layouts(receipt.get("images"))
-        val images = receipt.get("images").asObject().associate { row ->
-            val value = row.asObject(); val file = value.getString("file", "")
-            ResourceId.parse(row.name) to PreparedResourceImage(member(file), layouts.getValue(ResourceId.parse(row.name)),
-                value.getInt("pixelWidth", 0), value.getInt("pixelHeight", 0))
+        fun parseImagesNode(imgNode: JsonValue?): Map<ResourceId, PreparedResourceImage> {
+            if (imgNode == null) return emptyMap()
+            val nodeLayouts = layouts(imgNode)
+            return imgNode.asObject().associate { row ->
+                val value = row.asObject(); val file = value.getString("file", "")
+                ResourceId.parse(row.name) to PreparedResourceImage(member(file), nodeLayouts.getValue(ResourceId.parse(row.name)),
+                    value.getInt("pixelWidth", 0), value.getInt("pixelHeight", 0))
+            }
         }
-        val soundRows = receipt.get("sounds").asObject()
-        val declarations = JsonObject()
-        val sounds = soundRows.associate { row ->
-            val value = row.asObject(); val file = value.getString("file", "")
-            declarations.add(row.name, JsonObject().add("file", file))
-            val expected = members.get(file).asObject()
-            ResourceId.parse(row.name) to PreparedResourceSound(member(file), value.getInt("channels", 0),
-                value.getInt("sampleRate", 0), value.getInt("frames", 0), expected.getInt("bytes", 0), expected.getString("sha256", ""))
+        fun parseSoundsAndEvents(sndNode: JsonValue?, evtNode: JsonValue?, allSoundDecls: JsonValue? = null): Pair<Map<ResourceId, PreparedResourceSound>, Map<ResourceId, ResourceSoundEvent>> {
+            val mergedDeclFiles = LinkedHashMap<String, String>()
+            if (allSoundDecls != null) {
+                for (c in allSoundDecls) mergedDeclFiles[c.name] = c.asObject().getString("file", "")
+            }
+            val parsedSounds = sndNode?.asObject()?.associate { row ->
+                val value = row.asObject(); val file = value.getString("file", "")
+                mergedDeclFiles[row.name] = file
+                val expected = members.get(file).asObject()
+                ResourceId.parse(row.name) to PreparedResourceSound(member(file), value.getInt("channels", 0),
+                    value.getInt("sampleRate", 0), value.getInt("frames", 0), expected.getInt("bytes", 0), expected.getString("sha256", ""))
+            }.orEmpty()
+            val parsedEvents = if (evtNode != null) {
+                val declarations = JsonObject()
+                for ((id, file) in mergedDeclFiles) {
+                    declarations.add(id, JsonObject().add("file", file))
+                }
+                val soundManifest = JsonObject().add("formatVersion", 2).add("sounds", declarations).add("events", evtNode)
+                ResourceSoundManifest.read(soundManifest.toJson(OutputType.json).toByteArray(), "sounds.json").events
+            } else emptyMap()
+            return parsedSounds to parsedEvents
         }
-        val soundManifest = JsonObject().add("formatVersion", 2).add("sounds", declarations).add("events", receipt.get("events"))
-        val events = ResourceSoundManifest.read(soundManifest.toJson(OutputType.json).toByteArray(), "sounds.json").events
+
+        val images = parseImagesNode(receipt.get("images"))
+        val baseSoundRows = receipt.get("sounds")?.asObject()
+        val (sounds, events) = parseSoundsAndEvents(baseSoundRows, receipt.get("events"))
+
+        val baseThemeFile = if (UiThemeComposer.PACK_THEME_FILE in uiKeysToCheck) {
+            UiThemeComposer.resolveStrictPackFile(directory, UiThemeComposer.PACK_THEME_FILE)
+        } else null
+        val baseThemeBytes = baseThemeFile?.let { read(it, UiThemeComposer.MAX_THEME_BYTES) }
+        val baseThemePatch = baseThemeBytes?.let { UiThemePatch.read(it, baseThemeFile.toString(), requireFull = false) }
+
+        val restoredVariants = LinkedHashMap<PackVariantKey, PreparedPackVariantOverlay>()
+        receipt.get("variants")?.asObject()?.forEach { vRow ->
+            val vObj = vRow.asObject()
+            val optId = vObj.getString("optionId")
+            val choiceVal = vObj.getString("choiceValue")
+            val relTheme = vObj.get("uiThemeFile")?.asString()
+            val varThemeBytes = relTheme?.let {
+                val tf = requireNotNull(UiThemeComposer.resolveStrictPackFile(directory, it)) {
+                    "RESOURCE_PACK_ACCEPTANCE_INVALID: Missing variant theme file: $it"
+                }
+                read(tf, UiThemeComposer.MAX_THEME_BYTES)
+            }
+            val varThemePatch = varThemeBytes?.let { UiThemePatch.read(it, relTheme, requireFull = false) }
+            val vImages = parseImagesNode(vObj.get("images"))
+            val (vSounds, vEvents) = parseSoundsAndEvents(vObj.get("sounds"), vObj.get("events"), baseSoundRows)
+            restoredVariants[PackVariantKey(optId, choiceVal)] = PreparedPackVariantOverlay(
+                uiThemePatch = varThemePatch,
+                uiThemeRawBytes = varThemeBytes,
+                uiThemeSourceRelPath = relTheme,
+                images = vImages,
+                sounds = vSounds,
+                soundEvents = vEvents,
+            )
+        }
+
+        val allMediaPaths = buildSet {
+            images.values.forEach { add(it.path) }
+            sounds.values.forEach { add(it.path) }
+            restoredVariants.values.forEach { v ->
+                v.images.values.forEach { add(it.path) }
+                v.sounds.values.forEach { add(it.path) }
+            }
+        }
+
         fun verify(paths: Set<Path>) {
             checkVisualCancellation()
             require(read(directory.resolve("receipt.json"), 4 * 1024 * 1024).contentEquals(bytes)) {
@@ -259,13 +393,28 @@ internal class PcAcceptedResourceStore(cache: Path,
                 }
             }
         }
-        return PreparedImagePack(metadata, manifest, identity, images, emptyList(),
-            { verify((images.values.map { it.path } + sounds.values.map { it.path }).toSet()) },
-            ::checkVisualCancellation, sounds, events, ::verify, clientHeld = true, staticBaseContracts = contracts)
+        return PreparedImagePack(
+            metadata = metadata,
+            manifest = manifest,
+            identity = identity,
+            images = images,
+            sources = emptyList(),
+            verifyPrepared = { verify(allMediaPaths) },
+            recheckSources = ::checkVisualCancellation,
+            sounds = sounds,
+            soundEvents = events,
+            verifySelected = ::verify,
+            clientHeld = true,
+            staticBaseContracts = contracts,
+            baseUiThemePatch = baseThemePatch,
+            baseUiThemeRawBytes = baseThemeBytes,
+            variants = restoredVariants,
+        )
     }
 
     private fun declaration(file: String, layout: ResourceImageDeclaration) = JsonObject().add("file", file)
         .add("frameWidth", layout.frameWidth).add("frameHeight", layout.frameHeight).add("totalFrames", layout.totalFrames)
+
     private fun layouts(rows: JsonValue): Map<ResourceId, ResourceImageDeclaration> {
         val declarations = JsonObject()
         for (row in rows) declarations.add(row.name, JsonObject().add("file", row.getString("file"))

@@ -77,7 +77,13 @@
     "mapCardLabelPillBorder": "#CBD5E1FF",
     "mapCardLabelFg": "#0F172AFF",
     "menuExtrudeAccent": "#E5481EFF",
-    "menuExtrudeStroke": "#FFFFFFFF"
+    "menuExtrudeStroke": "#FFFFFFFF",
+    "backdropWater": "#DCE5EFFF",
+    "backdropLow": "#F0F4F8FF",
+    "backdropMid": "#E6ECF3FF",
+    "backdropHigh": "#D8E1ECFF",
+    "backdropOre": "#BDC9D7FF",
+    "backdropGrid": "#0F172A@0.055"
   },
   "metrics": {
     "keyRadius": 4.0,

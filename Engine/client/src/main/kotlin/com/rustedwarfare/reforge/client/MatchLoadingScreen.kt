@@ -38,6 +38,7 @@ data class MatchLoadingSummary(
     val economyText: String,
     val noNukes: Boolean,
     val tipIndex: Int = 1,
+    val thumbnailPath: java.nio.file.Path? = null,
 ) {
     fun localizedMapTitle(language: UiLanguage = UiStrings.currentLanguage): String =
         if (isMapTitleKey) UiStrings.get(mapTitleKeyOrRaw, language) else mapTitleKeyOrRaw
@@ -87,6 +88,7 @@ data class MatchLoadingSummary(
             economyText = config.moreRules.incomeMultiplier.displayText,
             noNukes = config.moreRules.noNukes,
             tipIndex = tipIndex,
+            thumbnailPath = mapEntry.thumbnailPath,
         )
 
         fun fromTestScenario(
@@ -175,6 +177,7 @@ class MatchLoadingScreen(
 
     private data class ThumbTexKey(
         val mapId: String,
+        val thumbnailPath: java.nio.file.Path?,
         val widthTiles: Int,
         val heightTiles: Int,
         val themeId: String,
@@ -443,6 +446,14 @@ class MatchLoadingScreen(
         val pinSize = 22f
         val font = fontsProvider()?.keyBold ?: fontsProvider()?.smallMono ?: fallbackFontProvider()
 
+        val mapWorldW = (summary.mapDefinition.widthTiles * summary.mapDefinition.tileWidth).coerceAtLeast(1).toFloat()
+        val mapWorldH = (summary.mapDefinition.heightTiles * summary.mapDefinition.tileHeight).coerceAtLeast(1).toFloat()
+        val fitScale = if (summary.thumbnailPath != null) min(thumbSize / mapWorldW, thumbSize / mapWorldH) else 1f
+        val fitW = if (summary.thumbnailPath != null) (mapWorldW * fitScale).coerceIn(1f, thumbSize) else thumbSize
+        val fitH = if (summary.thumbnailPath != null) (mapWorldH * fitScale).coerceIn(1f, thumbSize) else thumbSize
+        val fitX = thumbX + (thumbSize - fitW) * 0.5f
+        val fitY = thumbY + (thumbSize - fitH) * 0.5f
+
         for (spawnIdx in 1..totalSpawns) {
             val holder = seatsBySpawn[spawnIdx] ?: continue
             val (nx, ny) = if (spawnIdx - 1 < baseSpawns.size) {
@@ -451,8 +462,8 @@ class MatchLoadingScreen(
                 val angle = -PI * 0.5 + (2.0 * PI * (spawnIdx - 1).toDouble() / totalSpawns.toDouble())
                 (0.50f + 0.34f * cos(angle).toFloat()) to (0.50f + 0.34f * sin(angle).toFloat())
             }
-            val px = (thumbX + nx * thumbSize - pinSize * 0.5f).roundToInt().toFloat()
-            val py = (thumbY + (1f - ny) * thumbSize - pinSize * 0.5f).roundToInt().toFloat()
+            val px = (fitX + nx * fitW - pinSize * 0.5f).roundToInt().toFloat()
+            val py = (fitY + (1f - ny) * fitH - pinSize * 0.5f).roundToInt().toFloat()
             val pCol = theme.palettes.playerColor(holder.colorIndex)
 
             OutGameDraw.fillRect(batch, white, px, py, pinSize, pinSize, theme.colors.solid, parentAlpha)
@@ -470,8 +481,10 @@ class MatchLoadingScreen(
 
     private fun ensureThumbTexture(summary: MatchLoadingSummary, theme: UiTheme): Texture? {
         if (Gdx.gl == null) return null
+        val thumbPath = summary.thumbnailPath?.takeIf { java.nio.file.Files.isRegularFile(it) }
         val key = ThumbTexKey(
             mapId = summary.mapId,
+            thumbnailPath = thumbPath,
             widthTiles = summary.mapDefinition.widthTiles,
             heightTiles = summary.mapDefinition.heightTiles,
             themeId = theme.id,
@@ -481,9 +494,24 @@ class MatchLoadingScreen(
         )
         if (cachedKey == key && cachedTexture != null) return cachedTexture
         cachedTexture?.let { runCatching { it.dispose() } }
-        val pm = OutGameMapPreviewRenderer.renderTacticalPixmap(summary.mapDefinition, 384, 384, theme)
+        val synthEntry = MapPickerEntry(
+            id = summary.mapId,
+            slug = summary.mapSlug,
+            titleKeyOrRaw = summary.mapTitleKeyOrRaw,
+            isTranslationKey = summary.isMapTitleKey,
+            tmxPath = null,
+            mapDefinition = summary.mapDefinition,
+            spawnPointsNormalized = summary.spawnPointsNormalized,
+            thumbnailPath = thumbPath,
+        )
+        val pm = if (thumbPath != null) {
+            OutGameMapPreviewRenderer.loadOrRenderSquareCardPixmap(synthEntry, 384, theme)
+        } else {
+            OutGameMapPreviewRenderer.renderTacticalPixmap(summary.mapDefinition, 384, 384, theme)
+        }
+        val filter = if (thumbPath != null) Texture.TextureFilter.Linear else Texture.TextureFilter.Nearest
         val tex = try {
-            Texture(pm).also { it.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest) }
+            Texture(pm).also { it.setFilter(filter, filter) }
         } finally {
             pm.dispose()
         }

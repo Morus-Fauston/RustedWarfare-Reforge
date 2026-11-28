@@ -18,6 +18,7 @@ class ResourcePackMetadata private constructor(
     val descriptionZh: String? = null,
     val displayTextEn: String? = null,
     val descriptionEn: String? = null,
+    val options: List<ResourcePackOption> = emptyList(),
 ) {
     fun localizedName(language: UiLanguage = UiStrings.currentLanguage): String =
         LocalizedMetadata.resourcePackName(this, language)
@@ -43,7 +44,7 @@ class ResourcePackMetadata private constructor(
             val metadata = parsed.asObject()
             val allowed = setOf(
                 "formatVersion", "requiresResourceFormat", "id", "name", "description", "icon",
-                "displayText_zh", "description_zh", "displayText_en", "description_en",
+                "displayText_zh", "description_zh", "displayText_en", "description_en", "options",
             )
             val seen = mutableSetOf<String>()
             for (member in metadata) {
@@ -77,6 +78,7 @@ class ResourcePackMetadata private constructor(
             catch (failure: IllegalArgumentException) { bad(field, failure.message ?: "Invalid resource ID") }
             val format = version("formatVersion")
             val requires = version("requiresResourceFormat", CURRENT_RESOURCE_FORMAT)
+            val parsedOptions = ResourcePackOption.parseList(metadata.get("options"), source)
             return ResourcePackMetadata(
                 id = resource("id"),
                 name = string("name"),
@@ -88,6 +90,7 @@ class ResourcePackMetadata private constructor(
                 descriptionZh = optionalString("description_zh"),
                 displayTextEn = optionalString("displayText_en"),
                 descriptionEn = optionalString("description_en"),
+                options = java.util.Collections.unmodifiableList(ArrayList(parsedOptions)),
             )
         }
     }

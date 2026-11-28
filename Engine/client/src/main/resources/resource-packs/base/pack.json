@@ -5,6 +5,39 @@
   "name": "Public placeholder pack",
   "description": "Repository-authored placeholder pictures and sounds.",
   "displayText_zh": "内置基础资源包",
-  "description_zh": "reforge:base · 兜底表现资源",
-  "icon": "reforge:units/c_tank/body"
+  "description_zh": "reforge:base · 兜底表现资源与内置主题",
+  "icon": "reforge:units/c_tank/body",
+  "options": [
+    {
+      "id": "theme",
+      "type": "enum",
+      "default": "dark",
+      "name": "UI Theme",
+      "displayText_zh": "界面主题",
+      "displayText_en": "UI Theme",
+      "choices": [
+        {
+          "value": "dark",
+          "name": "Industrial Dark",
+          "displayText_zh": "暗黑工业",
+          "displayText_en": "Industrial Dark",
+          "uiTheme": "ui/theme.json"
+        },
+        {
+          "value": "white",
+          "name": "Polar White",
+          "displayText_zh": "极昼纯白",
+          "displayText_en": "Polar White",
+          "uiTheme": "ui/themes/white.json"
+        },
+        {
+          "value": "bone",
+          "name": "Constructivist Bone",
+          "displayText_zh": "骨白构成主义",
+          "displayText_en": "Constructivist Bone",
+          "uiTheme": "ui/themes/bone.json"
+        }
+      ]
+    }
+  ]
 }

@@ -451,6 +451,7 @@ class SkirmishLobbyState(
     var fastBuild: Boolean = false
 
     private var nextSeatId: Int = 1
+    private var seatsCustomized: Boolean = false
     private val mutableSeats = ArrayList<MatchSeatConfig>()
 
     val seats: List<MatchSeatConfig>
@@ -520,7 +521,7 @@ class SkirmishLobbyState(
         }
     }
 
-    /** Selects a new [MapPickerEntry] and updates `winMode` from map `winCondition` (when switching maps) while preserving seats & rules. */
+    /** Selects a new [MapPickerEntry] and updates `winMode` from map `winCondition` (when switching maps) while preserving custom seats & rules. */
     fun selectMapEntry(entry: MapPickerEntry) {
         val mapChanged = entry.id != selectedMap.id
         selectedMap = entry
@@ -528,6 +529,10 @@ class SkirmishLobbyState(
             val mapped = SkirmishWinMode.mapFromMapDefinition(entry.mapDefinition)
             winMode = mapped.mode
             winConditionFallbackNoticeKey = mapped.fallbackNoticeKey
+            if (!seatsCustomized) {
+                resetDefaultSeatsForMap(entry)
+                return
+            }
         }
         reconcileSeatSpawns()
     }
@@ -566,6 +571,7 @@ class SkirmishLobbyState(
         difficulty: SkirmishAiDifficulty = if (freeSandboxMode) SkirmishAiDifficulty.IDLE else SkirmishAiDifficulty.NORMAL,
     ): MatchSeatConfig? {
         if (!canAddSeat) return null
+        seatsCustomized = true
         val usedColors = mutableSeats.map { it.colorIndex }.toSet()
         val color = (0 until MatchSeatConfig.MAX_PALETTE_COLORS).firstOrNull { it !in usedColors }
             ?: (mutableSeats.size % MatchSeatConfig.MAX_PALETTE_COLORS)
@@ -591,6 +597,7 @@ class SkirmishLobbyState(
     /** Adds a non-host human seat (`玩家 N`, supporting the `踢出` action contract for `2.0` & headless verification). */
     fun addRemoteHumanSeat(customName: String? = null): MatchSeatConfig? {
         if (!canAddSeat) return null
+        seatsCustomized = true
         val usedColors = mutableSeats.map { it.colorIndex }.toSet()
         val color = (0 until MatchSeatConfig.MAX_PALETTE_COLORS).firstOrNull { it !in usedColors }
             ?: (mutableSeats.size % MatchSeatConfig.MAX_PALETTE_COLORS)
@@ -616,6 +623,7 @@ class SkirmishLobbyState(
         if (seatIndex !in mutableSeats.indices) return false
         val target = mutableSeats[seatIndex]
         if (target.kind == MatchSeatKind.LOCAL_HUMAN) return false
+        seatsCustomized = true
         mutableSeats.removeAt(seatIndex)
         renumberAiOrdinals()
         reconcileSeatSpawns()
@@ -654,6 +662,7 @@ class SkirmishLobbyState(
         val normColor = Math.floorMod(targetColorIndex, MatchSeatConfig.MAX_PALETTE_COLORS)
         val current = mutableSeats[seatIndex]
         if (current.colorIndex == normColor) return
+        seatsCustomized = true
         val holderIdx = mutableSeats.indexOfFirst { it.colorIndex == normColor }
         mutableSeats[seatIndex] = current.copy(colorIndex = normColor)
         if (holderIdx >= 0 && holderIdx != seatIndex) {
@@ -667,6 +676,7 @@ class SkirmishLobbyState(
         val clamped = targetSpawnPoint.coerceIn(1, availableSpawnCount)
         val current = mutableSeats[seatIndex]
         if (current.spawnPoint == clamped) return
+        seatsCustomized = true
         val holderIdx = mutableSeats.indexOfFirst { it.spawnPoint == clamped }
         mutableSeats[seatIndex] = current.copy(spawnPoint = clamped)
         if (holderIdx >= 0 && holderIdx != seatIndex) {
@@ -676,6 +686,7 @@ class SkirmishLobbyState(
 
     fun assignSeatTeam(seatIndex: Int, teamIndex: Int) {
         if (seatIndex !in mutableSeats.indices) return
+        seatsCustomized = true
         val clamped = Math.floorMod(teamIndex, MatchSeatConfig.MAX_TEAMS)
         mutableSeats[seatIndex] = mutableSeats[seatIndex].copy(teamIndex = clamped)
     }
@@ -684,12 +695,14 @@ class SkirmishLobbyState(
         if (seatIndex !in mutableSeats.indices) return
         val cur = mutableSeats[seatIndex]
         if (cur.kind == MatchSeatKind.AI) {
+            seatsCustomized = true
             mutableSeats[seatIndex] = cur.copy(aiDifficulty = difficulty)
         }
     }
 
     /** `混战` (FFA): assigns each active seat its own distinct team (`A, B, C...`). */
     fun applyFreeForAllTeams() {
+        seatsCustomized = true
         for (i in mutableSeats.indices) {
             mutableSeats[i] = mutableSeats[i].copy(teamIndex = i % MatchSeatConfig.MAX_TEAMS)
         }
@@ -697,6 +710,7 @@ class SkirmishLobbyState(
 
     /** `双队平分` (2 Teams): splits active seats evenly between Team `A` (`0`) and Team `B` (`1`). */
     fun applyTwoTeamsSplit() {
+        seatsCustomized = true
         val firstHalfCount = (mutableSeats.size + 1) / 2
         for (i in mutableSeats.indices) {
             val team = if (i < firstHalfCount) 0 else 1

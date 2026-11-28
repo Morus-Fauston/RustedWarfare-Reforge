@@ -12,8 +12,9 @@ import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 /**
- * Built-in UI style themes shipped in Phase VIII pt1 (UI-P004-001 & UI Supplement §0, §2, §7).
+ * Built-in UI style themes shipped in Phase VIII pt1 (UI-P004-001, ADR-014 & UI Supplement §0, §2, §7).
  *
+ * Consolidated as the `theme` option choices on `reforge:base` (`暗黑工业 / 极昼纯白 / 骨白构成主义`).
  * Note: The NASA-Punk (`nasa`) concept theme is intentionally excluded per maintainer directive.
  */
 enum class BuiltInUiThemeId(
@@ -38,7 +39,7 @@ enum class BuiltInUiThemeId(
 
 /**
  * Immutable cross-platform user preferences persisted to platform-private `settings.json`
- * (Phase VIII Spec §7.2 & UI Supplement §7–§8).
+ * (Phase VIII Spec §7.2, ADR-014 & UI Supplement §7–§8).
  */
 data class UserSettings(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
@@ -58,14 +59,91 @@ data class UserSettings(
     val enabledResourcePacks: List<String> = listOf(BASE_RESOURCE_PACK_ID),
     /** Known external resource pack manifest paths keyed by pack ID. */
     val knownResourcePackPaths: Map<String, String> = emptyMap(),
+    /**
+     * Per-pack declarative presentation variant option values (`packId -> (optionId -> choiceValue)`).
+     * Retained even when a pack is moved to `未启用` so re-enabling restores user choices (Q7).
+     */
+    val resourcePackOptions: Map<String, Map<String, String>> = emptyMap(),
     /** High-to-low content pack IDs; base content pack is pinned at the bottom when configured. */
     val enabledContentPacks: List<String> = listOf(DEFAULT_BASE_CONTENT_PACK_ID),
     /** Known external content pack directory/manifest paths keyed by pack ID. */
     val knownContentPackPaths: Map<String, String> = emptyMap(),
 ) {
+    fun optionsForPack(packId: String): Map<String, String> {
+        val stored = resourcePackOptions[packId].orEmpty()
+        return if (packId == BASE_RESOURCE_PACK_ID) {
+            LinkedHashMap(stored).apply { put(BASE_THEME_OPTION_ID, themeId.code) }
+        } else {
+            stored
+        }
+    }
+
+    fun allEffectivePackOptions(): Map<String, Map<String, String>> {
+        val out = LinkedHashMap<String, Map<String, String>>()
+        for ((k, v) in resourcePackOptions) {
+            if (v.isNotEmpty()) out[k] = v
+        }
+        val baseMap = LinkedHashMap(out[BASE_RESOURCE_PACK_ID].orEmpty())
+        baseMap[BASE_THEME_OPTION_ID] = themeId.code
+        out[BASE_RESOURCE_PACK_ID] = java.util.Collections.unmodifiableMap(baseMap)
+        return java.util.Collections.unmodifiableMap(out)
+    }
+
+    fun withPackOption(packId: String, optionId: String, value: String): UserSettings {
+        val cleanPack = packId.trim()
+        val cleanOpt = optionId.trim()
+        val cleanVal = value.trim()
+        if (cleanPack.isEmpty() || cleanOpt.isEmpty() || cleanVal.isEmpty()) return this
+        val nextOuter = LinkedHashMap(resourcePackOptions)
+        val nextInner = LinkedHashMap(nextOuter[cleanPack].orEmpty())
+        nextInner[cleanOpt] = cleanVal
+        nextOuter[cleanPack] = nextInner
+        val nextTheme = if (cleanPack == BASE_RESOURCE_PACK_ID && cleanOpt == BASE_THEME_OPTION_ID) {
+            BuiltInUiThemeId.fromCodeOrDefault(cleanVal, themeId)
+        } else {
+            themeId
+        }
+        return copy(themeId = nextTheme, resourcePackOptions = nextOuter).normalized()
+    }
+
+    fun resetPackOptions(packId: String): UserSettings {
+        val cleanPack = packId.trim()
+        val nextOuter = LinkedHashMap(resourcePackOptions).apply { remove(cleanPack) }
+        val nextTheme = if (cleanPack == BASE_RESOURCE_PACK_ID) BuiltInUiThemeId.DARK else themeId
+        return copy(themeId = nextTheme, resourcePackOptions = nextOuter).normalized()
+    }
+
     fun normalized(): UserSettings {
-        val cleanRes = normalizePackStack(enabledResourcePacks, BASE_RESOURCE_PACK_ID)
+        val cleanRes = normalizePackStack(
+            enabledResourcePacks.filterNot { it.trim().startsWith("ui-theme:") },
+            BASE_RESOURCE_PACK_ID,
+        )
         val cleanMod = normalizePackStack(enabledContentPacks, DEFAULT_BASE_CONTENT_PACK_ID)
+        val cleanPackOpts = LinkedHashMap<String, Map<String, String>>()
+        for ((packId, opts) in resourcePackOptions) {
+            val pid = packId.trim()
+            if (pid.isEmpty() || pid.startsWith("ui-theme:")) continue
+            val inner = LinkedHashMap<String, String>()
+            for ((optId, rawVal) in opts) {
+                val oid = optId.trim()
+                val v = rawVal.trim()
+                if (oid.isEmpty() || v.isEmpty()) continue
+                if (pid == BASE_RESOURCE_PACK_ID && oid == BASE_THEME_OPTION_ID) {
+                    inner[oid] = themeId.code
+                } else {
+                    inner[oid] = v
+                }
+            }
+            if (pid == BASE_RESOURCE_PACK_ID) {
+                inner[BASE_THEME_OPTION_ID] = themeId.code
+            }
+            if (inner.isNotEmpty()) {
+                cleanPackOpts[pid] = java.util.Collections.unmodifiableMap(inner)
+            }
+        }
+        if (BASE_RESOURCE_PACK_ID !in cleanPackOpts) {
+            cleanPackOpts[BASE_RESOURCE_PACK_ID] = mapOf(BASE_THEME_OPTION_ID to themeId.code)
+        }
         return copy(
             schemaVersion = CURRENT_SCHEMA_VERSION,
             masterVolume = masterVolume.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: 1.0f,
@@ -75,6 +153,7 @@ data class UserSettings(
             cameraZoomSensitivity = cameraZoomSensitivity.takeIf(Float::isFinite)?.coerceIn(MIN_SENSITIVITY, MAX_SENSITIVITY) ?: 1.0f,
             enabledResourcePacks = cleanRes,
             knownResourcePackPaths = knownResourcePackPaths.filter { (k, v) -> k.isNotBlank() && v.isNotBlank() },
+            resourcePackOptions = java.util.Collections.unmodifiableMap(cleanPackOpts),
             enabledContentPacks = cleanMod,
             knownContentPackPaths = knownContentPackPaths.filter { (k, v) -> k.isNotBlank() && v.isNotBlank() },
         )
@@ -83,6 +162,7 @@ data class UserSettings(
     companion object {
         const val CURRENT_SCHEMA_VERSION: Int = 1
         const val BASE_RESOURCE_PACK_ID: String = "reforge:base"
+        const val BASE_THEME_OPTION_ID: String = "theme"
         const val DEFAULT_BASE_CONTENT_PACK_ID: String = "phase-seven.json"
         const val MIN_UI_SCALE_MULTIPLIER: Float = 0.75f
         const val MAX_UI_SCALE_MULTIPLIER: Float = 1.50f
@@ -144,19 +224,13 @@ data class UserSettingsCliOverrides(
 
 /**
  * Atomic JSON store for [UserSettings] in platform-private user directories.
- *
- * Guarantees:
- * - Never writes inside the repository unless an explicit isolated temp path is injected in tests.
- * - Corrupted, truncated, or schema-incompatible `settings.json` safely falls back to defaults
- *   (`language = ZH`, `themeId = DARK`) and records [lastLoadWarning].
- * - [cliOverrides] take precedence in [effective] without ever polluting persisted [saved] settings on disk.
  */
 class UserSettingsStore(
     val file: Path,
     val cliOverrides: UserSettingsCliOverrides = UserSettingsCliOverrides(),
 ) {
     @Volatile
-    var saved: UserSettings = UserSettings()
+    var saved: UserSettings = UserSettings().normalized()
         private set
 
     @Volatile
@@ -190,23 +264,26 @@ class UserSettingsStore(
         return effective
     }
 
-    /**
-     * Updates user settings and atomically persists them to [file], while preserving the original
-     * persisted values of any fields currently overridden via [cliOverrides] so CLI flags never
-     * leak into `settings.json`.
-     */
     @Synchronized
     fun update(transform: (UserSettings) -> UserSettings): UserSettings {
         val currentSaved = saved
         val proposed = transform(effective).normalized()
+        val effectiveThemeToPersist = if (cliOverrides.themeId != null) currentSaved.themeId else proposed.themeId
+        val nextPackOpts = LinkedHashMap(proposed.resourcePackOptions)
+        if (cliOverrides.themeId != null) {
+            val baseInner = LinkedHashMap(nextPackOpts[UserSettings.BASE_RESOURCE_PACK_ID].orEmpty())
+            baseInner[UserSettings.BASE_THEME_OPTION_ID] = currentSaved.themeId.code
+            nextPackOpts[UserSettings.BASE_RESOURCE_PACK_ID] = baseInner
+        }
         val toPersist = proposed.copy(
             language = if (cliOverrides.language != null) currentSaved.language else proposed.language,
             muted = if (cliOverrides.muted != null) currentSaved.muted else proposed.muted,
             uiScaleMultiplier = if (cliOverrides.uiScaleMultiplier != null) currentSaved.uiScaleMultiplier else proposed.uiScaleMultiplier,
             touchCameraJoystick = if (cliOverrides.touchCameraJoystick != null) currentSaved.touchCameraJoystick else proposed.touchCameraJoystick,
             windowEdgeScroll = if (cliOverrides.windowEdgeScroll != null) currentSaved.windowEdgeScroll else proposed.windowEdgeScroll,
-            themeId = if (cliOverrides.themeId != null) currentSaved.themeId else proposed.themeId,
+            themeId = effectiveThemeToPersist,
             enabledResourcePacks = if (cliOverrides.enabledResourcePacks != null) currentSaved.enabledResourcePacks else proposed.enabledResourcePacks,
+            resourcePackOptions = nextPackOpts,
             enabledContentPacks = if (cliOverrides.enabledContentPacks != null) currentSaved.enabledContentPacks else proposed.enabledContentPacks,
         ).normalized()
         writeAtomically(toPersist)
@@ -237,7 +314,6 @@ class UserSettingsStore(
         const val MAX_SETTINGS_BYTES: Int = 256 * 1024
         const val SETTINGS_FILE_NAME: String = "settings.json"
 
-        /** Resolves desktop user-private `settings.json` path (Windows `%LOCALAPPDATA%\RustedWarfare-Reforge\settings.json`). */
         fun desktopDefaultFile(
             localAppData: String? = System.getenv("LOCALAPPDATA"),
             userHome: String = System.getProperty("user.home"),
@@ -252,6 +328,11 @@ class UserSettingsStore(
 
         internal fun serializeJson(settings: UserSettings): String {
             val s = settings.normalized()
+            val packOptsObj = JsonObject().apply {
+                for ((packId, opts) in s.resourcePackOptions) {
+                    add(packId, toJsonObject(opts))
+                }
+            }
             val obj = JsonObject()
                 .add("schemaVersion", UserSettings.CURRENT_SCHEMA_VERSION)
                 .add("language", s.language.code)
@@ -266,6 +347,7 @@ class UserSettingsStore(
                 .add("themeId", s.themeId.code)
                 .add("enabledResourcePacks", toJsonArray(s.enabledResourcePacks))
                 .add("knownResourcePackPaths", toJsonObject(s.knownResourcePackPaths))
+                .add("resourcePackOptions", packOptsObj)
                 .add("enabledContentPacks", toJsonArray(s.enabledContentPacks))
                 .add("knownContentPackPaths", toJsonObject(s.knownContentPackPaths))
             return obj.toString(Stringify.FORMATTED) + "\n"
@@ -319,10 +401,29 @@ class UserSettingsStore(
                 return out
             }
 
+            fun optNestedStringMap(key: String): Map<String, Map<String, String>> {
+                val v = root.get(key) ?: return emptyMap()
+                require(v.isObject) { "Expected object for '$key'" }
+                val out = LinkedHashMap<String, Map<String, String>>()
+                for (outer in v.asObject()) {
+                    require(outer.value.isObject) { "Expected object for '$key.${outer.name}'" }
+                    val inner = LinkedHashMap<String, String>()
+                    for (m in outer.value.asObject()) {
+                        require(m.value.isString) { "Expected string value in '$key.${outer.name}.${m.name}'" }
+                        inner[m.name] = m.value.asString()
+                    }
+                    out[outer.name] = inner
+                }
+                return out
+            }
+
             val language = root.get("language")?.let { lv ->
                 require(lv.isString) { "Expected string for 'language'" }
                 UiLanguage.fromCodeOrNull(lv.asString()) ?: throw IllegalArgumentException("Unknown language '${lv.asString()}'")
             } ?: UiLanguage.ZH
+
+            val packOptions = optNestedStringMap("resourcePackOptions")
+            val baseThemeFromPackOpts = packOptions[UserSettings.BASE_RESOURCE_PACK_ID]?.get(UserSettings.BASE_THEME_OPTION_ID)
 
             val themeId = root.get("themeId")?.let { tv ->
                 require(tv.isString) { "Expected string for 'themeId'" }
@@ -330,6 +431,10 @@ class UserSettingsStore(
                 require(raw != "nasa") { "Unsupported themeId '$raw'" }
                 BuiltInUiThemeId.entries.firstOrNull { it.code == raw || it.themeId.lowercase() == raw }
                     ?: throw IllegalArgumentException("Unknown themeId '${tv.asString()}'")
+            } ?: baseThemeFromPackOpts?.let { raw ->
+                val norm = raw.trim().lowercase()
+                require(norm != "nasa") { "Unsupported theme '$norm'" }
+                BuiltInUiThemeId.fromCodeOrDefault(norm, BuiltInUiThemeId.DARK)
             } ?: BuiltInUiThemeId.DARK
 
             return UserSettings(
@@ -346,6 +451,7 @@ class UserSettingsStore(
                 themeId = themeId,
                 enabledResourcePacks = optStringList("enabledResourcePacks", listOf(UserSettings.BASE_RESOURCE_PACK_ID)),
                 knownResourcePackPaths = optStringMap("knownResourcePackPaths"),
+                resourcePackOptions = packOptions,
                 enabledContentPacks = optStringList("enabledContentPacks", listOf(UserSettings.DEFAULT_BASE_CONTENT_PACK_ID)),
                 knownContentPackPaths = optStringMap("knownContentPackPaths"),
             ).normalized()

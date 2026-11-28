@@ -101,6 +101,12 @@ data class UiThemeOutGameColors(
     val mapCardLabelFg: Color,
     val menuExtrudeAccent: Color,
     val menuExtrudeStroke: Color,
+    val backdropWater: Color,
+    val backdropLow: Color,
+    val backdropMid: Color,
+    val backdropHigh: Color,
+    val backdropOre: Color,
+    val backdropGrid: Color,
 )
 
 data class UiThemeMetrics(
@@ -314,6 +320,7 @@ data class UiThemePatch(
             "tintedDropdownFg",
             "mapCardLabelPillBg", "mapCardLabelPillBorder", "mapCardLabelFg",
             "menuExtrudeAccent", "menuExtrudeStroke",
+            "backdropWater", "backdropLow", "backdropMid", "backdropHigh", "backdropOre", "backdropGrid",
         )
 
         internal val METRIC_BOUNDS: Map<String, ClosedFloatingPointRange<Float>> = mapOf(
@@ -709,6 +716,12 @@ object UiThemeComposer {
                 mapCardLabelFg = og("mapCardLabelFg"),
                 menuExtrudeAccent = og("menuExtrudeAccent"),
                 menuExtrudeStroke = og("menuExtrudeStroke"),
+                backdropWater = og("backdropWater"),
+                backdropLow = og("backdropLow"),
+                backdropMid = og("backdropMid"),
+                backdropHigh = og("backdropHigh"),
+                backdropOre = og("backdropOre"),
+                backdropGrid = og("backdropGrid"),
             ),
             metrics = UiThemeMetrics(
                 keyRadius = m("keyRadius"),
@@ -841,6 +854,12 @@ object UiThemeComposer {
             "mapCardLabelFg" to theme.outGame.mapCardLabelFg,
             "menuExtrudeAccent" to theme.outGame.menuExtrudeAccent,
             "menuExtrudeStroke" to theme.outGame.menuExtrudeStroke,
+            "backdropWater" to theme.outGame.backdropWater,
+            "backdropLow" to theme.outGame.backdropLow,
+            "backdropMid" to theme.outGame.backdropMid,
+            "backdropHigh" to theme.outGame.backdropHigh,
+            "backdropOre" to theme.outGame.backdropOre,
+            "backdropGrid" to theme.outGame.backdropGrid,
         ),
         metrics = linkedMapOf(
             "keyRadius" to theme.metrics.keyRadius,

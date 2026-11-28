@@ -62,12 +62,20 @@ class BootstrapScreen(
     private lateinit var hudGroupBar: HudControlGroupBar
     private lateinit var hudDebugOverlay: HudDebugOverlay
     private lateinit var hudConsole: HudSandboxConsole
+    private val effectiveSettingsStore: UserSettingsStore by lazy {
+        userSettingsStore ?: UserSettingsStore(
+            java.nio.file.Files.createTempDirectory("rwre-ephemeral-settings-")
+                .also { it.toFile().deleteOnExit() }
+                .resolve("settings.json"),
+        )
+    }
     private var activeBuiltInThemeId: BuiltInUiThemeId = userSettingsStore?.effective?.themeId ?: BuiltInUiThemeId.DARK
     private var userScaleMultiplier: Float = userSettingsStore?.effective?.uiScaleMultiplier ?: 1.0f
-    private var activeUiTheme: UiTheme = composeUiThemeForBuiltIn(activeBuiltInThemeId, null)
+    private var activeUiTheme: UiTheme = UiTheme.builtIn(activeBuiltInThemeId)
     private var activeThemeAssetResolver: UiThemeAssetResolver = UiThemeAssetResolver(initialUiThemePacks)
     private val uiThemeProvider: UiThemeProvider = UiThemeProvider { activeUiTheme }
     val currentBuiltInThemeId: BuiltInUiThemeId get() = activeBuiltInThemeId
+    val currentUiTheme: UiTheme get() = activeUiTheme
     val currentUserScaleMultiplier: Float get() = userScaleMultiplier
     private var commandIcons: HudCommandIconAtlas? = null
     private val hudEvents = HudEventStream()
@@ -183,7 +191,9 @@ class BootstrapScreen(
     private lateinit var mapInput: SandboxInput
     private lateinit var contentLabel: Label
     private val groupButtons = mutableListOf<TextButton>()
-    private val visualState = visualSettings?.let(::VisualAssetSettingsSession)
+    private val visualState = visualSettings?.let {
+        VisualAssetSettingsSession(it, userSettingsStore?.effective?.allEffectivePackOptions().orEmpty())
+    }
     private var visualPanel: VisualAssetSettingsPanel? = null
     private val packState = ContentPackSelectionSession()
     private var packPanel: ContentPackPanel? = null
@@ -226,13 +236,6 @@ class BootstrapScreen(
     private lateinit var devTestScenesRelay: Actor
     private var inMatchSettingsOpen: Boolean = false
     private var pendingAutoEnableContentPackId: String? = null
-    private val effectiveSettingsStore: UserSettingsStore by lazy {
-        userSettingsStore ?: UserSettingsStore(
-            java.nio.file.Files.createTempDirectory("rwre-ephemeral-settings-")
-                .also { it.toFile().deleteOnExit() }
-                .resolve("settings.json"),
-        )
-    }
     private var startupPage = if (openSetup) StartupPage.SETUP else StartupPage.HOME
     private var settingsBack = startupPage
     private var activeSettingsPage: StartupPage = StartupPage.RESOURCES
@@ -247,7 +250,9 @@ class BootstrapScreen(
     init {
         userSettingsStore?.effective?.let { effective ->
             UiStrings.currentLanguage = effective.language
+            visualState?.syncPackOptions(effective.allEffectivePackOptions())
         }
+        activeUiTheme = composeUiThemeForBuiltIn(activeBuiltInThemeId, null)
     }
     private val qualification = SandboxLoader()
     private var contentInput: String? = null
@@ -273,6 +278,9 @@ class BootstrapScreen(
             visualState?.selection ?: VisualAssetSelection(),
         ),
     )
+    init {
+        syncOutGameMapCatalogDirectories()
+    }
     private var activeVisuals: PreparedVisualAssets? = null
     private var pendingLoad: SandboxLoad? = null
     private var loading = false
@@ -319,6 +327,7 @@ class BootstrapScreen(
     }
 
     private fun createPresentation() {
+        syncOutGameMapCatalogDirectories()
         lastHudState = null
         drawnActionLayout.invalidate()
         val created = mutableListOf<() -> Unit>()
@@ -705,7 +714,7 @@ class BootstrapScreen(
                     chosen.tmxPath?.let { tmx ->
                         skirmishMapState.select(
                             tmx,
-                            visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory,
+                            currentOriginalDirectory(),
                             chosen.localizedTitle(),
                         )
                     }
@@ -713,7 +722,7 @@ class BootstrapScreen(
                 }
             },
             onLoadCustomTmxPath = { rawPath ->
-                val origDir = visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                val origDir = currentOriginalDirectory()
                 if (skirmishMapState.selectPath(rawPath, origDir)) {
                     lobbyExplicitMapChosen = true
                     val sel = checkNotNull(skirmishMapState.selected)
@@ -759,7 +768,7 @@ class BootstrapScreen(
                 openMapPicker(currentId, MapPickerFilter.FREE_SANDBOX, onChosen)
             },
             onLoadCustomTmxPath = { rawPath ->
-                val origDir = visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                val origDir = currentOriginalDirectory()
                 val probe = SkirmishMapSelectionState()
                 if (probe.selectPath(rawPath, origDir)) {
                     val sel = checkNotNull(probe.selected)
@@ -827,6 +836,7 @@ class BootstrapScreen(
             appShell = appShell,
             settingsStore = effectiveSettingsStore,
             themeProvider = uiThemeProvider,
+            iconsProvider = { outGameControlIcons },
             fontsProvider = { fontSet },
             fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
             showExtractOriginalButton = visualState?.supportsOriginalResourceExtraction == true || visualState?.supportsOriginalImageExtraction == true,
@@ -891,6 +901,15 @@ class BootstrapScreen(
             },
             onSetResourcePackEnabled = { packId, enabled ->
                 setSettingsResourcePackEnabled(packId, enabled)
+            },
+            onGetResourcePackOptionValues = { packId ->
+                effectiveSettingsStore.effective.optionsForPack(packId)
+            },
+            onSetResourcePackOption = { packId, optionId, value ->
+                setSettingsResourcePackOption(packId, optionId, value)
+            },
+            onResetResourcePackOptions = { packId ->
+                resetSettingsResourcePackOptions(packId)
             },
             onImportResourcePackPath = { rawPath ->
                 val vs = visualState
@@ -1009,7 +1028,17 @@ class BootstrapScreen(
         startButton = button("Start", 752f, 96f, 176f) { requestLoad() }
         visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin,
             contentChoice = { testScenes.choice?.content ?: packState.choice() }) {
+            state.syncPackOptions(effectiveSettingsStore.effective.allEffectivePackOptions())
             evidence.recordVisualAssetMenu(state)
+            syncOutGameMapCatalogDirectories()
+            if (initialUiThemePacks.isEmpty()) {
+                val prepared = state.latestPreparedAssets
+                if (prepared != null) {
+                    applyLoadedUiTheme(composeUiThemeForBuiltIn(activeBuiltInThemeId, prepared), prepared.uiThemeAssetResolver)
+                } else {
+                    refreshLiveUiThemeFromSession()
+                }
+            }
             if (::settingsScreen.isInitialized) settingsScreen.refreshPackLists()
             loadError = null; lastHudState = null; updateHud()
         }.also { it.setBounds(150f, 114f, 660f, 440f); stage.addActor(it) } }
@@ -1066,7 +1095,7 @@ class BootstrapScreen(
                 if (tmx != null) {
                     skirmishMapState.select(
                         tmx,
-                        visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory,
+                        currentOriginalDirectory(),
                         chosen.localizedTitle(),
                     )
                     if (skirmishMapState.hasSelection && testScenes.selected) {
@@ -1094,7 +1123,7 @@ class BootstrapScreen(
         skirmishMapPanel = SkirmishMapPanel(
             skirmishMapState,
             skin,
-            originalDirectoryProvider = { visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory },
+            originalDirectoryProvider = { currentOriginalDirectory() },
             themeProvider = uiThemeProvider,
             sandboxPresetSeeds = discoveredSandboxSeeds,
             onSelectSandboxSeed = { seed ->
@@ -1127,7 +1156,7 @@ class BootstrapScreen(
             it.setBounds(150f, 114f, 660f, 440f)
             stage.addActor(it)
             initialSkirmishMap?.let { preselected ->
-                if (skirmishMapState.select(preselected, visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory)) {
+                if (skirmishMapState.select(preselected, currentOriginalDirectory())) {
                     lobbyExplicitMapChosen = true
                     skirmishMapState.selected?.let { sel ->
                         val entry = OutGameMapCatalog.findByIdOrPath(sel.path.toString())
@@ -1714,25 +1743,102 @@ class BootstrapScreen(
         }
     }
 
-    private fun composeUiThemeForBuiltIn(themeId: BuiltInUiThemeId, visuals: PreparedVisualAssets? = activeVisuals): UiTheme {
+    private fun currentOriginalDirectory(): Path? {
+        val explicit = visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+        if (explicit != null && java.nio.file.Files.isDirectory(explicit)) {
+            return explicit
+        }
+        if (Gdx.app != null && userSettingsStore != null) {
+            discoveredSteamOriginalDir?.let { return it }
+        }
+        return explicit
+    }
+
+    private fun currentUserMapsDirectory(): Path? =
+        userSettingsStore?.file?.parent?.resolve("maps")
+
+    private fun syncOutGameMapCatalogDirectories() {
+        OutGameMapCatalog.configureDirectories(currentOriginalDirectory(), currentUserMapsDirectory())
+        if (!lobbyExplicitMapChosen && skirmishMapState.selected == null && skirmishMapState.selectedCatalog == null) {
+            val catalogEntries = OutGameMapCatalog.entries(MapPickerFilter.SKIRMISH)
+            val realDefault = catalogEntries.firstOrNull() ?: return
+            if (catalogEntries.none { it.id == skirmishLobbyState.selectedMap.id }) {
+                skirmishLobbyState.selectMapEntry(realDefault)
+                if (::skirmishLobbyScreen.isInitialized) skirmishLobbyScreen.syncControlsFromState()
+            }
+            if (catalogEntries.none { it.id == freeSandboxLobbyState.selectedMap.id }) {
+                freeSandboxLobbyState.selectMapEntry(realDefault)
+                if (::testAndSandboxScreen.isInitialized) testAndSandboxScreen.syncControlsFromState()
+            }
+        }
+    }
+
+    private fun composeUiThemeForBuiltIn(
+        themeId: BuiltInUiThemeId,
+        visuals: PreparedVisualAssets? = activeVisuals ?: visualState?.latestPreparedAssets,
+    ): UiTheme {
         val base = UiTheme.builtIn(themeId)
-        return when {
-            initialUiThemePacks.isNotEmpty() -> UiThemeComposer.composeFromPackDirectories(initialUiThemePacks, base = base)
-            visuals != null -> visuals.composeUiTheme(base)
-            else -> base
+        if (initialUiThemePacks.isNotEmpty()) {
+            return UiThemeComposer.composeFromPackDirectories(initialUiThemePacks, base = base)
+        }
+        val liveOptions = effectiveSettingsStore.effective.allEffectivePackOptions()
+        if (visuals != null && visuals.selection.packOptions == liveOptions) {
+            return visuals.composeUiTheme(base)
+        }
+        val vs = visualState
+        if (vs != null) {
+            val (livePatches, _) = vs.resolveLiveUiThemePatches(liveOptions)
+            val allEnabledChecked = vs.selection.packs.enabled
+                .filter { it != VisualAssetSource.ORIGINAL.resourcePackId }
+                .all { id -> vs.rows.any { r -> r.id == id && r.metadata != null } }
+            if (livePatches.isNotEmpty() || visuals == null || allEnabledChecked) {
+                return if (livePatches.isNotEmpty()) UiThemeComposer.compose(overridesHighToLow = livePatches, base = base) else base
+            }
+        }
+        if (visuals != null) {
+            return visuals.composeUiTheme(base)
+        }
+        return base
+    }
+
+    private fun refreshLiveUiThemeFromSession() {
+        if (initialUiThemePacks.isNotEmpty()) return
+        val vs = visualState
+        if (vs != null) {
+            val (patches, resolver) = vs.resolveLiveUiThemePatches(effectiveSettingsStore.effective.allEffectivePackOptions())
+            val nextTheme = if (patches.isNotEmpty()) {
+                UiThemeComposer.compose(overridesHighToLow = patches, base = UiTheme.builtIn(activeBuiltInThemeId))
+            } else {
+                UiTheme.builtIn(activeBuiltInThemeId)
+            }
+            applyLoadedUiTheme(nextTheme, resolver)
+        } else {
+            applyLoadedUiTheme(UiTheme.builtIn(activeBuiltInThemeId), activeThemeAssetResolver)
         }
     }
 
     fun setBuiltInTheme(themeId: BuiltInUiThemeId, persist: Boolean = true) {
         activeBuiltInThemeId = themeId
         if (persist) {
-            userSettingsStore?.update { it.copy(themeId = themeId) }
+            userSettingsStore?.update {
+                it.withPackOption(UserSettings.BASE_RESOURCE_PACK_ID, UserSettings.BASE_THEME_OPTION_ID, themeId.code)
+            }
         }
+        val liveOptions = effectiveSettingsStore.effective.allEffectivePackOptions()
+        visualState?.syncPackOptions(liveOptions)
         if (::settingsScreen.isInitialized) {
-            settingsScreen.themeSegmented.setSelectedSilently(themeId)
+            settingsScreen.refreshPackLists()
+            if (settingsScreen.packOptionsModal.isOpen) {
+                settingsScreen.packOptionsModal.syncSelectionsFromStore()
+            }
         }
-        val resolver = if (initialUiThemePacks.isNotEmpty()) UiThemeAssetResolver(initialUiThemePacks)
-            else activeVisuals?.uiThemeAssetResolver ?: activeThemeAssetResolver
+        val currentVisuals = activeVisuals ?: visualState?.latestPreparedAssets
+        val resolver = when {
+            initialUiThemePacks.isNotEmpty() -> UiThemeAssetResolver(initialUiThemePacks)
+            currentVisuals != null && currentVisuals.selection.packOptions == liveOptions -> currentVisuals.uiThemeAssetResolver
+            visualState != null -> visualState.resolveLiveUiThemePatches(liveOptions).second
+            else -> currentVisuals?.uiThemeAssetResolver ?: activeThemeAssetResolver
+        }
         applyLoadedUiTheme(composeUiThemeForBuiltIn(themeId), resolver)
         lastHudState = null
         if (presentationReady) updateHud()
@@ -1993,19 +2099,6 @@ class BootstrapScreen(
     private fun buildSettingsResourcePackEntries(): List<DualColumnPackEntry> {
         val lang = UiStrings.currentLanguage
         val eff = effectiveSettingsStore.effective
-        val activeThemePackId = "ui-theme:${activeBuiltInThemeId.code}"
-
-        fun themeTitle(id: BuiltInUiThemeId): String = when (id) {
-            BuiltInUiThemeId.DARK -> if (lang == UiLanguage.ZH) "高对比工业暗黑样式包" else "Industrial Dark Style Pack"
-            BuiltInUiThemeId.WHITE -> if (lang == UiLanguage.ZH) "极昼纯白界面主题包" else "Polar White UI Theme Pack"
-            BuiltInUiThemeId.BONE -> if (lang == UiLanguage.ZH) "骨白构成主义主题包" else "Constructivist Bone Theme Pack"
-        }
-
-        fun themeSubtitle(id: BuiltInUiThemeId): String = when (id) {
-            BuiltInUiThemeId.DARK -> if (lang == UiLanguage.ZH) "v1.0 · 默认暗黑工业 UI 样式覆盖" else "v1.0 · Default industrial dark UI tokens"
-            BuiltInUiThemeId.WHITE -> if (lang == UiLanguage.ZH) "v1.0 · 瑞士精密白昼 UI 样式覆盖" else "v1.0 · Crisp daylight white UI tokens"
-            BuiltInUiThemeId.BONE -> if (lang == UiLanguage.ZH) "v1.0 · 去黄暖石白构成主义 UI 样式" else "v1.0 · Warm stone constructivist UI tokens"
-        }
 
         val sessionRowsById = visualState?.rows.orEmpty().associateBy { it.id }
         val nonBaseSavedEnabled = eff.enabledResourcePacks.filter {
@@ -2016,12 +2109,21 @@ class BootstrapScreen(
         }
         val mergedUserEnabled = (nonBaseSavedEnabled + sessionEnabled).distinct()
 
+        fun formatOptionsSummary(packId: String, options: List<ResourcePackOption>): String? {
+            if (options.isEmpty()) return null
+            val activeMap = eff.optionsForPack(packId)
+            return options.joinToString(" · ") { opt ->
+                "${opt.localizedLabel(lang)}：${opt.localizedValueLabel(activeMap[opt.id], lang)}"
+            }
+        }
+
         val result = ArrayList<DualColumnPackEntry>()
-        // ADR-014 layering: external user resource packs on top (reorderable), then active built-in UI theme
-        // (fixed directly above `reforge:base`), then `reforge:base` locked at bottom.
+        // ADR-014 layering: external user resource packs on top (reorderable), with `reforge:base`
+        // (hosting the 3 built-in UI themes via its declarative `theme` option) locked at bottom.
         for (id in mergedUserEnabled) {
             val row = sessionRowsById[id]
             val meta = row?.metadata
+            val packOpts = meta?.options.orEmpty()
             val title = if (meta != null) {
                 LocalizedMetadata.resourcePackName(meta, lang)
             } else if (id == VisualAssetSource.ORIGINAL.resourcePackId) {
@@ -2029,11 +2131,13 @@ class BootstrapScreen(
             } else {
                 id
             }
-            val sub = if (meta != null) {
+            val baseSub = if (meta != null) {
                 LocalizedMetadata.resourcePackDescription(meta, lang)
             } else {
                 id
             }
+            val optSummary = formatOptionsSummary(id, packOpts)
+            val sub = if (optSummary != null) "$baseSub · $optSummary" else baseSub
             result += DualColumnPackEntry(
                 id = id,
                 title = title,
@@ -2046,61 +2150,28 @@ class BootstrapScreen(
                 badgeStyle = if (id == VisualAssetSource.ORIGINAL.resourcePackId) PackIconBadgeStyle.ORIGINAL_RESOURCE else PackIconBadgeStyle.CUSTOM_RESOURCE,
                 customIconPath = row?.icon?.path,
                 errorText = row?.error,
+                options = packOpts,
             )
         }
 
-        result += DualColumnPackEntry(
-            id = activeThemePackId,
-            title = themeTitle(activeBuiltInThemeId),
-            subtitle = themeSubtitle(activeBuiltInThemeId),
-            enabled = true,
-            lockedBottom = false,
-            canReorder = false,
-            canDisable = activeBuiltInThemeId != BuiltInUiThemeId.DARK,
-            canEnable = true,
-            badgeStyle = PackIconBadgeStyle.CUSTOM_RESOURCE,
-        )
-
         val baseRow = sessionRowsById[UserSettings.BASE_RESOURCE_PACK_ID]
-        val baseMeta = baseRow?.metadata
+        val baseMeta = baseRow?.metadata ?: BuiltInResourcePacks.forSource(VisualAssetSource.PLACEHOLDER)
+        val baseOptSummary = formatOptionsSummary(UserSettings.BASE_RESOURCE_PACK_ID, baseMeta.options)
+        val baseDesc = LocalizedMetadata.resourcePackDescription(baseMeta, lang)
         result += DualColumnPackEntry(
             id = UserSettings.BASE_RESOURCE_PACK_ID,
-            title = if (baseMeta != null) {
-                LocalizedMetadata.resourcePackName(baseMeta, lang)
-            } else if (lang == UiLanguage.ZH) {
-                "内置基础资源包"
-            } else {
-                "Built-in Base Resource Pack"
-            },
-            subtitle = if (baseMeta != null) {
-                LocalizedMetadata.resourcePackDescription(baseMeta, lang)
-            } else {
-                "${UserSettings.BASE_RESOURCE_PACK_ID} · ${if (lang == UiLanguage.ZH) "兜底表现资源" else "Base fallback visuals & sounds"}"
-            },
+            title = LocalizedMetadata.resourcePackName(baseMeta, lang),
+            subtitle = if (baseOptSummary != null) "$baseDesc · $baseOptSummary" else baseDesc,
             enabled = true,
             lockedBottom = true,
             canReorder = false,
             canDisable = false,
             canEnable = false,
             badgeStyle = PackIconBadgeStyle.BASE_RESOURCE,
+            options = baseMeta.options,
         )
 
-        // Available (`未启用`) column: inactive built-in UI themes (never `nasa`!) + disabled resource packs
-        for (th in BuiltInUiThemeId.entries) {
-            if (th != activeBuiltInThemeId) {
-                result += DualColumnPackEntry(
-                    id = "ui-theme:${th.code}",
-                    title = themeTitle(th),
-                    subtitle = themeSubtitle(th),
-                    enabled = false,
-                    lockedBottom = false,
-                    canReorder = false,
-                    canDisable = false,
-                    canEnable = true,
-                    badgeStyle = PackIconBadgeStyle.CUSTOM_RESOURCE,
-                )
-            }
-        }
+        // Available (`未启用`) column: disabled resource packs (retaining saved `resourcePackOptions` in `settings.json`)
         for (row in sessionRowsById.values) {
             if (row.id != UserSettings.BASE_RESOURCE_PACK_ID && row.id !in mergedUserEnabled) {
                 val meta = row.metadata
@@ -2128,10 +2199,84 @@ class BootstrapScreen(
                     badgeStyle = if (row.id == VisualAssetSource.ORIGINAL.resourcePackId) PackIconBadgeStyle.ORIGINAL_RESOURCE else PackIconBadgeStyle.CUSTOM_RESOURCE,
                     customIconPath = row.icon?.path,
                     errorText = row.error,
+                    options = meta?.options.orEmpty(),
                 )
             }
         }
         return result
+    }
+
+    private fun setSettingsResourcePackOption(packId: String, optionId: String, value: String) {
+        if (packId == UserSettings.BASE_RESOURCE_PACK_ID && optionId == UserSettings.BASE_THEME_OPTION_ID) {
+            effectiveSettingsStore.update { it.withPackOption(packId, optionId, value) }
+            setBuiltInTheme(BuiltInUiThemeId.fromCodeOrDefault(value), persist = false)
+            return
+        }
+        val rowMeta = visualState?.rows?.firstOrNull { it.id == packId }?.metadata
+        val optionMeta = rowMeta?.options?.firstOrNull { it.id == optionId }
+        if (inMatchSettingsOpen && optionMeta?.affectsMediaAssets == true) {
+            return
+        }
+        val updated = effectiveSettingsStore.update { it.withPackOption(packId, optionId, value) }
+        val vs = visualState
+        if (vs != null) {
+            if (!vs.busy && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
+                runCatching {
+                    vs.setPackOption(packId, optionId, value)
+                    vs.apply(testScenes.choice?.content ?: packState.choice())
+                }
+            } else {
+                vs.syncPackOptions(updated.allEffectivePackOptions())
+            }
+        }
+        refreshLiveUiThemeFromSession()
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    fun applyResourcePackOptionForTest(packId: String, optionId: String, value: String, inMatch: Boolean = false, matchVisuals: PreparedVisualAssets? = null) {
+        if (matchVisuals != null) {
+            activeVisuals = matchVisuals
+        }
+        inMatchSettingsOpen = inMatch
+        setSettingsResourcePackOption(packId, optionId, value)
+    }
+
+    val currentVisualSelectionForTest: VisualAssetSelection?
+        get() = visualState?.selection
+
+    fun pollVisualStateForTest(): Boolean = visualState?.poll() ?: false
+
+    private fun resetSettingsResourcePackOptions(packId: String) {
+        if (packId == UserSettings.BASE_RESOURCE_PACK_ID) {
+            effectiveSettingsStore.update { it.resetPackOptions(packId) }
+            setBuiltInTheme(BuiltInUiThemeId.DARK, persist = false)
+            return
+        }
+        val rowMeta = visualState?.rows?.firstOrNull { it.id == packId }?.metadata
+        val updated = if (inMatchSettingsOpen && rowMeta != null) {
+            effectiveSettingsStore.update { cur ->
+                var acc = cur
+                for (opt in rowMeta.options) {
+                    if (!opt.affectsMediaAssets) {
+                        acc = acc.withPackOption(packId, opt.id, opt.defaultValue)
+                    }
+                }
+                acc
+            }
+        } else {
+            effectiveSettingsStore.update { it.resetPackOptions(packId) }
+        }
+        val vs = visualState
+        if (vs != null) {
+            vs.syncPackOptions(updated.allEffectivePackOptions())
+            if (!vs.busy && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
+                runCatching { vs.apply(testScenes.choice?.content ?: packState.choice()) }
+            }
+        }
+        refreshLiveUiThemeFromSession()
+        lastHudState = null
+        if (presentationReady) updateHud()
     }
 
     private fun moveSettingsResourcePack(packId: String, delta: Int) {
@@ -2417,7 +2562,7 @@ class BootstrapScreen(
         recordSkirmishLaunchForTest(config)
         val preserveControlledInputs = initialContent && !lobbyExplicitMapChosen && skirmishMapState.selected == null && skirmishMapState.selectedCatalog == null
         if (!preserveControlledInputs && skirmishMapState.selectedCatalog == null && config.tmxPath != null) {
-            val origDir = visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+            val origDir = currentOriginalDirectory()
             skirmishMapState.select(config.tmxPath, origDir, config.mapDisplayName)
             if (skirmishMapState.hasSelection && testScenes.selected) {
                 testScenes.useCustomContent()
@@ -2482,7 +2627,7 @@ class BootstrapScreen(
         nextLoadFollowScriptedCamera = true
         recordSkirmishLaunchForTest(config)
         if (config.tmxPath != null) {
-            val origDir = visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+            val origDir = currentOriginalDirectory()
             skirmishMapState.select(config.tmxPath, origDir, config.mapDisplayName)
             if (skirmishMapState.hasSelection && testScenes.selected) {
                 testScenes.useCustomContent()
@@ -2707,7 +2852,8 @@ class BootstrapScreen(
             if (catalogEntry != null) {
                 loader.requestCatalogScenario(catalogEntry, activeRoot, contentPack, prepare)
             } else if (skirmishMapPath != null) {
-                val origDir = request.configuration.visuals.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                val origDir = request.configuration.visuals.originalDirectory?.takeIf { java.nio.file.Files.isDirectory(it) }
+                    ?: currentOriginalDirectory()
                 loader.requestSkirmishMap(skirmishMapPath, activeRoot, contentPack, origDir, request.configuration.skirmishMapName, prepare)
             } else if (testScenario != null) loader.requestTestScenario(testScenario, prepare)
             else if (contentPack == null) loader.request(activeRoot, prepare)
@@ -3849,6 +3995,7 @@ class BootstrapScreen(
             settingsScreen.refreshPackLists()
             settingsScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)
             settingsScreen.toFront()
+            UnifiedDropdown.bringOpenDropdownsToFront(stage)
         }
         val legacySetup = false
         startupFrame.isVisible = false
@@ -4214,7 +4361,7 @@ class BootstrapScreen(
                 createPresentation()
                 graphics = session?.let {
                     val origRoot = TmxSkirmishScenarioBuilder.tilesetFallbackRoots(
-                        visualState?.selection?.originalDirectory ?: visualSettings?.initialSelection?.originalDirectory
+                        currentOriginalDirectory()
                     ).firstOrNull()
                     val bound = activeVisuals?.let { v -> it.renderResources.bindVisuals(v, originalTilesetRoot = origRoot) }
                         ?: it.renderResources.resolveTileAtlases(null, origRoot)
@@ -4408,5 +4555,50 @@ class BootstrapScreen(
             try { cleanup() } catch (failure: Exception) { Gdx.app?.error("p001-dispose", "Cleanup failed", failure) }
         }
         evidence.record("application-disposed", emptyMap())
+    }
+
+    companion object {
+        private val discoveredSteamOriginalDir: Path? by lazy {
+            discoverLocalSteamRustedWarfareDir()
+        }
+
+        private fun discoverLocalSteamRustedWarfareDir(): Path? {
+            System.getProperty("reforge.original.dir")?.trim()?.takeIf { it.isNotEmpty() }?.let { prop ->
+                val p = runCatching { Path.of(prop).toAbsolutePath().normalize() }.getOrNull()
+                if (p != null && java.nio.file.Files.isDirectory(p.resolve("assets/maps/skirmish"))) return p
+            }
+            val candidateRoots = LinkedHashSet<Path>()
+            for (envName in listOf("ProgramFiles(x86)", "ProgramFiles")) {
+                System.getenv(envName)?.let { base ->
+                    runCatching { Path.of(base, "Steam") }.getOrNull()?.let { candidateRoots.add(it) }
+                }
+            }
+            for (drive in java.io.File.listRoots().orEmpty()) {
+                val dPath = runCatching { drive.toPath() }.getOrNull() ?: continue
+                for (sub in listOf("SteamLibrary", "Steam", "Program Files/Steam", "Program Files (x86)/Steam", "Games/Steam")) {
+                    runCatching { dPath.resolve(sub) }.getOrNull()?.let { candidateRoots.add(it) }
+                }
+            }
+            val libraryDirs = LinkedHashSet<Path>()
+            val vdfPathRegex = Regex(""""path"\s+"([^"]+)"""")
+            for (steamRoot in candidateRoots) {
+                libraryDirs.add(steamRoot)
+                val vdf = steamRoot.resolve("steamapps/libraryfolders.vdf")
+                if (java.nio.file.Files.isRegularFile(vdf)) {
+                    val text = runCatching { java.nio.file.Files.readString(vdf) }.getOrNull().orEmpty()
+                    for (m in vdfPathRegex.findAll(text)) {
+                        val rawLib = m.groupValues[1].replace("\\\\", "\\")
+                        runCatching { Path.of(rawLib).toAbsolutePath().normalize() }.getOrNull()?.let { libraryDirs.add(it) }
+                    }
+                }
+            }
+            for (lib in libraryDirs) {
+                val rw = lib.resolve("steamapps/common/Rusted Warfare")
+                if (java.nio.file.Files.isDirectory(rw.resolve("assets/maps/skirmish"))) {
+                    return rw
+                }
+            }
+            return null
+        }
     }
 }

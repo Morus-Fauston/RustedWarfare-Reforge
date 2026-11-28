@@ -47,7 +47,12 @@ data class DualColumnPackEntry(
     val badgeStyle: PackIconBadgeStyle,
     val customIconPath: Path? = null,
     val errorText: String? = null,
-)
+    val options: List<ResourcePackOption> = emptyList(),
+) {
+    val hasOptions: Boolean get() = options.isNotEmpty()
+    val hasInMatchEditableOptions: Boolean get() = options.any { !it.affectsMediaAssets }
+    val hasPureUiThemeOptionsOnly: Boolean get() = options.isNotEmpty() && options.none { it.affectsMediaAssets }
+}
 
 /**
  * Shared Minecraft-style left-enabled / right-available dual-column pack manager
@@ -70,6 +75,7 @@ class DualColumnPackManagerView(
     private val showExtractOriginalButton: Boolean = false,
     private val onMovePriority: (packId: String, deltaIndex: Int) -> Unit,
     private val onSetPackEnabled: (packId: String, enabled: Boolean) -> Unit,
+    private val onOpenPackOptions: (DualColumnPackEntry) -> Unit = {},
     private val onImportPath: (rawPath: String) -> Unit = {},
     private val onExtractOriginalPath: (rawPath: String) -> Unit = {},
 ) : Group(), AutoCloseable {
@@ -157,6 +163,7 @@ class DualColumnPackManagerView(
     private var rightScrollOffset = 0f
 
     private val arrowTexCache = LinkedHashMap<ArrowDir, Texture>()
+    private var gearTex: Texture? = null
     private val badgeTexCache = LinkedHashMap<Pair<PackIconBadgeStyle, String>, Texture>()
     private val customIconTexCache = LinkedHashMap<Path, Texture>()
 
@@ -428,10 +435,15 @@ class DualColumnPackManagerView(
         }
     }
 
-    /** Trigger helper for headless unit tests (`up`, `down`, `enable`, `disable`). */
+    /** Trigger helper for headless unit tests (`up`, `down`, `enable`, `disable`, `options`). */
     fun triggerPackActionForTest(packId: String, action: String): Boolean {
-        if (inMatchMode || busy) return false
         val card = cardGroups.firstOrNull { it.entry.id == packId } ?: return false
+        if (action == "options") {
+            if (busy && !card.entry.hasPureUiThemeOptionsOnly) return false
+            if (inMatchMode && !card.entry.hasInMatchEditableOptions) return false
+            return card.triggerAction(action)
+        }
+        if (inMatchMode || busy) return false
         return card.triggerAction(action)
     }
 
@@ -492,6 +504,40 @@ class DualColumnPackManagerView(
             pm.dispose()
         }
         arrowTexCache[dir] = tex
+        return TextureRegion(tex)
+    }
+
+    private fun ensureGearRegion(): TextureRegion? {
+        if (Gdx.gl == null) return null
+        gearTex?.let { return TextureRegion(it) }
+        val size = 24
+        val sub = 4
+        val pm = Pixmap(size, size, Pixmap.Format.RGBA8888)
+        val tex = try {
+            for (py in 0 until size) {
+                for (px in 0 until size) {
+                    var inside = 0
+                    for (sy in 0 until sub) {
+                        val ny = (py + (sy + 0.5f) / sub) / size.toFloat() - 0.5f
+                        for (sx in 0 until sub) {
+                            val nx = (px + (sx + 0.5f) / sub) / size.toFloat() - 0.5f
+                            val r = kotlin.math.sqrt(nx * nx + ny * ny)
+                            val theta = kotlin.math.atan2(ny.toDouble(), nx.toDouble())
+                            val toothWave = kotlin.math.cos(theta * 8.0)
+                            val outerR = if (toothWave >= 0.25) 0.42f else 0.31f
+                            if (r in 0.14f..outerR) inside++
+                        }
+                    }
+                    if (inside > 0) {
+                        pm.drawPixel(px, py, Color.rgba8888(1f, 1f, 1f, inside.toFloat() / (sub * sub).toFloat()))
+                    }
+                }
+            }
+            Texture(pm).also { it.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear) }
+        } finally {
+            pm.dispose()
+        }
+        gearTex = tex
         return TextureRegion(tex)
     }
 
@@ -563,6 +609,8 @@ class DualColumnPackManagerView(
     override fun close() {
         arrowTexCache.values.forEach { runCatching { it.dispose() } }
         arrowTexCache.clear()
+        gearTex?.let { runCatching { it.dispose() } }
+        gearTex = null
         badgeTexCache.values.forEach { runCatching { it.dispose() } }
         badgeTexCache.clear()
         customIconTexCache.values.forEach { runCatching { it.dispose() } }
@@ -575,6 +623,10 @@ class DualColumnPackManagerView(
         val canMoveUp: Boolean,
         val canMoveDown: Boolean,
     ) : Group() {
+
+        private val optionsActor: GearSquareButton? = if (inEnabledColumn && entry.hasOptions) {
+            GearSquareButton { onOpenPackOptions(entry) }
+        } else null
 
         private val upActor: IconSquareButton? = if (inEnabledColumn && !entry.lockedBottom) {
             IconSquareButton(ArrowDir.UP) { onMovePriority(entry.id, -1) }
@@ -594,18 +646,21 @@ class DualColumnPackManagerView(
 
         init {
             setTransform(false)
+            optionsActor?.let(::addActor)
             upActor?.let(::addActor)
             downActor?.let(::addActor)
             transferActor?.let(::addActor)
         }
 
         fun syncEnabledState(allowEdit: Boolean) {
+            optionsActor?.enabled = (entry.hasPureUiThemeOptionsOnly || !busy) && (!inMatchMode || entry.hasInMatchEditableOptions)
             upActor?.enabled = allowEdit && canMoveUp
             downActor?.enabled = allowEdit && canMoveDown
             transferActor?.enabled = allowEdit && (if (inEnabledColumn) entry.canDisable else entry.canEnable)
         }
 
         fun triggerAction(action: String): Boolean = when (action) {
+            "options" -> optionsActor?.triggerClick() == true
             "up" -> upActor?.triggerClick() == true
             "down" -> downActor?.triggerClick() == true
             "disable" -> if (inEnabledColumn) transferActor?.triggerClick() == true else false
@@ -616,12 +671,15 @@ class DualColumnPackManagerView(
         override fun setBounds(x: Float, y: Float, width: Float, height: Float) {
             super.setBounds(x, y, width, height)
             val rightX = width - 8f
-            if (inEnabledColumn && !entry.lockedBottom) {
+            if (inEnabledColumn && entry.lockedBottom) {
+                optionsActor?.setBounds(rightX - 28f, (height - 32f) * 0.5f, 28f, 32f)
+            } else if (inEnabledColumn && !entry.lockedBottom) {
                 transferActor?.setBounds(rightX - 26f, (height - 44f) * 0.5f, 26f, 44f)
                 val udX = rightX - 26f - 5f - 26f
                 val baseY = (height - 44f) * 0.5f
                 downActor?.setBounds(udX, baseY, 26f, 21f)
                 upActor?.setBounds(udX, baseY + 23f, 26f, 21f)
+                optionsActor?.setBounds(udX - 5f - 26f, baseY, 26f, 44f)
             } else if (!inEnabledColumn) {
                 transferActor?.setBounds(rightX - 26f, (height - 44f) * 0.5f, 26f, 44f)
             }
@@ -650,7 +708,9 @@ class DualColumnPackManagerView(
 
             // Right reserved width for buttons or `基础常驻` tag
             val rightReservedW = when {
+                entry.lockedBottom && optionsActor != null -> 108f
                 entry.lockedBottom -> 74f
+                inEnabledColumn && optionsActor != null -> 99f
                 inEnabledColumn -> 68f
                 else -> 38f
             }
@@ -679,7 +739,8 @@ class DualColumnPackManagerView(
                 glyphLayout.setText(subFont, pinText)
                 val prevP = subFont.color.cpy()
                 subFont.setColor(theme.colors.dim.r, theme.colors.dim.g, theme.colors.dim.b, theme.colors.dim.a * parentAlpha)
-                subFont.draw(batch, pinText, x + width - 12f - glyphLayout.width, y + (height + glyphLayout.height) * 0.5f)
+                val pinRightOffset = if (optionsActor != null) 44f else 12f
+                subFont.draw(batch, pinText, x + width - pinRightOffset - glyphLayout.width, y + (height + glyphLayout.height) * 0.5f)
                 subFont.color = prevP
             }
 
@@ -700,6 +761,7 @@ class DualColumnPackManagerView(
         }
 
         fun drawnActions(prefix: String): List<DrawnAction> = buildList {
+            optionsActor?.let { add(DrawnAction("$prefix-pack-options:${entry.id}", it, UiStrings.get("settings.packs.optionsBtn"), enabled = it.enabled)) }
             upActor?.let { add(DrawnAction("$prefix-pack-up:${entry.id}", it, UiStrings.get("settings.packs.moveUp"), enabled = it.enabled)) }
             downActor?.let { add(DrawnAction("$prefix-pack-down:${entry.id}", it, UiStrings.get("settings.packs.moveDown"), enabled = it.enabled)) }
             transferActor?.let {
@@ -707,6 +769,83 @@ class DualColumnPackManagerView(
                 val label = UiStrings.get(if (inEnabledColumn) "settings.packs.disable" else "settings.packs.enable")
                 add(DrawnAction("$prefix-pack-$actName:${entry.id}", it, label, enabled = it.enabled))
             }
+        }
+    }
+
+    private inner class GearSquareButton(
+        private val onClick: () -> Unit,
+    ) : Actor() {
+        var enabled: Boolean = true
+        private var hovered = false
+        private var pressed = false
+
+        init {
+            touchable = Touchable.enabled
+            addListener(object : InputListener() {
+                override fun enter(event: InputEvent, x: Float, y: Float, pointer: Int, fromActor: Actor?) {
+                    if (pointer == -1) hovered = true
+                }
+
+                override fun exit(event: InputEvent, x: Float, y: Float, pointer: Int, toActor: Actor?) {
+                    if (pointer == -1) hovered = false
+                }
+
+                override fun touchDown(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int): Boolean {
+                    if (pointer != 0 || !enabled) return false
+                    pressed = true
+                    return true
+                }
+
+                override fun touchUp(event: InputEvent, x: Float, y: Float, pointer: Int, button: Int) {
+                    if (pointer != 0) return
+                    val wasPressed = pressed
+                    pressed = false
+                    if (wasPressed && enabled && x in 0f..width && y in 0f..height) {
+                        onClick()
+                    }
+                }
+            })
+        }
+
+        fun triggerClick(): Boolean {
+            if (!enabled) return false
+            onClick()
+            return true
+        }
+
+        override fun draw(batch: Batch, parentAlpha: Float) {
+            val saved = batch.packedColor
+            val theme = themeProvider.currentTheme()
+            val white = skin.getRegion("white")
+            val activeHover = enabled && (hovered || pressed)
+
+            val bg = when {
+                !enabled -> theme.colors.well
+                activeHover -> theme.colors.cellHover
+                else -> theme.colors.cell
+            }
+            val border = when {
+                !enabled -> theme.colors.hair
+                activeHover -> theme.colors.value
+                else -> theme.colors.line
+            }
+            val fg = when {
+                !enabled -> theme.colors.dim
+                activeHover -> theme.colors.boneHi
+                else -> theme.colors.text
+            }
+            val alphaMul = if (enabled) parentAlpha else parentAlpha * 0.48f
+
+            OutGameDraw.fillRect(batch, white, x, y, width, height, bg, alphaMul)
+            OutGameDraw.strokeRect(batch, white, x, y, width, height, 1f, border, alphaMul)
+
+            val gearReg = ensureGearRegion()
+            if (gearReg != null) {
+                val iconS = min(15f, min(width, height) - 6f)
+                batch.setColor(fg.r, fg.g, fg.b, fg.a * alphaMul)
+                batch.draw(gearReg, x + (width - iconS) * 0.5f, y + (height - iconS) * 0.5f, iconS, iconS)
+            }
+            batch.packedColor = saved
         }
     }
 

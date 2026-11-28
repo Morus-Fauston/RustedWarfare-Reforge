@@ -142,7 +142,11 @@ class UiP004MainMenuAndMapPickerTest {
             assertEquals(1, openedCount)
             assertTrue(picker.hasPendingSelectionCallback)
             assertEquals("river_crossing", picker.selectedMapId)
-            assertTrue(picker.visibleEntries().size >= 8, "Expected built-in 4P..10P skirmish map catalog")
+            assertTrue(picker.visibleEntries().size >= 3, "Expected packaged real playable .tmx fallback map catalog")
+            assertTrue(
+                picker.visibleEntries().all { val p = it.tmxPath; p != null && Files.isRegularFile(p) },
+                "Every MapPicker catalog entry must point to a real playable .tmx file (zero fake procedural maps)",
+            )
             val tenPlayerEntry = picker.visibleEntries().firstOrNull { it.id == "ring_atoll" }
             assertNotNull(tenPlayerEntry)
             assertEquals(10, tenPlayerEntry.maxPlayers)
@@ -281,6 +285,8 @@ class UiP004MainMenuAndMapPickerTest {
             "DynamicMapBackdrop.kt",
             "MainMenuScreen.kt",
             "MapPickerScreen.kt",
+            "ResourcePackOptions.kt",
+            "ResourcePackOptionsModal.kt",
         )
         val srcDir = listOf(
             Paths.get("src/main/kotlin/com/rustedwarfare/reforge/client"),

@@ -93,10 +93,12 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
 
     private fun fallbackCatalogPack(root: Path): ContentPackChoice? {
         val candidates = listOf(
+            root.resolve("../phase-seven-sandbox/json/package"),
+            Path.of("test-scenarios/inputs/phase-seven-sandbox/json/package"),
+            Path.of("SimulationTest/public/inputs/phase-seven-sandbox/json/package"),
             root.resolve("package"),
             root.resolve("json/package"),
             root.resolve("../phase-six-a-sandbox/json/package"),
-            root.resolve("../phase-seven-sandbox/json/package"),
             Path.of("test-scenarios/inputs/phase-six-a-sandbox/json/package"),
             Path.of("SimulationTest/public/inputs/phase-six-a-sandbox/json/package"),
         )
@@ -124,8 +126,16 @@ class SandboxLoader internal constructor(private val load: ((Path) -> Scenario)?
         pending = executor.submit<Result<LoadedSandbox>> { runCatching {
             val startedNanos = System.nanoTime()
             val checked = contentPack?.revalidate()
+            val preferSevenRoot = if (checked == null && root.toString().replace('\\', '/').endsWith("phase-six-a-sandbox/json")) {
+                listOf(
+                    root.resolve("../../phase-seven-sandbox/json/package"),
+                    Path.of("test-scenarios/inputs/phase-seven-sandbox/json/package"),
+                    Path.of("SimulationTest/public/inputs/phase-seven-sandbox/json/package"),
+                ).map { it.toAbsolutePath().normalize() }.firstOrNull { java.nio.file.Files.isRegularFile(it.resolve("pack.json")) }
+            } else null
             val directPackDir = when {
                 checked != null -> null
+                preferSevenRoot != null -> preferSevenRoot
                 java.nio.file.Files.isRegularFile(root.resolve("pack.json")) -> root
                 java.nio.file.Files.isRegularFile(root.resolve("package/pack.json")) -> root.resolve("package")
                 else -> null

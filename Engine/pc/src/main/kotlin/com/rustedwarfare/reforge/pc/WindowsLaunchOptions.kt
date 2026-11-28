@@ -125,7 +125,7 @@ data class WindowsLaunchOptions(
             require(skirmishMap == null || catalogSceneId == null) { "--map and --scene are mutually exclusive" }
             val themePackDir = options["--theme-pack"]?.let { value -> require(value.isNotBlank()) { "--theme-pack requires a directory" }; resolve(value) }
             val seed = defaultScenarioSeed.toAbsolutePath().normalize()
-            val defaultInputs = if (skirmishMap != null)
+            val defaultInputs = if (skirmishMap != null || !development)
                 seed.parent.resolve("../inputs/phase-seven-sandbox/json/package").normalize()
             else
                 seed.parent.resolve("../inputs/phase-six-a-sandbox/json").normalize()

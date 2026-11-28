@@ -48,6 +48,7 @@ class MapPickerScreen(
 
     private data class CardTextureKey(
         val mapId: String,
+        val thumbnailPath: java.nio.file.Path?,
         val themeId: String,
         val wellBits: Int,
         val boneHiBits: Int,
@@ -254,6 +255,7 @@ class MapPickerScreen(
     private fun ensureCardTexture(entry: MapPickerEntry, theme: UiTheme): Texture {
         val key = CardTextureKey(
             mapId = entry.id,
+            thumbnailPath = entry.thumbnailPath,
             themeId = theme.id,
             wellBits = Color.rgba8888(theme.colors.well),
             boneHiBits = Color.rgba8888(theme.colors.boneHi),
@@ -261,12 +263,12 @@ class MapPickerScreen(
             p3Bits = Color.rgba8888(theme.palettes.playerColor(2)),
         )
         textureCache[key]?.let { return it }
-        if (textureCache.size >= 24) {
+        if (textureCache.size >= 64) {
             val oldest = textureCache.entries.first()
             oldest.value.dispose()
             textureCache.remove(oldest.key)
         }
-        val pm = OutGameMapPreviewRenderer.renderTacticalPixmap(entry.mapDefinition, 256, 256, theme)
+        val pm = OutGameMapPreviewRenderer.loadOrRenderSquareCardPixmap(entry, 256, theme)
         val tex = try {
             Texture(pm).also { it.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear) }
         } finally {
@@ -332,21 +334,23 @@ class MapPickerScreen(
             val white = skin.getRegion("white")
             val tex = ensureCardTexture(entry, theme)
 
-            // 1:1 tactical map terrain fill
+            // 1:1 tactical map terrain fill (native `*_map.png` thumbnails already bake numbered spawn markers)
             batch.setColor(1f, 1f, 1f, parentAlpha)
             batch.draw(tex, x, y, width, height)
 
-            // Spawn point player-colored square pins (matching mockup `.mp-card` 12x12 outer + 8x8 inner)
-            val pinOuter = 12f
-            val pinInner = 8f
-            val pinFrameColor = if (theme.colors.well.r < theme.colors.boneHi.r) theme.colors.well else theme.colors.boneHi
-            entry.spawnPointsNormalized.forEachIndexed { idx, (nx, ny) ->
-                val px = x + nx * width
-                // Normalized spawn Y is top-down [0..1]; Stage Y is bottom-up
-                val py = y + (1f - ny) * height
-                val pCol = theme.palettes.playerColor(idx)
-                OutGameDraw.fillRect(batch, white, px - pinOuter * 0.5f, py - pinOuter * 0.5f, pinOuter, pinOuter, pinFrameColor, parentAlpha)
-                OutGameDraw.fillRect(batch, white, px - pinInner * 0.5f, py - pinInner * 0.5f, pinInner, pinInner, pCol, parentAlpha)
+            if (entry.thumbnailPath == null) {
+                // Spawn point player-colored square pins for procedural tactical fallback maps
+                val pinOuter = 12f
+                val pinInner = 8f
+                val pinFrameColor = if (theme.colors.well.r < theme.colors.boneHi.r) theme.colors.well else theme.colors.boneHi
+                entry.spawnPointsNormalized.forEachIndexed { idx, (nx, ny) ->
+                    val px = x + nx * width
+                    // Normalized spawn Y is top-down [0..1]; Stage Y is bottom-up
+                    val py = y + (1f - ny) * height
+                    val pCol = theme.palettes.playerColor(idx)
+                    OutGameDraw.fillRect(batch, white, px - pinOuter * 0.5f, py - pinOuter * 0.5f, pinOuter, pinOuter, pinFrameColor, parentAlpha)
+                    OutGameDraw.fillRect(batch, white, px - pinInner * 0.5f, py - pinInner * 0.5f, pinInner, pinInner, pCol, parentAlpha)
+                }
             }
 
             // Bottom-right localized map title:

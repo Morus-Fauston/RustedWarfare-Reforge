@@ -414,8 +414,15 @@ object TmxSkirmishScenarioBuilder {
         ensurePlayer("0")
         ensurePlayer("1")
 
+        val searchRadius = maxOf(16, maxOf(map.widthTiles, map.heightTiles) / 3)
+        // Place all buildings before mobile units so BuildingTerrain.initial never sees a mobile unit inside a later building footprint.
+        val orderedDeclared = map.startingUnits.sortedBy { declared ->
+            val resolved = resolveUnitTypeId(declared.unitType, definitions)
+            if (resolved != null && definitions[resolved]?.building != null) 0 else 1
+        }
+
         var nextIndex = 1
-        for (declared in map.startingUnits) {
+        for (declared in orderedDeclared) {
             val resolvedType = resolveUnitTypeId(declared.unitType, definitions)
             if (resolvedType == null) {
                 skippedCounts[declared.unitType] = (skippedCounts[declared.unitType] ?: 0) + 1
@@ -423,7 +430,13 @@ object TmxSkirmishScenarioBuilder {
             }
             val def = definitions.getValue(resolvedType)
             val ownerId = ensurePlayer(declared.team)
-            val position = findValidSpawnPosition(map, def, Position(declared.worldX, declared.worldY), occupiedBuildingCells)
+            val position = findValidSpawnPosition(
+                map = map,
+                def = def,
+                desired = Position(declared.worldX, declared.worldY),
+                occupied = occupiedBuildingCells,
+                maxRadiusTiles = searchRadius,
+            )
             if (position == null) {
                 skippedCounts[declared.unitType] = (skippedCounts[declared.unitType] ?: 0) + 1
                 continue
