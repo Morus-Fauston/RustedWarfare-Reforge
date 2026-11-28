@@ -1,12 +1,14 @@
 package com.rustedwarfare.reforge.android
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import android.app.Activity
 import android.app.Instrumentation
 import android.os.Bundle
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.knowledge.*
-import com.rustedwarfare.reforge.core.path.PathPlanner
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.AuthorizedNavigationTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import com.rustedwarfare.reforge.core.sim.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -50,7 +52,7 @@ class MotionMechanismInstrumentation : Instrumentation() {
     private fun identity(): JSONObject {
         val targetLoader = targetContext.classLoader
         val classes = listOf(SimulationContext::class.java, MovementProfile::class.java, MotionStepSample::class.java,
-            PathPlanner::class.java, PlanningTerrain::class.java, Position::class.java)
+            AuthorizedNavigationTerrain::class.java, PlanningTerrain::class.java, Position::class.java)
         val loaded = JSONArray()
         for (type in classes) {
             check(Class.forName(type.name, false, targetLoader) === type) { "Not target MAIN class: ${type.name}" }
@@ -122,32 +124,19 @@ class MotionMechanismInstrumentation : Instrumentation() {
         val simulation = open(speed, turn, acceleration)
         try {
             simulation.enableMotionDiagnostics(simulation.world)
-            simulation.submit(MoveAction("go", "p1", "u1", Position(450.0, 250.0), simulation.world))
+            val destination = Position(450.0, 250.0)
+            simulation.submit(MoveAction("go", "p1", "u1", destination, simulation.world))
             var previous = simulation.observe().units.single()
             var normal: Long? = null; var settle: Long? = null; var stable = 0; var advances = 0
-            var previousAim: Position? = null; var changedAim = false
             var stableAnchor: UnitObservation? = null
             for (q in 0L until 2500L) {
                 val observation = simulation.advance(Step(q, 1.0, "sim-tick"))
                 advances++; val now = observation.units.single(); finite(now)
                 val trace = simulation.drainMotionDiagnostics(simulation.world).single()
                 val aim = trace.steeringAim
-                var saveAim = false
                 if (q == 0L) {
-                    val distance = if (speed == .55) 165.0 else 72.16
-                    val expected = Position(50.0 + 400.0 * distance / kotlin.math.hypot(400.0, 180.0),
-                        70.0 + 180.0 * distance / kotlin.math.hypot(400.0, 180.0))
-                    check(aim != null && abs(aim.x - expected.x) < 1e-10 && abs(aim.y - expected.y) < 1e-10)
+                    check(aim != null && abs(aim.x - destination.x) < 1e-10 && abs(aim.y - destination.y) < 1e-10)
                 }
-                if (aim != null && previousAim != null && aim != previousAim && !changedAim) {
-                    val expected = if (speed == .55) Position(450.0, 250.0) else Position(
-                        50.0 + 400.0 * 108.24 / kotlin.math.hypot(400.0, 180.0),
-                        70.0 + 180.0 * 108.24 / kotlin.math.hypot(400.0, 180.0))
-                    check(abs(aim.x - expected.x) < 1e-10 && abs(aim.y - expected.y) < 1e-10)
-                    changedAim = true; saveAim = true
-                    result.put("aimBeforeFirstChange", JSONArray(listOf(previousAim.x, previousAim.y)))
-                }
-                if (aim != null) previousAim = aim
                 check(observation.events.none { it.kind in setOf("path-unreachable", "movement-blocked", "movement-boundary-blocked") })
                 val arrived = observation.events.count { it.kind == "movement-arrived" }
                 check(trace.normalCompletion == (arrived == 1))
@@ -163,12 +152,11 @@ class MotionMechanismInstrumentation : Instrumentation() {
                         check(now.movementState == MovementState.IDLE && now == stableAnchor)
                     }
                 }
-                if (q == 0L || arrived == 1 || saveAim || now.speed == 0.0 && normal != null) saved.put(row(q, now, trace, observation.events))
+                if (q == 0L || arrived == 1 || now.speed == 0.0 && normal != null) saved.put(row(q, now, trace, observation.events))
                 previous = now
                 if (stable >= 19) break
             }
             check(normal != null && settle != null && stable >= 19) { "No unique normal completion and 18q tail within 2500 steps" }
-            check(changedAim) { "No adaptive aim was consumed" }
             result.put("normalStep", normal).put("settleStep", settle).put("advances", advances)
                 .put("stablePoints", stable).put("allStepsChecked", true).put("fullTrajectorySaved", false).put("success", true)
         } finally { simulation.close() }
@@ -262,14 +250,14 @@ class MotionMechanismInstrumentation : Instrumentation() {
                 .put("radius",11.0).put("start",JSONArray(listOf(start.x,start.y)))
                 .put("target",JSONArray(listOf(target.x,target.y)))
             checked.put(item)
-            val route = checkNotNull(PathPlanner.findPath(terrain,start,target,11.0)) { "Captured $sequence rejected" }
+            val route = checkNotNull(ClearanceAStarPolicy.findExactPath(terrain,start,target,11.0)) { "Captured $sequence rejected" }
             item.put("route",JSONArray(route.map { JSONArray(listOf(it.x,it.y)) }))
             check(route.isNotEmpty() && route.last() == target) { "Captured $sequence target changed" }
             var previous = start
             for (point in route) {
                 // Public direct-path branch verifies each emitted leg; retained
                 // coordinates also support independent host geometry checking.
-                check(PathPlanner.findPath(terrain,previous,point,11.0) == listOf(point)) { "Captured $sequence has a non-direct leg" }
+                check(ClearanceAStarPolicy.findExactPath(terrain,previous,point,11.0) == listOf(point)) { "Captured $sequence has a non-direct leg" }
                 previous = point
             }
             item.put("allLegsDirect",true).put("success",true)

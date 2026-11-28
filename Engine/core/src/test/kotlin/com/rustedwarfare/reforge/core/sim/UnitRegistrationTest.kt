@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 import java.nio.file.Path
 import kotlin.test.*
@@ -12,7 +14,7 @@ class UnitRegistrationTest {
         val spawn = input.units.single { it.unitId == "f" }
         val born = UnitRegistration.sandbox(state, input,
             SandboxCommand.Spawn(spawn.typeId, spawn.position, "p1", state = SandboxInitialState.DAMAGED),
-            UnitRegistration.sandboxId("p1", 3L, 1L), ScreenPlane)
+            UnitRegistration.sandboxId("p1", 3L, 1L))
         val paid = assertIs<ProductionChange.Accepted>(state.productionLedger!!.enqueue(born.unitId, "c_tank", "2".repeat(32)))
         assertEquals(1400L, paid.ledger.balances.getValue("p1"))
         assertEquals(checkNotNull(born.definition.maximumHealth) / 2.0, born.health)
@@ -24,7 +26,7 @@ class UnitRegistrationTest {
         val input = BuildingTestContent.scenario()
         val state = StepState(nextObjectId = 11L, lastBirthSerial = Long.MAX_VALUE,
             productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
-        val factory = UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" }, ScreenPlane)
+        val factory = UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" })
         val ledger = state.productionLedger
         val completed = ProductionCompletion("f", "p1", "c_tank", "1".repeat(32))
         assertFailsWith<ArithmeticException> { UnitRegistration.produced(state, input, factory, completed) }
@@ -45,7 +47,7 @@ class UnitRegistrationTest {
         val input = BuildingTestContent.scenario()
         val state = StepState(nextObjectId = 11L,
             productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
-        UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" }, ScreenPlane)
+        UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" })
         val paid = assertIs<ProductionChange.Accepted>(
             state.productionLedger!!.enqueue("f", "c_tank", "0".repeat(32)))
         assertEquals(1400L, paid.ledger.balances.getValue("p1"))
@@ -58,7 +60,7 @@ class UnitRegistrationTest {
         val input = BuildingTestContent.scenario()
         val state = StepState(nextObjectId = 11L)
         val spawn = input.units.single { it.unitId == "a" }.copy(heading = -270.0, height = 7.5)
-        val unit = UnitRegistration.initial(state, input, spawn, ScreenPlane)
+        val unit = UnitRegistration.initial(state, input, spawn)
         assertSame(unit, state.units.getValue("a"))
         assertEquals("a", unit.unitId)
         assertEquals("p1", unit.ownerPlayerId)
@@ -81,7 +83,7 @@ class UnitRegistrationTest {
         val input = BuildingTestContent.scenario()
         val state = StepState(nextObjectId = 11L,
             productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
-        val factory = UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" }, ScreenPlane)
+        val factory = UnitRegistration.initial(state, input, input.units.single { it.unitId == "f" })
         val registeredLedger = state.productionLedger
         val nonce = "0".repeat(32)
         val unit = UnitRegistration.produced(state, input, factory,
@@ -116,8 +118,8 @@ class UnitRegistrationTest {
         val state = StepState(nextObjectId = 11L,
             productionLedger = ProductionLedger.initial(mapOf("p1" to 1750L, "p2" to 0L), emptyMap()))
         val spawn = input.units.single { it.unitId == "f" }
-        val factory = UnitRegistration.initial(state, input, spawn, ScreenPlane)
-        assertFailsWith<IllegalStateException> { UnitRegistration.initial(state, input, spawn, ScreenPlane) }
+        val factory = UnitRegistration.initial(state, input, spawn)
+        assertFailsWith<IllegalStateException> { UnitRegistration.initial(state, input, spawn) }
         assertSame(factory, state.units.getValue("f"))
         val completed = ProductionCompletion("f", "p1", "c_tank", "0".repeat(32))
         val born = UnitRegistration.produced(state, input, factory, completed)
@@ -137,7 +139,7 @@ class UnitRegistrationTest {
         val input = base.copy(unitDefinitions = mapOf(old.id to movementOnly),
             units = listOf(base.units.single { it.unitId == "a" }), combatContract = null, economyContract = null)
         val state = StepState()
-        val born = UnitRegistration.initial(state, input, input.units.single(), ScreenPlane)
+        val born = UnitRegistration.initial(state, input, input.units.single())
         assertNull(born.objectId)
         assertNull(born.combat)
         assertNull(born.namedWeapons)

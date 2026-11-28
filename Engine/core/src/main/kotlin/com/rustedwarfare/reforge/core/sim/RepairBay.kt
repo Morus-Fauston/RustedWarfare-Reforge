@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 
 /** Qualification of the explicit native capability; class names and idle flags confer no work ability. */

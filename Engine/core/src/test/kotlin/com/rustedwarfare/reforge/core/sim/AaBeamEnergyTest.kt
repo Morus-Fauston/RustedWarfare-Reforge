@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import java.nio.file.Path
 import org.junit.jupiter.api.io.TempDir
 import kotlin.test.*

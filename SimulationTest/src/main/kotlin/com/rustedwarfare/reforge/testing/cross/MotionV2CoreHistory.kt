@@ -1,7 +1,7 @@
 package com.rustedwarfare.reforge.testing.cross
 
-import com.rustedwarfare.reforge.core.sim.MotionStepSample
-import com.rustedwarfare.reforge.core.sim.MotionTerrainDisposition
+import com.rustedwarfare.reforge.core.navigation.MotionStepSample
+import com.rustedwarfare.reforge.core.navigation.MotionTerrainDisposition
 import com.rustedwarfare.reforge.core.sim.Position
 
 /** Observable history only. Private cursor coverage and same-build mechanisms are separate. */

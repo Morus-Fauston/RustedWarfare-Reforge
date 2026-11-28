@@ -1,8 +1,10 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.knowledge.*
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -558,14 +560,13 @@ class LocomotionModuleTest {
 
         fun runTrace(injectFault: Boolean): List<List<Any?>> {
             var faultFired = false
-            val steering = SteeringPolicy { body, aim, delta, coordinates ->
-                if (injectFault && !faultFired && body.nav.lastAvoidHeadingDeg != null) {
+            val faultHook: (MutableUnit) -> Unit = { body ->
+                if (injectFault && !faultFired && body.lastAvoidHeadingDeg != null) {
                     faultFired = true
                     error("injected-avoid-rollback-fault")
                 }
-                AcceleratedSteering.turn(body, aim, delta, coordinates)
             }
-            val ctx = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(steering = steering)).initialize(scene)).context
+            val ctx = assertIs<InitResult.Accepted>(SimulationContext(steeringFaultHook = faultHook).initialize(scene)).context
             try {
                 val eIds = (0 until 6).map { "e-$it" }
                 val wIds = (0 until 6).map { "w-$it" }
@@ -593,9 +594,6 @@ class LocomotionModuleTest {
                 ctx.close()
             }
         }
-
-        val navWithAvoid = UnitNavigationState.EMPTY.copy(lastAvoidHeadingDeg = 125.0)
-        assertEquals(null, navWithAvoid.adoptRoute(listOf(Position(100.0, 100.0)), 1L).lastAvoidHeadingDeg)
 
         val clean = runTrace(injectFault = false)
         val recovered = runTrace(injectFault = true)

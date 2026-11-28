@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.DurabilityProfile
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import kotlin.test.*
@@ -16,8 +18,8 @@ class CombatTargetQueryTest {
     private fun harmless() = UnitDefinition(tank.id,tank.className,tank.radius,tank.displayRadius,tank.totalFrames,
         tank.imagePath,tank.imageScale,tank.movement,tank.retainedUnconsumed,tank.fogOfWarSightRange,
         checkNotNull(tank.combat).let { it.copy(projectile=it.projectile.copy(directDamage=0.0)) })
-    private fun nearest(units:Collection<MutableUnit>,coordinates:CoordinatePolicy=ScreenPlane) =
-        CombatTargetQuery.nearestEnemy(actor,units,scene.players,coordinates,scene.map)
+    private fun nearest(units:Collection<MutableUnit>,distanceSquared:(Position,Position)->Double=ScreenPlane::distanceSquared) =
+        CombatTargetQuery.nearestEnemy(actor,units,scene.players,scene.map,distanceSquared)
     private fun patrol(units:Collection<MutableUnit>,visible:(String,Position)->Boolean={_,_->true}) =
         CombatTargetQuery.patrolEnemy(actor,units,scene.players,visible,scene.map)
 
@@ -38,9 +40,7 @@ class CombatTargetQueryTest {
         assertSame(inside,nearest(listOf(inside)))
         assertNull(nearest(listOf(unit("edge",range),unit("outside",Math.nextUp(range)))))
         val plus=unit("plus",1.0);val minus=unit("minus",-1.0)
-        val signed=object:CoordinatePolicy by ScreenPlane {
-            override fun distanceSquared(position:Position,target:Position)=if(target.x<0.0)-0.0 else 0.0
-        }
+        val signed: (Position, Position) -> Double = { _, target -> if(target.x<0.0)-0.0 else 0.0 }
         assertSame(minus,nearest(listOf(plus,minus),signed))
     }
 
@@ -52,7 +52,7 @@ class CombatTargetQueryTest {
         val candidates=listOf(actor,unit("own",1.0,owner="p1"),unit("ally",2.0),
             unit("dead",3.0,owner="p3").also { it.health=0.0 },
             unit("healthless",4.0,owner="p3").also { it.health=null },enemy)
-        assertSame(enemy,CombatTargetQuery.nearestEnemy(actor,candidates,players,ScreenPlane,scene.map))
+        assertSame(enemy,CombatTargetQuery.nearestEnemy(actor,candidates,players,scene.map))
         assertTrue(CombatTargetQuery.isEnemy(actor,enemy,players))
         assertFalse(CombatTargetQuery.isEnemy(actor,candidates[2],players))
     }
@@ -107,9 +107,7 @@ class CombatTargetQueryTest {
     @Test
     fun a_failed_query_propagates_and_cannot_poison_the_next_query() {
         val target=unit("target",30.0)
-        val failed=object:CoordinatePolicy by ScreenPlane {
-            override fun distanceSquared(position:Position,target:Position):Double = error("query-failure")
-        }
+        val failed: (Position, Position) -> Double = { _, _ -> error("query-failure") }
         assertFailsWith<IllegalStateException> { nearest(listOf(target),failed) }
         assertSame(target,nearest(listOf(target)))
         assertEquals(Position(30.0,0.0),target.position)

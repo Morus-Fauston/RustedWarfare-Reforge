@@ -45,5 +45,22 @@ class BackgroundLaunchTest {
         assertFailsWith<IllegalArgumentException> {
             WindowsLaunchOptions.parse(arrayOf("--development", "true", "--touch", "true", "--touch", "true"), root)
         }
+
+        // ENG-P017-003: --background-input works with --diagnostics false (zero heavy per-frame JsonlEvidence)
+        // and resolves --hotspot-summary automatically or explicitly.
+        val lightBg = WindowsLaunchOptions.parse(
+            arrayOf("--evidence", "bg-run", "--background-input", "true", "--diagnostics", "false", "--development", "true"),
+            root,
+        )
+        assertTrue(lightBg.backgroundInput)
+        assertFalse(lightBg.diagnostics, "--diagnostics false must decouple BackgroundClientInput from JsonlEvidence")
+        assertEquals(root.resolve("bg-run/hotspot-summary.json"), lightBg.hotspotSummary)
+
+        val customSummary = WindowsLaunchOptions.parse(
+            arrayOf("--development", "true", "--hotspot-summary", "out/custom-hotspot.json"),
+            root,
+        )
+        assertFalse(customSummary.diagnostics)
+        assertEquals(root.resolve("out/custom-hotspot.json"), customSummary.hotspotSummary)
     }
 }

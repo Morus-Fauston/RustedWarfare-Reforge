@@ -67,7 +67,7 @@ class Minimap(val worldWidth: Double, val worldHeight: Double,
         }
     }
     fun frame(frame: SandboxFrame): MinimapFrame = MinimapFrame(
-        Collections.unmodifiableList(ArrayList(frame.terrain)),
+        frame.terrain,
         Collections.unmodifiableList(frame.observation.units.filter { it.alive && it.attachment == null }.map {
             MinimapUnit(it.unitId, it.ownerPlayerId, it.position)
         }))

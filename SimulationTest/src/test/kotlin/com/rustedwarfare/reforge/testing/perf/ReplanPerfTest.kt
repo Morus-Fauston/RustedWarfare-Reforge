@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.testing.perf
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals

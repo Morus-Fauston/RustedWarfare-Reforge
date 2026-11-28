@@ -17,7 +17,7 @@ class DevelopmentSelectionTest(unittest.TestCase):
             for entry, selection in [('development_check.py', ['--suite', 'production-combat']),
                                      ('public_check.py', ['--suite', 'production-combat', '--kind', 'pr']),
                                      ('public_batch.py', ['--kind', 'pr'])]:
-                for forks in (1, 2, 4):
+                for forks in (1, 2, 4, 8):
                     result = subprocess.run([sys.executable, '-B', str(ci/entry), *selection,
                         '--test-forks', str(forks), '--list', '--output', str(output)],
                         capture_output=True, text=True, encoding='utf8')
@@ -28,7 +28,7 @@ class DevelopmentSelectionTest(unittest.TestCase):
                     self.assertEqual(1, budget['modules']['pc']['maxParallelForks'])
                     self.assertEqual(forks, budget['modules']['tools']['maxParallelForks'])
                     self.assertFalse(output.exists())
-                for forks in ('0', '3', '5', '-1', 'two'):
+                for forks in ('0', '3', '5', '9', '-1', 'two'):
                     result = subprocess.run([sys.executable, '-B', str(ci/entry), *selection,
                         '--test-forks', forks, '--output', str(output)], capture_output=True)
                     self.assertEqual(2, result.returncode, entry)
@@ -132,6 +132,78 @@ class DevelopmentSelectionTest(unittest.TestCase):
                     '--output', str(output), *options], capture_output=True)
                 self.assertEqual(2, result.returncode)
                 self.assertFalse(output.exists())
+
+    def test_concurrent_python_mechanisms_preserve_deterministic_order_and_admit_boundaries(self):
+        import threading
+        import time
+        from unittest import mock
+        import development_check
+
+        scripts = ['tests/slow.py', 'tests/fast.py', 'tests/medium.py']
+        delays = {'tests/slow.py': 0.25, 'tests/fast.py': 0.02, 'tests/medium.py': 0.10}
+        plan = dict(
+            groups=[],
+            pythonTests=scripts,
+            pythonOwners={path: ['tooling'] for path in scripts},
+            deduplicated=[],
+        )
+        lock = threading.Lock()
+        running = [0]
+        peak = [0]
+        admit_calls = [0]
+
+        def fake_execute(argv, cwd, out_dir, timeout=600, env=None):
+            out_dir.mkdir(parents=True, exist_ok=True)
+            test_path = Path(argv[argv.index('--test') + 1])
+            summary_path = Path(argv[argv.index('--output') + 1])
+            rel = 'tests/' + test_path.name
+            with lock:
+                running[0] += 1
+                peak[0] = max(peak[0], running[0])
+            try:
+                time.sleep(delays[rel])
+            finally:
+                with lock:
+                    running[0] -= 1
+            failed = rel == 'tests/fast.py' and fail_fast[0]
+            summary_path.write_text(json.dumps(dict(
+                status='failed' if failed else 'passed',
+                tests=1,
+                sourceUnchanged=True,
+            )), encoding='utf8')
+            return dict(passed=not failed, exitCode=1 if failed else 0, argv=argv)
+
+        def fake_admit():
+            admit_calls[0] += 1
+
+        fail_fast = [False]
+        with (tempfile.TemporaryDirectory(prefix='reforge-py-concurrent-') as temporary,
+              mock.patch.object(development_check, 'identities', return_value=[]),
+              mock.patch.object(development_check, 'toolchain_identity', return_value={'python': '3.13'}),
+              mock.patch.object(development_check, 'execute_step', side_effect=fake_execute)):
+            repo = Path(temporary) / 'repo'
+            repo.mkdir()
+            ok_out = Path(temporary) / 'ok'
+            code = development_check.run_development(repo, ok_out, plan, False, forks=4, admit=fake_admit)
+            self.assertEqual(0, code)
+            self.assertGreaterEqual(peak[0], 2, 'Multiple Python mechanisms must overlap when forks > 1')
+            self.assertEqual(2, admit_calls[0], 'Batch admit should run once before and once after Python mechanisms')
+            receipt = json.loads((ok_out / 'result.json').read_text(encoding='utf8'))
+            self.assertEqual('passed', receipt['status'])
+            self.assertEqual(scripts, [row['path'] for row in receipt['pythonCoverage']])
+            for idx in range(len(scripts)):
+                self.assertTrue((ok_out / f'python-{idx}.json').is_file())
+
+            fail_fast[0] = True
+            admit_calls[0] = 0
+            fail_out = Path(temporary) / 'fail'
+            fail_code = development_check.run_development(repo, fail_out, plan, False, forks=4, admit=fake_admit)
+            self.assertEqual(1, fail_code)
+            self.assertEqual(2, admit_calls[0])
+            fail_receipt = json.loads((fail_out / 'result.json').read_text(encoding='utf8'))
+            self.assertEqual('execution-failed', fail_receipt['status'])
+            self.assertIn('tests/fast.py', fail_receipt['error'])
+            self.assertEqual(scripts, [row['path'] for row in fail_receipt['pythonCoverage']])
 
 
 if __name__ == '__main__':

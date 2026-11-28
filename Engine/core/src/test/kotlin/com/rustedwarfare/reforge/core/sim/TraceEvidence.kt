@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 /** Test-only observation export; no production serializer or TestLab runner is introduced. */
 internal fun traceObservation(caseId: String, phase: String, sample: Observation) {
     fun position(value: Position?): Any? = value?.let { mapOf("x" to it.x, "y" to it.y) }

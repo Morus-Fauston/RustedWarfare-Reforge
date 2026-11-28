@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 /** Custom weapon energyUsage only; resourceUsage and laser defense have different rules. */
 internal object WeaponEnergy {
     fun canFire(unit: MutableUnit, cost: Float): Boolean = cost <= 0f || !unit.energyRecharging && unit.energy >= cost

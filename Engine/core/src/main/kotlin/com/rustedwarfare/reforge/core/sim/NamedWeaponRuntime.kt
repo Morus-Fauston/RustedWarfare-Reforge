@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.NamedWeaponDefinition
 import com.rustedwarfare.reforge.core.content.CombatProfile
 import com.rustedwarfare.reforge.core.content.MovementType
@@ -8,7 +10,7 @@ import com.rustedwarfare.reforge.core.content.MapDefinition
 
 /** Stack-scoped world inputs. Candidates are selected by the host; lookup never grants visibility. */
 internal class NamedWeaponFrame(val worldSeed: Int, val counter: Int, val delta: Double,
-    val players: List<Player>, val coordinates: CoordinatePolicy, val units: Map<String, MutableUnit>,
+    val players: List<Player>, val units: Map<String, MutableUnit>,
     val candidates: Collection<MutableUnit>, val primary: MutableUnit?, val manual: MutableUnit?, val map: MapDefinition,
     val beamOffsets: Map<String, Position> = emptyMap())
 
@@ -16,16 +18,16 @@ internal class NamedWeaponFrame(val worldSeed: Int, val counter: Int, val delta:
 internal object NamedWeaponRuntime {
     // cg.ab constructor default in the fixed original turret evidence.
     private const val DEFAULT_LIMITING_RANGE = 99999.0
-    fun inRange(unit: MutableUnit, target: MutableUnit, players: List<Player>, coordinates: CoordinatePolicy, map: MapDefinition): Boolean {
+    fun inRange(unit: MutableUnit, target: MutableUnit, players: List<Player>, map: MapDefinition): Boolean {
         val catalog = checkNotNull(unit.definition.combat?.namedWeapons)
         return catalog.ordered.any { weapon ->
-            weapon.canShoot && qualifies(unit, target, weapon, players, coordinates, map) &&
+            weapon.canShoot && qualifies(unit, target, weapon, players, map) &&
                 (weapon.attachedTo?.let { parent ->
-                    qualifies(unit, target, catalog.byName.getValue(parent), players, coordinates, map)
+                    qualifies(unit, target, catalog.byName.getValue(parent), players, map)
                 } ?: true)
         }
     }
-    fun usesNamedState(combat: CombatProfile): Boolean = WeaponAssembly.requiresNamedState(combat)
+    fun usesNamedState(combat: CombatProfile): Boolean = combat.weaponAssembly.usesNamedState
 
     fun initialStates(combat: CombatProfile?, heading: Double, primary: MutableCombat?): MutableMap<String, MutableCombat>? =
         combat?.takeIf(::usesNamedState)?.weaponAssembly?.slots?.mapIndexed { index, slot ->
@@ -58,7 +60,7 @@ internal object NamedWeaponRuntime {
                 continue
             }
             if (definition.slave) continue
-            val target = NamedWeaponRuntime.target(unit, definition, state, frame.primary, frame.candidates, frame.players, frame.coordinates, frame.map)
+            val target = NamedWeaponRuntime.target(unit, definition, state, frame.primary, frame.candidates, frame.players, frame.map)
             if (state.targetId != target?.unitId) {
                 state.targetId = target?.unitId
                 if (target != null && target === frame.manual) OrdinaryWeapon.refreshOffset(frame.worldSeed, frame.counter, actorId, unit, target, state)
@@ -88,7 +90,7 @@ internal object NamedWeaponRuntime {
             val state = states.getValue(definition.name)
             val parent = states.getValue(checkNotNull(assembly.parent(definition.name)).definition.name)
             val target = frame.units[parent.targetId]?.takeIf {
-                NamedWeaponRuntime.qualifies(unit, it, definition, frame.players, frame.coordinates, frame.map)
+                NamedWeaponRuntime.qualifies(unit, it, definition, frame.players, frame.map)
             }
             state.targetId = target?.unitId
             state.turretHeading = parent.turretHeading
@@ -99,7 +101,7 @@ internal object NamedWeaponRuntime {
             val definition = slot.definition
             val state = states.getValue(definition.name)
             val target = frame.units[state.targetId] ?: continue
-            if (!state.aimReady || !NamedWeaponRuntime.qualifies(unit, target, definition, frame.players, frame.coordinates, frame.map)) continue
+            if (!state.aimReady || !NamedWeaponRuntime.qualifies(unit, target, definition, frame.players, frame.map)) continue
             if (!WeaponEnergy.canFire(unit, definition.energyUsage)) continue
             val weapon = slot.profile
             if (state.cooldown == 0.0) active = true
@@ -143,7 +145,7 @@ internal object NamedWeaponRuntime {
     }
 
     fun qualifies(unit: MutableUnit, target: MutableUnit, weapon: NamedWeaponDefinition,
-                  players: List<Player>, coordinates: CoordinatePolicy, map: MapDefinition, checkRange: Boolean = true): Boolean {
+                  players: List<Player>, map: MapDefinition, checkRange: Boolean = true): Boolean {
         if (!CombatTargetQuery.isEnemy(unit, target, players) || !CombatTargetQuery.conditionAllows(unit, target, weapon, map)) return false
         if ((unit.amphibiousState != null || unit.definition.submarine != null ||
                 unit.definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NAUTILUS_SUBMERGED) &&
@@ -159,18 +161,18 @@ internal object NamedWeaponRuntime {
         if (!checkRange) return true
         val globalRange = UnitCombat.range(unit)
         val maximum = minOf(globalRange, weapon.maximumRange ?: DEFAULT_LIMITING_RANGE)
-        val distance = coordinates.distanceSquared(unit.position, target.position)
+        val distance = ScreenPlane.distanceSquared(unit.position, target.position)
         return distance < globalRange * globalRange && distance <= maximum * maximum &&
             (weapon.minimumRange <= 0.0 || distance >= weapon.minimumRange * weapon.minimumRange)
     }
 
     fun target(unit: MutableUnit, weapon: NamedWeaponDefinition, state: MutableCombat,
                primary: MutableUnit?, candidates: Collection<MutableUnit>, players: List<Player>,
-               coordinates: CoordinatePolicy, map: MapDefinition): MutableUnit? {
-        if (primary != null && qualifies(unit, primary, weapon, players, coordinates, map)) return primary
+               map: MapDefinition): MutableUnit? {
+        if (primary != null && qualifies(unit, primary, weapon, players, map)) return primary
         if (unit.definition.combat?.multiTargeting != true ||
             (unit.definition.combat?.namedWeapons?.ordered?.size ?: 0) <= 1) return null
-        candidates.firstOrNull { it.unitId == state.targetId && qualifies(unit, it, weapon, players, coordinates, map) }
+        candidates.firstOrNull { it.unitId == state.targetId && qualifies(unit, it, weapon, players, map) }
             ?.let { return it }
         val globalRange = UnitCombat.range(unit)
         val maximum = minOf(globalRange, weapon.maximumRange ?: DEFAULT_LIMITING_RANGE)
@@ -178,8 +180,8 @@ internal object NamedWeaponRuntime {
         val minimum = if (weapon.minimumRange > 0.0) weapon.minimumRange * weapon.minimumRange else -1.0
         var chosen: MutableUnit? = null
         for (candidate in candidates) {
-            if (!qualifies(unit, candidate, weapon, players, coordinates, map)) continue
-            val distance = coordinates.distanceSquared(unit.position, candidate.position)
+            if (!qualifies(unit, candidate, weapon, players, map)) continue
+            val distance = ScreenPlane.distanceSquared(unit.position, candidate.position)
             if (distance < best && distance > minimum) {
                 chosen = candidate
                 best = distance

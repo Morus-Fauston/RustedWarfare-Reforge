@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.ModularSpiderUtilityForms.ANTI_NUKE_AMMO_COST
 import com.rustedwarfare.reforge.core.content.ModularSpiderUtilityForms.ANTI_NUKE_AMMO_LIMIT
 import com.rustedwarfare.reforge.core.content.ModularSpiderUtilityForms.ANTI_NUKE_AMMO_RATE

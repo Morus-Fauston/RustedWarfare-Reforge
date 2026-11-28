@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeRules
 import com.rustedwarfare.reforge.core.knowledge.PathInformationSource

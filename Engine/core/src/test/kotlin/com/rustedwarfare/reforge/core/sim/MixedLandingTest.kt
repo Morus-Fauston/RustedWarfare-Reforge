@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.UnitDefinition
@@ -59,9 +61,9 @@ class MixedLandingTest {
             MutableUnit(spawn.unitId, "p1", spawn.typeId, scene.unitDefinitions.getValue(spawn.typeId),
                 spawn.position, 90.0)
         }
-        val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"), true)
+        val group = GroupMoveRequest(WorldHandle("mixed-apron"), null, "p1", click, setOf("a", "b"))
         val pool = SharedLandingSites.forGroup(scene.map, group, cars)
-        val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
+        val terrain = com.rustedwarfare.reforge.core.navigation.PlanningTerrain(38, 38, 20, 20, BooleanArray(38 * 38))
         val survey = assertNotNull(pool.mixedBays)
         assertNull(survey.sites(terrain, PathWorkBudget(1)))
         assertEquals(emptyList(), survey.sites(terrain, PathWorkBudget(256)))
@@ -84,8 +86,10 @@ class MixedLandingTest {
             car.speed = 0.0
             car.adoptRoute(listOf(Position(200.0, 300.0), click), click, car.lastPlannedKnowledgeRevision,
                 car.lastPlannedBuildingRevision, listOf("parked"))
-            car.followsManeuverRoute = true
-            car.landingMember = LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked"), true))
+            car.updateNavigation {
+                it.withFollowsManeuverRoute(true)
+                    .withLandingMember(LandingMember(GroupMoveRequest(ctx.world, null, "p1", click, setOf("car", "parked"))))
+            }
             val first = state.stepIndex + 1
             for (tick in first until first + 600) {
                 val frame = ctx.advance(Step(tick, 1.0, "sim-tick"))
@@ -128,14 +132,16 @@ class MixedLandingTest {
             val group = assertNotNull(context.requestGroupMove("p1", listOf("a", "b"), click))
             val def = scene.unitDefinitions.getValue("small")
             val car = MutableUnit("b", "p1", def.id, def, Position(370.0, 260.0), 90.0).apply {
-                landingMember = LandingMember(group)
-                moveTarget = click
-                pathPoints = mutableListOf(click)
+                updateNavigation {
+                    it.withLandingMember(LandingMember(group))
+                        .withMoveTarget(click, MotionContract.sharedCluster(click))
+                        .withPathPoints(listOf(click))
+                }
             }
             val other = MutableUnit("parked", "p1", def.id, def, site, 90.0)
             var blockers = emptyList<MutableUnit>()
-            var ground = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(scene.map)
-            val paths = ExperimentalPolicies().path
+            var ground = com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(scene.map)
+            val paths = ClearanceAStarPolicy.DEFAULT
             fun serve(survey: MixedLandingBays, sites: List<Position> = listOf(site)): MixedLandingBays.Decision {
                 car.heading += 0.1 // A circular body can keep steering between slices of the same swept route.
                 val slice = PathWorkBudget(1)
@@ -157,7 +163,7 @@ class MixedLandingTest {
             car.position = Position(400.0, 330.0)
             assertEquals(listOf(site), assertIs<MixedLandingBays.Decision.Claim>(serve(bay)).path)
             val blocked = scenario({ x, y -> x == 21 && y == 16 }, car.position)
-            ground = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(blocked.map)
+            ground = com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(blocked.map)
             assertIs<MixedLandingBays.Decision.Pending>(serve(bay))
         } finally { context.close() }
     }
@@ -224,15 +230,19 @@ class MixedLandingTest {
             smallDef.imagePath, smallDef.imageScale, smallDef.movement, emptySet(),
             movementCollision = MovementCollisionShape.Rectangle(60.0, 16.0),
         )
-        val groupA = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("big", "escort"), true)
-        val groupB = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("small"), true)
+        val groupA = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("big", "escort"))
+        val groupB = GroupMoveRequest(WorldHandle("w"), null, "p1", Position(420.0, 260.0), setOf("small"))
         val big = MutableUnit("big", "p1", "rect", rectDef, Position(220.0, 260.0), 0.0).apply {
-            moveTarget = Position(420.0, 260.0)
-            landingMember = LandingMember(groupA, claimed = Position(420.0, 260.0), claimedHeading = 90.0)
+            updateNavigation {
+                it.withMoveTarget(Position(420.0, 260.0), MotionContract.sharedCluster(Position(420.0, 260.0)))
+                    .withLandingMember(LandingMember(groupA, claimed = Position(420.0, 260.0), claimedHeading = 90.0))
+            }
         }
         val small = MutableUnit("small", "p1", "small", smallDef, Position(444.0, 260.0), 90.0).apply {
-            moveTarget = Position(420.0, 260.0)
-            landingMember = LandingMember(groupB)
+            updateNavigation {
+                it.withMoveTarget(Position(420.0, 260.0), MotionContract.sharedCluster(Position(420.0, 260.0)))
+                    .withLandingMember(LandingMember(groupB))
+            }
         }
         val units = mapOf("big" to big, "small" to small)
         val occupancy = LandingOccupancy()

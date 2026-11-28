@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 /** Player-local history; host IDs only track membership, never assign order or public labels. */
 internal data class ProjectedProjectileEvent(val objectId: Long, val kind: String, val position: Position,
     val heading: Double, val height: Double, val sourceUnitId: String?, val targetUnitId: String?, val damage: Double?,

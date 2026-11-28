@@ -97,9 +97,9 @@ class PlayerTerrainKnowledgeTest {
             assertEquals("out-of-bounds",assertFailsWith<KnowledgeException> { original.planningBlocked(column,row) }.code)
         }
         store.accept(world,listOf(VisibleTerrainCell(0,0,true)))
+        assertEquals(1L,store.snapshot(world).revision)
+        store.accept(world,listOf(VisibleTerrainCell(0,0,false)))
         assertEquals(2L,store.snapshot(world).revision)
-        store.accept(world,listOf(VisibleTerrainCell(0,0,true)))
-        assertEquals(3L,store.snapshot(world).revision)
     }
 
     @Test fun ks05_hardcore_empty_projection_forgets_knowledge_but_old_snapshot_survives() {

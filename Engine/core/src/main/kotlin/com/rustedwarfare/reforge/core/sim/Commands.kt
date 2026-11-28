@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 sealed interface Action {
     val actionId: String
     val actorPlayerId: String
@@ -166,6 +168,7 @@ data class MoveAction(
     val target: Position,
     override val world: WorldHandle,
     override val atStep: Long? = null,
+    val cohortEscort: Boolean = false,
 ) : Action
 
 data class StopAction(

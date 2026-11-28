@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -360,11 +362,16 @@ class BottleneckContractABTest {
 
         // Direct PassageAdmission check: unopposed traffic through 1-tile gate leaves passageEntry == null,
         // whereas two opposed movers across the 1-tile gate activate PassageAdmission.
-        val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(map, MovementType.LAND)
+        val terrain = com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(map, MovementType.LAND)
         val admission = PassageAdmission(listOf(heavy, scout))
         val soloUnit = MutableUnit("solo-1", "p1", "scout", scout, Position(470.0, 150.0), 90.0).apply {
-            moveTarget = Position(600.0, 150.0)
-            originMoveId = "m-solo"
+            updateNavigation {
+                it.bindCommandTarget(
+                    target = Position(600.0, 150.0),
+                    originMoveId = "m-solo",
+                    contract = MotionContract.pointMove(Position(600.0, 150.0)),
+                )
+            }
             taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, "m-solo", Position(600.0, 150.0)))
             adoptRoute(listOf(Position(600.0, 150.0)), Position(600.0, 150.0), 0L, 0L)
         }
@@ -377,8 +384,13 @@ class BottleneckContractABTest {
         assertNull(soloUnit.passageEntry, "Unopposed mover must keep passageEntry == null")
 
         val opposedEast = MutableUnit("opp-e", "p2", "scout", scout, Position(570.0, 150.0), 270.0).apply {
-            moveTarget = Position(440.0, 150.0)
-            originMoveId = "m-opp"
+            updateNavigation {
+                it.bindCommandTarget(
+                    target = Position(440.0, 150.0),
+                    originMoveId = "m-opp",
+                    contract = MotionContract.pointMove(Position(440.0, 150.0)),
+                )
+            }
             taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, "m-opp", Position(440.0, 150.0)))
             adoptRoute(listOf(Position(440.0, 150.0)), Position(440.0, 150.0), 0L, 0L)
         }
@@ -419,7 +431,7 @@ class BottleneckContractABTest {
 
     @Test
     fun loc_module_has_zero_upper_command_special_casing_identifiers() {
-        val locFile = java.nio.file.Paths.get("src/main/kotlin/com/rustedwarfare/reforge/core/sim/LocomotionModule.kt")
+        val locFile = java.nio.file.Paths.get("src/main/kotlin/com/rustedwarfare/reforge/core/navigation/LocomotionModule.kt")
         val source = java.nio.file.Files.readString(locFile)
         val codeLines = source.lines()
             .map { it.substringBefore("//") }
@@ -475,11 +487,16 @@ class BottleneckContractABTest {
         // 1. Verify StepState.fork isolates `passageTracker` mutations across candidate-step rollback!
         val rollback = PathSearchRollback()
         val state0 = StepState()
-        val terrain = com.rustedwarfare.reforge.core.path.PlanningTerrain.fromNoFog(map, MovementType.LAND)
+        val terrain = com.rustedwarfare.reforge.core.navigation.PlanningTerrain.fromNoFog(map, MovementType.LAND)
         val admission = PassageAdmission(listOf(tank))
         val uWest = MutableUnit("w0", "p1", "tank", tank, Position(242.0, 150.0), 90.0).apply {
-            moveTarget = Position(420.0, 150.0)
-            originMoveId = "mw"
+            updateNavigation {
+                it.bindCommandTarget(
+                    target = Position(420.0, 150.0),
+                    originMoveId = "mw",
+                    contract = MotionContract.pointMove(Position(420.0, 150.0)),
+                )
+            }
             taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, "mw", Position(420.0, 150.0)))
             adoptRoute(listOf(Position(420.0, 150.0)), Position(420.0, 150.0), 0L, 0L)
         }

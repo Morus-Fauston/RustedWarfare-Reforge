@@ -1,12 +1,14 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.MovementType
-import com.rustedwarfare.reforge.core.path.PathSearchReason
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -24,7 +26,7 @@ class LatestMovePlanningTest {
         val hull = RectangularDeparture(MovementCollisionShape.Rectangle(62.0, 20.0), 90.0, false, true)
         fun replay(retry: Boolean): List<Int> {
             val cache = PathClearanceCache()
-            val policy = ExperimentalPolicies().path
+            val policy = ClearanceAStarPolicy.DEFAULT
             val used = mutableListOf<Int>()
             for (target in listOf(Position(290.0, 101.0), Position(290.0, 121.0))) {
                 var active = policy.beginExact(terrain, origin, target, 0.0, hull)
@@ -104,14 +106,16 @@ class LatestMovePlanningTest {
                 val group = assertNotNull(context.requestGroupMove("p1", ids, target))
                 ids.forEach { id -> assertIs<ActionResult.Accepted>(context.submitGroupMove(
                     MoveAction("bay-$id", "p1", id, target, context.world), group)) }
+                val started = linkedSetOf<String>()
                 var finishedAt: Long? = null
                 for (tick in 0L..12000L) {
                     val frame = context.advance(Step(tick, 1.0, "sim-tick"))
                     context.drainPlanningWorkDiagnostics(context.world).forEach { assertTrue(it.used in 0..512) }
                     context.drainPathDiagnostics(context.world)
                     assertTrue(frame.events.none { it.kind == "group-destination-unavailable" })
-                    if (frame.events.count { it.kind == "movement-started" } == ids.size) {
-                        assertTrue(frame.units.all { assertNotNull(it.moveTarget).x < 240.0 })
+                    started += frame.events.filter { it.kind == "movement-started" }.mapNotNull { it.unitId }
+                    if (started.size == ids.size) {
+                        assertTrue(frame.units.all { it.position.x < 240.0 && (it.moveTarget?.x ?: it.position.x) < 240.0 })
                         finishedAt = tick; break
                     }
                 }
@@ -151,9 +155,33 @@ class LatestMovePlanningTest {
                        replacement: Position = target, stopped: String? = null, repeatThrough: Long = 2L,
                        reissueMembers: List<String> = listOf("a", "b", "c")): Result {
         val ids = listOf("a", "b", "c")
-        val scene = WaterTestScene.scenario(map, MovementType.WATER, Position(475.0, 140.0)).copy(
+        // Use a baffled water channel + rectangular hull so multi-tick MovePlanning search stays in flight
+        // past tick 2 under the 512 step budget (after ENG-P017-007 removed legacy GroupMoveDestinations).
+        val w = 48
+        val h = 90
+        val landGid = map.groundGids.first()
+        val waterGid = map.groundGids[map.widthTiles - 1]
+        val gids = IntArray(w * h) { idx ->
+            val col = idx % w
+            val row = idx / w
+            when {
+                col < 12 -> landGid
+                // Deep U-trap forcing multi-tick rectangular A* (> 14 ticks) before opening at bottom/top
+                col == 25 && row in 0..84 -> landGid
+                col == 29 && row in 5..89 -> landGid
+                else -> waterGid
+            }
+        }
+        val channelMap = MapDefinition(w, h, map.tileWidth, map.tileHeight,
+            map.tileSets, gids, BlockingGrid(w, h, BooleanArray(w * h)))
+        val baseShip = WaterTestScene.unit(MovementType.WATER)
+        val ship = UnitDefinition(baseShip.id, baseShip.className, 21.0, 21.0, baseShip.totalFrames,
+            baseShip.imagePath, baseShip.imageScale, baseShip.movement, emptySet(),
+            movementCollision = MovementCollisionShape.Rectangle(42.0, 16.0), mass = 20_000.0)
+        val scene = WaterTestScene.scenario(channelMap, MovementType.WATER, Position(475.0, 140.0)).copy(
+            unitDefinitions = mapOf(ship.id to ship),
             units = ids.mapIndexed { index, id ->
-                UnitSpawn(id, "p1", "water-test", Position(475.0, 140.0 + 45.0 * index), 90.0)
+                UnitSpawn(id, "p1", ship.id, Position(475.0, 140.0 + 45.0 * index), 90.0)
             })
         val context = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
         try {

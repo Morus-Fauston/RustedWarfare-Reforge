@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 
 /** One weapon clock; launch parameters are captured from actual depth at the firing boundary. */

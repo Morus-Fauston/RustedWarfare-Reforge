@@ -124,6 +124,8 @@ object AutomaticVisionDevelopment {
         val normalStep=completion.integer("normalClearStep")
         require(normalStep in 0 until fixture.maxSteps && arrivedStep in normalStep until fixture.maxSteps && advanceCount == arrivedStep + 1 + fixture.tailSteps)
         val remembered = Array(2) { Array<Pair<Boolean?, Int?>>(600) { null to null } }
+        val previousVisible = Array(2) { emptySet<Int>() }
+        val expectedRevision = IntArray(2)
         val wall = (1..15).map { 14 to it }
         var previousPosition = Position(50.0, 70.0)
         var previousPath = emptyList<Position>()
@@ -212,7 +214,7 @@ object AutomaticVisionDevelopment {
                 val player = players.getValue(id).jsonObject
                 require(player.text("playerId") == id && player.text("worldId") == world)
                 require(player.integer("width") == 30 && player.integer("height") == 20)
-                require(player.integer("epoch") == maxOf(step + 1, 0) && player.integer("revision") == maxOf(step + 2, 1))
+                require(player.integer("epoch") == maxOf(step + 1, 0))
                 val visible = if (id == "p2") emptyList() else (0 until 600).filter { cell ->
                     val dx = cell % 30 + 0.5 - position.x / 20.0
                     val dy = cell / 30 + 0.5 - position.y / 20.0
@@ -222,15 +224,22 @@ object AutomaticVisionDevelopment {
                 require(player.getValue("effectiveCells").jsonArray.map { it.jsonPrimitive.int } == visible)
                 val actualCells = player.getValue("cells").jsonArray
                 require(actualCells.size == 600)
+                var knowledgeChanged = false
                 for (cell in 0 until 600) {
                     val value = actualCells[cell].jsonObject
+                    val wasVisible = cell in previousVisible[playerIndex]
+                    val oldExpected = remembered[playerIndex][cell]
                     val isVisible = cell in visible
                     if (isVisible) remembered[playerIndex][cell] = (cell % 30 == 14 && cell / 30 in 1..15) to 1
                     val expected = remembered[playerIndex][cell]
+                    if (index != 1 && (wasVisible != isVisible || oldExpected != expected)) knowledgeChanged = true
                     require(value.getValue("visible").jsonPrimitive.boolean == isVisible) { "Vision differs $id cell$cell step$step" }
                     require(value.getValue("lastKnownBlocked") == (expected.first?.let(::JsonPrimitive) ?: JsonNull))
                     require(value.getValue("lastKnownGroundGid") == (expected.second?.let(::JsonPrimitive) ?: JsonNull))
                 }
+                if (knowledgeChanged) expectedRevision[playerIndex]++
+                if (index != 1) previousVisible[playerIndex] = visible.toSet()
+                require(player.integer("revision") == expectedRevision[playerIndex])
                 val observed = player.getValue("observation").jsonObject
                 require(observed.text("worldId") == world && observed.integer("stepIndex") == maxOf(step, 0))
                 if (continuousRoute) {

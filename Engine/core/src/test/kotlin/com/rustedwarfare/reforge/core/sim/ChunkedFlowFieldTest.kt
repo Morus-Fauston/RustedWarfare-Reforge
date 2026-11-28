@@ -1,7 +1,9 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.test.Test
@@ -270,30 +272,47 @@ class ChunkedFlowFieldTest {
         assertEquals(0, field.congestionPenalty[northGapIdx].toInt())
         assertEquals(0, field.congestionPenalty[southGapIdx].toInt())
 
-        // Pack 4 friendly units into the north gap tile (col 19, row 6 -> x=390, y=130)
+        // Idle units (moveTarget == null) parked inside a gate throat must pay ZERO congestion toll
         val base = TestContentFactory.openScenario()
         val def = base.unitDefinitions.getValue("tank")
-        val crowdedUnits = (0 until 4).map { i ->
+        val idleGarrison = (0 until 4).map { i ->
             MutableUnit(
-                unitId = "crowd-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
+                unitId = "idle-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
                 position = Position(385.0 + i * 2.0, 128.0 + (i % 2) * 2.0), heading = 90.0,
             )
         }
-        spatial.syncAll(crowdedUnits)
+        val activeFollower = MutableUnit(
+            unitId = "sub-0", ownerPlayerId = "p1", typeId = "tank", definition = def,
+            position = Position(80.0, 230.0), heading = 90.0, speed = def.movement.moveSpeed,
+        ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
+        spatial.syncAll(idleGarrison + activeFollower)
+        spatial.beginStep(true)
+        adapter.advanceP1Budget(idleGarrison + activeFollower, spatial, { _, _ -> terrain }, 30L, 10000)
+        assertEquals(0, field.congestionPenalty[northGapIdx].toInt(),
+            "Idle garrison units with moveTarget == null must NOT contribute to gate congestion")
+
+        // Pack 4 slow actively moving friendly units into the north gap tile (col 19, row 6 -> x=390, y=130)
+        val crowdedUnits = (0 until 4).map { i ->
+            MutableUnit(
+                unitId = "crowd-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
+                position = Position(385.0 + i * 2.0, 128.0 + (i % 2) * 2.0), heading = 90.0, speed = 0.05,
+            ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
+        }
+        spatial.syncAll(crowdedUnits + activeFollower)
         spatial.beginStep(true)
 
-        // Trigger congestion refresh at step 35 (>= 30 ticks interval)
-        adapter.advanceP1Budget(crowdedUnits, spatial, { _, _ -> terrain }, 35L, 10000)
+        // Trigger congestion refresh at step 60 (>= 24 ticks interval)
+        adapter.advanceP1Budget(crowdedUnits + activeFollower, spatial, { _, _ -> terrain }, 60L, 10000)
         val penAfterCrowding = field.congestionPenalty[northGapIdx].toInt()
         assertTrue(penAfterCrowding >= 6, "Crowded north gap must accumulate hysteresis congestion penalty (>=6), got $penAfterCrowding")
         assertEquals(0, field.congestionPenalty[southGapIdx].toInt(), "Empty south gap must stay at 0 penalty")
         assertTrue(field.cost[northGapIdx] > field.cost[southGapIdx],
             "North gap cost (${field.cost[northGapIdx]}) must exceed clear south gap cost (${field.cost[southGapIdx]}) to split flow")
 
-        // Clear units and verify smooth hysteresis decay (not abrupt zero-jump in a single tick)
-        spatial.syncAll(emptyList())
+        // Clear crowded queue while downstream subscriber remains active -> verify smooth hysteresis decay
+        spatial.syncAll(listOf(activeFollower))
         spatial.beginStep(true)
-        adapter.advanceP1Budget(emptyList(), spatial, { _, _ -> terrain }, 70L, 10000)
+        adapter.advanceP1Budget(listOf(activeFollower), spatial, { _, _ -> terrain }, 95L, 10000)
         val penAfterFirstDecay = field.congestionPenalty[northGapIdx].toInt()
         assertTrue(penAfterFirstDecay in 1 until penAfterCrowding,
             "Hysteresis decay must step down smoothly (expected 1..${penAfterCrowding - 1}, got $penAfterFirstDecay)")
@@ -387,8 +406,12 @@ class ChunkedFlowFieldTest {
             unitId = "pending-1", ownerPlayerId = "p1", typeId = "tank", definition = def,
             position = Position(120.0, 320.0), heading = 90.0,
         )
-        // Pending fast-start state: moveTarget == null, MOVE task queued
-        pendingUnit.taskQueue = pendingUnit.taskQueue.append(UnitTask(UnitTaskKind.MOVE, "act-1", Position(520.0, 320.0)))
+        // Pending fast-start state: moveTarget == null, MOVE task queued with orthogonal MotionContract
+        val pendingTarget = Position(520.0, 320.0)
+        pendingUnit.taskQueue = pendingUnit.taskQueue.append(
+            UnitTask(UnitTaskKind.MOVE, "act-1", pendingTarget, motionContract = MotionContract.pointMove(pendingTarget)),
+        )
+        pendingUnit.updateNavigation { it.withMotionContract(MotionContract.pointMove(pendingTarget)) }
 
         val spatial = WorldSpatialIndex()
         adapter.advanceP1Budget(listOf(pendingUnit), spatial, { _, _ -> t2 }, 1L, 20000)
@@ -433,22 +456,22 @@ class ChunkedFlowFieldTest {
         val pureMembers = (0 until 5).map { "p-$it" }.toSet()
         val pureReq = GroupMoveRequest(
             world = WorldHandle("w"), completedStep = 0L, actor = "p1", click = goal,
-            members = pureMembers, sharedLanding = true,
+            members = pureMembers,
             maxRadiusByMovement = mapOf(MovementType.LAND to 6.0),
         )
         val pureUnit = MutableUnit("p-0", "p1", "sm", smallDef, Position(240.0, 230.0), 90.0)
-        pureUnit.landingMember = LandingMember(pureReq)
+        pureUnit.updateNavigation { it.withLandingMember(LandingMember(pureReq)) }
 
         assertTrue(adapter.hasValidGuidanceFor(pureUnit, terrain),
             "Pure small group must resolve its own smallYieldsWide=false field instead of hitting incomplete mixed field")
 
         val mixedReq = GroupMoveRequest(
             world = WorldHandle("w"), completedStep = 0L, actor = "p1", click = goal,
-            members = pureMembers, sharedLanding = true,
+            members = pureMembers,
             maxRadiusByMovement = mapOf(MovementType.LAND to 14.0),
         )
         val mixedUnit = MutableUnit("m-0", "p1", "sm", smallDef, Position(240.0, 230.0), 90.0)
-        mixedUnit.landingMember = LandingMember(mixedReq)
+        mixedUnit.updateNavigation { it.withLandingMember(LandingMember(mixedReq)) }
         assertFalse(adapter.hasValidGuidanceFor(mixedUnit, terrain),
             "Mixed group small member must resolve smallYieldsWide=true field strictly")
     }
@@ -504,7 +527,7 @@ class ChunkedFlowFieldTest {
             MutableUnit(
                 unitId = "fast-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
                 position = Position(385.0 + i * 3.0, 130.0), heading = 90.0, speed = fullSpeed,
-            ).also { it.moveTarget = goal }
+            ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(smoothUnits)
         spatial.beginStep(true)
@@ -518,7 +541,7 @@ class ChunkedFlowFieldTest {
             MutableUnit(
                 unitId = "slow-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
                 position = Position(385.0 + i * 3.0, 130.0), heading = 90.0, speed = 0.05,
-            ).also { it.moveTarget = goal }
+            ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(slowUnits)
         spatial.beginStep(true)
@@ -681,7 +704,7 @@ class ChunkedFlowFieldTest {
             MutableUnit(
                 unitId = "ov-$i", ownerPlayerId = "p1", typeId = "tank", definition = def,
                 position = Position(385.0 + i * 3.0, 130.0), heading = 90.0, speed = 0.05,
-            ).also { it.moveTarget = goal }
+            ).also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
         }
         spatial.syncAll(slowUnits)
         spatial.beginStep(true)
@@ -771,10 +794,14 @@ class ChunkedFlowFieldTest {
         val members = setOf("out-0", "out-1", "out-2", "in-0", "in-1")
         val req = GroupMoveRequest(
             world = WorldHandle("w"), completedStep = 0L, actor = "p1", click = goal,
-            members = members, sharedLanding = true, maxRadiusByMovement = mapOf(MovementType.LAND to 6.0),
+            members = members, maxRadiusByMovement = mapOf(MovementType.LAND to 6.0),
         )
-        val outerUnit = MutableUnit("out-0", "p1", "sm", smallDef, Position(340.0, 220.0), 90.0).also { it.landingMember = LandingMember(req) }
-        val innerUnit = MutableUnit("in-0", "p1", "sm", smallDef, Position(150.0, 220.0), 90.0).also { it.landingMember = LandingMember(req) }
+        val outerUnit = MutableUnit("out-0", "p1", "sm", smallDef, Position(340.0, 220.0), 90.0).also {
+            it.updateNavigation { nav -> nav.withLandingMember(LandingMember(req)) }
+        }
+        val innerUnit = MutableUnit("in-0", "p1", "sm", smallDef, Position(150.0, 220.0), 90.0).also {
+            it.updateNavigation { nav -> nav.withLandingMember(LandingMember(req)) }
+        }
 
         val outerComp = adapter.resolveSourceComponent(terrain, 6.0, 28, 11, 17, 11)
         val innerComp = adapter.resolveSourceComponent(terrain, 6.0, 28, 11, 7, 11)
@@ -838,6 +865,251 @@ class ChunkedFlowFieldTest {
             assertEquals(10, arrived, "All 10 units across both squads must arrive cleanly, arrived=$arrived/10")
         } finally {
             ctx.close()
+        }
+    }
+
+    @Test
+    fun large_350x350_map_15_cross_moves_with_garrison_zero_rescan_and_frozen_inactive_fields() {
+        val base = TestContentFactory.openScenario()
+        val tankBase = base.unitDefinitions.getValue("tank")
+        val smallTank = UnitDefinition(
+            id = "c_tank", className = tankBase.className, radius = 6.0, displayRadius = 6.0,
+            totalFrames = tankBase.totalFrames, imagePath = tankBase.imagePath, imageScale = tankBase.imageScale,
+            movement = tankBase.movement.copy(moveSpeed = 1.2, maxTurnSpeed = 5.0, turnAcceleration = 0.5),
+            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+            combat = tankBase.combat, durability = tankBase.durability, build = tankBase.build,
+            movementCollision = MovementCollisionShape.Circle(6.0), mass = 3000.0,
+        )
+        val w = 350; val h = 350
+        val blocked = BooleanArray(w * h) { idx ->
+            val x = idx % w; val y = idx / w
+            if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
+            // Base gate wall at x=40..41 with narrow gates at y=40..43 and y=80..83
+            else if (x in 40..41 && y !in 40..43 && y !in 80..83 && y < 140) true
+            // Sealed island in center x=170..190, y=170..190 (triggers goalWasNearestFallback == true)
+            else if (x in 170..190 && y in 170..190) true
+            else false
+        }
+        val garrison = (0 until 12).map { i ->
+            // Stationary garrison parked right inside/around the south base gate (x=40, y=80..83)
+            UnitSpawn("gar-$i", "p1", "c_tank", Position(805.0 + (i % 3) * 14.0, 1605.0 + (i / 3) * 18.0), 90.0)
+        }
+        val mobile = (0 until 16).map { i ->
+            UnitSpawn("mob-$i", "p1", "c_tank", Position(300.0 + (i % 4) * 24.0, 760.0 + (i / 4) * 24.0), 90.0)
+        }
+        val scene = makeScenario(w, h, blocked, mapOf("c_tank" to smallTank), garrison + mobile)
+        val ctx = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            val mobileIds = mobile.map { it.unitId }
+            val targets = listOf(
+                Position(1400.0, 900.0),
+                Position(2400.0, 1300.0),
+                Position(3600.0, 3600.0), // inside sealed island -> goalWasNearestFallback = true
+                Position(4800.0, 2200.0),
+                Position(5600.0, 1400.0),
+                Position(6200.0, 2800.0),
+                Position(5200.0, 4400.0),
+                Position(3620.0, 3620.0), // another sealed island click
+                Position(2600.0, 5200.0),
+                Position(1800.0, 4200.0),
+                Position(4200.0, 5800.0),
+                Position(5800.0, 5800.0),
+                Position(6400.0, 4600.0),
+                Position(4600.0, 3200.0),
+                Position(3200.0, 2400.0),
+                Position(5400.0, 3600.0),
+            )
+            val maskCountBefore = ChunkedFlowFieldAdapter.gateMaskComputeCount
+            val inactiveExpansionsSnapshot = HashMap<ChunkedFlowFieldAdapter.FieldKey, Long>()
+            for (s in 0L until 640L) {
+                if (s % 40L == 0L) {
+                    val ordIdx = (s / 40L).toInt()
+                    if (ordIdx < targets.size) {
+                        val goal = targets[ordIdx]
+                        val grp = assertNotNull(ctx.requestGroupMove("p1", mobileIds, goal))
+                        for (id in mobileIds) {
+                            assertIs<ActionResult.Accepted>(
+                                ctx.submitGroupMove(MoveAction("m-$ordIdx-$id", "p1", id, goal, ctx.world), grp)
+                            )
+                        }
+                    }
+                }
+                ctx.advance(Step(s, 1.0, "sim-tick"))
+                for (field in ctx.flowFields.cachedFieldsForTest()) {
+                    if (field.activeSubscribers == 0) {
+                        val prev = inactiveExpansionsSnapshot.putIfAbsent(field.key, field.totalExpansions)
+                        if (prev != null) {
+                            assertEquals(prev, field.totalExpansions,
+                                "Zero-subscriber cached field ${field.key} must remain frozen (0 background wavefront expansions)")
+                        }
+                    } else {
+                        inactiveExpansionsSnapshot.remove(field.key)
+                    }
+                }
+            }
+            val maskComputesDuringRun = ChunkedFlowFieldAdapter.gateMaskComputeCount - maskCountBefore
+            assertTrue(maskComputesDuringRun <= 1L,
+                "Static gate mask on unchanging 350x350 terrain must be computed at most once (0 copyForRollback rescans), got $maskComputesDuringRun")
+            assertTrue(inactiveExpansionsSnapshot.isNotEmpty(),
+                "Expected multiple zero-subscriber historical fields in LRU cache across 16 cross-map moves")
+
+            // Also verify fallback-goal congestion shadow rebuild reuses upstream < effectiveCut cells instead of full-map reset
+            val fallbackField = ctx.flowFields.cachedFieldsForTest().firstOrNull { it.goalWasNearestFallback }
+            if (fallbackField != null && fallbackField.completed) {
+                val rollbackBefore = ChunkedFlowFieldAdapter.gateMaskComputeCount
+                val snap = fallbackField.copyForRollback()
+                assertEquals(rollbackBefore, ChunkedFlowFieldAdapter.gateMaskComputeCount,
+                    "copyForRollback() must perform ZERO computeGateThroatMask scans")
+                assertEquals(fallbackField.cost.toList(), snap.cost.toList())
+            }
+        } finally {
+            ctx.close()
+        }
+    }
+
+    @Test
+    fun initial_build_and_shadow_rebuild_candidate_step_rollback_preserves_byte_exact_trajectory() {
+        val w = 48; val h = 32
+        val blocked = BooleanArray(w * h) { idx ->
+            val x = idx % w; val y = idx / w
+            if (x == 0 || x == w - 1 || y == 0 || y == h - 1) true
+            else (x in 22..23) && (y !in 6..9) && (y !in 20..23)
+        }
+        val t1 = PlanningTerrain(w, h, 20, 20, blocked)
+        val goal = Position(820.0, 320.0)
+        val base = TestContentFactory.openScenario()
+        val tankBase = base.unitDefinitions.getValue("tank")
+        val smallDef = UnitDefinition(
+            id = "c_tank", className = tankBase.className, radius = 6.0, displayRadius = 6.0,
+            totalFrames = tankBase.totalFrames, imagePath = tankBase.imagePath, imageScale = tankBase.imageScale,
+            movement = tankBase.movement.copy(moveSpeed = 1.2, maxTurnSpeed = 5.0, turnAcceleration = 0.5),
+            retainedUnconsumed = emptySet(), fogOfWarSightRange = 18,
+            combat = tankBase.combat, durability = tankBase.durability, build = tankBase.build,
+            movementCollision = MovementCollisionShape.Circle(6.0), mass = 3000.0,
+        )
+
+        // 1. Mid-initial-build COW rollback check + mid-shadow-rebuild COW rollback check on adapter
+        //    including LIFO ordering when scalar activeSubscribers & lastAccessStep mutate BEFORE recordFieldMutation!
+        val cleanAdapter = ChunkedFlowFieldAdapter()
+        val fClean = cleanAdapter.ensureFieldForGroup("p1", MovementType.LAND, 6.0, 6.0, t1, goal, 0L)
+        assertEquals(0, fClean.activeSubscribers)
+        assertEquals(0L, fClean.lastAccessStep)
+        val spatial = WorldSpatialIndex()
+        val initDrivers = (0 until 3).map { i ->
+            MutableUnit("init-$i", "p1", "c_tank", smallDef, Position(80.0 + i * 24.0, 120.0), 90.0, speed = 0.8)
+                .also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
+        }
+        spatial.syncAll(initDrivers)
+        spatial.beginStep(true)
+        cleanAdapter.advanceP1Budget(initDrivers, spatial, { _, _ -> t1 }, 1L, 180)
+        assertFalse(fClean.completed)
+        assertEquals(3, fClean.activeSubscribers)
+        assertEquals(0L, fClean.lastAccessStep)
+        val midCostSnap = fClean.cost.toList()
+        val midDirXSnap = fClean.dirX.toList()
+        val midHeapSize = fClean.heapSize
+
+        // Fork COW, change BOTH lastAccessStep (via ensureFieldForGroup) AND activeSubscribers (via 5 units)
+        // BEFORE recordFieldMutation runs inside advanceP1Budget, then abort & restore!
+        val rb1 = PathSearchRollback()
+        val aborted1 = cleanAdapter.fork(rb1)
+        aborted1.ensureFieldForGroup("p1", MovementType.LAND, 6.0, 6.0, t1, goal, 99L)
+        val extraDrivers = initDrivers + (3 until 5).map { i ->
+            MutableUnit("init-$i", "p1", "c_tank", smallDef, Position(80.0 + i * 24.0, 144.0), 90.0, speed = 0.8)
+                .also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
+        }
+        aborted1.advanceP1Budget(extraDrivers, spatial, { _, _ -> t1 }, 2L, 400)
+        assertEquals(5, fClean.activeSubscribers)
+        assertEquals(99L, fClean.lastAccessStep)
+        rb1.restore()
+        val restoredInit = assertNotNull(cleanAdapter.statsFor(fClean.key))
+        assertEquals(3, restoredInit.activeSubscribers, "Initial-build COW rollback must restore exact activeSubscribers despite LIFO undo")
+        assertEquals(0L, restoredInit.lastAccessStep, "Initial-build COW rollback must restore exact lastAccessStep despite LIFO undo")
+        assertEquals(midCostSnap, restoredInit.cost.toList(), "Initial-build COW rollback must restore exact cost array")
+        assertEquals(midDirXSnap, restoredInit.dirX.toList(), "Initial-build COW rollback must restore exact dirX array")
+        assertEquals(midHeapSize, restoredInit.heapSize, "Initial-build COW rollback must restore exact heap size")
+
+        // Finish initial build, start shadow congestion rebuild mid-flight, then abort & restore COW!
+        cleanAdapter.advanceP1Budget(initDrivers, spatial, { _, _ -> t1 }, 2L, 20000)
+        assertTrue(restoredInit.completed)
+        val slowQueue = (0 until 4).map { i ->
+            MutableUnit("sq-$i", "p1", "c_tank", smallDef, Position(445.0 + i * 2.0, 140.0), 90.0, speed = 0.05)
+                .also { it.updateNavigation { nav -> nav.withMoveTarget(goal) } }
+        }
+        spatial.syncAll(slowQueue)
+        spatial.beginStep(true)
+        cleanAdapter.advanceP1Budget(slowQueue, spatial, { _, _ -> t1 }, 30L, 25)
+        assertTrue(restoredInit.shadowActive)
+        assertEquals(4, restoredInit.activeSubscribers)
+        val shadowSnapCost = restoredInit.shadowCost.toList()
+        val shadowSnapHeap = restoredInit.shadowHeapSize
+        val penSnap = restoredInit.congestionPenalty.toList()
+
+        val rb2 = PathSearchRollback()
+        val aborted2 = cleanAdapter.fork(rb2)
+        aborted2.ensureFieldForGroup("p1", MovementType.LAND, 6.0, 6.0, t1, goal, 77L)
+        aborted2.advanceP1Budget(slowQueue.take(2), spatial, { _, _ -> t1 }, 31L, 20000)
+        assertFalse(restoredInit.shadowActive) // mutated in place prior to restore
+        assertEquals(2, restoredInit.activeSubscribers)
+        assertEquals(77L, restoredInit.lastAccessStep)
+        rb2.restore()
+        val restoredField = assertNotNull(cleanAdapter.statsFor(restoredInit.key))
+        assertTrue(restoredField.shadowActive, "Shadow-rebuild COW rollback must restore shadowActive=true")
+        assertEquals(4, restoredField.activeSubscribers, "Shadow-rebuild COW rollback must restore exact activeSubscribers")
+        assertEquals(0L, restoredField.lastAccessStep, "Shadow-rebuild COW rollback must restore exact lastAccessStep")
+        assertEquals(shadowSnapHeap, restoredField.shadowHeapSize, "Shadow-rebuild COW rollback must restore exact shadow heap size")
+        assertEquals(shadowSnapCost, restoredField.shadowCost.toList(), "Shadow-rebuild COW rollback must restore exact shadowCost")
+        assertEquals(penSnap, restoredField.congestionPenalty.toList(), "Shadow-rebuild COW rollback must restore exact congestionPenalty")
+
+        // 2. Full SimulationContext trajectory byte-exactness across CandidateStep rollback during initial & shadow phases
+        val spawns = (0 until 8).map { i ->
+            UnitSpawn("u-$i", "p1", "c_tank", Position(180.0 + (i % 2) * 24.0, 120.0 + (i / 2) * 24.0), 90.0)
+        }
+        val scene = makeScenario(w, h, blocked, mapOf("c_tank" to smallDef), spawns)
+        val refCtx = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        val testCtx = assertIs<InitResult.Accepted>(SimulationContext.initialize(scene)).context
+        try {
+            val ids = spawns.map { it.unitId }
+            for (ctx in listOf(refCtx, testCtx)) {
+                val grp = assertNotNull(ctx.requestGroupMove("p1", ids, goal))
+                for (id in ids) assertIs<ActionResult.Accepted>(ctx.submitGroupMove(MoveAction("g-$id", "p1", id, goal, ctx.world), grp))
+            }
+            for (s in 0L until 120L) {
+                if (s == 0L || s == 25L) {
+                    // Inject a candidate-step failure on testCtx, verify rollback, then advance normally!
+                    assertTrue(runCatching {
+                        testCtx.advanceWithInjectedFailureForTest(Step(s, 1.0, "sim-tick"))
+                    }.isFailure)
+                }
+                val refObs = refCtx.advance(Step(s, 1.0, "sim-tick"))
+                val testObs = testCtx.advance(Step(s, 1.0, "sim-tick"))
+                assertEquals(
+                    refObs.units.map { Triple(it.unitId, it.position.x.toBits() to it.position.y.toBits(), it.heading.toBits()) },
+                    testObs.units.map { Triple(it.unitId, it.position.x.toBits() to it.position.y.toBits(), it.heading.toBits()) },
+                    "Post-rollback trajectory at step $s must match clean execution bit-for-bit",
+                )
+            }
+        } finally {
+            refCtx.close()
+            testCtx.close()
+        }
+
+        // 3. Deferred step-0 worldId matches authoritative world.id, and close() + reopen() never leaks deferred events!
+        val host = OfflineSandboxHost(scene)
+        try {
+            val ctx = host.context
+            assertIs<ActionResult.Accepted>(ctx.submit(MoveAction("m-0", "p1", "u-0", goal, ctx.world)))
+            val deferred0 = host.advance(Step(0L, 1.0, "sim-tick"), materializeObservation = false)
+            assertEquals(ctx.world.id, deferred0.worldId, "Step-0 deferred Observation.worldId must include worldGeneration")
+            ctx.close()
+            assertIs<InitResult.Accepted>(ctx.reopen(scene))
+            val freshInitial = ctx.observe()
+            assertTrue(freshInitial.events.isEmpty(), "Reopened session initial observation must not leak prior deferred events: ${freshInitial.events}")
+            assertTrue(freshInitial.actionResults.isEmpty(), "Reopened session initial observation must not leak prior deferred actionResults")
+            val freshStep0 = ctx.advance(Step(0L, 1.0, "sim-tick"))
+            assertTrue(freshStep0.events.isEmpty(), "Reopened session step 0 must not leak prior deferred events: ${freshStep0.events}")
+        } finally {
+            host.close()
         }
     }
 }

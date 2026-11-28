@@ -3,7 +3,7 @@ package com.rustedwarfare.reforge.core.knowledge
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.sim.*
 import java.nio.file.Path
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import kotlin.test.*
 import kotlin.math.hypot
 
@@ -418,7 +418,7 @@ class AutomaticVisionTest {
             assertTrue(recovered.actionResults.any { it.actionId == "queued-select" })
             val searches = context.drainPathDiagnostics(context.world)
             assertEquals(listOf("a"), searches.map { it.unitId })
-            assertEquals(com.rustedwarfare.reforge.core.path.PathSearchReason.KNOWLEDGE_REPLAN, searches.single().reason)
+            assertEquals(com.rustedwarfare.reforge.core.navigation.PathSearchReason.KNOWLEDGE_REPLAN, searches.single().reason)
             assertEquals(vision.epoch + 1L, context.visionSnapshot(context.world, "p1").epoch)
         } finally { context.close() }
     }

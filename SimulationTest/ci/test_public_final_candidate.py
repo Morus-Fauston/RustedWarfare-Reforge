@@ -54,8 +54,8 @@ class PublicFinalCandidateTest(unittest.TestCase):
                    run_attempt=2, created_at='2026-11-12T00:00:00Z', run_started_at='2026-11-13T10:00:00Z')
         jobs = [dict(name=name, conclusion='success', labels=['ubuntu-latest'], runner_group_name='GitHub Actions',
                      completed_at='2026-11-13T10:19:59Z') for name in JOBS]
-        from public_parallel import SCENARIOS
-        shards = ('mechanisms', *SCENARIOS)
+        from public_parallel import MECHANISMS, SCENARIOS
+        shards = (*MECHANISMS, *SCENARIOS)
         plan = dict(identity=identity, shards={key: [] for key in shards})
         coverage = dict(status='passed', identity=identity, planSha256='c'*64, errors=[],
                         verifiedRawEvidence={key: {} for key in shards},
@@ -68,7 +68,7 @@ class PublicFinalCandidateTest(unittest.TestCase):
                 verify_sample(candidate, run, jobs, changed, plan, 'c'*64)
         for field in ('verifiedRawEvidence', 'receipts'):
             changed = deepcopy(coverage)
-            changed[field].pop('mechanisms')
+            changed[field].pop(MECHANISMS[0])
             with self.assertRaises(ValueError):
                 verify_sample(candidate, run, jobs, changed, plan, 'c'*64)
         for changed in (dict(run, event='workflow_dispatch'), dict(run, conclusion='failure')):
@@ -77,7 +77,7 @@ class PublicFinalCandidateTest(unittest.TestCase):
         jobs_without = jobs[:-1]
         with self.assertRaises(ValueError):
             verify_sample(candidate, run, jobs_without, coverage, plan, 'c'*64)
-        jobs_changed = [dict(job, conclusion='cancelled') if job['name']=='public-mechanisms' else job
+        jobs_changed = [dict(job, conclusion='cancelled') if job['name']==f'public-mechanisms ({MECHANISMS[0]})' else job
                         for job in jobs]
         with self.assertRaises(ValueError):
             verify_sample(candidate, run, jobs_changed, coverage, plan, 'c'*64)

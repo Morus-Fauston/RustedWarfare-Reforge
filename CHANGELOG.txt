@@ -62,6 +62,95 @@ v0.6.0 (2026-11-27 23:09)
 
 ====
 
+v0.5.91 (2026-11-28 16:15)
+  性能优化: 针对 350x350 大地图 4x 压测热点完成模拟与渲染全链路提速，包括 WorldSpatialIndex 原语链表与双槽 ping-pong 冻结快照复用及 Chebyshev 环剪枝 Top-K、LocomotionModule 拆分 7 项中粒度子方法与原始数组 ORCA 求解、NavigationGuidance/PlanningTerrain 增量地形掩码与大地图影子重建配额及轻量回滚、CircularTerrain/UnitContact 长线段走廊早停与零分配圆形扫掠、SimulationContext 阵营包围盒索敌剪枝/活体建筑快径/SimulationKernelWarmup JIT 预热，以及 SandboxGraphics 静态地形 SpriteCache 与 OfflineStepClock 帧预算守卫
+  修复: 修复 WorldSpatialIndex 对向车流圆锥补角余弦回绕、NavigationGuidance 小地图影子限流与门洞梯度余量及自格通行费扣减、UnitContact 纯在途独立车流与 41px 近目标轴向对接及静止群死锁回退、contactLayerAt 水下闭区间边界、SHORE_REJOIN 弹栈进度清零与 BuildingTerrain 慢路径条目同步
+  技术: 新增 SimulationKernelWarmupTest 与 OfflineStepClock 帧预算单测；原版素材 350x350 后台真 GL 4x 综合压测 4704 步实测 P95=13.24ms / P99=20.60ms / 有效倍速 3.9987x（170 峰值在场单位，零焦点抢占）；public_batch --kind pr（7 套机制与短测）、--kind long（33 条长测）、dev-ab 12/12、Holdout v3 12/12、Android 构建与双根布局全绿，经独立视觉与非作者代码 R2 双审 APPROVE（0 必修）
+
+====
+
+v0.5.90 (2026-11-28 07:48)
+  新增: 为 MoveAction、GroupMoveRequest、MotionContract 与 Windows 客户端 SandboxInput/SandboxSession 接通左右 Alt 单次显式编队行进（保持敌军攻击及友方装载/维修/续建原语义不变） / 在 CohortCoordinator 与 ChunkedFlowFieldAdapter 落地共同最严净空走廊绑定与无共同连通域自动分流脱钩、零单位 ID 硬编码的通用耐久与射程一维波前前后护航配速（同质编队零偏置、无武器高血量辅助保底后随武装前锋、统一流场测地距离基准与 C0 连续限速）、双侧夹缝/瓶颈门洞鱼贯过门与出口重聚、空地跨层同步配速及阵亡/改令/抵岸/真卡死>=90步即时动态脱钩 / 主动陪行态 cohortEscortYielding 经 PlayerObservationProjector 对敌方剥离，并豁免停滞重寻路与 DiagnosticSceneProjector 2 秒标红（真实堵死仍正常标红），同时严守 LocomotionModule 零改动红线
+  技术: 在 ScenarioCatalog 注册海岛绕岛与逆序重甲护航两项标准编队基准场景；新增 CohortEscortAndAltMoveTest（7 项核心契约）与 CohortAltInputTest 并入公开套件，新增 CohortEscortVisualEvidenceTest（4 组 2 秒标红对照拼图）及 BackgroundClientInput 无人值守后台真 GL 实窗 Alt+右键 回执与 F3+H 截图；dev-ab 全 12 场景、public_batch --kind pr 全 7 套机制与短测、Android 编译与双根布局检查全绿，经独立视觉与非作者代码 R2 双审 APPROVE（0 必修）
+
+====
+
+v0.5.89 (2026-11-28 06:35)
+  修复: 在全局指引与 LocomotionModule 之间新建无状态 CohortCoordinator 汇聚成核与消旋协调底座，对零核多向汇聚盆地识别唯一领头与向心受挤状态、施加切向阻尼并抬升运动学贴靠权重（排除受限死胡同口袋并在首核落地后无缝退还控制权） / 在 TerminalLanding 禁止空核切向 probeFlank 高速滑行并修复零核盆地内被微挤即清零进度的死锁，同时将 LocomotionModule 近距 rightShift 对齐既有纯运动学 dockingFade < 0.25 衰减带（零上层命令与群身份特判），根除空地多向群移持续环绕涡旋
+  技术: 新增 CohortNucleationAndAntiVortexTest 6 项核心契约并入公开套件，新增 CohortAntiVortexVisualEvidenceTest 三组 2 秒标红拼图；架构守卫、瓶颈 A/B、dev-ab 全 10 场景、public_batch --kind pr 全 7 套机制与短测、Android 编译与双根布局检查全绿，经独立视觉与非作者代码双审 APPROVE
+
+====
+
+v0.5.88 (2026-11-28 05:41)
+  体验优化: 引入可渗透前向半圆扇形出厂分配与厂前 NoParkingCorridor 禁停走廊（按工厂与阵营稳定复用动态落位簇，首车沿用原出口、矩形海厂与空厂保持兼容），消除无集结点连续出厂堵门 / 新增静态母厂占地脱离检测 overlapsProducerFootprint 并关闭有集结出厂锚点刹车，实现清出母厂当步不断速直连共享集结流场 / 升级 UnitContact 为圆体硬接触外法线传递及共线多体受压侧向屈曲分流，严守单步位移上限与零硬侵入并将受推车群摊开为二维片状
+  调整: 同步更新 phase-five-{ini,json,hjson,mixed}.json 中机甲产线两处选点坐标以对齐扇形散开后的零碰撞停稳位置
+  技术: 新增 FactoryFanOutAndSheetPushTest 8 项核心契约与 FactoryFanOutVisualEvidenceTest 视觉证据测；dev-ab 10 场景、public_batch --kind pr 全 7 套机制与短测、Android 编译及双根布局检查全绿，经独立视觉与非作者代码双审 APPROVE
+
+====
+
+v0.5.87 (2026-11-28 03:13)
+  架构改进: 移除 SimulationContext.requestGroupMove 的 mixedThreshold=4/8 等双轨分叉并将全介质圆单位与 2-7 矩形舰队统一收口至 LandingMember + MotionContract.sharedCluster 单一终点落位体系（补齐矩形编队收敛礼让与雾图编组最近可达重规划），物理删除 GroupMoveDestinations.kt 及 GroupMoveSlot、GroupReservation/groupMoveReservation/parkedReservationOwner、ManeuverRepair.GROUP_SLOT、refreshGroupDestinations、groupStopClearsSlots 与 MovePlanning.byGroup，统一按确定性 group.trafficOrder 迭代
+  体验优化: 基于 AuthorizedNavigationTerrain.clearanceRings、双体通宽跨度（覆盖 1 格、窄 2 格与 45 度对角瓶颈）及流场测地距离 sampleGeodesicDistance 升级瓶颈喉道防堵门 / 落地死胡同阶段 A 三项确定性机制（R<=24 局部有界 BFS PocketTopology 多地形缓存、O(1) 同型同组原子匿名槽位交换 tryAnonymousSlotSwap 与结合流场切向/测地进度的过角传染式外溢停稳），解除 culdesac-overflow-100 已知限制并达成 100/100 到达停稳（袋内 63 辆、袋外 37 辆、lastArrivalStep=718、零硬重叠与零停滞）
+  技术: 重写 GroupMoveDestinationsTest 为 6 项黑盒行为契约测并补齐 PocketTopology/SlotSwap/2 格喉道单测与相关调度单测适配；dev-ab 全 10 场景（含死胡同与双百石阵全部 100/100）、public_batch --kind pr --test-forks 4 --scenario-workers 8（1032.0s 全绿）、Android Debug/Test 编译与双根布局检查全绿，经独立全新上下文视觉审阅与非作者代码整审双 APPROVE（0 必修）
+
+====
+
+v0.5.86 (2026-11-28 01:55)
+  性能优化: 改造 SimulationTest/ci/development_tests.gradle，消除 beforeTest/afterTest 在全局锁内每次线性查找并全量序列化覆写 methods.json 的 O(N²) 磁盘瓶颈，改为内存 O(1) ArrayDeque 记录并在顶层 afterSuite 单次落盘结构完全一致的 methods.json / 将 public_check.py、public_scenarios.py、public_batch.py、development_check.py、development_tests.gradle 与 quick_test.py 的 --test-forks 与 --scenario-workers 白名单扩展至 {1, 2, 4, 8}（严格保持 :pc:test 串行 maxParallelForks == 1 与云端配置不变），并将 development_check.py 的 41 项只读 Python 机制测试改为线程池并发、确定性顺序落盘及批前后全仓 SHA-256 校验（消除 80 次冗余扫盘）
+  技术: 补齐 test_development_check.py（并发重叠、确定性排序、admit 边界与失败保全及 8-fork 断言）、test_public_check.py 与 test_quick_test.py 覆盖；74 项 CI 单测与 9 项 quick_test 单测全绿，实跑 --test-forks 8 机制验证一次通过（66.0s），同口径 public_batch --kind pr --test-forks 2 --scenario-workers 8 全绿并将整批墙钟由 1971.1s 降至 1365.0s（-30.7%，mechanisms -35.4%，Python 机制段 -67.6%），双根布局通过，经独立非作者代码整审 APPROVE（0 必修）
+
+====
+
+v0.5.85 (2026-11-28 00:39)
+  架构改进: 在 :Engine:core 建立独立包域 core.navigation 物理收拢原 core.path 与 core.sim 共 36 个寻路/流场/避让/空间索引/落位/接触文件（删除 src/main 与 src/test 旧 core/path 目录），收敛为 LocomotionDescriptor & VerticalPoseController、AuthorizedNavigationTerrain、NavigationSubsystem 三道窄接口与 DynamicBuildingGrid/窄化 UnitMovementHost，彻底切断业务类、StepState/CandidateStep、UnitTaskKind 与具体单位 ID 逆向依赖 / 新增 WaterLandSpeedProfile、SubmersibleMotionProfile、CustomVerticalPoseProfile、shortReverseDistance、sinksInWaterOnDeath 纯数据契约（配 Float/平方溢出与多垂向控制器互斥校验），拔除 SimulationContext.validate 的 radius>=20、离散倒车比、slidingMode/ignoringBody 与 FOUR_LEGGED 介质锁，将 UnitLocomotion、*Motion、WaterBody 与 BuildingOverlapEscape 运行期全面参数化清零单位 ID 白名单并贯通 OVER_CLIFF_WATER 全链路
+  文档: 按授权同步主仓库 AGENTS.md 治理索引微调与 CONTEXT.md 命令队列/编队行进/出厂散开/连片停稳领域术语增量
+  技术: 新增 NavigationModuleArchitectureGuardTest（包隔离、双目录旧 path 删除与运行期零单位 ID 守卫）及 PhaseSixBMovementContractTest（radius=38 六足 OVER_CLIFF_WATER 巨兽、自定义参数潜艇跨层路由、水陆双速气垫登陆、72x44 矩形巨舰绕宽水道与沉没及边界组合校验）并注册至公开套件；全量 :core:test、Android 编译、dev-ab 10 场景、public_batch --kind pr（7 套机制与全部短测）、public_batch --kind long（33 条长链）及双根布局校验全绿，经独立非作者代码整审与 R01 定向复核 APPROVE（0 必修）
+
+====
+
+v0.5.84 (2026-11-27 21:50)
+  架构改进: 删除 MutableUnit 32 个逐字段 var 导航写代理并将 6 个路径节点审计字段并入不可变 UnitNavigationState.NavigationRequestAudit（配反射单测守卫），引入与上层任务解耦的正交 MotionContract（Point/SharedCluster/RangeBand、isBoardingApproach 与 INDEPENDENT/COHORT_ESCORT）彻底拔除 7 个导航与避让文件对 UnitTaskKind 及任务队列长度的直接读取 / 以分步预算且支持回滚的 RangePathSearch（含 1 步无障碍直线快检、O(1) 连通预检与 KKT 闭式可容许启发式）取代无预算同步 findPathToRange 及 ThreadLocal 缓冲，将施工、攻击追击（加 O(1) 尾段接驳与目标格迟滞）、巡逻、装载 4 条场外寻路统一收口至 ADR-010 步内预算，并按 TacticalUnreachablePolicy 对齐跨步修路不可达守卫与任务队头弹出
+  修复: 修复 org.gradle.parallel=true 下 development_tests.gradle 在 :publicPreparation 的 doLast 阶段无锁解析跨项目 testRuntimeClasspath 的并发锁报错（前移至 gradle.taskGraph.whenReady），并为双根 gradle.properties 与测试子进程配置有界堆/元空间与 G1PeriodicGCInterval=5000
+  调整: 同步 maintenance-defense-chain.json 中 6 处 preciseBalances.p1 时序基线（围攻阶段主基地多存 30 步，一致偏移 +13.5）
+  技术: 新增 MotionContractAndBudgetTest（350x350 50 车追击与 30 建造者跨障施工预算与回滚、队列 >= 2 非 MOVE 契约、跨步修路不可达策略与源码静态守卫）及 UnitNavigationStateTest 38 项反射守卫；全量 :core:test、Android 测试编译、dev-ab 10 场景、public_batch --kind pr（7 套机制与全部短测）、public_batch --kind long（33 条连续长链）及双根布局检查全绿，经独立非作者代码整审与 R01 定向复核 APPROVE（0 必修）
+
+====
+
+v0.5.83 (2026-11-27 18:08)
+  修复: 将 Engine/core 的 p001.inputs.dir 公开夹具自动回退、public.fixtures.dir 与 repo.root 透传同步至 :client:test（启用可配置多 fork）与 :pc:test（保持串行），消除独立工作树直跑缺失夹具报错 / 在双根 gradle.properties 开启 org.gradle.parallel=true（不启缓存）并为 development_tests.gradle 与 workflow_gradle.init.gradle 的任务回调补齐并发锁保护消除 ConcurrentModificationException
+  新增: 新增热驻无头快筛工具 SimulationTest/tools/quick_test.py 及 8 项单测并纳入公共闭包与 tooling 套件，统一在 SimulationTest 根复用热 Daemon 执行定向单测、单套件机制检查与 dev-ab，隔离系统临时目录绝对路径并支持含空格路径安全引用
+  文档: 在 AGENTS.md 补充排障纪律、由轻到重分层验证、热 Daemon 复用与独立工作树夹具规范入口
+  技术: 独立工作树零参数直跑 client/pc 测试、quick_test 热驻实测（单类热复测 7s、build-economy 套件与 dev-ab）、7 套 CI 与工具 Python 契约单测及双根布局检查全绿，经独立非作者整审与 R01 定向复核 APPROVE（0 必修）
+
+====
+
+v0.5.82 (2026-11-27 15:06)
+  修复: 修复 PlayerTerrainKnowledge 空变更递增并拆分 terrainRevision 根除迷雾对局规划地形缓存伪失效，收敛带净空半径的解析网格线段扫掠原语消除宽体单位贴边揭雾漏重规划 / 统一五处重叠母厂与新建建筑脱离规则至 BuildingOverlapEscape（补齐切向轴滑移防子格接缝卡滞）并引入有界增量缓存消除全图数组重复克隆
+  架构改进: 提炼玩家知识隔离的只读 AuthorizedNavigationTerrain 深模块（统一净空环、多档连通分量与门洞掩码） / 端到端接通 WaypointRouteAdapter 连续视线前视跟随，移除 ReferencePropulsion 非终点死区与全部伪造距离修正，物理删除 PathPlanner、LocalMotionSegment、LocalMotionMaintenance、重复中心线类及 9 个单实现假策略接口
+  技术: 新增 AuthorizedNavigationTerrainTest 并升级连续跟随行为契约单测；全量 :core:test、Android 测试编译、dev-ab 10 场景、public_batch --kind pr 全套 7 机制与短测及双根布局检查全绿，经独立非作者代码整审 APPROVE（0 必修）
+
+====
+
+v0.5.81 (2026-11-27 06:02)
+  新增: 内建稳态零文件 IO 的 SimHotspotCollector 与 LiveHotspotProfiler 内存环缓冲追踪器，拆分 7 个模拟分段与 5 个客户端渲染分段并统计子步积压、流场活跃数及反射隔离的 JVM 分配/GC 指标（Android 安全降级），支持局内 F3+H 实时热点叠层与退局原子输出 hotspot-summary.json（含 >33ms 慢帧 Top-10） / 解耦 --background-input 与逐帧诊断落盘并补齐 alt/f3 等修饰键、中键拖拽及镜头/状态查询，新增 live_hotspot_stress.py 无人值守后台真 OpenGL 350x350 大地图 4x 自动压测与截屏管线
+  技术: 新增热点确定性与压测校验单测并纳入公共套件闭包，跑通原版资源 350x350 大地图 4x 无人值守真 GL 基线压测（零裸 JSONL 残留），platform-basics、tooling、公开短测 6 套与双根布局检查全绿，经独立视觉审阅与非作者代码整审通过（0 必修）
+
+====
+
+v0.5.80 (2026-11-27 03:32)
+  修复: 外提只读门洞与宽道拓扑掩码消除流场回滚全图重扫并合流单一 WavefrontHeap，建立活跃订阅计数冻结零订阅历史缓存场，排除待机静止单位拥堵并修复最近可达落点阴影重建对称种子，根除 350x350 大地图周期性流场重建卡顿 / 补齐延迟观察缓冲在关闭重开时的跨局清理与首步权威 worldId 代数后缀
+  体验优化: 客户端 4x 多子步渲染帧合并为仅末步单次构建观察与渲染帧（完整保留中间子步事件、回执与音效，外提 CandidateStep 常量正则） / 解耦 --development 与重型逐帧 JSONL 默认落盘，常规及开发模式下框选、编组召回与批量指令统一单次发布
+  技术: 扩充大地图流场零重扫、初建与阴影期候选步回滚逐字节一致性及 4x 末步投影单测；全量 core/client/pc 单测、dev-ab 10 场景、公开短测 6 套与双根布局检查全绿，经独立非作者整审复核 APPROVE（0 必修）
+
+====
+
+v0.5.79 (2026-11-27 00:59)
+  修复: 将公共 CI 工作流精确锁定为 Temurin 25.0.5+8 以消除跨矩阵节点 JDK 小版本漂移，并为公开会话场景透传分层超时预算与非观测帧即时刷盘，修绿 phase-five-ini-session-chain 等全套 33 条连续长测
+  调整: 将 public-mechanisms 拆分为 mechanisms-1..4 四路并行矩阵分片并补齐汇总与最终候选跨分片双向守恒校验，零删减消除单作业 900s 超时脆弱性
+  技术: 73 项 CI 治理单测、56 项平台会话工具单测、全套 33 条 public-long 长测及双根 workspace_layout.py 全绿，经独立非作者代码整审 APPROVE（0 必修）
+
+====
+
 v0.5.78 (2026-11-26 21:36)
   修复: 放行跨 2 的幂次坐标边界推挤时的单调非恶化亚 ULP 接触间隙，消除浮点容差减半引发的同向推挤原地冻结 / 为偏角顶推贴墙静置圆形单位补齐微移阻塞回退与沿墙切向同向等距伴随滑行，消除窄道门内亚像素僵持且严守空闲位移上界
   技术: 新增 2 项接触边界单测，全量核心单测、公开短测、PC 与 Android 构建校验、核心基准与两批已知回归探针全绿，经独立目视与代码复核通过

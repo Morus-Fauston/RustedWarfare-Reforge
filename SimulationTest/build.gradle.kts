@@ -45,6 +45,7 @@ gradle.projectsEvaluated {
 tasks.test {
     useJUnitPlatform()
     systemProperty("repo.root", projectDir.parentFile.absolutePath)
+    System.getProperty("evidence.dir")?.let { systemProperty("evidence.dir", it) }
 }
 
 // Separate accepted P001 suite entry; the existing run/compare CLI stays unchanged.

@@ -25,6 +25,8 @@ internal class BackgroundClientInput(
     private val currentGeneration: () -> Long,
     private val deployProjectiles: (String, SandboxCommand.ProjectileBatch) -> SandboxCommandReceipt,
     private val deploymentReceipt: (Long) -> SandboxCommandReceipt?,
+    private val automationStatus: () -> Map<String, Any?> = { emptyMap() },
+    private val setCamera: (Double, Double, Double?) -> Map<String, Any?> = { _, _, _ -> emptyMap() },
 ) : ApplicationListener by client {
     private val bridge = directory.resolve("background-input")
     private val reader = JsonReader()
@@ -33,7 +35,7 @@ internal class BackgroundClientInput(
     private var closing = false
 
     override fun create() {
-        Files.createDirectory(bridge)
+        Files.createDirectories(bridge)
         client.create()
         write("ready.json", displayIdentity())
     }
@@ -51,7 +53,26 @@ internal class BackgroundClientInput(
             val message = reader.parse(Files.readString(request))
             require(message.getString("runId") == runId && message.getLong("id") == id) { "Stale input session" }
             val details = when (message.getString("action")) {
-                "status" -> emptyMap()
+                "status" -> automationStatus()
+                "camera" -> {
+                    require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
+                    val cxNode = message.get("centerX")
+                    val cyNode = message.get("centerY")
+                    require(cxNode != null && cxNode.isNumber && cyNode != null && cyNode.isNumber) {
+                        "Expected numeric centerX and centerY"
+                    }
+                    val cx = cxNode.asDouble()
+                    val cy = cyNode.asDouble()
+                    require(cx.isFinite() && cy.isFinite()) { "Camera coordinates must be finite" }
+                    val zoomNode = message.get("zoom")
+                    val zoom = if (zoomNode != null && !zoomNode.isNull) {
+                        require(zoomNode.isNumber && zoomNode.asDouble().isFinite() && zoomNode.asDouble() > 0.0) {
+                            "Expected positive finite zoom"
+                        }
+                        zoomNode.asDouble()
+                    } else null
+                    mapOf("camera" to setCamera(cx, cy, zoom))
+                }
                 "deploy_projectiles", "deployment_receipt" -> {
                     require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
                     val receipt = if (message.getString("action") == "deploy_projectiles") {
@@ -91,11 +112,19 @@ internal class BackgroundClientInput(
                         val button = when (name) {
                             "left" -> Input.Buttons.LEFT
                             "right" -> Input.Buttons.RIGHT
+                            "middle" -> Input.Buttons.MIDDLE
                             else -> error("Unknown button")
                         }
-                        val down = processor.touchDown(x, y, 0, button)
-                        val up = processor.touchUp(x, y, 0, button)
-                        mapOf("button" to name, "downConsumed" to down, "upConsumed" to up)
+                        val ctrl = message.getBoolean("ctrl", false)
+                        val shift = message.getBoolean("shift", false)
+                        val alt = message.getBoolean("alt", false)
+                        val (down, up) = withModifiers(processor, ctrl = ctrl, shift = shift, alt = alt) {
+                            val d = processor.touchDown(x, y, 0, button)
+                            val u = processor.touchUp(x, y, 0, button)
+                            d to u
+                        }
+                        mapOf("button" to name, "ctrl" to ctrl, "shift" to shift, "alt" to alt,
+                            "downConsumed" to down, "upConsumed" to up)
                     }
                     mapOf("input" to (mapOf("x" to x, "y" to y) + input))
                 }
@@ -121,17 +150,25 @@ internal class BackgroundClientInput(
                     val button = when (name) {
                         "left" -> Input.Buttons.LEFT
                         "right" -> Input.Buttons.RIGHT
+                        "middle" -> Input.Buttons.MIDDLE
                         else -> throw IllegalArgumentException("Unknown button: $name")
                     }
+                    val ctrl = message.getBoolean("ctrl", false)
+                    val shift = message.getBoolean("shift", false)
+                    val alt = message.getBoolean("alt", false)
                     val processor = checkNotNull(Gdx.input.inputProcessor) { "Client is not accepting input" }
-                    val down = processor.touchDown(x1, y1, 0, button)
                     val midX = (x1 + x2) / 2
                     val midY = (y1 + y2) / 2
-                    val drag1 = processor.touchDragged(midX, midY, 0)
-                    val drag2 = processor.touchDragged(x2, y2, 0)
-                    val up = processor.touchUp(x2, y2, 0, button)
+                    val (down, dragged, up) = withModifiers(processor, ctrl = ctrl, shift = shift, alt = alt) {
+                        val d = processor.touchDown(x1, y1, 0, button)
+                        val drag1 = processor.touchDragged(midX, midY, 0)
+                        val drag2 = processor.touchDragged(x2, y2, 0)
+                        val u = processor.touchUp(x2, y2, 0, button)
+                        Triple(d, drag1 || drag2, u)
+                    }
                     mapOf("input" to mapOf("x1" to x1, "y1" to y1, "x2" to x2, "y2" to y2, "button" to name,
-                        "downConsumed" to down, "dragConsumed" to (drag1 || drag2), "upConsumed" to up))
+                        "ctrl" to ctrl, "shift" to shift, "alt" to alt,
+                        "downConsumed" to down, "dragConsumed" to dragged, "upConsumed" to up))
                 }
                 "key" -> {
                     require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
@@ -144,17 +181,16 @@ internal class BackgroundClientInput(
                     val keycode = rawKey.toInt()
                     val ctrl = message.getBoolean("ctrl", false)
                     val shift = message.getBoolean("shift", false)
+                    val alt = message.getBoolean("alt", false)
                     val f3 = message.getBoolean("f3", false)
                     val processor = checkNotNull(Gdx.input.inputProcessor) { "Client is not accepting input" }
-                    if (ctrl) processor.keyDown(Input.Keys.CONTROL_LEFT)
-                    if (shift) processor.keyDown(Input.Keys.SHIFT_LEFT)
-                    if (f3) processor.keyDown(Input.Keys.F3)
-                    val down = processor.keyDown(keycode)
-                    val up = processor.keyUp(keycode)
-                    if (f3) processor.keyUp(Input.Keys.F3)
-                    if (shift) processor.keyUp(Input.Keys.SHIFT_LEFT)
-                    if (ctrl) processor.keyUp(Input.Keys.CONTROL_LEFT)
-                    mapOf("input" to mapOf("keycode" to keycode, "ctrl" to ctrl, "shift" to shift, "downConsumed" to down, "upConsumed" to up))
+                    val (down, up) = withModifiers(processor, ctrl = ctrl, shift = shift, alt = alt, f3 = f3) {
+                        val d = processor.keyDown(keycode)
+                        val u = processor.keyUp(keycode)
+                        d to u
+                    }
+                    mapOf("input" to mapOf("keycode" to keycode, "ctrl" to ctrl, "shift" to shift, "alt" to alt,
+                        "downConsumed" to down, "upConsumed" to up))
                 }
                 "type" -> {
                     require(message.getLong("generation") == currentGeneration()) { "Stale client generation" }
@@ -210,6 +246,28 @@ internal class BackgroundClientInput(
         }
         return SandboxCommand.ProjectileDeployment(text("alias"), text("sourceUnitId"), text("targetUnitId"),
             if (entry.has("weapon")) text("weapon") else null)
+    }
+
+    private inline fun <T> withModifiers(
+        processor: com.badlogic.gdx.InputProcessor,
+        ctrl: Boolean = false,
+        shift: Boolean = false,
+        alt: Boolean = false,
+        f3: Boolean = false,
+        block: () -> T,
+    ): T {
+        if (ctrl) processor.keyDown(Input.Keys.CONTROL_LEFT)
+        if (shift) processor.keyDown(Input.Keys.SHIFT_LEFT)
+        if (alt) processor.keyDown(Input.Keys.ALT_LEFT)
+        if (f3) processor.keyDown(Input.Keys.F3)
+        return try {
+            block()
+        } finally {
+            if (f3) processor.keyUp(Input.Keys.F3)
+            if (alt) processor.keyUp(Input.Keys.ALT_LEFT)
+            if (shift) processor.keyUp(Input.Keys.SHIFT_LEFT)
+            if (ctrl) processor.keyUp(Input.Keys.CONTROL_LEFT)
+        }
     }
 
     private fun write(name: String, values: Map<String, Any?>) {

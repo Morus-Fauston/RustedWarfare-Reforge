@@ -28,6 +28,7 @@ from public_distribution import digest, package_files, toolchain_identity
 from public_scenarios import run_scenarios
 
 
+MECHANISMS = ('mechanisms-1', 'mechanisms-2', 'mechanisms-3', 'mechanisms-4')
 PRODUCTION = ('production-1', 'production-2', 'production-3')
 SCENARIOS = (*PRODUCTION, 'other-short', 'content-three-formats')
 LONG_SHARDS = ('long-1', 'long-2', 'long-3')
@@ -36,6 +37,69 @@ COMMAND_TIMEOUT = 600
 LONG_COMMAND_TIMEOUT = 900
 FORKS = 4
 WORKERS = 4
+
+
+def is_mechanism_shard(shard):
+    return shard == 'mechanisms' or shard in MECHANISMS
+
+
+def mechanism_plan_for_shard(bundle, shard):
+    if shard in MECHANISMS and 'mechanismShards' in bundle:
+        return bundle['mechanismShards'][shard]
+    return bundle['mechanisms']
+
+
+def allocate_mechanisms(mechanisms):
+    selectors = {
+        'mechanisms-1': lambda mod, classes: classes if mod == 'core' else [],
+        'mechanisms-2': lambda mod, classes: classes if mod in ('client', 'pc') else [],
+        'mechanisms-3': lambda mod, classes: classes[0::2] if mod == 'tools' else [],
+        'mechanisms-4': lambda mod, classes: classes[1::2] if mod == 'tools' else [],
+    }
+    known_modules = {'core', 'client', 'pc', 'tools'}
+    for group in mechanisms['groups']:
+        unknown = set(group['tests']) - known_modules
+        if unknown:
+            raise ValueError('Unassigned mechanism module(s): ' + ', '.join(sorted(unknown)))
+    shards = {}
+    assigned_pairs = []
+    for shard in MECHANISMS:
+        select = selectors[shard]
+        groups = []
+        for group in mechanisms['groups']:
+            sub_tests = {}
+            sub_owners = {}
+            claimed_suites = set()
+            for mod, classes in group['tests'].items():
+                picked = list(select(mod, classes))
+                if picked:
+                    sub_tests[mod] = picked
+                    sub_owners[mod] = {cls: list(group['owners'][mod][cls]) for cls in picked}
+                    for cls in picked:
+                        claimed_suites.update(group['owners'][mod][cls])
+                        assigned_pairs.append((group['fixture'], mod, cls))
+            if sub_tests:
+                groups.append(dict(
+                    fixture=group['fixture'],
+                    tests=sub_tests,
+                    suites=[s for s in group['suites'] if s in claimed_suites],
+                    owners=sub_owners,
+                ))
+        if not groups:
+            raise ValueError(f'Public mechanism shard is empty: {shard}')
+        py_tests = list(mechanisms['pythonTests']) if shard == 'mechanisms-1' else []
+        py_owners = dict(mechanisms['pythonOwners']) if shard == 'mechanisms-1' else {}
+        dedup = [
+            row for row in mechanisms.get('deduplicated', [])
+            if any(g['fixture'] == row['fixture'] and row['testClass'] in g['tests'].get(row['module'], ())
+                   for g in groups)
+        ]
+        shards[shard] = dict(groups=groups, pythonTests=py_tests, pythonOwners=py_owners, deduplicated=dedup)
+    expected_pairs = [(g['fixture'], mod, cls)
+                      for g in mechanisms['groups'] for mod, classes in g['tests'].items() for cls in classes]
+    if len(assigned_pairs) != len(expected_pairs) or set(assigned_pairs) != set(expected_pairs):
+        raise ValueError('Mechanism shard partition lost or duplicated test classes')
+    return shards
 
 
 def write_json(path, value):
@@ -184,10 +248,13 @@ def new_plan(repo, layer_kind='pr'):
         shards = allocate_long(cases)
         return dict(layer=layer, mechanisms=None, shards=shards, timing='balanced-backend-round-robin-v1')
     timing = read_json(repo/'SimulationTest/ci/public_scenario_timings.json')
-    shards = {'mechanisms': [], **allocate(cases, timing['seconds'])}
+    mechanisms = plan_mechanisms(suites)
+    mechanism_shards = allocate_mechanisms(mechanisms)
+    shards = {**{name: [] for name in MECHANISMS}, **allocate(cases, timing['seconds'])}
     if any(not shards[shard] for shard in SCENARIOS):
         raise ValueError('A public scenario shard is empty')
-    return dict(layer=layer, mechanisms=plan_mechanisms(suites), shards=shards, timing=timing['source'])
+    return dict(layer=layer, mechanisms=mechanisms, mechanismShards=mechanism_shards,
+                shards=shards, timing=timing['source'])
 
 
 def prepare(repo, output, layer_kind='pr'):
@@ -286,6 +353,38 @@ def verify_mechanism_coverage(coverage, plan):
             raise ValueError('JVM fixture, class, method or suite owner coverage differs')
 
 
+def verify_sharded_mechanism_conservation(receipts, full_plan):
+    expected_classes = {(g['fixture'], mod, cls): g['owners'][mod][cls]
+                        for g in full_plan['groups'] for mod, classes in g['tests'].items() for cls in classes}
+    seen_methods = set()
+    seen_classes = {}
+    seen_python = []
+    for shard in MECHANISMS:
+        coverage = receipts[shard]['coverage']
+        for row in coverage['python']:
+            if row['suites'] != full_plan['pythonOwners'].get(row['path']) or row['tests'] < 1:
+                raise ValueError('Sharded Python script execution or owners differ')
+            seen_python.append(row['path'])
+        for group in coverage['groups']:
+            fixture = group['fixture']
+            shard_group_classes = set()
+            for method in group['methods']:
+                key = (fixture, method['module'], method['className'], method['method'])
+                if not method['method'] or key in seen_methods:
+                    raise ValueError('Duplicate or empty JVM method across mechanism shards')
+                seen_methods.add(key)
+                cls_key = (fixture, method['module'], method['className'])
+                shard_group_classes.add(cls_key)
+                if method['suites'] != expected_classes.get(cls_key):
+                    raise ValueError('Sharded JVM suite owner coverage differs')
+            for cls_key in shard_group_classes:
+                if cls_key in seen_classes:
+                    raise ValueError('Duplicate JVM test class across mechanism shards')
+                seen_classes[cls_key] = shard
+    if set(seen_classes) != set(expected_classes) or seen_python != full_plan['pythonTests']:
+        raise ValueError('Total sharded mechanism coverage does not conserve planned JVM/Python selection')
+
+
 def run_shard(repo, bundle, plan_sha, shard, archive, output):
     output.mkdir(parents=True)
     started = time.monotonic()
@@ -305,9 +404,9 @@ def run_shard(repo, bundle, plan_sha, shard, archive, output):
             if package_files(distribution) != bundle['files']:
                 raise ValueError('Relocated distribution changed during verification')
 
-        if shard == 'mechanisms':
+        if is_mechanism_shard(shard):
             folder = output/'mechanisms'
-            plan = bundle['mechanisms']
+            plan = mechanism_plan_for_shard(bundle, shard)
             receipt['gradle'] = measure_gradle(repo, output)
             if receipt['gradle'] != bundle['gradle']:
                 raise ValueError('Actual Gradle distribution differs')
@@ -344,7 +443,7 @@ def run_shard(repo, bundle, plan_sha, shard, archive, output):
 def inspect_raw_evidence(path, expected, receipt, bundle):
     if digest(path) != expected:
         raise ValueError('Raw artifact bytes differ from upload digest')
-    mechanism = receipt['shard'] == 'mechanisms'
+    mechanism = is_mechanism_shard(receipt['shard'])
     member = 'mechanisms/result.json' if mechanism else 'scenario-execution.json'
     with zipfile.ZipFile(path) as archive:
         if archive.namelist().count(member) != 1:
@@ -353,7 +452,8 @@ def inspect_raw_evidence(path, expected, receipt, bundle):
     if actual['status'] != 'passed':
         raise ValueError('Raw artifact reported a failed execution')
     if mechanism:
-        if (actual['selection'] != bundle['mechanisms'] or actual['source'] != bundle['source']
+        expected_plan = mechanism_plan_for_shard(bundle, receipt['shard'])
+        if (actual['selection'] != expected_plan or actual['source'] != bundle['source']
                 or mechanism_coverage(actual) != receipt['coverage']):
             raise ValueError('Raw JVM/Python evidence does not match the shard receipt')
     elif scenario_coverage(bundle['shards'][receipt['shard']], actual) != receipt['coverage']:
@@ -467,15 +567,20 @@ def aggregate(bundle, plan_sha, folder, pins, jobs, artifacts, admit_raw, *, rec
             package = bundle['archiveSha256']
             if (row['identity'] != bundle['identity'] or row['toolchain'] != bundle['toolchain']
                     or row['planSha256'] != plan_sha or row['archiveSha256'] != package or row['status'] != 'passed'
-                    or row['gradle'] != (bundle['gradle'] if shard == 'mechanisms' else None)):
+                    or row['gradle'] != (bundle['gradle'] if is_mechanism_shard(shard) else None)):
                 raise ValueError('Failed shard or receipt identity differs')
-            if shard == 'mechanisms':
-                verify_mechanism_coverage(row['coverage'], bundle['mechanisms'])
+            if is_mechanism_shard(shard):
+                verify_mechanism_coverage(row['coverage'], mechanism_plan_for_shard(bundle, shard))
             else:
                 verify_scenario_coverage(row['coverage'], cases)
             admit_raw(shard, row)
         except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile) as error:
             errors.append(f'{shard}: {error}')
+    if 'mechanismShards' in bundle and all(shard in receipts for shard in MECHANISMS):
+        try:
+            verify_sharded_mechanism_conservation(receipts, bundle['mechanisms'])
+        except (ValueError, KeyError, TypeError) as error:
+            errors.append(f'mechanisms-conservation: {error}')
     return dict(identity=bundle['identity'], planSha256=plan_sha, jobs=jobs, receipts=receipts, evidenceArtifacts=artifacts, errors=errors,
                 status='execution-failed' if errors else 'passed')
 
@@ -494,7 +599,7 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--transfer', type=Path)
     parser.add_argument('--plan-sha', default=os.environ.get('PUBLIC_PLAN_SHA'))
-    parser.add_argument('--shard', choices=('mechanisms', *SCENARIOS, *LONG_SHARDS))
+    parser.add_argument('--shard', choices=('mechanisms', *MECHANISMS, *SCENARIOS, *LONG_SHARDS))
     parser.add_argument('--receipts', type=Path)
     args = parser.parse_args()
     output = args.output.resolve()

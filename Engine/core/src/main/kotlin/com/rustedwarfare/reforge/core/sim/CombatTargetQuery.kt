@@ -1,24 +1,24 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.NamedWeaponDefinition
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.TransportProfile
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.content.WeaponCondition
+import com.rustedwarfare.reforge.core.navigation.UnitLocomotion
 
 /** Queries current candidate objects in gameplay order; no position or membership survives a call. */
 internal object CombatTargetQuery {
-    fun isFlying(target: MutableUnit): Boolean =
-        if (target.amphibiousState != null) UnitLocomotion.movement(target).type == MovementType.AIR
-        else target.definition.movement.type == MovementType.AIR && target.height >= 4.0
+    fun isFlying(target: MutableUnit): Boolean = UnitLocomotion.isFlying(target)
 
-    fun isUnderwater(target: MutableUnit, height: Double = target.height): Boolean = isUnderwater(target.definition, height)
+    fun isUnderwater(target: MutableUnit, height: Double = target.height): Boolean =
+        UnitLocomotion.isUnderwater(target, height)
 
     fun isUnderwater(definition: UnitDefinition, height: Double): Boolean =
-        UnitLocomotion.isSubmerged(definition, height) ||
-            definition.transport == TransportProfile.NAUTILUS_SUBMERGED && height < UnitLocomotion.SUBMERGED_DEPTH ||
-            definition.fixedUnderwaterTarget != null && height <= UnitLocomotion.SUBMERGED_DEPTH
+        UnitLocomotion.isUnderwater(definition, height)
 
     /** Physical flying takes precedence; negative ordinary heights do not grant underwater capability. */
     fun weaponAllows(target: MutableUnit, weapon: NamedWeaponDefinition): Boolean = when {
@@ -82,9 +82,14 @@ internal object CombatTargetQuery {
         target.alive && target.carriedBy == null && target.health != null && target.ownerPlayerId != owner &&
             (team == null || players.single { it.playerId == target.ownerPlayerId }.teamId != team)
 
-    fun nearestEnemy(actor: MutableUnit, candidates: Collection<MutableUnit>, players: List<Player>,
-                     coordinates: CoordinatePolicy, map: MapDefinition): MutableUnit? {
-        val weapon = actor.definition.combat ?: return null
+    fun nearestEnemy(
+        actor: MutableUnit,
+        candidates: Collection<MutableUnit>,
+        players: List<Player>,
+        map: MapDefinition,
+        distanceSquared: (Position, Position) -> Double = ScreenPlane::distanceSquared,
+    ): MutableUnit? {
+        actor.definition.combat ?: return null
         val team = players.single { it.playerId == actor.ownerPlayerId }.teamId
         val range = UnitCombat.range(actor)
         val rangeSquared = range * range
@@ -93,11 +98,73 @@ internal object CombatTargetQuery {
         var chosenArmed = false
         for (candidate in candidates) {
             if (!isEnemy(actor.ownerPlayerId, team, candidate, players) || !canAttackAirCategory(actor, candidate, map)) continue
-            val distance = coordinates.distanceSquared(actor.position, candidate.position)
+            val distance = distanceSquared(actor.position, candidate.position)
             if (!(distance < rangeSquared)) continue
             val armed = candidate.definition.combat != null
             if (chosen == null || (armed && !chosenArmed) ||
                 (armed == chosenArmed && distance.compareTo(chosenDistance) < 0)) {
+                chosen = candidate
+                chosenDistance = distance
+                chosenArmed = armed
+            }
+        }
+        return chosen
+    }
+
+    /**
+     * Zero-allocation exact equivalent of `nearestEnemy(actor, spatialIndex.queryAllLayersCenterBox(...), ...)`
+     * breaking exact distance ties by ascending `updateKey` (matching `UNIT_KEY_COMPARATOR` order).
+     */
+    fun nearestEnemyInSpatialIndex(
+        actor: MutableUnit,
+        spatialIndex: WorldSpatialIndex,
+        players: List<Player>,
+        map: MapDefinition,
+    ): MutableUnit? {
+        actor.definition.combat ?: return null
+        val actorOwner = actor.ownerPlayerId
+        var actorTeam: String? = null
+        for (i in 0 until players.size) {
+            val p = players[i]
+            if (p.playerId == actorOwner) {
+                actorTeam = p.teamId
+                break
+            }
+        }
+        val range = UnitCombat.range(actor)
+        val rangeSquared = range * range
+        var chosen: MutableUnit? = null
+        var chosenDistance = 0.0
+        var chosenArmed = false
+        spatialIndex.forEachInAllLayersCenterBoxUnordered(actor.position, range + 1e-6) { candidate ->
+            if (!candidate.alive || candidate.carriedBy != null || candidate.health == null) return@forEachInAllLayersCenterBoxUnordered
+            val candOwner = candidate.ownerPlayerId
+            if (candOwner == actorOwner) return@forEachInAllLayersCenterBoxUnordered
+            if (actorTeam != null) {
+                var candTeam: String? = null
+                for (i in 0 until players.size) {
+                    val p = players[i]
+                    if (p.playerId == candOwner) {
+                        candTeam = p.teamId
+                        break
+                    }
+                }
+                if (candTeam == actorTeam) return@forEachInAllLayersCenterBoxUnordered
+            }
+            if (!canAttackAirCategory(actor, candidate, map)) return@forEachInAllLayersCenterBoxUnordered
+            val distance = ScreenPlane.distanceSquared(actor.position, candidate.position)
+            if (!(distance < rangeSquared)) return@forEachInAllLayersCenterBoxUnordered
+            val armed = candidate.definition.combat != null
+            val curChosen = chosen
+            val better = if (curChosen == null) {
+                true
+            } else if (armed != chosenArmed) {
+                armed
+            } else {
+                val cmp = distance.compareTo(chosenDistance)
+                cmp < 0 || (cmp == 0 && candidate.updateKey < curChosen.updateKey)
+            }
+            if (better) {
                 chosen = candidate
                 chosenDistance = distance
                 chosenArmed = armed

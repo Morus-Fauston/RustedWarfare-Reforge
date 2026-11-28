@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.ProjectileProfile
 
 /** Finite ground snapshot entry; ordinary weapons retain their existing Double mathematics. */

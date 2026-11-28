@@ -47,7 +47,7 @@ internal object NautilusRules {
         d.displayRadius == 9.0 && d.maximumHealth == 150.0 && d.combat != null && d.transportSlots == 1 &&
         d.building == null && d.transport == null
 
-    fun supports(d: UnitDefinition): Boolean = d.id in setOf("nautilusSubmarine", "nautilusSubmarineSurface", "nautilusSubmarineLand") &&
+    fun supports(d: UnitDefinition): Boolean = (d.id == "nautilusSubmarine" || d.id == "nautilusSubmarineSurface" || d.id == "nautilusSubmarineLand") &&
         d.className == "CustomUnitMetadata" &&
         d.radius == 36.0 && d.displayRadius == 36.0 && d.totalFrames == 1 && d.imageScale == 1.0 &&
         d.movement == when (d.id) {

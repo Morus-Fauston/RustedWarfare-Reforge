@@ -1,8 +1,10 @@
 package com.rustedwarfare.reforge.core.sim
 
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.*
+
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import kotlin.test.Test
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -98,10 +100,12 @@ class PassageSurveyBudgetTest {
             val drivers = cars.map { state.units.getValue(it.unitId) }
             val wallGroup = assertNotNull(ctx.requestGroupMove("p1", cars.map { it.unitId }, click))
             drivers.forEachIndexed { i, unit ->
-                unit.moveTarget = click
-                unit.pathPoints = mutableListOf(Position(176.0, 191.0 + 100 * i))
-                unit.terrainCorrectionTime = 4.0
-                unit.landingMember = LandingMember(wallGroup)
+                unit.updateNavigation {
+                    it.withMoveTarget(click, MotionContract.sharedCluster(click))
+                        .withPathPoints(listOf(Position(176.0, 191.0 + 100 * i)))
+                        .withTerrainHistory(correctionTime = 4.0)
+                        .withLandingMember(LandingMember(wallGroup))
+                }
             }
             val retry = SimulationContext::class.java.declaredMethods.single { it.name == "recoverStalledMoves" }
                 .apply { isAccessible = true }
@@ -118,12 +122,12 @@ class PassageSurveyBudgetTest {
 
             // A just-issued order has members before its landing pool is materialized.
             val other = assertNotNull(ctx.requestGroupMove("p1", listOf(cars.last().unitId, queued.last().unitId), click))
-            drivers.last().landingMember = LandingMember(other)
-            drivers.forEachIndexed { i, u -> u.pathPoints = mutableListOf(Position(176.0, 191.0 + 100 * i)) }
+            drivers.last().updateNavigation { it.withLandingMember(LandingMember(other)) }
+            drivers.forEachIndexed { i, u -> u.updateNavigation { it.withPathPoints(listOf(Position(176.0, 191.0 + 100 * i))) } }
             assertNull(state.landingSites[wallGroup])
             assertNull(state.landingSites[other])
-            kotlin.test.assertFalse(state.sharedWallRepairDue(retryStep - 1))
-            kotlin.test.assertTrue(state.sharedWallRepairDue(retryStep), "Due drivers without sites still need a reserved slice")
+            kotlin.test.assertFalse(sharedWallRepairDue(state.units.values, retryStep - 1))
+            kotlin.test.assertTrue(sharedWallRepairDue(state.units.values, retryStep), "Due drivers without sites still need a reserved slice")
             ctx.advance(Step(retryStep, 1.0, "sim-tick"))
             val shared = ctx.drainPlanningWorkDiagnostics(ctx.world).single()
             val wallWork = shared.slices.filter { it.reason == PathSearchReason.ROUTE_REPAIR && it.unitIds.isEmpty() }.sumOf { it.workUnits }

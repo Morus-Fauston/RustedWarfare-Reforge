@@ -29,7 +29,7 @@ class SandboxInput(
     private data class PatrolPress(val members: Set<String>, val append: Boolean)
     private var patrolPress: PatrolPress? = null
     private data class CommandPress(val session: SandboxSession, val revision: Long, val members: Set<String>,
-        val modeRevision: Long, val targetId: String?, val append: Boolean)
+        val modeRevision: Long, val targetId: String?, val append: Boolean, val cohortEscort: Boolean = false)
     private var commandPress: CommandPress? = null
     private var pHeld = false
     private var upgradeHeld = false
@@ -169,6 +169,8 @@ class SandboxInput(
         Input.Keys.CONTROL_LEFT in heldModifiers || Input.Keys.CONTROL_RIGHT in heldModifiers
     private fun shift() = pressed(Input.Keys.SHIFT_LEFT) || pressed(Input.Keys.SHIFT_RIGHT) ||
         Input.Keys.SHIFT_LEFT in heldModifiers || Input.Keys.SHIFT_RIGHT in heldModifiers
+    internal fun alt() = pressed(Input.Keys.ALT_LEFT) || pressed(Input.Keys.ALT_RIGHT) ||
+        Input.Keys.ALT_LEFT in heldModifiers || Input.Keys.ALT_RIGHT in heldModifiers
     private fun mode() = when { control() -> SelectionMode.TOGGLE; shift() -> SelectionMode.ADD; else -> SelectionMode.REPLACE }
     private fun canTargetAt(x: Int, y: Int) = insideViewport(x, y) && battlefieldAt(x, y)
 
@@ -252,7 +254,7 @@ class SandboxInput(
             changed(); return true
         }
         if (kind == MapButton.COMMAND) commandPress = CommandPress(current, current.selectionRevision,
-            current.selectedIds.toSet(), modeRevision, current.commandTargetAt(world), append)
+            current.selectedIds.toSet(), modeRevision, current.commandTargetAt(world), append, cohortEscort = alt())
         gesture = MapGesture(map).also { check(it.begin(ui.x, ui.y, kind, mode(), current.selectedIds)) }
         ownerButton = button
         changed()
@@ -374,7 +376,7 @@ class SandboxInput(
                 if (canTargetAt(screenX, screenY) && current === press.session && current.isOpen &&
                     current.selectionRevision == press.revision && current.selectedIds == press.members &&
                     modeRevision == press.modeRevision && current.commandTargetAt(intent.position) == press.targetId)
-                    current.command(intent.position, press.append)
+                    current.command(intent.position, press.append, press.cohortEscort)
             }
             null -> Unit
         }
@@ -401,7 +403,8 @@ class SandboxInput(
     }
     override fun keyDown(keycode: Int): Boolean {
         if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT ||
-            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT
+            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT ||
+            keycode == Input.Keys.ALT_LEFT || keycode == Input.Keys.ALT_RIGHT
         ) {
             heldModifiers.add(keycode)
             return false
@@ -417,14 +420,14 @@ class SandboxInput(
         }
         if (buildType != null) {
             if (!constructionHeld.add(keycode)) return true
-            if (control() || shift() || pressed(Input.Keys.ALT_LEFT) || pressed(Input.Keys.ALT_RIGHT)) return false
+            if (control() || shift() || alt()) return false
             val action = current.constructionActions.firstOrNull { it.typeId == buildType } ?: return false
             return beginConstruction(action.typeId)
         }
         if (keycode == Input.Keys.U) {
             if (upgradeHeld) return true
             upgradeHeld = true
-            if (control() || shift() || pressed(Input.Keys.ALT_LEFT) || pressed(Input.Keys.ALT_RIGHT)) return false
+            if (control() || shift() || alt()) return false
             val action = current.actionMenu.upgrades.singleOrNull()
                 ?.takeIf { it.kind == UpgradePresentationKind.ECONOMIC } ?: return false
             cancel()
@@ -453,7 +456,8 @@ class SandboxInput(
     }
     override fun keyUp(keycode: Int): Boolean {
         if (keycode == Input.Keys.CONTROL_LEFT || keycode == Input.Keys.CONTROL_RIGHT ||
-            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT
+            keycode == Input.Keys.SHIFT_LEFT || keycode == Input.Keys.SHIFT_RIGHT ||
+            keycode == Input.Keys.ALT_LEFT || keycode == Input.Keys.ALT_RIGHT
         ) {
             heldModifiers.remove(keycode)
             return false

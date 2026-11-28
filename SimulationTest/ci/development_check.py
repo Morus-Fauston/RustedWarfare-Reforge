@@ -1,5 +1,6 @@
 """Run named public mechanisms with warm compilation and fresh test evidence."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -98,7 +99,7 @@ def collect_tests(folder, selected):
                  and config and set(config['classes']) == set(expected)
                  and all(config.get(key) == [] for key in ('excludePatterns','commandLineIncludePatterns','fileIncludes','fileExcludes'))
                  and config.get('junitOptions') == {key:[] for key in ('includeTags','excludeTags','includeEngines','excludeEngines')}
-                 and effective.get('testForks') in (1, 2, 4)
+                 and effective.get('testForks') in (1, 2, 4, 8)
                  and effective.get('maxWorkers') == effective['testForks']
                  and config.get('maxParallelForks') == (1 if module == 'pc' else effective['testForks'])
                  and config.get('forkEvery') == 0)
@@ -169,23 +170,38 @@ def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=Non
             if prepared and any(row.get('didWork') for row in record['tests']['tasks'] if row['task'] not in tasks):
                 raise RuntimeError('Prepared compilation or packaging executed again')
             record['methodOwners'] = method_owners(group, record['tests'])
-        for index, path in enumerate(plan['pythonTests']):
-            summary = output/('python-'+str(index)+'.json')
+        if plan['pythonTests']:
             if admit is not None:
                 admit()
-            argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/python_check.py'),
-                    '--test', str(repo/path), '--output', str(summary)]
-            env = None
-            if session_distribution is not None and path == 'SimulationTest/tools/test_platform_session_cli.py':
-                env = dict(os.environ, REFORGE_SESSION_TEST_DISTRIBUTION=str(session_distribution))
-            command = execute_step(argv, repo, output/('python-'+str(index)), timeout=timeout, env=env)
-            measured = json.loads(summary.read_text(encoding='utf8'))
-            result['pythonCoverage'].append(dict(path=path, command=command, result=measured,
-                                                 suites=plan['pythonOwners'][path]))
+
+            def run_python_item(index_and_path):
+                index, path = index_and_path
+                summary = output/('python-'+str(index)+'.json')
+                argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/python_check.py'),
+                        '--test', str(repo/path), '--output', str(summary)]
+                env = None
+                if session_distribution is not None and path == 'SimulationTest/tools/test_platform_session_cli.py':
+                    env = dict(os.environ, REFORGE_SESSION_TEST_DISTRIBUTION=str(session_distribution))
+                command = execute_step(argv, repo, output/('python-'+str(index)), timeout=timeout, env=env)
+                measured = json.loads(summary.read_text(encoding='utf8')) if summary.exists() else dict(status='execution-failed')
+                return index, path, command, measured
+
+            items = list(enumerate(plan['pythonTests']))
+            if forks > 1 and len(items) > 1:
+                with ThreadPoolExecutor(max_workers=min(forks, len(items))) as pool:
+                    completed_py = list(pool.map(run_python_item, items))
+            else:
+                completed_py = [run_python_item(item) for item in items]
+
+            completed_py.sort(key=lambda row: row[0])
+            for _, path, command, measured in completed_py:
+                result['pythonCoverage'].append(dict(path=path, command=command, result=measured,
+                                                     suites=plan['pythonOwners'][path]))
             if admit is not None:
                 admit()
-            if not command['passed'] or measured['status'] != 'passed':
-                raise RuntimeError('Python mechanism did not pass: '+path)
+            for _, path, command, measured in completed_py:
+                if not command['passed'] or measured.get('status') != 'passed':
+                    raise RuntimeError('Python mechanism did not pass: '+path)
         result['toolchainAfter'] = toolchain_identity()
         if identities(repo) != initial or result['toolchainAfter'] != toolchain:
             raise RuntimeError('Source, input or toolchain changed during development check')
@@ -205,7 +221,7 @@ def main():
     parser.add_argument('--output', type=Path, help='New result directory; previous results are never consumed')
     parser.add_argument('--cold', action='store_true', help='Single-use daemon and full task rebuild')
     parser.add_argument('--isolated', action='store_true', help='Cold check in a fresh public source/project copy')
-    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2 or 4; PC stays serial')
+    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2, 4 or 8; PC stays serial')
     args = parser.parse_args()
     try:
         plan = plan_development(REPO, args.suite)

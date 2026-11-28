@@ -30,6 +30,11 @@ internal object DevelopmentAutomaticKnowledgeOracle {
             }
         }
         var retained=Array(2) { arrayOfNulls<Boolean>(width*height) }
+        var previousExpectedCells=Array<List<JsonElement>?>(2) { null }
+        var expectedRevision=LongArray(2)
+        val unknownCells=(0 until width*height).map {
+            obj("visible" to b(false),"lastKnownBlocked" to JsonNull,"lastKnownGroundGid" to JsonNull)
+        }
         val seenWalls=mutableSetOf<Int>();var lostWall=false;var moved=false;var generation=-1L
         for(row in rows.filter { it["kind"]==s("p002-sample") })try {
             val label=row.text("label");val operation=row.text("operation")
@@ -41,7 +46,9 @@ internal object DevelopmentAutomaticKnowledgeOracle {
             }
             if(operation in setOf("initialize","reopen")) {
                 check(row.integer("generation")==generation+1,"invalid generation reset")
-                generation=row.integer("generation");advances=0;retained=Array(2) { arrayOfNulls<Boolean>(width*height) };committed=null;declaredTarget=JsonNull
+                generation=row.integer("generation");advances=0;retained=Array(2) { arrayOfNulls<Boolean>(width*height) }
+                previousExpectedCells=Array(2) { null };expectedRevision=LongArray(2)
+                committed=null;declaredTarget=JsonNull
                 pendingEvents=emptyList();pendingResults=emptyList()
                 acceptedMoves=0;normalClears=0;clearQ=null
             }else check(row.integer("generation")==generation,"unexpected generation")
@@ -159,7 +166,6 @@ internal object DevelopmentAutomaticKnowledgeOracle {
                 }else {
                     val vision=entry.objectAt("vision");val store=entry.objectAt("knowledge")
                     check(vision.arrayAt("basicCells")==array(ownBasic.sorted().map(::n)) && vision.arrayAt("effectiveCells")==array(effective.sorted().map(::n)),"$player independently computed visibility differs")
-                    check(vision.integer("epoch")==advances && store.integer("revision")==advances+1,"$player epoch/revision differs")
                     val expected=(0 until width*height).map { cell->
                         val seen=cell in effective
                         if(seen)retained[playerIndex][cell]=cell in wallIds
@@ -167,6 +173,12 @@ internal object DevelopmentAutomaticKnowledgeOracle {
                         obj("visible" to b(seen),"lastKnownBlocked" to retained[playerIndex][cell]?.let(::b),
                             "lastKnownGroundGid" to if(retained[playerIndex][cell]!=null)n(0)else JsonNull)
                     }
+                    if(operation in setOf("initialize","reopen","advance")) {
+                        val baseline=previousExpectedCells[playerIndex] ?: unknownCells
+                        if(expected!=baseline)expectedRevision[playerIndex]++
+                        previousExpectedCells[playerIndex]=expected
+                    }
+                    check(vision.integer("epoch")==advances && store.integer("revision")==expectedRevision[playerIndex],"$player epoch/revision differs")
                     check(store.arrayAt("cells")==array(expected),"$player independent full knowledge cells differ")
                     check(store==row.objectAt("knowledge").objectAt(player),"$player host/player knowledge differs")
                     if(playerIndex==0)for(wall in wallIds) {

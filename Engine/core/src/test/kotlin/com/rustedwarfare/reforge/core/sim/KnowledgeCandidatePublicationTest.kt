@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.*
 
@@ -73,10 +75,14 @@ class KnowledgeCandidatePublicationTest {
                 val committed = checkNotNull(steps.current.automaticVisionSnapshots).getValue(player.playerId)
                 assertEquals(fresh.views.getValue(player.playerId).effectiveCells, committed.effectiveCells)
                 assertEquals(1L, committed.epoch)
-                assertEquals(snapshots.getValue(player.playerId).revision + 1,
+                val expectedDelta = if (player.playerId == spawn.ownerPlayerId) 1L else 0L
+                assertEquals(snapshots.getValue(player.playerId).revision + expectedDelta,
                     checkNotNull(steps.current.knowledgeStores).getValue(player.playerId).snapshot(world).revision)
             }
-            for ((player, snapshot) in snapshots) assertEquals(1L, snapshot.revision)
+            assertEquals(1L, snapshots.getValue(spawn.ownerPlayerId).revision)
+            for ((player, snapshot) in snapshots) {
+                if (player != spawn.ownerPlayerId) assertEquals(0L, snapshot.revision)
+            }
         } finally {
             steps.current.knowledgeStores?.values?.forEach { it.close() }
             origin.close()

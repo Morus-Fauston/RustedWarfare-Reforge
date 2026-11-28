@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import kotlin.test.*
 
 class UpgradeTransactionTest {
@@ -91,7 +93,7 @@ class UpgradeTransactionTest {
             assertTrue(before.projectileEvents.isEmpty())
             assertEquals(contexts[1].knowledgeSnapshot(contexts[1].world, "p1").cells,
                 failed.knowledgeSnapshot(failed.world, "p1").cells)
-            assertEquals(knowledge.revision + 6, failed.knowledgeSnapshot(failed.world, "p1").revision)
+            assertEquals(knowledge.revision, failed.knowledgeSnapshot(failed.world, "p1").revision)
             assertEquals(vision.epoch + 6, failed.visionSnapshot(failed.world, "p1").epoch)
             val samples = failed.drainMotionDiagnostics(failed.world)
             assertTrue(samples.isNotEmpty())
