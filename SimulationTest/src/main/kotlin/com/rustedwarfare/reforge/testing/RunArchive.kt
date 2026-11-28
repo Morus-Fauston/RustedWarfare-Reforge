@@ -21,12 +21,12 @@ internal class RunArchive(val path: Path, private val costs: RunCosts? = null) :
     private fun <T> detail(stage: String, block: () -> T): T = if (costs == null) block() else costs.detail(stage, block)
     fun write(record: JsonObject, input: LoadedScenario? = null) {
         val rawText = detail("serialization") { record.toString() }
-        detail("writing") { raw.write(rawText); raw.newLine(); raw.flush() }
+        detail("writing") { raw.write(rawText); raw.newLine() }
         lineNumber++
         val standardText = detail("serialization") {
             normalizeRecord(record, lineNumber, input?.core?.coordinateModel?.id, input?.core?.timeModel?.id).toString()
         }
-        detail("writing") { normalized.write(standardText); normalized.newLine(); normalized.flush() }
+        detail("writing") { normalized.write(standardText); normalized.newLine() }
     }
     fun observation(value: Observation, phase: String, input: LoadedScenario, players: JsonObject? = null): List<JsonObject> {
         val emitted = ArrayList<JsonObject>(1 + value.events.size)

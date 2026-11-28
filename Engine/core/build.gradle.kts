@@ -22,7 +22,7 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
     maxHeapSize = "768m"
-    jvmArgs("-XX:MaxMetaspaceSize=160m", "-XX:ReservedCodeCacheSize=64m")
+    jvmArgs("-XX:MaxMetaspaceSize=160m", "-XX:ReservedCodeCacheSize=160m")
     val configuredForks = providers.gradleProperty("core.test.maxParallelForks")
         .orElse(providers.systemProperty("core.test.maxParallelForks"))
         .map { it.toInt().coerceAtLeast(1) }

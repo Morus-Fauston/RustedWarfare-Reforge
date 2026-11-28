@@ -93,7 +93,9 @@ if spec.get('mutateComparator'):
  pathlib.Path(__file__).with_name('spider_platform.py').write_text('changed', encoding='utf8')
 if spec.get('fail'): raise SystemExit(7)
 if spec.get('noarchive'): raise SystemExit(0)
-if args[0]=='session': (out/'result.json').write_text(json.dumps({'status':'passed','exitCode':0}))
+if args[0]=='session':
+ row['compared']=time.time();(out/'lifecycle.json').write_text(json.dumps(row))
+ (out/'result.json').write_text(json.dumps({'status':'passed','exitCode':0}))
 else:
  run=out/'run-owned';(run/'comparison').mkdir(parents=True)
  (run/'comparison/result.json').write_text(json.dumps({'exitCode':0}))
@@ -317,6 +319,7 @@ class PublicSelectionTest(unittest.TestCase):
     def test_conflicting_session_outputs_are_refused_before_any_process_and_package_drift_stops_dispatch(self):
         from public_check import run
         with owned_scenario_processes([{'backend':'session'},{}]) as (repo,plan,prepared):
+            plan['scenarios'][0]['recompare']=True
             plan['scenarios'][1]['id']='owned-0-recompare'
             output=repo/'conflict'
             self.assertEqual(1,run(repo,output,plan,prepared,10,1,2))
@@ -344,13 +347,15 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertEqual(0, run(repo, output, plan, prepared, 10, 1, 1))
             result = json.loads((output/'result.json').read_text(encoding='utf8'))
             self.assertIn('--timeout', result['commands'][0]['argv'])
+            self.assertIn('--read-only-inputs', result['commands'][0]['argv'])
+            self.assertEqual(['owned-0'], [cmd['name'] for cmd in result['commands']])
             self.assertGreater(result['identityChecks']['scenario']['count'], 0)
             self.assertGreaterEqual(result['identityChecks']['scenario']['elapsedSeconds'], 0)
             queue = result['scenarioExecution']
             self.assertGreater(queue['elapsedSeconds'], 0)
             row, = queue['items']
             self.assertGreaterEqual(row['archiveSeconds'], 0)
-            self.assertGreater(row['commands'][1]['elapsedSeconds'], 0)
+            self.assertGreater(row['commands'][0]['elapsedSeconds'], 0)
 
     def test_same_length_and_timestamp_contract_drift_stops_next_scenario(self):
         from public_check import run
@@ -534,9 +539,18 @@ class PublicSelectionTest(unittest.TestCase):
                 capture_output=True, text=True,
             )
             self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertEqual(2, json.loads(proc.stdout)['scenarioConcurrency']['requested'])
+            self.assertEqual(
+                public_batch.default_scenario_workers('pr', None),
+                json.loads(proc.stdout)['scenarioConcurrency']['requested'],
+            )
+            self.assertEqual(2, public_batch.default_scenario_workers('pr', None, cloud=True, cpu_count=16))
+            self.assertEqual(8, public_batch.default_scenario_workers('pr', None, cloud=False, cpu_count=16))
+            self.assertEqual(6, public_batch.default_scenario_workers('long', None, cloud=False, cpu_count=16))
+            self.assertEqual(6, public_batch.default_scenario_workers('pr', None, cloud=False, cpu_count=12))
+            self.assertEqual(4, public_batch.default_scenario_workers('pr', None, cloud=False, cpu_count=8))
+            self.assertEqual(2, public_batch.default_scenario_workers('pr', None, cloud=False, cpu_count=4))
             for filename, mod, scope in scopes:
-                for workers in (1,2,4,8):
+                for workers in (1,2,4,6,8):
                     code, stdout_text, stderr_text = invoke_inproc(
                         mod, [*scope, '--list', '--output', str(output), '--scenario-workers', str(workers)])
                     self.assertEqual(0, code, stderr_text)
@@ -544,7 +558,7 @@ class PublicSelectionTest(unittest.TestCase):
                     self.assertEqual(workers, plan['scenarioConcurrency']['requested'])
                     self.assertEqual('after-build-and-tests', plan['scenarioConcurrency']['phase'])
                     self.assertEqual(expected_default_forks, plan['testConcurrency']['requested'])
-                for invalid in ('0','3','5','9','-1','two'):
+                for invalid in ('0','3','5','7','9','-1','two'):
                     code, _, _ = invoke_inproc(
                         mod, [*scope, '--output', str(output), '--scenario-workers', invalid])
                     self.assertEqual(2, code)

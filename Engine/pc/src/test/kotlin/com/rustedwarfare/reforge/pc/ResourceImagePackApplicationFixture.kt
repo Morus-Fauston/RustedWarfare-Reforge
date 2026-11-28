@@ -10,6 +10,10 @@ internal data class OwnPackImage(val id: String, val frames: Int = 3, val width:
 
 /** Only self-authored tiny PNGs; source and cache are distinct owned temporary domains. */
 internal class ResourceImagePackApplicationFixture : AutoCloseable {
+    companion object {
+        val sharedTrustedOutputs: PcTrustedOutputIndex by lazy { PcTrustedOutputIndex.bundled() }
+    }
+
     val root = Files.createTempDirectory("image-pack-application-").toAbsolutePath().normalize()
     val cache = root.resolve("cache")
     val settings = root.resolve("settings.properties")
@@ -27,8 +31,13 @@ internal class ResourceImagePackApplicationFixture : AutoCloseable {
         return PcResourcePackImporter(cache).load(directory)
     }
 
-    fun backend(arguments: Array<String> = arrayOf("--mode", "demo")) = PcVisualAssetSettings(store, cache, root,
-        WindowsLaunchOptions.parse(arguments, root))
+    fun backend(arguments: Array<String> = arrayOf("--mode", "demo")) = PcVisualAssetSettings(
+        store,
+        cache,
+        root,
+        WindowsLaunchOptions.parse(arguments, root),
+        trustedOutputs = sharedTrustedOutputs,
+    )
 
     override fun close() {
         require(root.isAbsolute && root.fileName.toString().startsWith("image-pack-application-"))

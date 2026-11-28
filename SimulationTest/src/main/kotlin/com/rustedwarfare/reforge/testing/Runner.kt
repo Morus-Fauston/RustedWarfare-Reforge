@@ -126,6 +126,7 @@ object Runner {
             archive.write(record("run-end", "status" to s(status), "exitCode" to n(exitCode),
                 "observedSteps" to n(observed), "requiredSteps" to n(required), "complete" to b(complete),
                 "collectionStatus" to s(collectionStatus), "error" to error?.let(::s)), loaded)
+            archive.flush()
             archive.document("comparison/result.json", (judgment ?: TraceComparator.judgment(exitCode, status,
                 contract, if (exitCode == 64) "input-error" else status, reason = error)).document)
             archive.document("logs/execution.json", record("execution-log", "command" to array(request.command.map(::s)),
@@ -162,6 +163,9 @@ object Runner {
         return RunResult(exitCode, status, output)
     }
 
+    private data class JarStatKey(val path: Path, val size: Long, val mtimeMillis: Long)
+    private val jarHashCache = java.util.concurrent.ConcurrentHashMap<JarStatKey, String>()
+
     private fun fileIdentity(path: Path): JsonObject = obj("path" to s(path.toAbsolutePath().normalize().toString()),
         "sha256" to if (Files.isRegularFile(path)) s(sha256(path)) else JsonNull)
 
@@ -173,7 +177,11 @@ object Runner {
                 digest(files.filter { Files.isRegularFile(it) }.sorted().map {
                     "${path.relativize(it)}:${sha256(it)}"
                 }.toList().joinToString("\n").toByteArray(Charsets.UTF_8))
-            } else sha256(path)
+            } else {
+                val attrs = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes::class.java)
+                val key = JarStatKey(path.toAbsolutePath().normalize(), attrs.size(), attrs.lastModifiedTime().toMillis())
+                jarHashCache.computeIfAbsent(key) { sha256(path) }
+            }
             obj("path" to s(path.toString()), "sha256" to s(hash))
         }
         return obj("id" to s("simulation-test.p001.record-chain"),

@@ -229,7 +229,7 @@ def _try_cleanup_orphan_lock(path):
     except OSError:
         return not path.exists()
     rechecked, re_state = _read_lock_record(stale)
-    if re_state == 'ok' and lock_owner_alive(rechecked):
+    if re_state == 'writing' or (re_state == 'ok' and lock_owner_alive(rechecked)):
         try:
             os.rename(stale, path)
         except OSError:

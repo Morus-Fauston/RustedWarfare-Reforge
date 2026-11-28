@@ -67,7 +67,7 @@ gradle.projectsEvaluated {
                 maxParallelForks = configuredForks
                 forkEvery = 0
                 maxHeapSize = '768m'
-                jvmArgs('-XX:MaxMetaspaceSize=160m', '-XX:ReservedCodeCacheSize=64m')
+                jvmArgs('-XX:MaxMetaspaceSize=160m', '-XX:ReservedCodeCacheSize=160m')
                 outputs.upToDateWhen { false }
                 outputs.cacheIf { false }
                 if (plan.fixture != null) {

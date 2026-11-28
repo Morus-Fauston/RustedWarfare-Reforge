@@ -14,7 +14,7 @@ def _populate_minimal_batch_repo(repo):
     from public_check import REPO, _EXPLICIT_BUILD_FILES, _EXPLICIT_TOOL_NAMES, _EXPLICIT_DEC_TOOL_NAMES
     ci = repo / 'SimulationTest/ci'
     ci.mkdir(parents=True, exist_ok=True)
-    for filename in ('public_batch.py', 'public_check.py', 'development_check.py', 'public_distribution.py'):
+    for filename in ('public_batch.py', 'public_check.py', 'development_check.py', 'public_distribution.py', 'public_scenarios.py'):
         shutil.copyfile(REPO / 'SimulationTest/ci' / filename, ci / filename)
     for name in ('workflow.py', 'workflow_inputs.py'):
         target = repo / 'SimulationTest/tools' / name

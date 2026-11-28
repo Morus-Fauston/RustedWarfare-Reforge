@@ -2344,27 +2344,42 @@ def compare_archive(output, expected_scenario=None, expected_contract=None, star
         return compare_archive_locked(output, expected_scenario, expected_contract, started_after)
 
 
-def verify_frozen_transport(plan, contract, files, digests):
+def verify_frozen_transport(plan, contract, files, digests, *, read_only_root=None, input_digests=None):
     settings=plan.get('transportTypes',{})
     if not settings:
         return
     prefix=plan['inputs'].rstrip('/')+'/'
     variants={ref['id']:ref for ref in plan['content']['unitVariants']}
     owners={unit['unitId']:unit['type'] for unit in plan['units']}
+    loaded_defs={}
 
     def definition(identity):
+        if identity in loaded_defs:
+            return loaded_defs[identity]
         ref=variants[identity]
         if not ref['path'].startswith(prefix):
             raise PlatformError('input-contract','Transport definition is outside the fixed input root',1)
-        name='inputSnapshot/'+ref['path'].removeprefix(prefix)
-        if name not in files or digests[name]!=ref['sha256']:
-            raise PlatformError('archive-identity','Frozen transport definition differs from the paired input')
-        raw=files[name].read_bytes()
-        if hashlib.sha256(raw).hexdigest()!=digests[name]:
-            raise PlatformError('archive-identity','Frozen transport definition changed during comparison')
+        rel=ref['path'].removeprefix(prefix)
+        if read_only_root is not None:
+            if (input_digests or {}).get(rel)!=ref['sha256']:
+                raise PlatformError('archive-identity','Frozen transport definition differs from the paired input')
+            target=(read_only_root/rel).resolve()
+            if not target.is_relative_to(read_only_root) or not target.is_file():
+                raise PlatformError('archive-identity','Frozen transport definition differs from the paired input')
+            raw=target.read_bytes()
+            if hashlib.sha256(raw).hexdigest()!=ref['sha256']:
+                raise PlatformError('archive-identity','Frozen transport definition changed during comparison')
+        else:
+            name='inputSnapshot/'+rel
+            if name not in files or digests[name]!=ref['sha256']:
+                raise PlatformError('archive-identity','Frozen transport definition differs from the paired input')
+            raw=files[name].read_bytes()
+            if hashlib.sha256(raw).hexdigest()!=digests[name]:
+                raise PlatformError('archive-identity','Frozen transport definition changed during comparison')
         document=read_document(raw)
         if document.get('copyFrom') or document.get('core',{}).get('name')!=identity:
             raise PlatformError('input-contract','Authored transport archive requires a direct, fixed unit definition',1)
+        loaded_defs[identity]=document
         return document
 
     for identity, expected in settings.items():
@@ -2378,7 +2393,7 @@ def verify_frozen_transport(plan, contract, files, digests):
             raise PlatformError('input-contract','Archived passenger slot cost differs from the frozen definition',1)
 
 
-def compare_archive_locked(output, expected_scenario=None, expected_contract=None, started_after=None):
+def compare_archive_locked(output, expected_scenario=None, expected_contract=None, started_after=None, *, verified_input_files=None):
     output = Path(output)
     if (expected_scenario is None) != (expected_contract is None):
         raise PlatformError('input-contract', 'Expected scenario and contract must be supplied together', 1)
@@ -2435,9 +2450,21 @@ def compare_archive_locked(output, expected_scenario=None, expected_contract=Non
             if digest != item['sha256']:
                 raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
             digests[name] = digest
-        inputs = [dict(path=name.removeprefix('inputSnapshot/'), sha256=digests[name])
-                  for name in sorted(digests) if name.startswith('inputSnapshot/')]
+        has_snapshot = any(name.startswith('inputSnapshot/') for name in digests)
         manifest = read_document(captured['manifest.json'])
+        ro_root_str = manifest.get('readOnlyInputRoot')
+        if ro_root_str is not None:
+            if backend != 'session' or not isinstance(ro_root_str, str) or not ro_root_str or has_snapshot:
+                raise PlatformError('archive-identity', 'Invalid read-only input archive manifest')
+            ro_root = Path(ro_root_str).resolve()
+            if ro_root.is_symlink() or not ro_root.is_dir():
+                raise PlatformError('archive-identity', 'Read-only input root is missing or invalid')
+            inputs = verified_input_files if verified_input_files is not None else tree(ro_root)
+            ro_digests = {item['path']: item['sha256'] for item in inputs}
+        else:
+            ro_root, ro_digests = None, None
+            inputs = [dict(path=name.removeprefix('inputSnapshot/'), sha256=digests[name])
+                      for name in sorted(digests) if name.startswith('inputSnapshot/')]
         if (manifest.get('backend') != backend or not manifest.get('packageFiles') or
                 manifest.get('scenarioSha256') != digests['scenario.json'] or
                 manifest.get('contractSha256') != digests['contract.json'] or
@@ -2478,18 +2505,27 @@ def compare_archive_locked(output, expected_scenario=None, expected_contract=Non
         if backend == 'windows-input':
             geometry = windows_geometry(output, records, {name: captured[path] for path, name in maps.items()})
         contract = read_document(captured['contract.json'])
-        verify_frozen_transport(plan, contract, actual, digests)
+        verify_frozen_transport(plan, contract, actual, digests, read_only_root=ro_root, input_digests=ro_digests)
         anchors = read_document(captured['intents.json'])
         return compare_run(records, plan, contract, anchors, geometry)
 
 
-def run_session(scenario, contract, distribution, output, java='java', timeout=60):
+def run_session(scenario, contract, distribution, output, java='java', timeout=60, *,
+                read_only_inputs=False, session_runner=None,
+                precomputed_package_files=None, precomputed_comparator_sha256=None):
     from evidence_compact import archive_lock
     with archive_lock(output):
-        return run_session_locked(scenario, contract, distribution, output, java, timeout)
+        return run_session_locked(
+            scenario, contract, distribution, output, java, timeout,
+            read_only_inputs=read_only_inputs, session_runner=session_runner,
+            precomputed_package_files=precomputed_package_files,
+            precomputed_comparator_sha256=precomputed_comparator_sha256,
+        )
 
 
-def run_session_locked(scenario, contract, distribution, output, java, timeout):
+def run_session_locked(scenario, contract, distribution, output, java, timeout, *,
+                       read_only_inputs=False, session_runner=None,
+                       precomputed_package_files=None, precomputed_comparator_sha256=None):
     scenario, contract, distribution, output = map(lambda p: Path(p).resolve(), (scenario, contract, distribution, output))
     plan = read(scenario)
     inputs = (scenario.parent / plan['inputs']).resolve()
@@ -2505,9 +2541,17 @@ def run_session_locked(scenario, contract, distribution, output, java, timeout):
     try:
         shutil.copyfile(scenario, output/'scenario.json')
         shutil.copyfile(contract, output/'contract.json')
-        shutil.copytree(inputs, output/'inputSnapshot')
-        if tree(output/'inputSnapshot') != expected_inputs or tree(inputs) != expected_inputs:
-            raise PlatformError('input-identity', 'Inputs changed while freezing the run')
+        if read_only_inputs:
+            if tree(inputs) != expected_inputs:
+                raise PlatformError('input-identity', 'Inputs changed while freezing the run')
+            runner_input_root = inputs
+            manifest_extra = dict(readOnlyInputRoot=str(inputs))
+        else:
+            shutil.copytree(inputs, output/'inputSnapshot')
+            if tree(output/'inputSnapshot') != expected_inputs or tree(inputs) != expected_inputs:
+                raise PlatformError('input-identity', 'Inputs changed while freezing the run')
+            runner_input_root = output/'inputSnapshot'
+            manifest_extra = {}
         # A single wildcard avoids the expanded JAR list and native-encoding
         # argument files. Windows receives the path through CreateProcessW;
         # Java needs the extended prefix for installs beyond MAX_PATH. Keep
@@ -2517,24 +2561,47 @@ def run_session_locked(scenario, contract, distribution, output, java, timeout):
         command_cwd=Path(tempfile.gettempdir()).resolve()
         command = [java, '-Xmx512m', '-cp', classpath,
                    'com.rustedwarfare.reforge.testing.PlatformSessionRunnerKt',
-                   str(output/'inputSnapshot'), str(output/'scenario.json'), str(output/'session'), str(timeout)]
-        save(output/'manifest.json', dict(backend='session', command=command, commandCwd=str(command_cwd),timeoutSeconds=timeout,
+                   str(runner_input_root), str(output/'scenario.json'), str(output/'session'), str(timeout)]
+        pkg_files = (precomputed_package_files if precomputed_package_files is not None
+                     else [dict(path=p.name, sha256=sha(p)) for p in jars])
+        comp_sha = (precomputed_comparator_sha256 if precomputed_comparator_sha256 is not None
+                    else sha(__file__))
+        save(output/'manifest.json', dict(backend='session', command=command, commandCwd=str(command_cwd), timeoutSeconds=timeout,
             scenarioSha256=sha(output/'scenario.json'), contractSha256=sha(output/'contract.json'),
-            inputFiles=expected_inputs, packageFiles=[dict(path=p.name, sha256=sha(p)) for p in jars],
-            comparatorSha256=sha(__file__)))
+            inputFiles=expected_inputs, packageFiles=pkg_files,
+            comparatorSha256=comp_sha, **manifest_extra))
         result['execution'] = dict(status='running', exitCode=None, startedUnix=time.time())
-        with (output/'stdout.log').open('xb') as stdout, (output/'stderr.log').open('xb') as stderr:
-            process = subprocess.run(command, cwd=command_cwd, stdout=stdout, stderr=stderr, timeout=timeout, shell=False)
-        result['execution'].update(status='passed' if process.returncode == 0 else 'failed',
-                                   exitCode=process.returncode, endedUnix=time.time())
+        stdout_path = output/'stdout.log'
+        stderr_path = output/'stderr.log'
+        if session_runner is not None:
+            try:
+                exec_rc = session_runner(
+                    runner_input_root, output/'scenario.json', output/'session', timeout,
+                    stdout_path, stderr_path,
+                )
+            finally:
+                for log_file in (stdout_path, stderr_path):
+                    if not log_file.exists():
+                        log_file.write_bytes(b'')
+        else:
+            with stdout_path.open('xb') as stdout, stderr_path.open('xb') as stderr:
+                process = subprocess.run(command, cwd=command_cwd, stdout=stdout, stderr=stderr, timeout=timeout, shell=False)
+            exec_rc = process.returncode
+        result['execution'].update(status='passed' if exec_rc == 0 else 'failed',
+                                   exitCode=exec_rc, endedUnix=time.time())
         save(output/'execution.json', result['execution'])
-        if process.returncode != 0:
-            raise PlatformError('adapter-process', 'Session adapter failed: '+str(process.returncode))
+        if exec_rc != 0:
+            raise PlatformError('adapter-process', 'Session adapter failed: '+str(exec_rc))
+        post_inputs = None
+        if read_only_inputs:
+            post_inputs = tree(inputs)
+            if post_inputs != expected_inputs:
+                raise PlatformError('input-identity', 'Read-only inputs changed during session execution')
         save(output/'intents.json', session_anchors(iter_jsonl_records(output/'session/client-diagnostic.jsonl')))
         save(output/'archive.json', dict(complete=True, backend='session', files=tree(output)))
         result['sealing'] = dict(status='sealed-complete')
         result['consumption'] = dict(status='running')
-        result.update(compare_archive_locked(output))
+        result.update(compare_archive_locked(output, verified_input_files=post_inputs))
         result['consumption'] = dict(status='passed', exitCode=result['exitCode'])
     except PlatformError as error:
         if result['consumption']['status'] == 'running':
@@ -2565,7 +2632,147 @@ def run_session_locked(scenario, contract, distribution, output, java, timeout):
     return result
 
 
+def prepare_session_workspace(scenario, contract, distribution, output, java='java', timeout=60, *,
+                              read_only_inputs=True, precomputed_package_files=None,
+                              precomputed_comparator_sha256=None):
+    from evidence_compact import archive_lock
+    with archive_lock(output):
+        scenario, contract, distribution, output = map(lambda p: Path(p).resolve(), (scenario, contract, distribution, output))
+        plan = read(scenario)
+        inputs = (scenario.parent / plan['inputs']).resolve()
+        expected_inputs = tree(inputs)
+        jars = sorted((distribution / 'lib').glob('*.jar'))
+        if not jars or not expected_inputs or type(timeout) is not int or not 1 <= timeout <= 600:
+            raise PlatformError('input-identity', 'Installed adapter, bounded deadline, and input files are required', 1)
+        output.mkdir()
+        started = time.time()
+        shutil.copyfile(scenario, output/'scenario.json')
+        shutil.copyfile(contract, output/'contract.json')
+        if read_only_inputs:
+            if tree(inputs) != expected_inputs:
+                raise PlatformError('input-identity', 'Inputs changed while freezing the run')
+            runner_input_root = inputs
+            manifest_extra = dict(readOnlyInputRoot=str(inputs))
+        else:
+            shutil.copytree(inputs, output/'inputSnapshot')
+            if tree(output/'inputSnapshot') != expected_inputs or tree(inputs) != expected_inputs:
+                raise PlatformError('input-identity', 'Inputs changed while freezing the run')
+            runner_input_root = output/'inputSnapshot'
+            manifest_extra = {}
+        classpath = str(distribution/'lib'/'*')
+        if os.name == 'nt':
+            classpath = '\\\\?\\' + classpath
+        command_cwd = Path(tempfile.gettempdir()).resolve()
+        command = [java, '-Xmx512m', '-cp', classpath,
+                   'com.rustedwarfare.reforge.testing.PlatformSessionRunnerKt',
+                   str(runner_input_root), str(output/'scenario.json'), str(output/'session'), str(timeout)]
+        pkg_files = (precomputed_package_files if precomputed_package_files is not None
+                     else [dict(path=p.name, sha256=sha(p)) for p in jars])
+        comp_sha = (precomputed_comparator_sha256 if precomputed_comparator_sha256 is not None
+                    else sha(__file__))
+        save(output/'manifest.json', dict(
+            backend='session', command=command, commandCwd=str(command_cwd), timeoutSeconds=timeout,
+            scenarioSha256=sha(output/'scenario.json'), contractSha256=sha(output/'contract.json'),
+            inputFiles=expected_inputs, packageFiles=pkg_files,
+            comparatorSha256=comp_sha, **manifest_extra,
+        ))
+        return dict(
+            output=str(output),
+            inputs=str(inputs),
+            runnerInputRoot=str(runner_input_root),
+            scenarioJson=str(output/'scenario.json'),
+            sessionDir=str(output/'session'),
+            expectedInputs=expected_inputs,
+            readOnlyInputs=read_only_inputs,
+            startedUnix=started,
+            timeoutSeconds=timeout,
+        )
+
+
+def finalize_session_workspace(ctx, exec_started_unix, exec_ended_unix, exec_rc, *, timed_out=False):
+    from evidence_compact import archive_lock
+    output = Path(ctx['output']).resolve()
+    inputs = Path(ctx['inputs']).resolve()
+    expected_inputs = ctx['expectedInputs']
+    read_only_inputs = bool(ctx['readOnlyInputs'])
+    with archive_lock(output):
+        result = dict(
+            exitCode=3, status='incomplete', backend='session', startedUnix=ctx['startedUnix'],
+            execution=dict(
+                status='timed-out' if timed_out else ('passed' if exec_rc == 0 else 'failed'),
+                exitCode=None if timed_out else exec_rc,
+                startedUnix=exec_started_unix,
+                endedUnix=exec_ended_unix,
+            ),
+            consumption=dict(status='not-run'), sealing=dict(status='pending'),
+        )
+        try:
+            for log_file in (output/'stdout.log', output/'stderr.log'):
+                if not log_file.exists():
+                    log_file.write_bytes(b'')
+            save(output/'execution.json', result['execution'])
+            if timed_out or exec_rc != 0:
+                raise PlatformError('adapter-process', 'Session adapter failed: '+str(exec_rc))
+            post_inputs = None
+            if read_only_inputs:
+                post_inputs = tree(inputs)
+                if post_inputs != expected_inputs:
+                    raise PlatformError('input-identity', 'Read-only inputs changed during session execution')
+            save(output/'intents.json', session_anchors(iter_jsonl_records(output/'session/client-diagnostic.jsonl')))
+            save(output/'archive.json', dict(complete=True, backend='session', files=tree(output)))
+            result['sealing'] = dict(status='sealed-complete')
+            result['consumption'] = dict(status='running')
+            result.update(compare_archive_locked(output, verified_input_files=post_inputs))
+            result['consumption'] = dict(status='passed', exitCode=result['exitCode'])
+        except PlatformError as error:
+            if result['consumption']['status'] == 'running':
+                result['consumption'] = dict(status='failed', exitCode=error.exit_code, category=error.category)
+            result.update(exitCode=error.exit_code, status='failed' if error.exit_code == 2 else 'incomplete',
+                          category=error.category, message=str(error))
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            result.update(category='adapter-exception', message=str(error))
+            if result['consumption']['status'] == 'running':
+                result['consumption'] = dict(status='incomplete', error=str(error))
+        try:
+            if not (output/'execution.json').exists():
+                save(output/'execution.json', result['execution'])
+            if not (output/'archive.json').exists():
+                save(output/'archive.json', dict(complete=False, backend='session', files=tree(output)))
+                result['sealing'] = dict(status='preserved-incomplete')
+        except OSError as error:
+            result['sealing'] = dict(status='failed', error=str(error))
+        result['endedUnix'] = time.time()
+        save(output/'result.json', result)
+        return result
+
+
+def _serve_session_eval_worker():
+    for raw_line in sys.stdin:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        req = json.loads(stripped)
+        req_id = req.get('id', '')
+        try:
+            res = finalize_session_workspace(
+                req['ctx'],
+                req['execStartedUnix'],
+                req['execEndedUnix'],
+                req['execRc'],
+                timed_out=bool(req.get('timedOut', False)),
+            )
+            payload = dict(id=req_id, ok=True, result=res)
+        except Exception as error:
+            payload = dict(id=req_id, ok=False, error=f'{type(error).__name__}: {error}')
+        sys.stdout.write(json.dumps(payload, ensure_ascii=True, allow_nan=False) + '\n')
+        sys.stdout.flush()
+    return 0
+
+
 def main(argv=None):
+    effective_argv = sys.argv[1:] if argv is None else list(argv)
+    if effective_argv == ['--session-eval-worker']:
+        return _serve_session_eval_worker()
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     session = commands.add_parser('session')
@@ -2574,6 +2781,7 @@ def main(argv=None):
     session.add_argument('--compact-evidence-root', type=Path)
     session.add_argument('--java', default='java')
     session.add_argument('--timeout', type=int, default=60)
+    session.add_argument('--read-only-inputs', action='store_true')
     windows = commands.add_parser('windows')
     for option in ('scenario', 'contract', 'distribution', 'output'):
         windows.add_argument('--'+option, required=True, type=Path)
@@ -2596,7 +2804,8 @@ def main(argv=None):
             if designated_batch(ticket, batch.name) != batch:
                 raise ValueError('Compaction output must be a batch directly inside the designated ticket')
         if args.command == 'session':
-            result = run_session(args.scenario, args.contract, args.distribution, args.output, args.java, args.timeout)
+            result = run_session(args.scenario, args.contract, args.distribution, args.output, args.java, args.timeout,
+                                 read_only_inputs=args.read_only_inputs)
         elif args.command == 'windows':
             from platform_windows import run_windows
             result = run_windows(args.scenario, args.contract, args.distribution, args.output,

@@ -1,5 +1,8 @@
 package com.rustedwarfare.reforge.testing
 
+import java.io.FileDescriptor
+import java.io.FileOutputStream
+import java.io.PrintStream
 import java.nio.file.Path
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption.CREATE_NEW
@@ -27,6 +30,11 @@ import com.rustedwarfare.reforge.pc.PcResourceImagePreparation
 import kotlinx.serialization.json.*
 
 fun main(args: Array<String>) {
+    if (args.contentEquals(arrayOf("--batch-worker")) || args.contentEquals(arrayOf("--batch"))) {
+        val rawOut = PrintStream(FileOutputStream(FileDescriptor.out), true, Charsets.UTF_8)
+        BatchScenarioWorker.serve(System.`in`.bufferedReader(Charsets.UTF_8), rawOut, sessionOnly = true)
+        return
+    }
     require(args.size in 3..4) { "PlatformSessionRunnerKt INPUT_ROOT PLAN_JSON NEW_OUTPUT_DIRECTORY [LOAD_TIMEOUT_SECONDS]" }
     val timeout = if (args.size == 4) requireNotNull(args[3].toIntOrNull()) { "Expected integer load timeout" } else 30
     require(timeout in 1..600) { "Load timeout must be bounded to 1..600 seconds" }

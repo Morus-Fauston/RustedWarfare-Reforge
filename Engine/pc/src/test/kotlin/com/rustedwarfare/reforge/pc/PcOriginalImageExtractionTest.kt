@@ -6,14 +6,99 @@ import java.nio.file.Path
 import java.awt.image.BufferedImage
 import javax.imageio.ImageIO
 import com.badlogic.gdx.utils.JsonReader
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
 import kotlin.test.*
 
 class PcOriginalImageExtractionTest {
+    companion object {
+        private var sharedRoot: Path? = null
+        private var sharedSourceDir: Path? = null
+        private var sharedImageProfile: PcOriginalImageProfile? = null
+        private var sharedSourceBytesSnapshot: Map<String, ByteArray> = emptyMap()
+
+        @JvmStatic
+        @BeforeAll
+        fun setUpSharedReadOnlyInstallation() {
+            val root = Files.createTempDirectory("pc-original-img-shared-ro-").toAbsolutePath().normalize()
+            sharedRoot = root
+            val (src, prof) = buildOwnedInstallationAt(root.resolve("owned PC 安装"))
+            sharedSourceDir = src
+            sharedImageProfile = prof
+            sharedSourceBytesSnapshot = Files.walk(src).use { files ->
+                files.filter { Files.isRegularFile(it) }.toList()
+                    .associate { src.relativize(it).toString().replace('\\', '/') to Files.readAllBytes(it) }
+            }
+        }
+
+        @JvmStatic
+        @AfterAll
+        fun tearDownSharedReadOnlyInstallation() {
+            val root = sharedRoot
+            sharedRoot = null
+            sharedSourceDir = null
+            sharedImageProfile = null
+            sharedSourceBytesSnapshot = emptyMap()
+            if (root != null) {
+                require(root.isAbsolute && root.fileName.toString().startsWith("pc-original-img-shared-ro-"))
+                root.toFile().deleteRecursively()
+            }
+        }
+
+        private fun buildOwnedInstallationAt(source: Path): Pair<Path, PcOriginalImageProfile> {
+            Files.createDirectories(source)
+            for (folder in listOf("assets", "res", "font")) Files.createDirectories(source.resolve(folder))
+            val jar = "Owned PC source identity, never executable".toByteArray()
+            Files.write(source.resolve("game-lib.jar"), jar)
+            val png = BufferedImage(8, 6, BufferedImage.TYPE_INT_ARGB)
+            for (x in 0 until 8) for (y in 0 until 6) png.setRGB(x, y, if (x < 4) 0xffe0a020.toInt() else 0xff2060c0.toInt())
+            assertTrue(ImageIO.write(png, "png", source.resolve("assets/tank.png").toFile()))
+            val jpg = BufferedImage(4, 3, BufferedImage.TYPE_INT_RGB)
+            for (x in 0 until 4) for (y in 0 until 3) jpg.setRGB(x, y, 0xff808080.toInt())
+            assertTrue(ImageIO.write(jpg, "jpeg", source.resolve("res/water cloud.jpg").toFile()))
+            Files.write(source.resolve("assets/author.xcf"), "Owned opaque author image fixture".toByteArray())
+            fun image(path: String, format: String, width: Int? = null, height: Int? = null): PcOriginalImageSource {
+                val bytes = Files.readAllBytes(source.resolve(path))
+                return PcOriginalImageSource(path, bytes.size, visualHash(bytes), format, width, height)
+            }
+            return source to PcOriginalImageProfile("owned.pc-images.v1", jar.size, visualHash(jar), listOf(
+                image("assets/tank.png", "PNG", 8, 6), image("res/water cloud.jpg", "JPEG", 4, 3), image("assets/author.xcf", "XCF")))
+        }
+    }
+
+    private fun readOnlyOwnedInstallation(): Pair<Path, PcOriginalImageProfile> =
+        checkNotNull(sharedSourceDir) to checkNotNull(sharedImageProfile)
+
+    private fun mutableOwnedInstallation(root: Path): Pair<Path, PcOriginalImageProfile> {
+        val prof = checkNotNull(sharedImageProfile)
+        val source = Files.createDirectories(root.resolve("owned PC 安装"))
+        for (folder in listOf("assets", "res", "font")) Files.createDirectories(source.resolve(folder))
+        for ((rel, data) in sharedSourceBytesSnapshot) {
+            val dst = source.resolve(rel)
+            Files.createDirectories(dst.parent)
+            Files.write(dst, data)
+        }
+        return source to prof
+    }
+
+    private fun newSettings(
+        fixture: ResourceImagePackApplicationFixture,
+        profile: PcOriginalImageProfile,
+        move: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically,
+    ): PcVisualAssetSettings = PcVisualAssetSettings(
+        fixture.store,
+        fixture.cache,
+        fixture.root,
+        WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root),
+        imageExtractionProfile = profile,
+        imageExtractionMove = move,
+        trustedOutputs = ResourceImagePackApplicationFixture.sharedTrustedOutputs,
+    )
+
     @Test fun a_failed_menu_extraction_preserves_the_current_applied_pack_and_good_settings() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedInstallation(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedInstallation()
+            val backend = newSettings(fixture, profile)
             VisualAssetSettingsSession(backend).use { state ->
                 state.extractOriginalImages(source); await(state)
                 state.setEnabled(state.selectedPackId, true); state.apply(); await(state)
@@ -31,22 +116,20 @@ class PcOriginalImageExtractionTest {
 
     @Test fun cancelled_or_closed_real_extraction_cannot_accept_its_deliberately_late_result_over_a_newer_menu_operation() {
         for (close in listOf(false, true)) ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedInstallation(fixture.root)
+            val (source, profile) = readOnlyOwnedInstallation()
             val latest = fixture.create("owned:latest", listOf(OwnPackImage("reforge:units/c_tank/body")))
             val entered = java.util.concurrent.CountDownLatch(1)
             val release = java.util.concurrent.CountDownLatch(1)
             val worker = java.util.concurrent.atomic.AtomicReference<Thread>()
             val output = fixture.cache.resolveSibling("extracted-original-packs")
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = profile,
-                imageExtractionMove = { from, to, replace ->
-                    if (to.startsWith(output) && to.parent.fileName.toString() == "generations") {
-                        worker.set(Thread.currentThread()); entered.countDown()
-                        // A real filesystem boundary returns late despite the UI cancellation.
-                        while (release.count > 0) try { release.await() } catch (_: InterruptedException) { }
-                    }
-                    moveVisualAtomically(from, to, replace)
-                })
+            val backend = newSettings(fixture, profile) { from, to, replace ->
+                if (to.startsWith(output) && to.parent.fileName.toString() == "generations") {
+                    worker.set(Thread.currentThread()); entered.countDown()
+                    // A real filesystem boundary returns late despite the UI cancellation.
+                    while (release.count > 0) try { release.await() } catch (_: InterruptedException) { }
+                }
+                moveVisualAtomically(from, to, replace)
+            }
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val saved = Files.readAllBytes(fixture.settings)
             val state = VisualAssetSettingsSession(backend)
@@ -80,9 +163,8 @@ class PcOriginalImageExtractionTest {
 
     @Test fun actual_menu_extracts_on_the_worker_and_accepts_a_disabled_unsaved_pack_then_preserves_a_repeated_enabled_cache_hit() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedInstallation(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedInstallation()
+            val backend = newSettings(fixture, profile)
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val before = Files.readAllBytes(fixture.settings)
             VisualAssetSettingsSession(backend).use { state ->
@@ -116,9 +198,8 @@ class PcOriginalImageExtractionTest {
 
     @Test fun failure_switching_ready_keeps_the_previous_complete_generation_and_saved_settings_unchanged() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedInstallation(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = profile)
+            val (source, profile) = mutableOwnedInstallation(fixture.root)
+            val backend = newSettings(fixture, profile)
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val saved = Files.readAllBytes(fixture.settings)
             val first = backend.extractOriginalImagePack(source)
@@ -146,7 +227,7 @@ class PcOriginalImageExtractionTest {
 
     @Test fun interruption_and_source_identity_change_before_commit_never_publish_a_ready_package() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedInstallation(fixture.root)
+            val (source, profile) = mutableOwnedInstallation(fixture.root)
             val output = fixture.cache.resolveSibling("extracted-original-packs")
             try {
                 Thread.currentThread().interrupt()
@@ -173,9 +254,8 @@ class PcOriginalImageExtractionTest {
 
     @Test fun repeated_extraction_reuses_a_complete_fixed_package_but_rebuilds_corrupted_output_without_overwriting_the_old_generation() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedInstallation(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedInstallation()
+            val backend = newSettings(fixture, profile)
             val first = backend.extractOriginalImagePack(source)
             val hit = backend.extractOriginalImagePack(source)
             assertEquals(first.catalogEntry, hit.catalogEntry, "Repeated extraction must reuse the same checked ordinary package")
@@ -197,10 +277,9 @@ class PcOriginalImageExtractionTest {
 
     @Test fun qualified_static_package_keeps_existing_aliases_and_its_static_layout_while_a_copy_without_certificate_has_no_layout_authority() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, raw) = ownedInstallation(fixture.root)
+            val (source, raw) = readOnlyOwnedInstallation()
             val profile = staticProfile(raw)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = profile)
+            val backend = newSettings(fixture, profile)
             val pack = backend.extractOriginalImagePack(source)
             val selection = backend.initialSelection.copy(packs = ResourcePackSelection(listOf(pack.catalogEntry), listOf(pack.metadata.id.value)))
             val prepared = backend.prepare(selection)
@@ -237,9 +316,8 @@ class PcOriginalImageExtractionTest {
 
     @Test fun changing_static_pixels_and_forging_the_certificate_hashes_still_rejects_apply_and_keeps_saved_settings() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, raw) = ownedInstallation(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = staticProfile(raw))
+            val (source, raw) = readOnlyOwnedInstallation()
+            val backend = newSettings(fixture, staticProfile(raw))
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val saved = Files.readAllBytes(fixture.settings)
             val pack = backend.extractOriginalImagePack(source)
@@ -267,9 +345,8 @@ class PcOriginalImageExtractionTest {
 
     @Test fun a_qualified_static_package_cannot_replace_a_custom_final_contents_changed_animation_layout() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, raw) = ownedInstallation(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = staticProfile(raw))
+            val (source, raw) = readOnlyOwnedInstallation()
+            val backend = newSettings(fixture, staticProfile(raw))
             val pack = backend.extractOriginalImagePack(source)
             val selected = backend.initialSelection.copy(packs = ResourcePackSelection(listOf(pack.catalogEntry), listOf(pack.metadata.id.value)))
             val contentSource = Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).resolve("content-pack-sandboxes/json/package")
@@ -307,9 +384,8 @@ class PcOriginalImageExtractionTest {
 
     @Test fun added_image_or_renamed_png_signature_rejects_the_whole_qualified_collection_without_publishing() {
         for (extra in listOf("res/extra.png", "assets/hidden-image.bin")) ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedInstallation(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = profile)
+            val (source, profile) = mutableOwnedInstallation(fixture.root)
+            val backend = newSettings(fixture, profile)
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val saved = Files.readAllBytes(fixture.settings)
             Files.copy(source.resolve("assets/tank.png"), source.resolve(extra))
@@ -322,9 +398,8 @@ class PcOriginalImageExtractionTest {
 
     @Test fun qualified_owned_installation_extracts_every_original_and_imports_renderable_images_without_enabling_or_saving() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedInstallation(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), imageExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedInstallation()
+            val backend = newSettings(fixture, profile)
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val saved = Files.readAllBytes(fixture.settings)
             val pack = backend.extractOriginalImagePack(source)
@@ -354,26 +429,6 @@ class PcOriginalImageExtractionTest {
             prepared.verifyForPublication()
             assertContentEquals(saved, Files.readAllBytes(fixture.settings), "Preparing the generated pack still must not save without Apply")
         }
-    }
-
-    private fun ownedInstallation(root: Path): Pair<Path, PcOriginalImageProfile> {
-        val source = Files.createDirectories(root.resolve("owned PC 安装"))
-        for (folder in listOf("assets", "res", "font")) Files.createDirectories(source.resolve(folder))
-        val jar = "Owned PC source identity, never executable".toByteArray()
-        Files.write(source.resolve("game-lib.jar"), jar)
-        val png = BufferedImage(8, 6, BufferedImage.TYPE_INT_ARGB)
-        for (x in 0 until 8) for (y in 0 until 6) png.setRGB(x, y, if (x < 4) 0xffe0a020.toInt() else 0xff2060c0.toInt())
-        assertTrue(ImageIO.write(png, "png", source.resolve("assets/tank.png").toFile()))
-        val jpg = BufferedImage(4, 3, BufferedImage.TYPE_INT_RGB)
-        for (x in 0 until 4) for (y in 0 until 3) jpg.setRGB(x, y, 0xff808080.toInt())
-        assertTrue(ImageIO.write(jpg, "jpeg", source.resolve("res/water cloud.jpg").toFile()))
-        Files.write(source.resolve("assets/author.xcf"), "Owned opaque author image fixture".toByteArray())
-        fun image(path: String, format: String, width: Int? = null, height: Int? = null): PcOriginalImageSource {
-            val bytes = Files.readAllBytes(source.resolve(path))
-            return PcOriginalImageSource(path, bytes.size, visualHash(bytes), format, width, height)
-        }
-        return source to PcOriginalImageProfile("owned.pc-images.v1", jar.size, visualHash(jar), listOf(
-            image("assets/tank.png", "PNG", 8, 6), image("res/water cloud.jpg", "JPEG", 4, 3), image("assets/author.xcf", "XCF")))
     }
 
     @Test fun actual_settings_backend_rejects_unknown_pc_image_build_with_observed_identity_and_preserves_good_settings() {

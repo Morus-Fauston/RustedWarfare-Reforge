@@ -3,16 +3,24 @@ package com.rustedwarfare.reforge.testing
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.HexFormat
 import kotlinx.serialization.json.*
+
+private val JSON_TRUE = JsonPrimitive(true)
+private val JSON_FALSE = JsonPrimitive(false)
+private val SMALL_INTS = Array(513) { JsonPrimitive(it - 1) }
+private val HEX_LOWER = HexFormat.of()
 
 internal val json = Json { prettyPrint = false; isLenient = false }
 internal fun obj(vararg entries: Pair<String, JsonElement?>) = JsonObject(entries.associate { it.first to (it.second ?: JsonNull) })
 internal fun s(value: String) = JsonPrimitive(value)
+internal fun n(value: Int): JsonPrimitive = if (value in -1..511) SMALL_INTS[value + 1] else JsonPrimitive(value)
 internal fun n(value: Number): JsonPrimitive {
+    if (value is Int) return n(value)
     if (!value.toDouble().isFinite()) throw CaptureError("Nonfinite number in collected output")
     return JsonPrimitive(value)
 }
-internal fun b(value: Boolean) = JsonPrimitive(value)
+internal fun b(value: Boolean) = if (value) JSON_TRUE else JSON_FALSE
 internal fun array(values: Iterable<JsonElement>) = JsonArray(values.toList())
 internal fun JsonObject.required(key: String): JsonElement = get(key) ?: throw InputError("Missing field: $key")
 internal fun JsonObject.text(key: String): String {
@@ -43,12 +51,12 @@ internal fun JsonObject.header(kind: String) {
 internal fun readObject(path: Path): JsonObject = try {
     json.parseToJsonElement(Files.readString(path)) as? JsonObject ?: throw InputError("Expected object: $path")
 } catch (e: IllegalArgumentException) { throw InputError("Invalid JSON at $path: ${e.message}") }
-internal fun digest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+internal fun digest(bytes: ByteArray): String = HEX_LOWER.formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 internal fun sha256(path: Path): String = Files.newInputStream(path).use { stream ->
     val hash = MessageDigest.getInstance("SHA-256")
-    val buffer = ByteArray(8192)
+    val buffer = ByteArray(65536)
     while (true) { val count = stream.read(buffer); if (count < 0) break; hash.update(buffer, 0, count) }
-    hash.digest().joinToString("") { "%02x".format(it) }
+    HEX_LOWER.formatHex(hash.digest())
 }
 internal fun record(kind: String, vararg fields: Pair<String, JsonElement?>) = obj(
     "schemaVersion" to n(1), "kind" to s(kind), *fields,

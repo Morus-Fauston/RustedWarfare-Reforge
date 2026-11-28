@@ -377,8 +377,8 @@ def test_concurrency(tests, forks=None, workers=None, *, cloud=None, cpu_count=N
 
 
 def scenario_workers(value):
-    if str(value) not in ('1', '2', '4', '8'):
-        raise argparse.ArgumentTypeError('Scenario workers must be 1, 2, 4 or 8')
+    if str(value) not in ('1', '2', '4', '6', '8'):
+        raise argparse.ArgumentTypeError('Scenario workers must be 1, 2, 4, 6 or 8')
     return int(value)
 
 
@@ -484,7 +484,8 @@ def build_shared_distribution(repo, output, source, command_timeout_seconds=600,
     wrapper = [str(project/'gradlew.bat')] if os.name == 'nt' else ['sh', str(project/'gradlew')]
     effective_forks = default_test_forks() if forks is None else test_forks(forks)
     build_workers = default_build_workers(workers_gradle)
-    argv = wrapper + [':installDist', '--no-daemon', '--console=plain', '--max-workers='+str(build_workers), '--rerun-tasks']
+    daemon_flag = '--no-daemon' if os.environ.get('GITHUB_ACTIONS') == 'true' else '--daemon'
+    argv = wrapper + [':installDist', daemon_flag, '--console=plain', '--max-workers='+str(build_workers), '--rerun-tasks']
     preparation = None
     kind = 'pr' if preparation_plan is not None else (kind or 'long')
     if preparation_plan is not None:
@@ -544,7 +545,8 @@ def build_shared_distribution(repo, output, source, command_timeout_seconds=600,
 
 
 def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600, forks=None, workers=2,
-        *, scenarios_only=False, lock_wait=1800, workers_gradle=None, pinned_source=None):
+        *, scenarios_only=False, lock_wait=1800, workers_gradle=None, pinned_source=None,
+        shared_worker_pool=None, lock_held=False, log_stream=None):
     output.mkdir(parents=True, exist_ok=False)
     concurrency = test_concurrency(plan['tests'], forks, workers_gradle)
     effective_forks = concurrency['requested']
@@ -656,11 +658,12 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
         if not measured['passed']:
             raise RuntimeError(f'{name}: exit {code}; see {name}.log')
     try:
+        from contextlib import nullcontext
         sys.path.insert(0, str(REPO/'SimulationTest/tools'))
         from workflow import resources
         from public_distribution import digest, package_files, package_metadata_snapshot, read_receipt, verify, verify_members
-        with resources(['host:heavy-verification', 'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')],
-                       wait_seconds=lock_wait):
+        lock_names = ['host:heavy-verification', 'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]
+        with (nullcontext() if lock_held else resources(lock_names, wait_seconds=lock_wait)):
             project = repo / 'SimulationTest'
             if prepared_distribution is not None:
                 if plan['kind'] not in ('pr', 'mechanism', 'short', 'long') or plan['inputScope'] != 'public':
@@ -710,8 +713,7 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
                 raise RuntimeError('Python mechanism evidence is incomplete: ' + relative)
             result['pythonCoverage'].append(dict(path=relative, result=name+'.json', **measured))
         from public_scenarios import run_scenarios
-        with resources(['host:heavy-verification', 'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')],
-                       wait_seconds=lock_wait):
+        with (nullcontext() if lock_held else resources(lock_names, wait_seconds=lock_wait)):
             # Verify package member bytes once on the first scenario admission inside run_scenarios
             # (preserving scenario-execution.json pre-dispatch failure receipts), then use fast
             # metadata snapshots + exact per-scenario input SHA-256 across remaining scenarios.
@@ -747,7 +749,7 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
 
             scenarios = run_scenarios(repo, output, plan['scenarios'], distribution, workers,
                 command_timeout_seconds, lambda case: measure_check('scenario', lambda: verify_scenario_inputs(case)),
-                execute_command)
+                execute_command, shared_worker_pool=shared_worker_pool)
             result['scenarioExecution'] = scenarios
             result['commands'].extend(c for item in scenarios['items'] for c in item['commands'])
             archives = [item['archive'] for item in scenarios['items'] if item['status'] == 'passed']
@@ -777,7 +779,8 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
     result['identityChecks'] = measured_checks
     result['elapsedSeconds'] = time.monotonic() - started
     (output / 'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    print(json.dumps(dict(status=result['status'], output=str(output), error=result.get('error')), ensure_ascii=False))
+    print(json.dumps(dict(status=result['status'], output=str(output), error=result.get('error')), ensure_ascii=False),
+          file=(log_stream if log_stream is not None else sys.stdout), flush=True)
     return 0 if result['status'] == 'passed' else 1
 
 
@@ -790,7 +793,7 @@ def main():
     parser.add_argument('--list', action='store_true', help='Print fixed plan without building or creating evidence')
     parser.add_argument('--test-forks', type=test_forks, default=None, help='Bound independent test JVMs: 1, 2, 3, 4 or 8; PC stays serial')
     parser.add_argument('--gradle-workers', type=gradle_workers, default=None, help='Bound Gradle max workers independently (1..16)')
-    parser.add_argument('--scenario-workers', type=scenario_workers, default=2, help='Bound independent headless scenarios after tests: 1, 2, 4 or 8')
+    parser.add_argument('--scenario-workers', type=scenario_workers, default=2, help='Bound independent headless scenarios after tests: 1, 2, 4, 6 or 8')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Explicit per-command seconds, at most 3600; default 600. Selection is unchanged.')
     parser.add_argument('--lock-wait-seconds', type=lock_wait_seconds, default=1800,

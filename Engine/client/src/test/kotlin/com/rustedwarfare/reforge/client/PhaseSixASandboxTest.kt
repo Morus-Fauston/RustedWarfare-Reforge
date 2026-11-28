@@ -31,39 +31,40 @@ class PhaseSixASandboxTest {
         }
     }
 
-    @Test fun both_normal_starts_share_the_catalogue_in_all_three_formats() {
-        for (format in listOf("ini", "json", "hjson")) {
-            val start = TestScenarioChoice.open(phaseSixFixtureRoot.resolve("scenarios/phase-six-a-$format.json"))
-            val spider = TestScenarioChoice.open(phaseSixFixtureRoot.resolve("scenarios/phase-six-a-spider-$format.json"))
-            assertEquals(start.content.content.units.keys, spider.content.content.units.keys)
-            assertEquals(start.root, spider.root)
-            assertEquals(listOf("naval-ground-40", "construction-strip-5"),
-                start.scenario.map.tileSets.map { VisualTileAtlas.from(it).supportedLayout() })
-            assertEquals("commandCenter", start.content.unitId)
-            assertEquals("modularSpider", spider.content.unitId)
-            SandboxSession(start.scenario).use { session ->
-                assertEquals(listOf("commandCenter"), session.phaseSixOwned().map { it.typeId })
-                assertEquals(30000L, session.observation.balance)
-                session.phaseSixSelectUnit(session.phaseSixOwned().single())
-                assertIs<ActionResult.Accepted>(session.produce("builder"))
-                val builder = session.phaseSixAwaitUnit("builder", 800)
-                session.phaseSixSelectUnit(builder)
-                assertEquals(setOf("extractorT1", "fabricatorT1", "landFactory", "mechFactory", "airFactory",
-                    "seaFactory", "c_turret_t1", "laserDefence", "repairbay", "experimentalLandFactory",
-                    "nukeLauncherC", "antiNukeLauncherC"), session.constructionActions.map { it.typeId }.toSet())
-            }
-            SandboxSession(spider.scenario).use { session ->
-                val chassis = session.phaseSixOwned().single { it.typeId == "modularSpider" }
-                assertEquals(6, assertNotNull(chassis.attachmentOverview).slots.size)
-                assertEquals(5000L, session.observation.balance)
-                session.phaseSixSelectUnit(chassis)
-                assertIs<ActionResult.Accepted>(session.unitAction("selectSlot1"))
-                assertIs<ActionResult.Accepted>(session.unitAction("buildGun"))
-                session.phaseSixAwaitUnit("modularSpider_gunturret", 1050)
-            }
-        }
+    @Test fun both_normal_starts_share_the_catalogue_in_ini_format() {
+        verifyPhaseSixANormalStartsShareCatalogue("ini")
     }
+}
 
+internal fun verifyPhaseSixANormalStartsShareCatalogue(format: String) {
+    val start = TestScenarioChoice.open(phaseSixFixtureRoot.resolve("scenarios/phase-six-a-$format.json"))
+    val spider = TestScenarioChoice.open(phaseSixFixtureRoot.resolve("scenarios/phase-six-a-spider-$format.json"))
+    assertEquals(start.content.content.units.keys, spider.content.content.units.keys)
+    assertEquals(start.root, spider.root)
+    assertEquals(listOf("naval-ground-40", "construction-strip-5"),
+        start.scenario.map.tileSets.map { VisualTileAtlas.from(it).supportedLayout() })
+    assertEquals("commandCenter", start.content.unitId)
+    assertEquals("modularSpider", spider.content.unitId)
+    SandboxSession(start.scenario).use { session ->
+        assertEquals(listOf("commandCenter"), session.phaseSixOwned().map { it.typeId })
+        assertEquals(30000L, session.observation.balance)
+        session.phaseSixSelectUnit(session.phaseSixOwned().single())
+        assertIs<ActionResult.Accepted>(session.produce("builder"))
+        val builder = session.phaseSixAwaitUnit("builder", 800)
+        session.phaseSixSelectUnit(builder)
+        assertEquals(setOf("extractorT1", "fabricatorT1", "landFactory", "mechFactory", "airFactory",
+            "seaFactory", "c_turret_t1", "laserDefence", "repairbay", "experimentalLandFactory",
+            "nukeLauncherC", "antiNukeLauncherC"), session.constructionActions.map { it.typeId }.toSet())
+    }
+    SandboxSession(spider.scenario).use { session ->
+        val chassis = session.phaseSixOwned().single { it.typeId == "modularSpider" }
+        assertEquals(6, assertNotNull(chassis.attachmentOverview).slots.size)
+        assertEquals(5000L, session.observation.balance)
+        session.phaseSixSelectUnit(chassis)
+        assertIs<ActionResult.Accepted>(session.unitAction("selectSlot1"))
+        assertIs<ActionResult.Accepted>(session.unitAction("buildGun"))
+        session.phaseSixAwaitUnit("modularSpider_gunturret", 1050)
+    }
 }
 
 internal val phaseSixFixtureRoot get() = Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).parent

@@ -8,20 +8,112 @@ import com.badlogic.gdx.utils.JsonReader
 import com.badlogic.gdx.utils.JsonValue
 import com.badlogic.gdx.utils.JsonWriter.OutputType
 import com.rustedwarfare.reforge.client.*
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeAll
 import kotlin.test.*
 
 class PcOriginalResourceExtractionTest {
+    companion object {
+        private var sharedRoot: Path? = null
+        private var sharedSourceDir: Path? = null
+        private var sharedResourceProfile: PcOriginalResourceProfile? = null
+        private var sharedSourceBytesSnapshot: Map<String, ByteArray> = emptyMap()
+        private var sharedTrustedIndex: PcTrustedOutputIndex? = null
+
+        @JvmStatic
+        @BeforeAll
+        fun setUpSharedReadOnlySource() {
+            val root = Files.createTempDirectory("pc-original-shared-ro-source-").toAbsolutePath().normalize()
+            sharedRoot = root
+            val (src, prof) = buildOwnedSourceAt(root.resolve("owned complete source"))
+            sharedSourceDir = src
+            sharedResourceProfile = prof
+            sharedSourceBytesSnapshot = Files.walk(src).use { files ->
+                files.filter { Files.isRegularFile(it) }.toList()
+                    .associate { src.relativize(it).toString().replace('\\', '/') to Files.readAllBytes(it) }
+            }
+            sharedTrustedIndex = PcTrustedOutputIndex.bundled()
+        }
+
+        @JvmStatic
+        @AfterAll
+        fun tearDownSharedReadOnlySource() {
+            val root = sharedRoot
+            sharedRoot = null
+            sharedSourceDir = null
+            sharedResourceProfile = null
+            sharedSourceBytesSnapshot = emptyMap()
+            sharedTrustedIndex = null
+            if (root != null) {
+                require(root.isAbsolute && root.fileName.toString().startsWith("pc-original-shared-ro-source-"))
+                root.toFile().deleteRecursively()
+            }
+        }
+
+        private fun buildOwnedSourceAt(source: Path): Pair<Path, PcOriginalResourceProfile> {
+            Files.createDirectories(source)
+            for (folder in listOf("assets", "res/raw", "font")) Files.createDirectories(source.resolve(folder))
+            val jar = "Owned complete source qualification, no executable code".toByteArray()
+            Files.write(source.resolve("game-lib.jar"), jar)
+            val picture = BufferedImage(8, 6, BufferedImage.TYPE_INT_ARGB)
+            for (x in 0 until 8) for (y in 0 until 6) picture.setRGB(x, y, 0xff2050a0.toInt())
+            assertTrue(ImageIO.write(picture, "png", source.resolve("assets/picture.png").toFile()))
+            val bytes = Files.readAllBytes(source.resolve("assets/picture.png"))
+            val images = PcOriginalImageProfile("owned.pc-images.v1", jar.size, visualHash(jar), listOf(
+                PcOriginalImageSource("assets/picture.png", bytes.size, visualHash(bytes), "PNG", 8, 6)))
+            val public = Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).resolve("resource-sound-packs")
+            val sounds = listOf("ogg" to "res/raw/tank_firing.ogg", "wav" to "res/raw/unused.wav").map { (kind, path) ->
+                Files.copy(public.resolve("$kind/clip.$kind"), source.resolve(path))
+                val data = Files.readAllBytes(source.resolve(path))
+                PcOriginalSoundSource(path, data.size, visualHash(data), if (kind == "ogg") "OGG_VORBIS" else "PCM16_WAV", 1, 22050)
+            }
+            return source to PcOriginalResourceProfile("owned.pc-resources.v1", images, sounds,
+                mapOf("reforge:events/tank-fire" to "res/raw/tank_firing.ogg"))
+        }
+    }
+
+    private fun readOnlyOwnedSource(): Pair<Path, PcOriginalResourceProfile> {
+        val src = checkNotNull(sharedSourceDir)
+        val prof = checkNotNull(sharedResourceProfile)
+        return src to prof
+    }
+
+    private fun mutableOwnedSource(root: Path): Pair<Path, PcOriginalResourceProfile> {
+        val prof = checkNotNull(sharedResourceProfile)
+        val source = Files.createDirectories(root.resolve("owned complete source"))
+        for (folder in listOf("assets", "res/raw", "font")) Files.createDirectories(source.resolve(folder))
+        for ((rel, data) in sharedSourceBytesSnapshot) {
+            val dst = source.resolve(rel)
+            Files.createDirectories(dst.parent)
+            Files.write(dst, data)
+        }
+        return source to prof
+    }
+
+    private fun newSettings(
+        fixture: ResourceImagePackApplicationFixture,
+        cache: Path = fixture.cache,
+        profile: PcOriginalResourceProfile? = sharedResourceProfile,
+        move: (Path, Path, Boolean) -> Unit = ::moveVisualAtomically,
+    ): PcVisualAssetSettings = PcVisualAssetSettings(
+        fixture.store,
+        cache,
+        fixture.root,
+        WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root),
+        imageExtractionMove = move,
+        resourceExtractionProfile = profile,
+        trustedOutputs = checkNotNull(sharedTrustedIndex),
+    )
+
     @Test fun interrupted_finished_publication_preserves_settings_and_the_incomplete_stage_is_not_importable() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val normal = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val normal = newSettings(fixture, profile = profile)
             normal.applyPrepared(normal.prepare(normal.initialSelection))
             val saved = Files.readAllBytes(fixture.settings)
             var stage: Path? = null
-            val interrupted = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile,
-                imageExtractionMove = { from, to, replace ->
+            val interrupted = newSettings(fixture, profile = profile,
+                move = { from, to, replace ->
                     if (from.parent.fileName.toString() == "prepared-original-packs") {
                         stage = from; throw java.util.concurrent.CancellationException("Owned export cancellation")
                     }
@@ -38,9 +130,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun finished_extraction_menu_keeps_the_saved_choice_when_runtime_or_qualification_is_damaged() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            fun backend() = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            fun backend() = newSettings(fixture, profile = profile)
             VisualAssetSettingsSession(backend()).use { menu ->
                 menu.extractOriginalResources(source); await(menu)
                 assertNull(menu.error); assertTrue(menu.diagnostic.orEmpty().startsWith("Extracted"), menu.diagnostic)
@@ -74,16 +165,14 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun complete_menu_extraction_outputs_a_finished_pack_and_can_import_it_in_another_client() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val backend = newSettings(fixture, profile = profile)
             val result = backend.extractOriginalPreparedResourcePack(source)
             assertEquals(4, result.metadata.requiresResourceFormat)
             assertTrue(Files.isRegularFile(result.manifest.parent.resolve("images.json")))
             assertTrue(Files.isRegularFile(result.manifest.parent.resolve("sounds.json")))
             val otherCache = fixture.root.resolve("other-client-cache")
-            val other = PcVisualAssetSettings(fixture.store, otherCache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val other = newSettings(fixture, cache = otherCache, profile = profile)
             val imported = other.checkImagePack(result.manifest)
             assertTrue(imported.clientHeld)
             assertEquals(result.images.keys, imported.images.keys)
@@ -93,8 +182,7 @@ class PcOriginalResourceExtractionTest {
             val parked = result.manifest.parent.parent.resolveSibling("parked-finished-generation")
             require(parked.startsWith(fixture.root) && result.manifest.parent.parent.startsWith(fixture.root))
             Files.move(result.manifest.parent.parent, parked)
-            val restarted = PcVisualAssetSettings(fixture.store, otherCache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val restarted = newSettings(fixture, cache = otherCache, profile = profile)
             restarted.prepare(restarted.initialSelection).verifyForPublication()
             assertEquals("MANAGED_REUSE", restarted.lastPreparationPath?.name)
         }
@@ -102,9 +190,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun passive_legacy_catalog_read_keeps_the_saved_identity_until_explicit_import() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            fun backend() = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            fun backend() = newSettings(fixture, profile = profile)
             val legacy = backend().extractOriginalResourcePack(source)
             val selected = backend().initialSelection.copy(packs = ResourcePackSelection(listOf(legacy.catalogEntry), listOf(legacy.metadata.id.value)))
             fixture.store.save(selected)
@@ -125,9 +212,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun client_held_original_acceptance_cannot_survive_an_incompatible_independent_mapping_basis() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val backend = newSettings(fixture, profile = profile)
             val legacy = backend.extractOriginalResourcePack(source)
             val accepted = backend.checkImagePack(legacy.manifest)
             val selected = backend.initialSelection.copy(packs = ResourcePackSelection(listOf(accepted.catalogEntry), listOf(accepted.metadata.id.value)))
@@ -135,8 +221,7 @@ class PcOriginalResourceExtractionTest {
             val saved = Files.readAllBytes(fixture.settings)
             val incompatible = PcOriginalResourceProfile(profile.id, profile.images, profile.sounds,
                 mapOf("reforge:events/tank-fire" to "res/raw/unused.wav"))
-            val newer = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = incompatible)
+            val newer = newSettings(fixture, profile = incompatible)
             val failure = assertFailsWith<IllegalArgumentException> { newer.prepare(selected) }
             assertTrue(failure.message.orEmpty().contains("Independent original qualification differs"), failure.message)
             assertContentEquals(saved, Files.readAllBytes(fixture.settings))
@@ -146,9 +231,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun a_legacy_certificate_change_at_publication_is_rejected_without_changing_the_saved_version_and_can_retry() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            fun backend() = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            fun backend() = newSettings(fixture, profile = profile)
             val good = backend()
             val legacy = good.extractOriginalResourcePack(source)
             val accepted = good.checkImagePack(legacy.manifest)
@@ -157,9 +241,8 @@ class PcOriginalResourceExtractionTest {
             val saved = Files.readAllBytes(fixture.settings)
             val certificate = legacy.manifest.parent.resolve("resource-extraction.json")
             val original = Files.readAllBytes(certificate)
-            val changed = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile,
-                imageExtractionMove = { from, to, replace ->
+            val changed = newSettings(fixture, profile = profile,
+                move = { from, to, replace ->
                     moveVisualAtomically(from, to, replace)
                     if (from.fileName.toString().startsWith("pending-")) Files.writeString(certificate, "{}")
                 })
@@ -175,9 +258,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun normal_import_migrates_a_qualified_legacy_pack_and_restarts_without_the_package_or_installation() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            fun backend() = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = mutableOwnedSource(fixture.root)
+            fun backend() = newSettings(fixture, profile = profile)
             val legacy = backend().extractOriginalResourcePack(source)
             val before = Files.walk(legacy.manifest.parent).use { files -> files.filter { Files.isRegularFile(it) }
                 .toList().associate { it to visualHash(Files.readAllBytes(it)) } }
@@ -212,31 +294,28 @@ class PcOriginalResourceExtractionTest {
     }
 
     @Test fun reviewed_output_data_is_bound_to_the_producer_and_the_whole_trusted_profile() {
-        ResourceImagePackApplicationFixture().use { fixture ->
-            val (_, profile) = ownedSource(fixture.root)
-            val file = "renderable/${visualHash("assets/picture.png".toByteArray())}.png"
-            val audio = profile.sounds.joinToString(",") { source ->
-                """{"file":"sounds/${visualHash(source.path.toByteArray())}.wav","bytes":48,"sha256":"${"b".repeat(64)}","channels":1,"sampleRate":22050,"frames":2}"""
-            }
-            val producer = mapOf("self-owned-producer-v1" to "c".repeat(64))
-            val bytes = """{"schemaVersion":1,"producers":{"self-owned-producer-v1":"${"c".repeat(64)}"},
-                "profiles":[{"id":"${profile.id}","basis":"${PcTrustedOutputIndex.basis(profile)}",
-                "images":[{"file":"$file","bytes":100,"sha256":"${"a".repeat(64)}","pixelSha256":"${"d".repeat(64)}","width":8,"height":6}],
-                "mapped":[],"sounds":[$audio]}]}""".toByteArray()
-            val trusted = PcTrustedOutputIndex.fromReviewed(bytes, producer)
-            assertEquals("a".repeat(64), assertNotNull(trusted.forProfile(profile)).images.getValue(file).sha256)
-            assertNull(PcTrustedOutputIndex.fromReviewed(bytes, mapOf("self-owned-producer-v1" to "e".repeat(64))).forProfile(profile))
-            val wrongImages = PcOriginalImageProfile(profile.images.id, profile.images.jarBytes, "0".repeat(64), profile.images.images)
-            assertNull(trusted.forProfile(PcOriginalResourceProfile(profile.id, wrongImages, profile.sounds, profile.events)))
-            assertNull(PcTrustedOutputIndex.fromReviewed(bytes.toString(Charsets.UTF_8).replace("\"schemaVersion\":1", "\"schemaVersion\":\"1\"").toByteArray(), producer).forProfile(profile))
+        val (_, profile) = readOnlyOwnedSource()
+        val file = "renderable/${visualHash("assets/picture.png".toByteArray())}.png"
+        val audio = profile.sounds.joinToString(",") { source ->
+            """{"file":"sounds/${visualHash(source.path.toByteArray())}.wav","bytes":48,"sha256":"${"b".repeat(64)}","channels":1,"sampleRate":22050,"frames":2}"""
         }
+        val producer = mapOf("self-owned-producer-v1" to "c".repeat(64))
+        val bytes = """{"schemaVersion":1,"producers":{"self-owned-producer-v1":"${"c".repeat(64)}"},
+            "profiles":[{"id":"${profile.id}","basis":"${PcTrustedOutputIndex.basis(profile)}",
+            "images":[{"file":"$file","bytes":100,"sha256":"${"a".repeat(64)}","pixelSha256":"${"d".repeat(64)}","width":8,"height":6}],
+            "mapped":[],"sounds":[$audio]}]}""".toByteArray()
+        val trusted = PcTrustedOutputIndex.fromReviewed(bytes, producer)
+        assertEquals("a".repeat(64), assertNotNull(trusted.forProfile(profile)).images.getValue(file).sha256)
+        assertNull(PcTrustedOutputIndex.fromReviewed(bytes, mapOf("self-owned-producer-v1" to "e".repeat(64))).forProfile(profile))
+        val wrongImages = PcOriginalImageProfile(profile.images.id, profile.images.jarBytes, "0".repeat(64), profile.images.images)
+        assertNull(trusted.forProfile(PcOriginalResourceProfile(profile.id, wrongImages, profile.sounds, profile.events)))
+        assertNull(PcTrustedOutputIndex.fromReviewed(bytes.toString(Charsets.UTF_8).replace("\"schemaVersion\":1", "\"schemaVersion\":\"1\"").toByteArray(), producer).forProfile(profile))
     }
 
     @Test fun rehashing_certificates_cannot_certify_renderable_pixels_different_from_the_trusted_original() {
         for (complete in listOf(true, false)) ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val backend = newSettings(fixture, profile = profile)
             val first = if (complete) backend.extractOriginalResourcePack(source) else backend.extractOriginalImagePack(source)
             val badRoot = Files.createDirectory(fixture.root.resolve("forged raw pixels"))
             Files.walk(first.manifest.parent).use { files -> files.forEach { file ->
@@ -274,9 +353,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun forged_output_hashes_cannot_certify_a_changed_unmapped_canonical_sound_or_overwrite_the_good_saved_combination() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val backend = newSettings(fixture, profile = profile)
             val first = backend.extractOriginalResourcePack(source)
             VisualAssetSettingsSession(backend).use { state ->
                 state.importImagePack(first.manifest); await(state)
@@ -320,12 +398,11 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun ready_switch_failure_or_late_original_source_change_preserves_the_last_good_complete_pointer_and_applied_resources() {
         for (mode in listOf("ready", "source")) ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
+            val (source, profile) = mutableOwnedSource(fixture.root)
             var armed = false
             var restore: Pair<Path, ByteArray>? = null
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile,
-                imageExtractionMove = { from, to, replace ->
+            val backend = newSettings(fixture, profile = profile,
+                move = { from, to, replace ->
                     if (armed && mode == "ready" && to.fileName.toString() == "ready.json" && to.parent.fileName.toString() == profile.id)
                         throw java.io.IOException("owned complete ready switch failure")
                     moveVisualAtomically(from, to, replace)
@@ -353,9 +430,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun an_already_interrupted_complete_request_does_not_publish_over_a_good_generation() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val backend = newSettings(fixture, profile = profile)
             val first = backend.extractOriginalResourcePack(source)
             val ready = first.manifest.parent.parent.parent.resolve("ready.json"); val previous = Files.readAllBytes(ready)
             try {
@@ -368,13 +444,12 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun every_qualified_sound_is_decoded_even_when_it_has_no_current_event_mapping() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, raw) = ownedSource(fixture.root)
+            val (source, raw) = mutableOwnedSource(fixture.root)
             val bytes = "Owned invalid PCM payload with a qualified fixture hash".toByteArray()
             Files.write(source.resolve("res/raw/unused.wav"), bytes)
             val sounds = raw.sounds.map { if (it.path == "res/raw/unused.wav") it.copy(bytes = bytes.size, sha256 = visualHash(bytes)) else it }
             val profile = PcOriginalResourceProfile(raw.id, raw.images, sounds, raw.events)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val backend = newSettings(fixture, profile = profile)
             val error = assertFailsWith<IllegalArgumentException> { backend.extractOriginalResourcePack(source) }
             assertTrue(error.message.orEmpty().contains("RESOURCE_PACK_AUDIO_INVALID"), error.message)
             assertTrue(error.message.orEmpty().contains("res/raw/unused.wav"), error.message)
@@ -386,9 +461,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun failed_complete_extraction_leaves_the_applied_good_selection_startable_and_the_saved_bytes_unchanged() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val backend = newSettings(fixture, profile = profile)
             VisualAssetSettingsSession(backend).use { state ->
                 state.extractOriginalResources(source); await(state)
                 state.setEnabled(state.selectedPackId, true); state.apply(); await(state)
@@ -405,14 +479,13 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun cancelled_or_closed_complete_worker_cannot_publish_its_deliberately_late_result_over_a_newer_import() {
         for (close in listOf(false, true)) ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
+            val (source, profile) = readOnlyOwnedSource()
             val latest = fixture.create("owned:latest-full", listOf(OwnPackImage("reforge:units/c_tank/body")))
             val entered = java.util.concurrent.CountDownLatch(1)
             val release = java.util.concurrent.CountDownLatch(1)
             val worker = java.util.concurrent.atomic.AtomicReference<Thread>()
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile,
-                imageExtractionMove = { from, to, replace ->
+            val backend = newSettings(fixture, profile = profile,
+                move = { from, to, replace ->
                     if (to.parent.fileName.toString() == "generations" && to.parent.parent.fileName.toString() == profile.id) {
                         worker.set(Thread.currentThread()); entered.countDown()
                         while (release.count > 0) try { release.await() } catch (_: InterruptedException) { }
@@ -451,9 +524,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun actual_session_extracts_complete_resources_on_its_worker_without_enabling_or_saving_and_preserves_a_repeated_enabled_hit() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val backend = newSettings(fixture, profile = profile)
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val before = Files.readAllBytes(fixture.settings)
             VisualAssetSettingsSession(backend).use { state ->
@@ -483,9 +555,8 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun repeated_complete_extraction_reuses_the_same_good_entry_and_rebuilds_a_corrupt_full_generation_without_deleting_it() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val (source, profile) = readOnlyOwnedSource()
+            val backend = newSettings(fixture, profile = profile)
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val saved = Files.readAllBytes(fixture.settings)
             val first = backend.extractOriginalResourcePack(source)
@@ -508,13 +579,12 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun a_corrupted_unmapped_original_after_generation_move_cannot_replace_the_last_complete_ready_or_good_settings() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
+            val (source, profile) = readOnlyOwnedSource()
             var corrupt = false
             var orphan: Path? = null
             var restoreReady: Pair<Path, ByteArray>? = null
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile,
-                imageExtractionMove = { from, to, replace ->
+            val backend = newSettings(fixture, profile = profile,
+                move = { from, to, replace ->
                     moveVisualAtomically(from, to, replace)
                     if (corrupt && to.parent.fileName.toString() == "generations" && to.parent.parent.fileName.toString() == profile.id) {
                         orphan = to
@@ -551,7 +621,7 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun the_complete_package_keeps_the_reviewed_static_image_contract_when_manually_enabled_and_applied_with_its_sound() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, raw) = ownedSource(fixture.root)
+            val (source, raw) = readOnlyOwnedSource()
             val picture = raw.images.images.single()
             val mapping = VisualAssetProfile.parse("""{"schemaVersion":1,"profileId":"owned.complete.static.v1",
                 "identity":{"manifestPath":"game-lib.jar","manifestBytes":${raw.images.jarBytes},"manifestSha256":"${raw.images.jarSha256}"},
@@ -560,8 +630,7 @@ class PcOriginalResourceExtractionTest {
                 "terrainOutputs":{},"unitBindings":{"c_tank":{"body":"tank"},"demo_tank":{"body":"tank"}}}""".toByteArray())
             val images = PcOriginalImageProfile(raw.images.id, raw.images.jarBytes, raw.images.jarSha256, raw.images.images, mapping)
             val profile = PcOriginalResourceProfile(raw.id, images, raw.sounds, raw.events)
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val backend = newSettings(fixture, profile = profile)
             val pack = backend.extractOriginalResourcePack(source)
             PcFrozenResourceInputs.capture(listOf(pack.manifest.parent)).use { inputs ->
                 val proof = assertNotNull(PcOriginalImageContracts.qualify(pack, images,
@@ -594,13 +663,12 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun official_music_is_listed_as_excluded_without_copying_or_registering_it_as_a_sound_effect() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
+            val (source, profile) = mutableOwnedSource(fixture.root)
             val name = "assets/music/starting/owned.ogg"
             Files.createDirectories(source.resolve(name).parent)
             Files.copy(Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).resolve("resource-sound-packs/ogg/clip.ogg"), source.resolve(name))
             val original = Files.readAllBytes(source.resolve(name))
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val backend = newSettings(fixture, profile = profile)
             val pack = backend.extractOriginalResourcePack(source)
             assertEquals(2, pack.sounds.size)
             val proof = JsonReader().parse(Files.readString(pack.manifest.parent.resolve("resource-extraction.json")))
@@ -616,11 +684,10 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun complete_extraction_refuses_extra_audio_even_when_a_valid_ogg_is_renamed_to_an_unrelated_extension() {
         for (extra in listOf("res/raw/extra.ogg", "assets/hidden.bin")) ResourceImagePackApplicationFixture().use { fixture ->
-            val (source, profile) = ownedSource(fixture.root)
+            val (source, profile) = mutableOwnedSource(fixture.root)
             val clip = Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).resolve("resource-sound-packs/ogg/clip.ogg")
             Files.copy(clip, source.resolve(extra))
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val backend = newSettings(fixture, profile = profile)
             val good = backend.prepare(backend.initialSelection); backend.applyPrepared(good)
             val saved = Files.readAllBytes(fixture.settings)
             val error = assertFailsWith<IllegalArgumentException> { backend.extractOriginalResourcePack(source) }
@@ -652,8 +719,7 @@ class PcOriginalResourceExtractionTest {
             val profile = PcOriginalResourceProfile("owned.pc-resources.v1", images, sounds,
                 mapOf("reforge:events/tank-fire" to "res/raw/tank_firing.ogg"))
             val sourceBefore = Files.walk(source).use { files -> files.filter { Files.isRegularFile(it) }.toList().associateWith { Files.readAllBytes(it) } }
-            val backend = PcVisualAssetSettings(fixture.store, fixture.cache, fixture.root,
-                WindowsLaunchOptions.parse(arrayOf("--mode", "demo"), fixture.root), resourceExtractionProfile = profile)
+            val backend = newSettings(fixture, profile = profile)
             backend.applyPrepared(backend.prepare(backend.initialSelection))
             val saved = Files.readAllBytes(fixture.settings)
             val pack = backend.extractOriginalResourcePack(source)
@@ -686,7 +752,7 @@ class PcOriginalResourceExtractionTest {
 
     @Test fun complete_resource_extraction_rejects_unknown_pc_identity_and_preserves_the_applied_good_configuration() {
         ResourceImagePackApplicationFixture().use { fixture ->
-            val backend = fixture.backend()
+            val backend = newSettings(fixture, profile = PcOriginalResourceProfile.bundled())
             val good = backend.prepare(backend.initialSelection)
             backend.applyPrepared(good)
             val saved = Files.readAllBytes(fixture.settings)
@@ -702,27 +768,6 @@ class PcOriginalResourceExtractionTest {
             assertTrue(Files.notExists(fixture.cache.resolveSibling("extracted-original-packs")))
             good.verifyForPublication()
         }
-    }
-
-    private fun ownedSource(root: Path): Pair<Path, PcOriginalResourceProfile> {
-        val source = Files.createDirectories(root.resolve("owned complete source"))
-        for (folder in listOf("assets", "res/raw", "font")) Files.createDirectories(source.resolve(folder))
-        val jar = "Owned complete source qualification, no executable code".toByteArray()
-        Files.write(source.resolve("game-lib.jar"), jar)
-        val picture = BufferedImage(8, 6, BufferedImage.TYPE_INT_ARGB)
-        for (x in 0 until 8) for (y in 0 until 6) picture.setRGB(x, y, 0xff2050a0.toInt())
-        assertTrue(ImageIO.write(picture, "png", source.resolve("assets/picture.png").toFile()))
-        val bytes = Files.readAllBytes(source.resolve("assets/picture.png"))
-        val images = PcOriginalImageProfile("owned.pc-images.v1", jar.size, visualHash(jar), listOf(
-            PcOriginalImageSource("assets/picture.png", bytes.size, visualHash(bytes), "PNG", 8, 6)))
-        val public = Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).resolve("resource-sound-packs")
-        val sounds = listOf("ogg" to "res/raw/tank_firing.ogg", "wav" to "res/raw/unused.wav").map { (kind, path) ->
-            Files.copy(public.resolve("$kind/clip.$kind"), source.resolve(path))
-            val data = Files.readAllBytes(source.resolve(path))
-            PcOriginalSoundSource(path, data.size, visualHash(data), if (kind == "ogg") "OGG_VORBIS" else "PCM16_WAV", 1, 22050)
-        }
-        return source to PcOriginalResourceProfile("owned.pc-resources.v1", images, sounds,
-            mapOf("reforge:events/tank-fire" to "res/raw/tank_firing.ogg"))
     }
 
     private fun await(state: VisualAssetSettingsSession) {

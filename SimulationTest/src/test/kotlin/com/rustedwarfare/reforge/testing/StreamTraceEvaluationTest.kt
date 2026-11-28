@@ -22,7 +22,8 @@ class StreamTraceEvaluationTest {
     @Test
     fun stream_evaluator_and_trace_files_match_pass_rejected_action_untriggered_truncation_and_dual_stream_divergence() {
         val root = Files.createTempDirectory("p014-stream-eval-")
-        val scenario = fixtures.scenario()
+        try {
+            val scenario = fixtures.scenario()
         val contract = fixtures.contract()
         val base = fixtures.controlled()
 
@@ -107,6 +108,9 @@ class StreamTraceEvaluationTest {
         assertEquals(5L, firstDiv.integer("line"))
         assertEquals(3, firstDiv.arrayAt("actualContext").size)
         assertEquals(3, firstDiv.arrayAt("expectedContext").size)
+        } finally {
+            root.toFile().deleteRecursively()
+        }
     }
 
     @Test

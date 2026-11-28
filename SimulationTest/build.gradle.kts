@@ -21,8 +21,11 @@ application {
     mainClass.set("com.rustedwarfare.reforge.testing.MainKt")
     applicationDefaultJvmArgs = listOf(
         "-Xmx512m",
-        "-XX:MaxMetaspaceSize=160m",
+        "-XX:MaxMetaspaceSize=128m",
         "-XX:ReservedCodeCacheSize=64m",
+        "-XX:MaxDirectMemorySize=32m",
+        "-XX:MaxHeapFreeRatio=35",
+        "-XX:MinHeapFreeRatio=15",
     )
 }
 // Windows cmd expands every absolute JAR path before Java starts. Keep deep installs below its line limit.
@@ -52,7 +55,7 @@ gradle.projectsEvaluated {
 tasks.test {
     useJUnitPlatform()
     maxHeapSize = "768m"
-    jvmArgs("-XX:MaxMetaspaceSize=160m", "-XX:ReservedCodeCacheSize=64m")
+    jvmArgs("-XX:MaxMetaspaceSize=160m", "-XX:ReservedCodeCacheSize=160m")
     val configuredForks = providers.gradleProperty("tools.test.maxParallelForks")
         .orElse(providers.systemProperty("tools.test.maxParallelForks"))
         .map { it.toInt().coerceAtLeast(1) }
