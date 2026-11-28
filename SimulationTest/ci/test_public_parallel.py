@@ -122,16 +122,15 @@ OS: Linux
             case = dict(id='probe', kind='short', suite='production-combat', backend='session')
             raw = dict(id='probe', kind='short', status='passed', startedUnix=1, endedUnix=2,
                        archive=dict(id='probe', kind='short', path='/actual/archive'),
-                       commands=[dict(name=name, exitCode=0, firstError=None)
-                                 for name in ('probe', 'probe-recompare')])
+                       commands=[dict(name='probe', exitCode=0, firstError=None)])
             payload = dict(status='passed', firstError=None, requestedWorkers=4, peakRunning=1, items=[raw])
             with zipfile.ZipFile(archive, 'w') as output:
                 output.writestr('scenario-execution.json', json.dumps(payload))
             bundle = dict(shards={'production-1': [case]})
             receipt['coverage'] = dict(scenarios=[dict(id='probe', kind='short', suite='production-combat',
-                status='passed', elapsedSeconds=1, archive=raw['archive'], commands=['probe','probe-recompare'])])
+                status='passed', elapsedSeconds=1, archive=raw['archive'], commands=['probe'])])
             inspect_raw_evidence(archive, digest(archive), receipt, bundle)
-            raw['commands'].pop()
+            raw['commands'].append(dict(name='probe-recompare', exitCode=0, firstError=None))
             with zipfile.ZipFile(archive, 'w') as output:
                 output.writestr('scenario-execution.json', json.dumps(payload))
             with self.assertRaises(ValueError):
@@ -223,7 +222,7 @@ OS: Linux
             for shard, cases in bundle['shards'].items():
                 scenarios = [dict(suite=c['suite'], id=c['id'], kind=c['kind'], status='passed',
                                   elapsedSeconds=1.0,
-                                  commands=[c['id']] + ([c['id']+'-recompare'] if c.get('backend') == 'session' or c.get('recompare') else []),
+                                  commands=[c['id']] + ([c['id']+'-recompare'] if c.get('recompare') else []),
                                   archive=dict(id=c['id'], kind=c['kind']))
                              for c in cases]
                 row = dict(identity=identity, planSha256=plan_sha, toolchain=bundle['toolchain'],
@@ -338,7 +337,7 @@ OS: Linux
                     cases = bundle['shards'][shard]
                     cov = dict(scenarios=[dict(suite=c['suite'], id=c['id'], kind=c['kind'], status='passed',
                                                elapsedSeconds=1.0,
-                                               commands=[c['id']] + ([c['id']+'-recompare'] if c.get('backend') == 'session' or c.get('recompare') else []) + ([c['id']+'-assertions'] if c.get('archiveAssertions') else []),
+                                               commands=[c['id']] + ([c['id']+'-recompare'] if c.get('recompare') else []) + ([c['id']+'-assertions'] if c.get('archiveAssertions') else []),
                                                archive=dict(id=c['id'], kind=c['kind'])) for c in cases])
                     gradle_val = None
                 row = dict(identity=identity, planSha256=plan_sha, toolchain=base_tools,

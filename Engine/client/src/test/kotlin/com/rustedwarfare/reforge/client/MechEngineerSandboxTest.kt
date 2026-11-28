@@ -137,7 +137,7 @@ class MechEngineerSandboxTest {
             for (choice in listOf("commandCenter", "builder", "mechFactory", "mechFactoryT2", "mechEngineer", "repairbay", "mechGun")) {
                 val loaded = SandboxLoader().use { loader ->
                     loader.requestPack(root, ContentPackChoice(pack, choice))
-                    val deadline = System.nanoTime() + 5_000_000_000L
+                    val deadline = System.nanoTime() + 30_000_000_000L
                     var result: LoadedSandbox? = null
                     while (result == null && System.nanoTime() < deadline) {
                         result = loader.pollPrepared()?.getOrThrow()

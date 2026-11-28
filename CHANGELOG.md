@@ -1,5 +1,159 @@
 # Changelog
 
+## v0.6.13 (2026-11-29 00:08)
+
+### 修复
+
+- **本地快筛工具单测云端环境变量解耦（`quick_test.py` / `test_quick_test.py`）**：修复在云端 GitHub Actions（`GITHUB_ACTIONS=true`）环境中运行 `test_quick_test.py` 时，因 `build_plan` 自动走入云端直通分支而与原本校验本地跨模块 `<= 8` 常驻测试子 JVM 分配池（如 `core + pc -> 7 + 1`）的断言发生隐式环境耦合失败的问题；为 `build_plan` 补充可选显式 `cloud` 参数（默认仍读取 `GITHUB_ACTIONS` 保持真实 CLI 行为不变），并在 `test_quick_test.py` 中分别显式校验 `cloud=False` 本地封顶池与 `cloud=True` 云端分支。
+
+### 技术
+
+- **双环境单测与定向复核核验**：在 `GITHUB_ACTIONS=true` 与未设置双环境下实跑 `test_quick_test.py`（`9/9`）及 `SimulationTest/ci` 全套单测（`78/78`）均 100% 通过，工作树布局校验通过，经原独立非作者终审子代理 R02 定向复核 `APPROVE`（0 必修、0 建议）。
+
+---
+
+## v0.6.12 (2026-11-28 23:49)
+
+### 新增
+
+- **Core 与 Session 常驻批量场景 Worker 及共享进程池（`Main` / `PlatformSessionRunner` / `BatchScenarioWorker` / `public_scenarios.py` / `public_batch.py`）**：新增独占原始标准输出描述符的 JSON 行协议常驻执行器 `BatchScenarioWorker`（支持 `core-run`、`core-compare`、`core-assertions`、`session-run` 四类命令及每任务独立捕获标准输出/错误日志文件，100% 保留原有单次 `run` / `compare` / `scene` CLI 参数与退出码兼容），并在 `public_scenarios.py` 实装批次级共享有界进程池 `PersistentScenarioWorkerPool`（每槽位配对常驻 `-Xmx512m` JVM 与 GIL 隔离的 `--session-eval-worker` Python 评估协进程、满 `25` 条优雅轮换重启、单条超时进程树强杀与槽位自动恢复、首错早停、热态 LPT 优先级槽位调度及超阈值空闲堆整理），消除公开短测与连续长测的百余次 JVM 冷启动与重复 JIT 开销。
+
+### 架构改进
+
+- **Session 公开场景只读零拷贝输入与冗余外部二次比较收敛（`platform_scenario.py` / `public_scenarios.py` / `public_parallel.py`）**：在 `platform_scenario.py` 新增 `--read-only-inputs` 及分阶段工作区准备/封签接口，直接只读消费已锁定的公开输入树并在运行前后完整计算与复核 `inputFiles` 字节级 SHA-256（省去百余次零碎小文件 `shutil.copytree`）；鉴于会话执行收尾已完整运行 `compare_archive_locked` 校验，移除 `public_scenarios.py` 对已通过会话归档重复拉起的第 2 个外部 `platform_scenario.py compare` 子进程，同步对齐 `public_parallel.py` 的 `scenario_commands` 分片汇总预期并完整保留独立 `compare` CLI 入口。
+- **Core 采集序列化与归档刷盘热路径降耗（`CoreAdapter` / `RunArchive` / `Runner` / `JsonIO`）**：在单局 `CoreAdapter` 实例内按观察者安全复用未发生修订变化的不可变视野快照 `JsonObject` 与网格坐标键，取消 `RunArchive.write` 逐行同步 `flush()` 并在 `Runner` 流式终判前与写完 `run-end` 计算清单哈希前显式刷盘，同时切换 `HexFormat` 64 KB 流式摘要缓冲与按 `(path, size, mtimeMillis)` 缓存工具 JAR 身份哈希，在不改变任何归档 JSON 字节的前提下降低长链采集开销。
+
+### 调整
+
+- **三格式串行巨型单测按格式拆类与桌面提取测试共享只读源夹具**：将 `PhaseSixASandboxTest`（拆为 `PhaseSixA{,Json,Hjson}SandboxTest` 共 3 类）、`PhaseFiveSandboxTest`（拆为 `PhaseFive{,Json,Hjson,Mixed}SandboxTest` 共 4 类）与 `NavalProductionArchiveTest`（拆为 `NavalProductionArchive{,Json,Hjson}Test` 共 3 类，通过同批次原子汇合文件保持跨格式规范化轨迹一致性校验）拆分为独立测试类并发执行（断言与模拟步数 100% 保留），同步注册至 `production-combat.json`；为串行桌面模块慢类 `PcOriginalResourceExtractionTest` 与 `PcOriginalImageExtractionTest` 提取 `@BeforeAll` 类级只读共享源夹具与共享可信产物索引（所有修改源目录的测试均走独立可变副本，各 `@Test` 保持独立 `store` / `cache` / 输出临时目录）。
+- **测试子 JVM 代码缓存对齐与本地共享构建守护进程复用**：将 `Engine` 各模块与 `SimulationTest`（含 `development_tests.gradle`）JUnit 测试子 JVM 的 `-XX:ReservedCodeCacheSize` 统一提升至 `160m` 以消除多类同进程下的分段代码缓存耗尽，本地 `build_shared_distribution` 默认复用热驻 `--daemon`（云端 `GITHUB_ACTIONS=true` 保持 `--no-daemon`），并支持 `--scenario-workers 6` 及 `long` 层跨套件并发共享常驻池。
+
+### 技术
+
+- **常驻批跑一致性对拍、全量耗时/内存硬指标与跨端构建核验**：新增 `BatchScenarioWorkerParityTest`（实跑覆盖多格式 Core 场景、建造失败、契约违背及多内容包 Session 场景的“独立冷进程逐跑 vs 常驻批量 Worker 两轮固定种子乱序混跑”完整规范化轨迹 SHA-256 对拍与 `sessionOnly` 隔离恢复）并扩展 `test_platform_session_cli.py`（覆盖进程池满上限轮换、超时强杀恢复、独立 `compare` 同统计量篡改拦截与首错早停），同步将 `StreamTraceEvaluationTest` 与 `BatchScenarioWorkerParityTest` 注册入 `tooling.json` 并顺手收口 `workflow.py` 孤儿锁二次状态检查；`SimulationTest/ci` 全集（`78/78`）、`test_platform_scenario.py`（`55/55`）、`test_platform_session_cli.py`（`4/4`）、`quick_test.py --dev-ab`（`12/12`）及 `:android:compileDebugKotlin :android:compileDebugUnitTestKotlin :pc:installDist` 全部通过；本机实跑全量 `public_batch.py --kind pr`（7 套机制 + 163 条公开短测 `passed`，整批墙钟 `559.08s`、其中 163 条短测合计 `72.65s`，主机内存最大净增量 `7.127 GB`、单场景 Worker 峰值工作集 `553.76 MB`）与 `public_batch.py --kind long`（4 套 `33/33` 条连续长测 `passed`，33 条场景墙钟跨度 `113.10s`、整批含重编 `156.95s`，主机内存最大净增量 `3.589 GB`、单场景 Worker 峰值工作集 `506.35 MB`），双根 `workspace_layout.py` 与文档治理检查全绿，经全新上下文独立非作者代码与契约终审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/BatchScenarioWorker.kt` | **新增** — JSON 行协议常驻批量场景 Worker（含逐任务日志隔离与超阈值空闲堆整理） |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/Main.kt` | 接入 `batch-worker` / `--batch` 常驻模式并保持原单次 CLI 兼容 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/PlatformSessionRunner.kt` | 接入 `--batch-worker` / `--batch` 会话常驻模式并保持位置参数 CLI 兼容 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/PublicArchiveAssertions.kt` | 提取可由常驻 Worker 复用的 `runPublicArchiveAssertions` 入口 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/CoreAdapter.kt` | 单局按观察者安全复用未变更的不可变视野快照 `JsonObject` 与坐标键 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/RunArchive.kt` | 移除逐行同步 `flush()` 以消除十万级小块同步写盘 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/Runner.kt` | 在流式终判与封签计算哈希前显式 `archive.flush()` 并按文件统计量缓存 JAR 哈希 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/JsonIO.kt` | 复用不可变布尔/小整数 `JsonPrimitive` 并升级 `HexFormat` 64 KB 流式哈希缓冲 |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/BatchScenarioWorkerParityTest.kt` | **新增** — 冷进程逐跑对常驻 Worker 乱序混跑规范化轨迹一致性对拍与隔离恢复单测 |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/StreamTraceEvaluationTest.kt` | 补齐临时测试目录 `finally` 确定性清理 |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/NavalProductionArchive{,Json,Hjson}Test.kt` | 将三格式海军生产归档测试拆为 3 个独立并发测试类并保持同批次跨格式汇合对拍 |
+| `SimulationTest/tools/platform_scenario.py` | 新增 `--read-only-inputs`、分阶段会话准备/封签接口与 GIL 隔离 `--session-eval-worker` |
+| `SimulationTest/tools/test_platform_session_cli.py` | 新增只读输入篡改拦截、独立 `compare`、常驻池轮换、超时强杀恢复与首错早停单测 |
+| `SimulationTest/tools/workflow.py` | 补齐孤儿锁回收二次读取的 `writing` 状态守卫 |
+| `SimulationTest/ci/public_scenarios.py` | 实装 `PersistentScenarioWorkerPool`、优先级槽位队列、热态 LPT 权重并移除会话二次外部 `compare` |
+| `SimulationTest/ci/public_batch.py` | 支持批次级共享常驻场景池、`long` 层跨套件并发调度与 `pr/long` 分化默认并发路数 |
+| `SimulationTest/ci/public_check.py` | 支持 `--scenario-workers 6`、本地热驻 `--daemon` 构建及受控透传锁与独立日志流 |
+| `SimulationTest/ci/public_parallel.py` | 对齐 `scenario_commands`（仅显式 `recompare` 场景包含 `-recompare`） |
+| `SimulationTest/ci/development_tests.gradle` | 将机制测试子 JVM `ReservedCodeCacheSize` 对齐至 `160m` |
+| `SimulationTest/ci/test_public_{batch,check,parallel}.py` | 同步常驻池闭包、`--scenario-workers 6` 与会话命令列表契约单测 |
+| `SimulationTest/public/suites/{production-combat,tooling}.json` | 注册拆类后的海军归档测试类及流式/常驻对拍工具单测类 |
+| `SimulationTest/build.gradle.kts` | 收敛场景默认元空间/直接内存参数并将 `:test` 代码缓存上限提至 `160m` |
+| `Engine/{core,client,pc}/build.gradle.kts` | 将各模块测试子 JVM `ReservedCodeCacheSize` 统一提至 `160m` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/PhaseSixA{,Json,Hjson}SandboxTest.kt` | 将六期 A 三格式沙盒测试拆为 3 个独立并发测试类（零删减覆盖） |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/PhaseFive{,Json,Hjson,Mixed}SandboxTest.kt` | 将五期四变体 15,000 步沙盒长链测试拆为 4 个独立并发测试类（零删减覆盖） |
+| `Engine/pc/src/test/kotlin/com/rustedwarfare/reforge/pc/{PcOriginalResourceExtractionTest,PcOriginalImageExtractionTest,ResourceImagePackApplicationFixture}.kt` | 提取 `@BeforeAll` 类级只读共享源夹具与共享可信产物索引并保持每测试独立输出缓存 |
+
+---
+
+## v0.6.11 (2026-11-28 20:02)
+
+### 新增
+
+- **Gradle 跨模块并发调度池与单模块测试子 JVM 解耦（`development_tests.gradle` / `public_check.py` / `development_check.py` / `public_batch.py` / `quick_test.py`）**：解除 `gradle.startParameter.maxWorkerCount == testForks` 硬捆绑，新增有界 `--gradle-workers`（`1..16`）参数与 `allocate_module_test_forks` 跨模块内存池分配器；`:pc:test` 全链路保持 `maxParallelForks == 1` 串行不变，云端 `GITHUB_ACTIONS=true` 与低核环境保持既有行为不超配，本地多核环境下准备构建默认并行扩展至最多 `12` 路、机制测试跨模块常驻子 JVM 总和严格封顶 `<= 8`（如 4 模块同跑配 `core=3, client=2, tools=2, pc=1`），同步扩展 `effective.json` 与 `collect_tests` 交叉校验契约。
+
+### 架构改进
+
+- **分层源码与分发包防篡改身份校验（`public_distribution.py` / `public_check.py` / `development_check.py` / `public_batch.py`）**：保留批次启动与批次/独立运行收口时的完整字节级 SHA-256 守卫（覆盖全仓公开源码闭包、编译产物、`distribution` 成员及独立包 `final-package` 终检），将同批中间步骤与逐场景外围重扫收敛为基于 `os.scandir` 的 `(path, size, mtime_ns)` 快速元数据快照、每套件首次字节验包及当前场景直接输入文件精确字节 SHA-256 校验，并在全路径显式拦截符号链接与 Windows 目录联接（Junction），在完整保留同长度同时间戳篡改检测能力的同时大幅消除全仓重复扫盘开销。
+
+### 调整
+
+- **异步沙盒与设置准备超时上限统一放宽至 30 秒**：将 `PlatformSessionRunner` 默认加载等待上限及 `Engine/client`、`SimulationTest` 测试套件中 34 处硬编码 `5s` 异步准备轮询截止时间统一提升至 `30s`，消除高并发磁盘 I/O 瞬时抖动诱发的假阴性超时。
+- **消除 Python CI 单测临时仓库空文件风暴**：重构 `test_public_check.py`、`test_development_check.py` 与 `test_public_batch.py` 的临时仓库构造夹具，以最小合法合成闭包替代逐测试循环创建与哈希数千个空文件，在完整保留真实 CLI 与子进程超时/防篡改断言的前提下将 41 项 Python 机制段墙钟压降至 `10.69s`。
+
+### 技术
+
+- **跨模块真并行、分层防篡改与主机内存预算实测核验**：补充符号链接与目录联接拒绝、独立包同统计量篡改收口拦截、跨模块常驻子 JVM 总和 `<= 8` 封顶及 `selection.json` 交叉校验单测；`SimulationTest/ci` 全集（`78/78`，其中 `test_public_check.py` 降至 `7.35s`）与 `test_quick_test.py`（`9/9`）全绿，实跑全量 `public_batch.py --kind pr --scenario-workers 4` 全 7 套机制与 163 条公开短测 `passed`（批次级外围校验总耗时降至 `14.41s`，主机物理内存最大净增量 `5.996 GB`，Daemon 子进程与单场景进程内存均严格受控），双根 `workspace_layout.py` 全绿，经全新上下文独立非作者整审与 R02 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `SimulationTest/ci/development_tests.gradle` | 解耦 `gradleWorkers` 与模块 `maxParallelForks`，写出 `moduleMaxParallelForks` 并锁死 `:pc:test` 串行 |
+| `SimulationTest/ci/public_distribution.py` | 新增 `os.scandir` 元数据快照、`verify_fast` 及符号链接/目录联接拦截 |
+| `SimulationTest/ci/public_check.py` | 实装跨模块 `<= 8` 常驻测试子 JVM 分配器、分层身份校验、独立包终检与链接拦截 |
+| `SimulationTest/ci/development_check.py` | 支持 `--gradle-workers`、固定源码快照透传及 `effective.json` / `selection.json` 严格整型交叉校验 |
+| `SimulationTest/ci/public_batch.py` | 支持 `--gradle-workers`、首尾全量字节 SHA-256 + 中间快速快照及 `identityChecks` 分项计时 |
+| `SimulationTest/build.gradle.kts` | 为 `:test` 任务补充 `tools.test.maxParallelForks` 属性透传 |
+| `SimulationTest/tools/quick_test.py` | 新增 `--gradle-workers` 并统一 `allocate_module_test_forks` 跨模块内存池规则 |
+| `SimulationTest/tools/test_quick_test.py` | 新增 `--gradle-workers` 边界与跨模块子 JVM 池一致性单测 |
+| `SimulationTest/ci/test_public_check.py` | 消除空文件风暴并新增符号链接/目录联接拦截与同统计量独立包篡改终检单测 |
+| `SimulationTest/ci/test_development_check.py` | 消除空文件风暴并新增跨模块池封顶、云端兼容与布尔/配置不匹配拒绝单测 |
+| `SimulationTest/ci/test_public_batch.py` | 消除空文件风暴并保持真实子进程超时与批次失败收据校验 |
+| `SimulationTest/ci/test_public_distribution.py` | 新增 `verify_fast` 元数据篡改与链接拦截单测 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/PlatformSessionRunner.kt` | 将默认沙盒加载超时上限放宽至 `30s` |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/*.kt` | 将 `MechCoreAdapterTest` 与 `NamedWeaponCoreAdapterTest` 异步加载等待上限放宽至 `30s` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/*.kt` | 将客户端 32 个沙盒与资源会话测试文件的异步准备等待上限统一放宽至 `30s` |
+
+---
+
+## v0.6.10 (2026-11-28 18:20)
+
+### 新增
+
+- **跨工作树主机级重型验证排队锁与孤儿锁自动回收（`workflow.py` / `public_batch.py` / `public_check.py` / `development_check.py`）**：新增固定落位于系统临时目录的主机级全局互斥锁 `host:heavy-verification` 及 `--lock-wait-seconds` 参数（默认排队等待 `1800s`、传 `0` 立即拒绝），结合跨平台 `(pid, processCreateTime)` 进程存活核验与 `.stale` 原子重命名安全回收已退出进程及 PID 复用遗留孤儿锁，消除多工作树重型验证批次静默叠加导致的物理内存耗尽。
+
+### 架构改进
+
+- **Core 轨迹采集与双流比较流式化（`RunArchive` / `Runner` / `TraceComparator` / `TraceFiles` / `NautilusTraceValidator` / `NuclearTraceValidator`）**：移除 `RunArchive.records` 全历史帧 `JsonObject` 强引用列表与 `Runner` 尾记录拼接全量拷贝，实装单遍流式评估器 `StreamEvaluator`、单拍延迟状态机 `StreamTraceValidator`、`BodyValidatorSession` 与双流同步逐行归档比对（失败时按行号经 `extractDivergenceWindow` 局部回读上下文窗口），将 15,000+ 步连续长测的比较堆驻留从线性增长降为常数窗口，完整保持 6 层错误优先级、退出码（`0 / 2 / 3 / 4 / 64`）、`comparison/result.json` 结构与开放 `Action` / `UnitTask` 校验规则。
+- **Session 诊断归档流式扫描与单次流偏移索引（`platform_scenario.py`）**：新增 `iter_jsonl_records` 与基于 `ExitStack` 单次打开流构建紧凑偏移数组的 `JsonlRecordSequence`（配单遍 SHA-256 校验与有界 LRU 解析缓存），消除 `client-diagnostic.jsonl` 全文一次性展开为字典列表的高内存峰值，保持防 TOCTOU 单次打开审计与锚点/契约判定语义不变。
+
+### 调整
+
+- **全链路测试 JVM 与构建守护进程显式内存封顶**：为 `SimulationTest` 启动脚本配置默认 `-Xmx512m -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=64m`（置于 `SIMULATION_TEST_OPTS` 之前以保留外部显式覆盖能力），将 `Engine` 与 `SimulationTest` 各模块 JUnit 测试子 JVM 默认上限统一设为 `-Xmx768m`，并将双根 Gradle 与 Kotlin Daemon 堆上限收敛至 `-Xmx1536m` / `-Xmx2g`。
+
+### 技术
+
+- **流式等价性、主机排队锁与 `-Xmx512m` 全量长测内存实测核验**：新增 `StreamTraceEvaluationTest`（含反射校验 `RunArchive` 零集合驻留及流式正反例）、`test_workflow.py` 跨工作树排队与死 PID / PID 复用锁回收单测及 `JsonlRecordSequence` 缓存上限单测；全套工具链 JUnit 与 Python 单测全绿，默认 `-Xmx512m` 实跑 `public_batch.py --kind long --scenario-workers 4` 全量 `33/33` 条连续长测零 OOM 通过（单 `simulation-test` 进程峰值工作集降至 `608.69 MB`，较此前降幅约 `89%`），会话流式归档经无损压缩校验通过，双根 `workspace_layout.py` 全绿，经全新上下文独立非作者整审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/RunArchive.kt` | 移除全历史 `records` 列表驻留并补充 `flush()` |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/Runner.kt` | 改为逐帧流式喂入 `StreamEvaluator` 并隔离 `captureArchive` 与 `comparison` 阶段计时 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceComparator.kt` | 实装 `StreamEvaluator`、`StreamTraceValidator`、双流 `evaluateSources` 与局部差异窗口回读 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceFiles.kt` | 新增流式 `TraceSource`、双流同步 `verifyArchive` 与尾记录流拼接 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/NautilusTraceValidator.kt` | 提取逐帧有状态 `Session` 消除整局列表依赖 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/NuclearTraceValidator.kt` | 提取逐帧有状态 `Session` 消除整局列表依赖 |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/StreamTraceEvaluationTest.kt` | **新增** — 流式轨迹评估等价性、错误优先级、开放任务校验与零历史驻留单测 |
+| `SimulationTest/tools/platform_scenario.py` | 新增 `iter_jsonl_records` 与单次流偏移索引 `JsonlRecordSequence` |
+| `SimulationTest/tools/test_platform_scenario.py` | 新增 `JsonlRecordSequence` 有界缓存、随机切片与截断尾行拒绝单测 |
+| `SimulationTest/tools/workflow.py` | 新增 `host:heavy-verification` 排队锁、`(pid, processCreateTime)` 核验与孤儿锁原子回收 |
+| `SimulationTest/tools/test_workflow.py` | 新增跨工作树排队、快速失败与死 PID / PID 复用锁回收单测 |
+| `SimulationTest/ci/public_batch.py` | 接入主机级重型验证锁与 `--lock-wait-seconds` 参数 |
+| `SimulationTest/ci/public_check.py` | 接入主机级重型验证锁与 `--lock-wait-seconds` 参数 |
+| `SimulationTest/ci/development_check.py` | 支持受控透传主机级重型验证锁与排队等待超时 |
+| `SimulationTest/ci/test_public_batch.py` | 新增 `--lock-wait-seconds` 边界参数校验单测 |
+| `SimulationTest/build.gradle.kts` | 配置应用默认 `-Xmx512m`、测试子 JVM `-Xmx768m` 并透传 `repo.root` |
+| `SimulationTest/ci/development_tests.gradle` | 统一机制测试子 JVM 堆与元空间上限为 `768m` / `160m` |
+| `SimulationTest/gradle.properties` | 收敛 Gradle / Kotlin Daemon 堆上限至 `-Xmx1536m` / `-Xmx2g` |
+| `Engine/gradle.properties` | 收敛 Gradle / Kotlin Daemon 堆上限至 `-Xmx1536m` / `-Xmx2g` |
+| `Engine/core/build.gradle.kts` | 统一核心模块测试子 JVM 堆与元空间上限为 `768m` / `160m` |
+| `Engine/client/build.gradle.kts` | 统一客户端模块测试子 JVM 堆与元空间上限为 `768m` / `160m` |
+| `Engine/pc/build.gradle.kts` | 统一桌面模块测试子 JVM 堆与元空间上限为 `768m` / `160m` |
+
+---
+
 ## v0.6.9 (2026-11-28 16:15)
 
 ### 修复

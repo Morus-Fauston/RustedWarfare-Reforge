@@ -199,6 +199,106 @@ class WorkflowChecks(unittest.TestCase):
             self.assertEqual(json.loads((root/'attempt/stdout.log').read_text()), args)
             self.assertEqual(json.loads((root/'attempt/result.json').read_text())['exitCode'], 7)
 
+    def test_host_heavy_lock_queues_across_worktrees_refuses_zero_wait_and_cleans_dead_or_reused_pids(self):
+        import os
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+
+        with tempfile.TemporaryDirectory(prefix='rw-host-lock-') as temp:
+            lock_root = Path(temp) / 'rw-reforge-workflow-locks'
+            lock_root.mkdir()
+            lock_file = lock_root / 'host-heavy-verification.lock'
+            with patch.object(workflow.tempfile, 'gettempdir', return_value=temp):
+                # 1. Dead PID orphan lock is cleaned up and taken over automatically
+                lock_file.write_text(json.dumps({
+                    'resource': workflow.HOST_HEAVY_LOCK,
+                    'pid': 99999999,
+                    'processCreateTime': 123456789,
+                    'cwd': 'D:/dead-worktree',
+                    'startedUnix': time.time() - 60,
+                }), encoding='utf-8')
+                with workflow.resources([workflow.HOST_HEAVY_LOCK], wait_seconds=0):
+                    active_record = json.loads(lock_file.read_text(encoding='utf-8'))
+                    self.assertEqual(os.getpid(), active_record['pid'])
+                    self.assertIsNotNone(active_record['processCreateTime'])
+                self.assertFalse(lock_file.exists())
+
+                # 2. Reused PID (live PID, mismatched processCreateTime) is cleaned up safely
+                my_ctime = workflow.process_create_time(os.getpid())
+                lock_file.write_text(json.dumps({
+                    'resource': workflow.HOST_HEAVY_LOCK,
+                    'pid': os.getpid(),
+                    'processCreateTime': (my_ctime or 0) + 1,
+                    'cwd': 'D:/reused-pid-worktree',
+                    'startedUnix': time.time() - 60,
+                }), encoding='utf-8')
+                with workflow.resources([workflow.HOST_HEAVY_LOCK], wait_seconds=0):
+                    reclaimed = json.loads(lock_file.read_text(encoding='utf-8'))
+                    self.assertEqual(my_ctime, reclaimed['processCreateTime'])
+
+                # 3. Live owner is never deleted; wait_seconds=0 immediately raises Resource occupied
+                child_script = (
+                    'import sys, time, workflow\n'
+                    'from unittest.mock import patch\n'
+                    f'with patch.object(workflow.tempfile, "gettempdir", return_value={temp!r}):\n'
+                    '    with workflow.resources([workflow.HOST_HEAVY_LOCK, "build:D:/wt-a/Engine"], wait_seconds=0):\n'
+                    '        print("LOCKED", flush=True)\n'
+                    '        time.sleep(0.6)\n'
+                )
+                holder = subprocess.Popen(
+                    [sys.executable, '-B', '-c', child_script],
+                    cwd=Path(workflow.__file__).parent,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                try:
+                    self.assertEqual('LOCKED', holder.stdout.readline().strip())
+                    with self.assertRaisesRegex(ValueError, 'Resource occupied: host:heavy-verification'):
+                        with workflow.resources([workflow.HOST_HEAVY_LOCK, 'build:D:/wt-b/Engine'], wait_seconds=0):
+                            self.fail('wait_seconds=0 must refuse immediately')
+                    holder_released_before = time.monotonic()
+                    with workflow.resources([workflow.HOST_HEAVY_LOCK, 'build:D:/wt-b/Engine'], wait_seconds=5):
+                        acquired_at = time.monotonic()
+                    self.assertEqual(0, holder.wait(timeout=5))
+                    self.assertGreaterEqual(acquired_at - holder_released_before, 0.2)
+                finally:
+                    if holder.poll() is None:
+                        holder.kill()
+                        holder.wait(timeout=5)
+                    if holder.stdout:
+                        holder.stdout.close()
+                    if holder.stderr:
+                        holder.stderr.close()
+
+                # 4. Two distinct worktrees requesting host:heavy-verification serialize with zero overlap
+                worker_prog = (
+                    'import json, sys, time, workflow\n'
+                    'from unittest.mock import patch\n'
+                    'wt = sys.argv[1]\n'
+                    f'with patch.object(workflow.tempfile, "gettempdir", return_value={temp!r}):\n'
+                    '    with workflow.resources([workflow.HOST_HEAVY_LOCK, "build:" + wt], wait_seconds=10):\n'
+                    '        s = time.monotonic(); time.sleep(0.25); e = time.monotonic()\n'
+                    '        print(json.dumps({"wt": wt, "start": s, "end": e}), flush=True)\n'
+                )
+                def launch(wt):
+                    proc = subprocess.run(
+                        [sys.executable, '-B', '-c', worker_prog, wt],
+                        cwd=Path(workflow.__file__).parent,
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                    self.assertEqual(0, proc.returncode, proc.stderr)
+                    return json.loads(proc.stdout.strip())
+
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    first, second = sorted(
+                        pool.map(launch, ['D:/wt-one', 'D:/wt-two']),
+                        key=lambda r: r['start'],
+                    )
+                self.assertGreaterEqual(second['start'], first['end'] - 0.01)
+
 
 if __name__ == '__main__':
     unittest.main()

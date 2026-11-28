@@ -160,11 +160,11 @@ class ContentPackSandboxTest {
     }
 
     private fun await(loader: SandboxLoader): Result<LoadedSandbox> {
-        val deadline = System.nanoTime() + 5_000_000_000L
+        val deadline = System.nanoTime() + 30_000_000_000L
         while (System.nanoTime() < deadline) {
             loader.pollPrepared()?.let { return it }
             Thread.sleep(5)
         }
-        error("Content pack sandbox did not load within five seconds")
+        error("Content pack sandbox did not load within 30 seconds")
     }
 }

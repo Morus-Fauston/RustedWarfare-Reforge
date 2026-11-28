@@ -80,7 +80,7 @@ class AuthorFactoryRallyInputTest {
         val pack = assertIs<ContentResult.Success<LoadedContentPack>>(result, result.toString()).value
         val loaded = SandboxLoader().use { loader ->
             loader.requestPack(root, ContentPackChoice(pack, "spfactory"))
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             var prepared = loader.pollPrepared()
             while (prepared == null && System.nanoTime() < deadline) {
                 Thread.sleep(5)

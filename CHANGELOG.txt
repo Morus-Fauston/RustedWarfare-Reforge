@@ -1,3 +1,33 @@
+v0.6.13 (2026-11-29 00:08)
+  修复: 为 quick_test.build_plan 补充可选显式 cloud 参数（默认仍读取 GITHUB_ACTIONS 保持 CLI 行为不变），并在 test_quick_test.py 中分别显式断言 cloud=False 本地跨模块 <= 8 常驻子 JVM 池与 cloud=True 云端直通分支，消除云端 GITHUB_ACTIONS=true 环境变量引发的单测断言耦合
+  技术: 在 GITHUB_ACTIONS=true 与本地双环境下通过 test_quick_test.py（9/9）与 SimulationTest/ci 全集（78/78）及布局检查，经原独立非作者终审子代理 R02 定向复核 APPROVE（0 必修）
+
+====
+
+v0.6.12 (2026-11-28 23:49)
+  新增: 为 Main 与 PlatformSessionRunner 新增 JSON 行协议常驻批量场景执行器 BatchScenarioWorker 并在 public_scenarios.py / public_batch.py 实装批次级共享常驻进程池 PersistentScenarioWorkerPool（支持 core-run / core-compare / core-assertions / session-run 四类任务、单槽位 GIL 隔离的 --session-eval-worker 评估协进程、满 25 条优雅轮换重启、单条超时进程树强杀恢复、首错早停、热态 LPT 优先级派发及超阈值空闲堆整理，100% 保留原单次 CLI 兼容）
+  架构改进: 在 platform_scenario.py 新增 --read-only-inputs 零拷贝公开输入模式（运行前后完整复核全文件字节级 SHA-256，省去逐局整树拷贝），并移除 public_scenarios.py 对已通过内部锁定比较的会话归档额外拉起的第二次外部 compare 子进程（同步对齐 public_parallel.py 预期命令列表并保留独立 compare CLI） / 在 CoreAdapter 按观察者安全复用单局不可变视野快照 JsonObject、取消 RunArchive 逐行同步刷盘改为评估与封签前显式 flush 并优化十六进制摘要缓冲
+  调整: 将 PhaseSixASandboxTest（拆为 3 类）、PhaseFiveSandboxTest（拆为 4 类）与 NavalProductionArchiveTest（拆为 3 类，含同批次跨格式轨迹汇合对拍）按格式拆解为独立并发测试类（零删减覆盖），为 PcOriginalResourceExtractionTest 与 PcOriginalImageExtractionTest 提取 @BeforeAll 只读共享源夹具，并将各模块 JUnit 测试子 JVM ReservedCodeCacheSize 统一提至 160m、本地共享分发构建默认复用热驻 Gradle Daemon
+  技术: 新增 BatchScenarioWorkerParityTest（覆盖多格式 Core 与多包 Session 冷跑基线对常驻乱序批跑完整规范化轨迹对拍及 sessionOnly 隔离恢复）并扩展 test_platform_session_cli.py（覆盖进程池轮换、超时强杀恢复、只读篡改拦截与首错早停）且注册入 tooling 套件；CI 与工具单测、dev-ab 微基准、Android Debug 与桌面安装包编译、双根布局与文档治理检查全绿，本机全量 public-pr 与 33/33 条 public-long 实跑 100% 通过（短测总耗时降至 72.65s、长测 33 条墙钟跨度降至 113.10s / 整批 156.95s，主机内存净增量峰值 <= 7.13 GB、单场景 Worker 峰值工作集 <= 553.76 MB），经全新上下文独立非作者终审 APPROVE（0 必修）
+
+====
+
+v0.6.11 (2026-11-28 20:02)
+  新增: 解耦 --gradle-workers（1..16）与单模块 maxParallelForks 并实装跨模块 <= 8 常驻测试子 JVM 分配池（保持 :pc:test 串行与 GITHUB_ACTIONS=true 云端兼容，本地准备构建默认扩至最多 12 路，同步扩展 effective.json 与 selection.json 交叉校验）
+  架构改进: 建立批次首尾全量字节 SHA-256 + 中间 os.scandir 元数据快照 + 逐场景直接输入精确字节 SHA-256 的分层防篡改校验（补齐独立模式 final-package 字节终检并全路径拦截符号链接与目录联接）
+  调整: 将 PlatformSessionRunner 及客户端与测试模块 34 处异步沙盒准备等待上限由 5s 统一放宽至 30s / 重构 Python CI 单测最小合成仓库夹具消除数千空文件创建风暴
+  技术: 补充链接注入、同统计量篡改终检与跨模块子 JVM 池封顶单测，CI 与工具单测全绿（test_public_check.py 降至 7.35s、Python 机制段墙钟 10.69s），全量 public-pr 实跑通过（批次外围校验降至 14.41s，主机内存净增量峰值 5.996 GB），双根布局检查通过，经独立非作者整审与 R02 定向复核 APPROVE（0 必修）
+
+====
+
+v0.6.10 (2026-11-28 18:20)
+  新增: 新增落位于系统临时目录的跨工作树主机级重型验证排队锁 host:heavy-verification 与 --lock-wait-seconds 参数（默认 1800s 排队、0s 快速拒绝），结合跨平台 (pid, processCreateTime) 核验与原子重命名回收孤儿锁
+  架构改进: 移除 RunArchive 全历史帧列表驻留与尾记录全量拷贝，实装 TraceComparator.StreamEvaluator 单遍流式评估、双流逐行比对与局部差异窗口按需回读（保持 6 层错误优先级、退出码与开放 Action/UnitTask 校验不变） / 在 platform_scenario.py 新增 iter_jsonl_records 与单次流偏移索引 JsonlRecordSequence（兼容防 TOCTOU 单次打开审计与有界 LRU 缓存），消除会话诊断 JSONL 全文列表驻留
+  调整: 为 simulation-test 配置默认 -Xmx512m（保留 SIMULATION_TEST_OPTS 覆盖），将各模块 JUnit 测试子 JVM 收敛至 -Xmx768m 并将双根 Gradle/Kotlin Daemon 上限收敛为 -Xmx1536m/-Xmx2g
+  技术: 新增流式评估等价性与跨工作树排队及孤儿锁回收单测，工具链与 Python 单测全绿，默认 -Xmx512m 实跑 33/33 条 public-long 零 OOM 通过（单场景进程峰值工作集降至 608.69 MB），会话归档无损压缩与双根布局检查通过，经独立非作者整审 APPROVE（0 必修）
+
+====
+
 v0.6.9 (2026-11-28 16:15)
   修复: 将自动探测到的本地 Steam 等非默认原版目录同步补入 VisualAssetSettingsSession 并在异步扫描与预览完成时保持，修复启用本地原版表现资源包后因默认路径缺失锁死开始对局的问题 / 无有效原版目录时禁用移入按钮并透出后台资源准备进度提示 / 补齐临时 CLI 覆盖不写盘守卫、统一取消后台 PREVIEW 并在启动 CATALOG 期间延后对账以保留外部资源包校验记录
   技术: 更新版本号至 v0.6.9，新增 Steam 65 单位直启与临时 CLI 零写盘及 CATALOG 对账回归测试，通过公开短测 6/6、PC 安装包、Android Debug APK 校验及双根布局检查，经独立非作者 R02 定向复核 APPROVE（0 必修）

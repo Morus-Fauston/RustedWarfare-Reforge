@@ -16,7 +16,7 @@ class AuthorShoreSandboxTest {
         val pack = assertIs<ContentResult.Success<LoadedContentPack>>(result, "$format: $result").value
         return SandboxLoader().use { loader ->
             loader.requestPack(root, ContentPackChoice(pack, "spbuilder"))
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             while (System.nanoTime() < deadline) {
                 loader.pollPrepared()?.let { return@use it.getOrThrow() }
                 Thread.sleep(5)

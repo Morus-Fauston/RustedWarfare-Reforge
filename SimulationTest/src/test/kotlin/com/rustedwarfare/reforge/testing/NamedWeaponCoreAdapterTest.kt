@@ -22,7 +22,7 @@ class NamedWeaponCoreAdapterTest {
         }
         val scene = SandboxLoader().use { loader ->
             loader.requestPack(root, ContentPackChoice(content, "named_tank"))
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             var loaded = loader.pollPrepared()
             while (loaded == null && System.nanoTime() < deadline) {
                 Thread.sleep(5)

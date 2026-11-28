@@ -11,6 +11,68 @@ def digest(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def _is_link(path_or_entry):
+    if path_or_entry.is_symlink():
+        return True
+    is_junction = getattr(path_or_entry, 'is_junction', None)
+    return bool(is_junction and is_junction())
+
+
+def _scandir_metadata(directory, *, root=None):
+    base = Path(directory)
+    origin = base if root is None else Path(root)
+    rows = []
+    stack = [base]
+    while stack:
+        current = stack.pop()
+        with os.scandir(current) as entries:
+            ordered = sorted(entries, key=lambda entry: entry.name)
+        subdirs = []
+        for entry in ordered:
+            if _is_link(entry):
+                raise ValueError('Fixed distribution or artifact tree cannot contain links: ' + entry.path)
+            if entry.is_dir(follow_symlinks=False):
+                subdirs.append(Path(entry.path))
+            elif entry.is_file(follow_symlinks=False):
+                st = entry.stat(follow_symlinks=False)
+                rel = Path(entry.path).relative_to(origin).as_posix()
+                rows.append((rel, st.st_size, st.st_mtime_ns))
+            else:
+                raise ValueError('Unsupported directory member: ' + entry.path)
+        for subdir in reversed(subdirs):
+            stack.append(subdir)
+    rows.sort(key=lambda item: item[0])
+    return rows
+
+
+def package_metadata_snapshot(directory):
+    directory = Path(directory)
+    if _is_link(directory) or not directory.is_dir():
+        raise ValueError('Fixed distribution must be an ordinary directory')
+    rows = _scandir_metadata(directory)
+    if not rows:
+        raise ValueError('Fixed distribution is empty')
+    return rows
+
+
+def artifact_metadata_snapshot(paths):
+    """Fast metadata snapshot for prepared compiler outputs and classpaths."""
+    rows = []
+    for path in sorted({Path(p).absolute() for p in paths}):
+        if _is_link(path):
+            raise ValueError('Prepared artifacts cannot contain links')
+        if path.is_file():
+            st = path.stat()
+            rows.append(('file', str(path), st.st_size, st.st_mtime_ns))
+        elif path.is_dir():
+            rows.append(('directory', str(path), _scandir_metadata(path)))
+        elif not path.exists():
+            rows.append(('missing', str(path)))
+        else:
+            raise ValueError('Unsupported prepared artifact')
+    return rows
+
+
 def package_files(directory):
     directory = Path(directory)
     if directory.is_symlink() or not directory.is_dir():
@@ -129,4 +191,30 @@ def verify_members(receipt, record):
     distribution = Path(record['distribution'])
     if distribution.resolve().parent != Path(receipt).resolve().parent or package_files(distribution) != record['files']:
         raise ValueError('Fixed distribution members or dependency bytes changed')
+    return distribution.resolve()
+
+
+def verify_fast(receipt, expected_sha256, pinned_source, toolchain, *, kind='long', plan=None, repo=None,
+                expected_artifact_meta=None, expected_package_meta=None):
+    """Mid-batch metadata verification after batch-start full byte SHA-256 admission."""
+    record = read_receipt(receipt, expected_sha256, pinned_source, toolchain, kind=kind, plan=plan, repo=repo)
+    preparation = record['preparation']
+    if preparation:
+        current_artifact_meta = artifact_metadata_snapshot(r['path'] for r in preparation['artifacts'])
+        if expected_artifact_meta is not None:
+            if current_artifact_meta != expected_artifact_meta:
+                raise ValueError('Fixed distribution prepared artifacts changed')
+        elif artifact_identities(r['path'] for r in preparation['artifacts']) != preparation['artifacts']:
+            raise ValueError('Fixed distribution prepared artifacts changed')
+    distribution = Path(record['distribution'])
+    if distribution.resolve().parent != Path(receipt).resolve().parent:
+        raise ValueError('Fixed distribution members or dependency bytes changed')
+    current_package_meta = package_metadata_snapshot(distribution)
+    if expected_package_meta is not None:
+        if current_package_meta != expected_package_meta:
+            raise ValueError('Fixed distribution members or dependency bytes changed')
+    else:
+        expected_pairs = [(row['path'], row['bytes']) for row in record['files']]
+        if [(row[0], row[1]) for row in current_package_meta] != expected_pairs:
+            raise ValueError('Fixed distribution members or dependency bytes changed')
     return distribution.resolve()

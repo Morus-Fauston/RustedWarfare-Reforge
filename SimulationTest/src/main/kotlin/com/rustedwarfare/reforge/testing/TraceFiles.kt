@@ -1,9 +1,86 @@
 package com.rustedwarfare.reforge.testing
 
+import java.io.BufferedReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import kotlinx.serialization.json.*
+
+internal interface CloseableTraceIterator : Iterator<JsonObject>, AutoCloseable
+
+internal fun interface TraceSource {
+    fun openIterator(): CloseableTraceIterator
+}
+
+internal fun listTraceSource(rows: List<JsonObject>): TraceSource = TraceSource {
+    val delegate = rows.iterator()
+    object : CloseableTraceIterator {
+        override fun hasNext(): Boolean = delegate.hasNext()
+        override fun next(): JsonObject = delegate.next()
+        override fun close() = Unit
+    }
+}
+
+internal fun fileTraceSource(rawPath: Path): TraceSource = TraceSource {
+    openJsonlIterator(rawPath)
+}
+
+internal fun rawWithAppendedRecordSource(rawPath: Path, tailRecord: JsonObject): TraceSource = TraceSource {
+    val fileIter = openJsonlIterator(rawPath)
+    var tailConsumed = false
+    object : CloseableTraceIterator {
+        override fun hasNext(): Boolean = fileIter.hasNext() || !tailConsumed
+        override fun next(): JsonObject {
+            if (fileIter.hasNext()) return fileIter.next()
+            if (!tailConsumed) {
+                tailConsumed = true
+                return tailRecord
+            }
+            throw NoSuchElementException()
+        }
+        override fun close() = fileIter.close()
+    }
+}
+
+private fun openJsonlIterator(path: Path): CloseableTraceIterator {
+    val reader: BufferedReader = Files.newBufferedReader(path)
+    var index = 0
+    var buffered: JsonObject? = null
+    var eof = false
+    fun advance() {
+        if (buffered != null || eof) return
+        try {
+            val line = reader.readLine()
+            if (line == null) {
+                eof = true
+                return
+            }
+            val parsed = json.parseToJsonElement(line) as? JsonObject
+                ?: throw IllegalArgumentException("Expected object at line ${index + 1}")
+            index++
+            buffered = parsed
+        } catch (failure: IllegalArgumentException) {
+            try { reader.close() } catch (_: Exception) {}
+            throw ArchiveFailure(3, "truncated-or-malformed-jsonl", "$path: ${failure.message}")
+        } catch (failure: Throwable) {
+            try { reader.close() } catch (_: Exception) {}
+            throw failure
+        }
+    }
+    return object : CloseableTraceIterator {
+        override fun hasNext(): Boolean {
+            advance()
+            return buffered != null
+        }
+        override fun next(): JsonObject {
+            advance()
+            val value = buffered ?: throw NoSuchElementException()
+            buffered = null
+            return value
+        }
+        override fun close() = reader.close()
+    }
+}
 
 /** Read-only archive comparison. No result, baseline, or source archive is rewritten. */
 object TraceFiles {
@@ -14,9 +91,9 @@ object TraceFiles {
             val scenario = readObject(scenarioPath)
             contract = readObject(contractPath)
             TraceComparator.validateContract(scenario, contract)
-            val actualRows = readArchive(actual, scenarioPath, contractPath, scenario)
-            val expectedRows = expected?.let { readArchive(it, scenarioPath, contractPath, scenario) }
-            TraceComparator.evaluate(scenario, contract, actualRows, expectedRows)
+            val actualSource = verifyArchive(actual, scenarioPath, contractPath, scenario)
+            val expectedSource = expected?.let { verifyArchive(it, scenarioPath, contractPath, scenario) }
+            TraceComparator.evaluateSources(scenario, contract, actualSource, expectedSource)
         } catch (failure: ArchiveFailure) {
             TraceComparator.judgment(failure.code, if (failure.code == 4) "execution-failed" else "evidence-insufficient",
                 contract, failure.category, reason = failure.message)
@@ -34,7 +111,7 @@ object TraceFiles {
             }))))
     }
 
-    private fun readArchive(directory: Path, scenarioPath: Path, contractPath: Path, scenario: JsonObject): List<JsonObject> {
+    private fun verifyArchive(directory: Path, scenarioPath: Path, contractPath: Path, scenario: JsonObject): TraceSource {
         fun missing(message: String): Nothing = throw ArchiveFailure(3, "archive-incomplete", message)
         val manifestPath = directory.resolve("manifest.json")
         if (!Files.isRegularFile(manifestPath)) missing("Missing manifest: $manifestPath")
@@ -79,32 +156,59 @@ object TraceFiles {
                 val path = directory.resolve(trace.text("path"))
                 if (!Files.isRegularFile(path) || sha256(path) != trace.text("sha256")) missing("Missing, truncated or changed trace: $path")
             }
-            val raw = readLines(directory.resolve("reforge/raw.jsonl"))
+            val rawPath = directory.resolve("reforge/raw.jsonl")
+            val normalizedPath = directory.resolve("reforge/normalized.jsonl")
+            checkFinalNewline(rawPath)
+            checkFinalNewline(normalizedPath)
+            val coordinateId = scenario.objectAt("coordinateModel").id("id")
+            val timeId = scenario.objectAt("timeModel").id("id")
+            var rawCount = 0
             var normalizedCount = 0
+            var firstRaw: JsonObject? = null
+            var lastRaw: JsonObject? = null
             var normalizationFailure: RuntimeException? = null
-            visitLines(directory.resolve("reforge/normalized.jsonl")) { index, standard ->
-                normalizedCount++
-                // Preserve the old precedence: parse all normalized rows, then check length,
-                // then report the first normalization error. Never retain its full JSON tree.
-                if (index < raw.size && normalizationFailure == null) {
-                    try {
-                        val canonical = normalizeRecord(raw[index], index + 1,
-                            if (index == 0) null else scenario.objectAt("coordinateModel").id("id"),
-                            if (index == 0) null else scenario.objectAt("timeModel").id("id"))
-                        if (canonical != standard) missing("Normalization does not preserve raw record ${index + 1}")
-                    } catch (failure: RuntimeException) { normalizationFailure = failure }
+            openJsonlIterator(rawPath).use { rawIter ->
+                openJsonlIterator(normalizedPath).use { normIter ->
+                    while (rawIter.hasNext() || normIter.hasNext()) {
+                        val rawRow = if (rawIter.hasNext()) rawIter.next() else null
+                        val normRow = if (normIter.hasNext()) normIter.next() else null
+                        if (rawRow != null) {
+                            if (rawCount == 0) firstRaw = rawRow
+                            lastRaw = rawRow
+                            rawCount++
+                        }
+                        if (normRow != null) {
+                            normalizedCount++
+                        }
+                        if (rawRow != null && normRow != null && normalizationFailure == null) {
+                            try {
+                                val canonical = normalizeRecord(
+                                    rawRow,
+                                    rawCount,
+                                    if (rawCount == 1) null else coordinateId,
+                                    if (rawCount == 1) null else timeId,
+                                )
+                                if (canonical != normRow) {
+                                    missing("Normalization does not preserve raw record $rawCount")
+                                }
+                            } catch (failure: RuntimeException) {
+                                normalizationFailure = failure
+                            }
+                        }
+                    }
                 }
             }
-            if (raw.size != normalizedCount) missing("Raw/normalized line count mismatch")
+            if (rawCount != normalizedCount) missing("Raw/normalized line count mismatch")
             normalizationFailure?.let { throw it }
-            val end = raw.lastOrNull() ?: missing("Empty trace")
+            val end = lastRaw ?: missing("Empty trace")
             if (end["kind"] != s("run-end")) missing("Missing run-end")
-            if (raw.first()["runId"] != manifest["runId"] || raw.first()["startedAt"] != manifest["startedAt"]) missing("Trace/manifest start mismatch")
+            val startRow = firstRaw ?: missing("Empty trace")
+            if (startRow["runId"] != manifest["runId"] || startRow["startedAt"] != manifest["startedAt"]) missing("Trace/manifest start mismatch")
             for (field in listOf("status", "exitCode", "complete")) if (manifest[field] != end[field]) missing("Manifest/run-end mismatch: $field")
             val coverage = manifest.objectAt("coverage")
             if (coverage["initialStateChecked"] != b(true)) missing("Initial state not checked")
             for (field in listOf("observedSteps", "requiredSteps")) if (coverage[field] != end[field]) missing("Coverage/run-end mismatch: $field")
-            return raw
+            return fileTraceSource(rawPath)
         } catch (failure: InputError) {
             if (failure.message?.contains("identity mismatch") == true || failure.message == "Archive records an input error") throw failure
             missing(failure.message ?: "Missing manifest/trace field")
@@ -113,38 +217,18 @@ object TraceFiles {
         }
     }
 
-    private fun readLines(path: Path): List<JsonObject> = buildList {
-        visitLines(path) { _, row -> add(row) }
-    }
-
-    private fun visitLines(path: Path, consume: (Int, JsonObject) -> Unit) {
-        try {
-            // Validate decoding and the final newline before parsing, as readString did.
-            // A bounded character buffer replaces the former whole-file String and line list.
-            var last = -1
-            Files.newBufferedReader(path).use { reader ->
-                val buffer = CharArray(8192)
-                while (true) {
-                    val count = reader.read(buffer)
-                    if (count < 0) break
-                    if (count > 0) last = buffer[count - 1].code
-                }
+    private fun checkFinalNewline(path: Path) {
+        var last = -1
+        Files.newBufferedReader(path).use { reader ->
+            val buffer = CharArray(8192)
+            while (true) {
+                val count = reader.read(buffer)
+                if (count < 0) break
+                if (count > 0) last = buffer[count - 1].code
             }
-            if (last != '\n'.code) throw ArchiveFailure(3, "truncated-jsonl", "Missing final JSONL newline: $path")
-            Files.newBufferedReader(path).use { reader ->
-                var index = 0
-                while (true) {
-                    val line = reader.readLine() ?: break
-                    val row = json.parseToJsonElement(line) as? JsonObject
-                        ?: throw IllegalArgumentException("Expected object at line ${index + 1}")
-                    consume(index++, row)
-                }
-            }
-        } catch (failure: IllegalArgumentException) {
-            throw ArchiveFailure(3, "truncated-or-malformed-jsonl", "$path: ${failure.message}")
         }
+        if (last != '\n'.code) throw ArchiveFailure(3, "truncated-jsonl", "Missing final JSONL newline: $path")
     }
-
 }
 
-private class ArchiveFailure(val code: Int, val category: String, message: String) : RuntimeException(message)
+internal class ArchiveFailure(val code: Int, val category: String, message: String) : RuntimeException(message)

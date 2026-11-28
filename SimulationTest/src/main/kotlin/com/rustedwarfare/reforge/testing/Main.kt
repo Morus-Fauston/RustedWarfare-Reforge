@@ -11,17 +11,22 @@ import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlin.system.exitProcess
 
-private const val usage = "simulation-test run --scenario <file> --contract <file> --output <topic-directory> --mode self [--timeout-ms <positive-integer>] [--cancel-file <file>]\nsimulation-test compare --scenario <file> --contract <file> --actual <archive> [--expected <archive>] --output <topic-directory> --mode self\nsimulation-test [scene] --scene <id|all|dev-ab|holdout> [--output <dir>] [--steps <n>] [--sheets true|false] [--assert true|false] [--holdout-file <json>] [--repo-root <dir>]\nsimulation-test [scene] --list [--holdout-file <json>]"
+private const val usage = "simulation-test run --scenario <file> --contract <file> --output <topic-directory> --mode self [--timeout-ms <positive-integer>] [--cancel-file <file>]\nsimulation-test compare --scenario <file> --contract <file> --actual <archive> [--expected <archive>] --output <topic-directory> --mode self\nsimulation-test batch-worker\nsimulation-test [scene] --scene <id|all|dev-ab|holdout> [--output <dir>] [--steps <n>] [--sheets true|false] [--assert true|false] [--holdout-file <json>] [--repo-root <dir>]\nsimulation-test [scene] --list [--holdout-file <json>]"
 
 internal fun isSceneCliInvocation(args: Array<String>): Boolean =
     args.firstOrNull() == "scene" ||
-        (args.firstOrNull() !in setOf("run", "compare") && ("--scene" in args || "--list" in args))
+        (args.firstOrNull() !in setOf("run", "compare", "batch-worker") && ("--scene" in args || "--list" in args))
 
 fun main(args: Array<String>) {
-    System.setOut(PrintStream(FileOutputStream(FileDescriptor.out), true, Charsets.UTF_8))
+    val rawOut = PrintStream(FileOutputStream(FileDescriptor.out), true, Charsets.UTF_8)
+    System.setOut(rawOut)
     System.setErr(PrintStream(FileOutputStream(FileDescriptor.err), true, Charsets.UTF_8))
     if (args.contentEquals(arrayOf("--help"))) { println(usage); return }
     if (args.contentEquals(arrayOf("--version"))) { println("simulation-test schemaVersion=1 ticket=TEST-P001-003"); return }
+    if (args.contentEquals(arrayOf("batch-worker")) || args.contentEquals(arrayOf("--batch"))) {
+        BatchScenarioWorker.serve(System.`in`.bufferedReader(Charsets.UTF_8), rawOut, sessionOnly = false)
+        return
+    }
     // Unified ScenarioCatalog CLI entry (ENG-P016-010): supports both `simulation-test scene ...` and any flag order containing `--scene` / `--list`
     if (isSceneCliInvocation(args)) {
         val sceneArgs = if (args.firstOrNull() == "scene") args.drop(1).toTypedArray() else args

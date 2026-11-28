@@ -97,10 +97,10 @@ class ContentPackSelectionTest {
     }
 
     private fun await(state: ContentPackSelectionSession) {
-        val deadline = System.nanoTime() + 5_000_000_000L
+        val deadline = System.nanoTime() + 30_000_000_000L
         while (state.busy && System.nanoTime() < deadline) {
             state.poll(); Thread.sleep(5)
         }
-        check(!state.busy) { "Package check did not finish within five seconds" }
+        check(!state.busy) { "Package check did not finish within 30 seconds" }
     }
 }

@@ -31,6 +31,8 @@
       "com.rustedwarfare.reforge.testing.perf.PathPerfBatchTest",
       "com.rustedwarfare.reforge.testing.perf.WholeChainPerfTest",
       "com.rustedwarfare.reforge.testing.TraceCaptureTest",
+      "com.rustedwarfare.reforge.testing.StreamTraceEvaluationTest",
+      "com.rustedwarfare.reforge.testing.BatchScenarioWorkerParityTest",
       "com.rustedwarfare.reforge.testing.original.protocol.StrictRequestCodecTest",
       "com.rustedwarfare.reforge.testing.cross.MotionV2CoreInputsTest"
     ]

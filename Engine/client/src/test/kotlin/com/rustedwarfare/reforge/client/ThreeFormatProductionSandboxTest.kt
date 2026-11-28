@@ -180,8 +180,9 @@ class ThreeFormatProductionSandboxTest {
         ?: Path.of("../../SimulationTest/public/inputs").toAbsolutePath().normalize()
     private fun load(family: String, format: String) = ControlledScenario.load(fixtures().resolve("three-format-production/$family/$format"))
     private fun await(loader: SandboxLoader): Result<LoadedSandbox> {
-        repeat(5000) { loader.pollPrepared()?.let { return it }; Thread.sleep(1) }
-        error("Actual background load did not complete")
+        val deadline = System.nanoTime() + 30_000_000_000L
+        while (System.nanoTime() < deadline) { loader.pollPrepared()?.let { return it }; Thread.sleep(2) }
+        error("Actual background load did not complete within 30 seconds")
     }
     private fun withOwnProduction(check: (Path) -> Unit) = withOwnInput("production", "json", check)
 

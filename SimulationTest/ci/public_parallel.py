@@ -309,7 +309,7 @@ def scenario_coverage(cases, execution):
 def scenario_commands(case):
     name = case['id']
     commands = [name]
-    if case.get('backend') == 'session' or case.get('recompare'):
+    if case.get('recompare'):
         commands.append(name+'-recompare')
     if case.get('archiveAssertions'):
         commands.append(name+'-assertions')

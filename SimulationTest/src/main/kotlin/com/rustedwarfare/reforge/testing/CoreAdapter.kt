@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.testing
 
+import com.rustedwarfare.reforge.core.knowledge.CellKnowledge
+import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
 import com.rustedwarfare.reforge.core.sim.*
 import kotlinx.serialization.json.*
 
@@ -7,6 +9,53 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
     private val context = when (val result = SimulationContext.initialize(input.core)) {
         is InitResult.Accepted -> result.context
         is InitResult.Rejected -> throw CoreFailure("Initialization rejected: ${result.error}")
+    }
+    private val coordNamesByShape = HashMap<Pair<Int, Int>, Array<String>>()
+    private val cellJsonByValue = HashMap<CellKnowledge, JsonObject>()
+    private val knowledgeJsonByObserver = HashMap<String, Pair<KnowledgeSnapshot, JsonObject>>()
+
+    private fun knowledgeJson(observerId: String, knowledge: KnowledgeSnapshot): JsonObject {
+        val prev = knowledgeJsonByObserver[observerId]
+        if (prev != null) {
+            val snap = prev.first
+            if (snap === knowledge || (
+                    snap.worldId == knowledge.worldId &&
+                    snap.playerId == knowledge.playerId &&
+                    snap.width == knowledge.width &&
+                    snap.height == knowledge.height &&
+                    snap.revision == knowledge.revision &&
+                    snap.cells == knowledge.cells
+                )
+            ) {
+                return prev.second
+            }
+        }
+        val names = coordNamesByShape.getOrPut(knowledge.width to knowledge.height) {
+            Array(knowledge.width * knowledge.height) { idx ->
+                "c${idx % knowledge.width}r${idx / knowledge.width}"
+            }
+        }
+        val cellsList = knowledge.cells
+        val cellEntries = LinkedHashMap<String, JsonElement>(cellsList.size * 4 / 3 + 1)
+        for (index in cellsList.indices) {
+            val cell = cellsList[index]
+            val encodedCell = cellJsonByValue.getOrPut(cell) {
+                obj(
+                    "visible" to b(cell.visible),
+                    "lastKnownBlocked" to cell.lastKnownBlocked?.let(::b),
+                    "lastKnownGroundGid" to cell.lastKnownGroundGid?.let(::n),
+                )
+            }
+            cellEntries[names[index]] = encodedCell
+        }
+        val encoded = obj(
+            "width" to n(knowledge.width),
+            "height" to n(knowledge.height),
+            "revision" to n(knowledge.revision),
+            "cells" to JsonObject(cellEntries),
+        )
+        knowledgeJsonByObserver[observerId] = knowledge to encoded
+        return encoded
     }
     fun initial(): Observation = context.observe().also { observation ->
         val expected = input.core.units.associateBy { it.unitId }
@@ -79,13 +128,7 @@ internal class CoreAdapter(private val input: LoadedScenario) : AutoCloseable {
                 "visibleUnitIds" to array(view.units.map { s(it.unitId) }),
                 "actionResults" to array(view.actionResults.map { it.json() }),
                 "events" to array(view.events.map { it.json() }),
-                "knowledge" to view.knowledge?.let { knowledge -> obj(
-                    "width" to n(knowledge.width), "height" to n(knowledge.height), "revision" to n(knowledge.revision),
-                    "cells" to JsonObject(knowledge.cells.mapIndexed { index, cell ->
-                        "c${index % knowledge.width}r${index / knowledge.width}" to obj("visible" to b(cell.visible),
-                            "lastKnownBlocked" to cell.lastKnownBlocked?.let(::b),
-                            "lastKnownGroundGid" to cell.lastKnownGroundGid?.let(::n))
-                    }.toMap())) }).toMutableMap().apply {
+                "knowledge" to view.knowledge?.let { knowledge -> knowledgeJson(id, knowledge) }).toMutableMap().apply {
                         capabilities.forEach { (key, value) -> put(key, value ?: JsonNull) }
                         putAll(namedWeapons)
                     })

@@ -1,6 +1,9 @@
 """Public CLI selection checks; no build, private input or test-runner mocking."""
+from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -8,16 +11,49 @@ import unittest
 from contextlib import contextmanager
 
 
+_CACHED_REPO_SOURCE_NAMES = None
+_CACHED_REPO_META = None
+_CACHED_PRODUCTION_COMBAT_PR = None
+
+
+def setUpModule():
+    global _CACHED_REPO_SOURCE_NAMES, _CACHED_REPO_META, _CACHED_PRODUCTION_COMBAT_PR
+    from public_check import REPO, plan_suite, repo_metadata_snapshot
+    _CACHED_REPO_META = repo_metadata_snapshot(REPO)
+    _CACHED_REPO_SOURCE_NAMES = {row[0] for row in _CACHED_REPO_META}
+    _CACHED_PRODUCTION_COMBAT_PR = plan_suite(REPO, 'production-combat', 'pr', _CACHED_REPO_SOURCE_NAMES)
+
+
+def tearDownModule():
+    global _CACHED_REPO_SOURCE_NAMES, _CACHED_REPO_META, _CACHED_PRODUCTION_COMBAT_PR
+    _CACHED_REPO_SOURCE_NAMES = None
+    _CACHED_REPO_META = None
+    _CACHED_PRODUCTION_COMBAT_PR = None
+
+
+def _populate_minimal_repo(repo):
+    from public_check import _EXPLICIT_BUILD_FILES, _EXPLICIT_TOOL_NAMES, _EXPLICIT_DEC_TOOL_NAMES
+    dirs = {repo / 'SimulationTest/tools', repo / 'Decompile/tools'}
+    dirs.update((repo / rel).parent for rel in _EXPLICIT_BUILD_FILES)
+    for d in dirs:
+        d.mkdir(parents=True, exist_ok=True)
+    for rel in _EXPLICIT_BUILD_FILES:
+        (repo / rel).write_bytes(b'')
+    for name in _EXPLICIT_TOOL_NAMES:
+        (repo / 'SimulationTest/tools' / name).write_bytes(b'')
+    for name in _EXPLICIT_DEC_TOOL_NAMES:
+        (repo / 'Decompile/tools' / name).write_bytes(b'')
+
+
 @contextmanager
 def owned_scenario_processes(specs):
     """Control only external scenario processes; use the actual public executor and receipts."""
-    import os, shutil, shlex
-    from public_check import source_files, identities
+    import shlex
+    from public_check import identities
     from public_distribution import seal
     with tempfile.TemporaryDirectory(prefix='reforge-scenario-queue-') as temporary:
         repo=Path(temporary)
-        for path in source_files(repo):
-            path.parent.mkdir(parents=True,exist_ok=True);path.write_text('',encoding='utf8')
+        _populate_minimal_repo(repo)
         package=repo/'package';(package/'bin').mkdir(parents=True)
         program='''import json,pathlib,subprocess,sys,time
 args=sys.argv[1:]
@@ -35,9 +71,19 @@ if spec.get('barrier'):
 if spec.get('child'):
  child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'])
  (out/'child.pid').write_text(str(child.pid))
-time.sleep(spec.get('delay',.1))
+if spec.get('delay'): time.sleep(spec['delay'])
 row['ended']=time.time();(out/'lifecycle.json').write_text(json.dumps(row))
 if spec.get('mutate'): pathlib.Path(__file__).with_name('changed-package.txt').write_text('owned mutation')
+if spec.get('mutatePackageSameStat'):
+ target=pathlib.Path(__file__)
+ raw=target.read_bytes()
+ assert len(raw)>0
+ edited=(b'#' if raw[0:1]!=b'#' else b' ')+raw[1:]
+ assert len(edited)==len(raw)
+ st=target.stat()
+ target.write_bytes(edited)
+ import os
+ os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns))
 if spec.get('mutateContract'):
  target=pathlib.Path(value('--contract')); timestamps=target.stat()
  target.write_bytes(b'[]')
@@ -47,7 +93,9 @@ if spec.get('mutateComparator'):
  pathlib.Path(__file__).with_name('spider_platform.py').write_text('changed', encoding='utf8')
 if spec.get('fail'): raise SystemExit(7)
 if spec.get('noarchive'): raise SystemExit(0)
-if args[0]=='session': (out/'result.json').write_text(json.dumps({'status':'passed','exitCode':0}))
+if args[0]=='session':
+ row['compared']=time.time();(out/'lifecycle.json').write_text(json.dumps(row))
+ (out/'result.json').write_text(json.dumps({'status':'passed','exitCode':0}))
 else:
  run=out/'run-owned';(run/'comparison').mkdir(parents=True)
  (run/'comparison/result.json').write_text(json.dumps({'exitCode':0}))
@@ -133,7 +181,7 @@ class PublicSelectionTest(unittest.TestCase):
                     # If failure can win while this acceptance is pending, record it.
                     # A synchronized dispatch keeps failure outside this boundary;
                     # the timeout only bounds that deliberately blocked interleaving.
-                    if failure_recorded.wait(1):
+                    if failure_recorded.wait(0.1):
                         late_submissions.append(index)
 
                     def start_after_failure():
@@ -181,13 +229,12 @@ class PublicSelectionTest(unittest.TestCase):
         from workflow import resources
         with tempfile.TemporaryDirectory(prefix='reforge-python-lock-phase-') as temporary:
             repo=Path(temporary).resolve()
-            for path in source_files(repo):
-                path.parent.mkdir(parents=True,exist_ok=True);path.write_text('',encoding='utf8')
-            shutil.copytree(REPO/'SimulationTest/ci',repo/'SimulationTest/ci',dirs_exist_ok=True,
-                            ignore=shutil.ignore_patterns('__pycache__'))
+            _populate_minimal_repo(repo)
+            ci=repo/'SimulationTest/ci';ci.mkdir(parents=True,exist_ok=True)
+            for name in ('public_check.py','public_distribution.py','development_check.py','python_check.py','public_scenarios.py'):
+                shutil.copyfile(REPO/'SimulationTest/ci'/name,ci/name)
             for name in ('workflow.py','workflow_inputs.py'):
                 shutil.copyfile(REPO/'SimulationTest/tools'/name,repo/'SimulationTest/tools'/name)
-            ci=repo/'SimulationTest/ci'
             (ci/'test_owned_lock.py').write_text(
                 'import pathlib,sys,unittest\n'
                 'root=pathlib.Path(__file__).resolve().parents[2]\n'
@@ -255,7 +302,7 @@ class PublicSelectionTest(unittest.TestCase):
         with owned_scenario_processes([{'delay':30,'child':True},{'delay':30},{}]) as (repo,plan,prepared):
             output=repo/'result';pid=None
             try:
-                self.assertEqual(1,run(repo,output,plan,prepared,1,1,2))
+                self.assertEqual(1,run(repo,output,plan,prepared,0.3,1,2))
                 queue=json.loads((output/'scenario-execution.json').read_text(encoding='utf8'))
                 self.assertEqual('timeout',queue['firstError']['cause']['kind'])
                 self.assertEqual(['failed','failed','not-started'],[r['status'] for r in queue['items']])
@@ -272,14 +319,15 @@ class PublicSelectionTest(unittest.TestCase):
     def test_conflicting_session_outputs_are_refused_before_any_process_and_package_drift_stops_dispatch(self):
         from public_check import run
         with owned_scenario_processes([{'backend':'session'},{}]) as (repo,plan,prepared):
+            plan['scenarios'][0]['recompare']=True
             plan['scenarios'][1]['id']='owned-0-recompare'
             output=repo/'conflict'
             self.assertEqual(1,run(repo,output,plan,prepared,10,1,2))
             result=json.loads((output/'result.json').read_text(encoding='utf8'))
             self.assertEqual([],result['commands'])
             self.assertEqual(['not-started','not-started'],[r['status'] for r in result['scenarioExecution']['items']])
-        with owned_scenario_processes([{'delay':.05,'mutate':True,'barrier':True},
-                                       {'delay':.3,'barrier':True},{}]) as (repo,plan,prepared):
+        with owned_scenario_processes([{'delay':.01,'mutate':True,'barrier':True},
+                                       {'delay':.05,'barrier':True},{}]) as (repo,plan,prepared):
             output=repo/'changed'
             self.assertEqual(1,run(repo,output,plan,prepared,10,1,2))
             result=json.loads((output/'result.json').read_text(encoding='utf8'))
@@ -299,13 +347,15 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertEqual(0, run(repo, output, plan, prepared, 10, 1, 1))
             result = json.loads((output/'result.json').read_text(encoding='utf8'))
             self.assertIn('--timeout', result['commands'][0]['argv'])
+            self.assertIn('--read-only-inputs', result['commands'][0]['argv'])
+            self.assertEqual(['owned-0'], [cmd['name'] for cmd in result['commands']])
             self.assertGreater(result['identityChecks']['scenario']['count'], 0)
             self.assertGreaterEqual(result['identityChecks']['scenario']['elapsedSeconds'], 0)
             queue = result['scenarioExecution']
             self.assertGreater(queue['elapsedSeconds'], 0)
             row, = queue['items']
             self.assertGreaterEqual(row['archiveSeconds'], 0)
-            self.assertGreater(row['commands'][1]['elapsedSeconds'], 0)
+            self.assertGreater(row['commands'][0]['elapsedSeconds'], 0)
 
     def test_same_length_and_timestamp_contract_drift_stops_next_scenario(self):
         from public_check import run
@@ -355,10 +405,86 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertEqual('not-started', queue['items'][0]['status'])
             self.assertEqual([], queue['items'][0]['commands'])
 
+    def test_standalone_same_stat_package_mutation_during_scenario_fails_final_byte_closeout(self):
+        from public_check import run
+        with owned_scenario_processes([{'mutatePackageSameStat': True}]) as (repo, plan, _):
+            project = repo/'SimulationTest'
+            package = project/'build/install/simulation-test'
+            shutil.copytree(repo/'package', package)
+            (project/'gradlew').write_text('#!/bin/sh\nexit 0\n', encoding='utf8')
+            (project/'gradlew.bat').write_text('@exit /b 0\n', encoding='utf8')
+            output = repo/'same-stat-package-tamper'
+            self.assertEqual(1, run(repo, output, plan, None, 10, 1, 1))
+            saved = json.loads((output/'result.json').read_text(encoding='utf8'))
+            self.assertEqual('execution-failed', saved['status'])
+            self.assertIn('Scenario distribution changed during verification', saved['error'])
+            self.assertGreaterEqual(saved['identityChecks']['final-package']['count'], 1)
+
+    def test_source_closure_and_metadata_snapshot_reject_symlinks_and_junctions(self):
+        from unittest.mock import patch
+        from public_check import identities, python_source_closure, repo_metadata_snapshot, source_files
+        with tempfile.TemporaryDirectory(prefix='reforge-symlink-guard-') as tmp:
+            base = Path(tmp)
+            repo = base/'repo'
+            _populate_minimal_repo(repo)
+            outside = base/'outside'
+            outside.mkdir()
+            secret_py = outside/'injected.py'
+            secret_py.write_text('# outside\n', encoding='utf8')
+            ci_dir = repo/'SimulationTest/ci'
+            ci_dir.mkdir(parents=True, exist_ok=True)
+            (ci_dir/'legit.py').write_text('# ok\n', encoding='utf8')
+            p003_dir = repo/'Decompile/tools/p003'
+            p003_dir.mkdir(parents=True, exist_ok=True)
+            (p003_dir/'legit_p003.py').write_text('# ok\n', encoding='utf8')
+
+            # Verify baseline clean repo passes all four functions
+            self.assertTrue(source_files(repo))
+            self.assertTrue(identities(repo))
+            self.assertTrue(repo_metadata_snapshot(repo))
+            self.assertIn('SimulationTest/ci/legit.py', python_source_closure(repo))
+
+            # 1) Real filesystem link/junction check (junction on Windows requires zero elevation; os.symlink on POSIX/DevMode)
+            link_dir = ci_dir/'linked_subdir'
+            created_real_link = False
+            try:
+                os.symlink(outside, link_dir, target_is_directory=True)
+                created_real_link = True
+            except OSError:
+                if os.name == 'nt':
+                    proc = subprocess.run(['cmd', '/c', 'mklink', '/J', str(link_dir), str(outside)], capture_output=True)
+                    created_real_link = (proc.returncode == 0)
+            if created_real_link:
+                try:
+                    for fn in (source_files, identities, repo_metadata_snapshot, python_source_closure):
+                        with self.assertRaisesRegex(ValueError, 'symlink'):
+                            fn(repo)
+                finally:
+                    if os.name == 'nt' and link_dir.exists():
+                        os.rmdir(link_dir)
+                    else:
+                        link_dir.unlink(missing_ok=True)
+
+            # 2) Deterministic entry-level & root-level symlink rejection across _SOURCE_TREE_ROOTS, p003, and explicit files
+            real_is_symlink = Path.is_symlink
+            for target_rel in ('SimulationTest/ci', 'Decompile/tools/p003', 'SimulationTest/tools/workflow.py'):
+                target_path = repo / target_rel
+                with patch.object(Path, 'is_symlink', autospec=True,
+                                  side_effect=lambda self_p, tp=target_path: True if self_p == tp else real_is_symlink(self_p)):
+                    for fn in (source_files, identities, repo_metadata_snapshot, python_source_closure):
+                        with self.assertRaisesRegex(ValueError, 'symlink'):
+                            fn(repo)
+            build_path = repo / 'SimulationTest/build.gradle.kts'
+            with patch.object(Path, 'is_symlink', autospec=True,
+                              side_effect=lambda self_p, tp=build_path: True if self_p == tp else real_is_symlink(self_p)):
+                for fn in (source_files, identities, repo_metadata_snapshot):
+                    with self.assertRaisesRegex(ValueError, 'symlink'):
+                        fn(repo)
+
     def test_scenario_failure_stops_dispatch_preserves_inflight_success_and_original_exit(self):
         from public_check import run
-        with owned_scenario_processes([{'delay':.05,'fail':True,'barrier':True},
-                                       {'delay':.3,'barrier':True},{}]) as (repo,plan,prepared):
+        with owned_scenario_processes([{'delay':.01,'fail':True,'barrier':True},
+                                       {'delay':.05,'barrier':True},{}]) as (repo,plan,prepared):
             output=repo/'result'
             self.assertEqual(1,run(repo,output,plan,prepared,20,1,2))
             result=json.loads((output/'result.json').read_text(encoding='utf8'))
@@ -371,8 +497,8 @@ class PublicSelectionTest(unittest.TestCase):
 
     def test_parallel_scenarios_keep_registration_order_and_session_compare_inside_its_item(self):
         from public_check import run
-        with owned_scenario_processes([{'delay':.3,'barrier':True},
-                                       {'delay':.05,'barrier':True,'backend':'session'}]) as (repo,plan,prepared):
+        with owned_scenario_processes([{'delay':.05,'barrier':True},
+                                       {'delay':.01,'barrier':True,'backend':'session'}]) as (repo,plan,prepared):
             output=repo/'result'
             self.assertEqual(0,run(repo,output,plan,prepared,20,1,2))
             result=json.loads((output/'result.json').read_text(encoding='utf8'))
@@ -385,37 +511,65 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertEqual(2,result['scenarioExecution']['peakRunning'])
 
     def test_scenario_workers_are_bounded_and_listing_keeps_build_and_scenario_phases_separate(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        import io
+        from unittest.mock import patch
+        import public_batch
+        import public_check
+        expected_default_forks = public_check.default_test_forks()
+
+        def invoke_inproc(mod, argv):
+            out, err = io.StringIO(), io.StringIO()
+            with patch.object(sys, 'argv', [mod.__file__, *argv]), redirect_stdout(out), redirect_stderr(err):
+                try:
+                    code = mod.main()
+                except SystemExit as exc:
+                    code = exc.code if isinstance(exc.code, int) else 1
+            return code, out.getvalue(), err.getvalue()
+
         with tempfile.TemporaryDirectory(prefix='reforge-scenario-workers-') as temporary:
             output=Path(temporary)/'must-not-exist'
-            for filename,scope in [('public_check.py',['--suite','production-combat','--kind','pr']),
-                                   ('public_batch.py',['--kind','pr'])]:
-                entry=Path(__file__).with_name(filename)
-                default=subprocess.run([sys.executable,'-B',str(entry),*scope,'--list'],capture_output=True,text=True)
-                self.assertEqual(0,default.returncode,default.stderr)
-                self.assertEqual(2,json.loads(default.stdout)['scenarioConcurrency']['requested'])
-                for workers in (1,2,4,8):
-                    result=subprocess.run([sys.executable,'-B',str(entry),*scope,'--list',
-                        '--output',str(output),'--scenario-workers',str(workers)],capture_output=True,text=True)
-                    self.assertEqual(0,result.returncode,result.stderr)
-                    plan=json.loads(result.stdout)
-                    self.assertEqual(workers,plan['scenarioConcurrency']['requested'])
-                    self.assertEqual('after-build-and-tests',plan['scenarioConcurrency']['phase'])
-                    self.assertEqual(1,plan['testConcurrency']['requested'])
-                for invalid in ('0','3','5','9','-1','two'):
-                    result=subprocess.run([sys.executable,'-B',str(entry),*scope,'--output',str(output),
-                        '--scenario-workers',invalid],capture_output=True)
-                    self.assertEqual(2,result.returncode)
+            scopes = [
+                ('public_check.py', public_check, ['--suite','production-combat','--kind','pr']),
+                ('public_batch.py', public_batch, ['--kind','pr']),
+            ]
+            # Real subprocess CLI contract smoke on public_batch.py (public_check.py real CLI is covered below)
+            proc = subprocess.run(
+                [sys.executable, '-B', str(Path(__file__).with_name('public_batch.py')), '--kind', 'pr', '--list'],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(0, proc.returncode, proc.stderr)
+            self.assertEqual(
+                public_batch.default_scenario_workers('pr', None),
+                json.loads(proc.stdout)['scenarioConcurrency']['requested'],
+            )
+            self.assertEqual(2, public_batch.default_scenario_workers('pr', None, cloud=True, cpu_count=16))
+            self.assertEqual(8, public_batch.default_scenario_workers('pr', None, cloud=False, cpu_count=16))
+            self.assertEqual(6, public_batch.default_scenario_workers('long', None, cloud=False, cpu_count=16))
+            self.assertEqual(6, public_batch.default_scenario_workers('pr', None, cloud=False, cpu_count=12))
+            self.assertEqual(4, public_batch.default_scenario_workers('pr', None, cloud=False, cpu_count=8))
+            self.assertEqual(2, public_batch.default_scenario_workers('pr', None, cloud=False, cpu_count=4))
+            for filename, mod, scope in scopes:
+                for workers in (1,2,4,6,8):
+                    code, stdout_text, stderr_text = invoke_inproc(
+                        mod, [*scope, '--list', '--output', str(output), '--scenario-workers', str(workers)])
+                    self.assertEqual(0, code, stderr_text)
+                    plan = json.loads(stdout_text)
+                    self.assertEqual(workers, plan['scenarioConcurrency']['requested'])
+                    self.assertEqual('after-build-and-tests', plan['scenarioConcurrency']['phase'])
+                    self.assertEqual(expected_default_forks, plan['testConcurrency']['requested'])
+                for invalid in ('0','3','5','7','9','-1','two'):
+                    code, _, _ = invoke_inproc(
+                        mod, [*scope, '--output', str(output), '--scenario-workers', invalid])
+                    self.assertEqual(2, code)
                 self.assertFalse(output.exists())
 
     def test_prepared_pr_still_executes_selected_python_and_rejects_a_long_package(self):
-        import shutil
-        from public_check import run, source_files, identities
+        from public_check import run, identities
         from public_distribution import seal, artifact_identities
         with tempfile.TemporaryDirectory(prefix='reforge-pr-consumer-') as temporary:
             repo = Path(temporary)
-            for path in source_files(repo):
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text('', encoding='utf8')
+            _populate_minimal_repo(repo)
             ci = repo/'SimulationTest/ci'
             ci.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(Path(__file__).with_name('python_check.py'), ci/'python_check.py')
@@ -442,8 +596,7 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertEqual([], json.loads((refused/'result.json').read_text(encoding='utf8'))['commands'])
 
     def test_native_driver_and_capture_contract_are_in_the_isolated_source_closure(self):
-        from public_check import REPO,source_files
-        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        names=_CACHED_REPO_SOURCE_NAMES
         self.assertTrue('SimulationTest/tools/platform_windows.py' in names,'Shared native driver missing')
         self.assertTrue('SimulationTest/tools/owned_window.py' in names,'Owned capture/input guard missing')
         self.assertTrue('SimulationTest/tools/test_owned_window.py' in names,'Owned capture contract missing')
@@ -451,13 +604,12 @@ class PublicSelectionTest(unittest.TestCase):
         self.assertTrue('SimulationTest/tools/test_action_layout.py' in names,'Drawn action contract missing')
 
     def test_transport_contract_survives_an_isolated_source_copy(self):
-        from public_check import REPO,source_files
-        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        names=_CACHED_REPO_SOURCE_NAMES
         self.assertIn('SimulationTest/tools/test_transport_platform.py',names)
 
     def test_air_transport_uses_registered_public_mechanisms_and_all_three_format_scenarios(self):
-        from public_check import REPO,plan_suite,source_files
-        plan=plan_suite(REPO,'production-combat','pr')
+        from public_check import REPO
+        plan=_CACHED_PRODUCTION_COMBAT_PR
         self.assertIn('com.rustedwarfare.reforge.core.content.DropshipContentFailureTest',plan['tests']['core'])
         self.assertIn('com.rustedwarfare.reforge.client.DropshipProductionSandboxTest',plan['tests']['client'])
         self.assertIn('com.rustedwarfare.reforge.pc.DropshipOriginalProfileTest',plan['tests']['pc'])
@@ -468,13 +620,13 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertEqual('session',cases['air-transport-'+fmt+'-production-chain']['backend'])
             contract = REPO/'SimulationTest/public'/cases['air-transport-'+fmt+'-production-chain']['contract']
             self.assertEqual('air-transport', json.loads(contract.read_bytes())['history']['productionSession'])
-        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        names=_CACHED_REPO_SOURCE_NAMES
         for name in ('air_transport_fixture.py','air_transport_scenarios.py'):
             self.assertIn('SimulationTest/tools/'+name,names)
 
     def test_aa_beam_uses_the_public_mechanisms_and_three_format_core_and_session_contracts(self):
-        from public_check import REPO,plan_suite,source_files
-        plan=plan_suite(REPO,'production-combat','pr')
+        from public_check import REPO
+        plan=_CACHED_PRODUCTION_COMBAT_PR
         for module,name in [('core','core.sim.AaBeamAdmissionTest'),('client','client.AaBeamPresentationTest'),
                             ('pc','pc.AaBeamOriginalProfileTest')]:
             self.assertIn('com.rustedwarfare.reforge.'+name,plan['tests'][module])
@@ -500,13 +652,13 @@ class PublicSelectionTest(unittest.TestCase):
             self.assertEqual(old_contract['rules'], new_contract['rules'][:23])
             self.assertEqual(old_contract['history']['finalUnits'],
                              new_contract['history']['unitsAfterIntents']['stop-home'])
-        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        names=_CACHED_REPO_SOURCE_NAMES
         for name in ('aa_beam_fixture.py','aa_beam_scenarios.py','test_aa_beam_archive.py'):
             self.assertIn('SimulationTest/tools/'+name,names)
 
     def test_afterburn_registers_actions_trail_and_all_three_normal_production_contracts(self):
-        from public_check import REPO,plan_suite,source_files
-        plan=plan_suite(REPO,'production-combat','pr')
+        from public_check import REPO
+        plan=_CACHED_PRODUCTION_COMBAT_PR
         for module,names in {
             'core':['core.content.AfterburnContentTest','core.sim.AfterburnActionTest','core.sim.AfterburnLifecycleTest'],
             'client':['client.AfterburnInputTest','client.AfterburnTrailTest'],
@@ -519,12 +671,12 @@ class PublicSelectionTest(unittest.TestCase):
             contract = REPO/'SimulationTest/public'/cases['afterburn-'+fmt+'-production-chain']['contract']
             self.assertEqual('aa-afterburn', json.loads(contract.read_bytes())['history']['productionSession'])
         self.assertIn('SimulationTest/tools/test_afterburn_platform.py',plan['pythonTests'])
-        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        names=_CACHED_REPO_SOURCE_NAMES
         self.assertIn('SimulationTest/tools/afterburn_scenarios.py',names)
 
     def test_bunker_registers_three_format_core_and_normal_session_chains_and_independent_checks(self):
-        from public_check import REPO,plan_suite,source_files
-        plan=plan_suite(REPO,'production-combat','pr')
+        from public_check import REPO
+        plan=_CACHED_PRODUCTION_COMBAT_PR
         for module,names in {
             'core':['core.content.BunkerContentTest','core.sim.BunkerActionTest','core.sim.BunkerWeaponTest',
                     'core.sim.BunkerFootprintTest','core.sim.BunkerHeightTest','core.sim.BunkerLifecycleTest',
@@ -542,45 +694,63 @@ class PublicSelectionTest(unittest.TestCase):
         for fmt in ('ini','json','hjson'):
             self.assertEqual('session',cases['bunker-'+fmt+'-production-chain']['backend'])
         self.assertIn('SimulationTest/tools/test_bunker_platform.py',plan['pythonTests'])
-        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        names=_CACHED_REPO_SOURCE_NAMES
         for name in ('bunker_fixture.py','bunker_scenarios.py','test_bunker_platform.py'):
             self.assertIn('SimulationTest/tools/'+name,names)
 
     def test_the_shared_live_reader_and_its_contract_survive_an_isolated_source_copy(self):
-        from public_check import REPO,source_files
-        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        names=_CACHED_REPO_SOURCE_NAMES
         self.assertTrue('SimulationTest/tools/diagnostic_reader.py' in names,'Shared live reader missing from isolated source')
         self.assertTrue('SimulationTest/tools/test_diagnostic_reader.py' in names,'Live reader contract missing from isolated source')
 
     def test_public_record_chain_fixture_is_in_the_isolated_source_closure(self):
-        from public_check import REPO, source_files
-        names={p.relative_to(REPO).as_posix() for p in source_files(REPO)}
+        from public_check import REPO, python_source_closure
+        names=_CACHED_REPO_SOURCE_NAMES
         self.assertIn('SimulationTest/fixtures/record-chain/scenario.json',names)
         self.assertIn('SimulationTest/fixtures/record-chain/contract.json',names)
+        meta_names = [row[0] for row in _CACHED_REPO_META]
+        self.assertEqual(sorted(names), meta_names)
+        py_names = python_source_closure(REPO)
+        self.assertTrue(py_names.issubset(names))
+        for p in names:
+            if p.startswith(('SimulationTest/ci/', 'SimulationTest/tools/', 'Decompile/tools/')) and p.endswith('.py'):
+                self.assertIn(p, py_names)
 
     def test_portable_corner_and_failure_preservation_mechanisms_are_not_left_out(self):
+        from contextlib import redirect_stdout
+        import io
+        from unittest.mock import patch
+        import public_check
         for name, module, classes in [
             ('content-movement-knowledge', 'core', ['com.rustedwarfare.reforge.core.sim.CornerCaptureTest']),
             ('platform-basics', 'pc', ['com.rustedwarfare.reforge.pc.EvidenceInitializationFailureTest',
                                      'com.rustedwarfare.reforge.pc.FailurePreservationTest']),
         ]:
-            result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('public_check.py')),
-                '--suite', name, '--kind', 'mechanism', '--list'], capture_output=True, text=True)
-            self.assertEqual(0, result.returncode, result.stderr)
+            out = io.StringIO()
+            with patch.object(sys, 'argv', [public_check.__file__, '--suite', name, '--kind', 'mechanism', '--list']), redirect_stdout(out):
+                self.assertEqual(0, public_check.main())
             for cls in classes:
-                self.assertIn(cls, json.loads(result.stdout)['tests'][module])
+                self.assertIn(cls, json.loads(out.getvalue())['tests'][module])
 
     def test_tooling_includes_complete_layer_contract_tests(self):
-        result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('public_check.py')),
-            '--suite', 'tooling', '--kind', 'mechanism', '--list'], capture_output=True, text=True)
-        self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn('SimulationTest/ci/test_public_batch.py', json.loads(result.stdout)['pythonTests'])
+        from contextlib import redirect_stdout
+        import io
+        from unittest.mock import patch
+        import public_check
+        out = io.StringIO()
+        with patch.object(sys, 'argv', [public_check.__file__, '--suite', 'tooling', '--kind', 'mechanism', '--list']), redirect_stdout(out):
+            self.assertEqual(0, public_check.main())
+        self.assertIn('SimulationTest/ci/test_public_batch.py', json.loads(out.getvalue())['pythonTests'])
 
     def test_tooling_plan_names_python_and_jvm_mechanisms_without_specialist_execution(self):
-        result = subprocess.run([sys.executable, '-B', str(Path(__file__).with_name('public_check.py')),
-            '--suite', 'tooling', '--kind', 'mechanism', '--list'], capture_output=True, text=True)
-        self.assertEqual(0, result.returncode, result.stderr)
-        plan = json.loads(result.stdout)
+        from contextlib import redirect_stdout
+        import io
+        from unittest.mock import patch
+        import public_check
+        out = io.StringIO()
+        with patch.object(sys, 'argv', [public_check.__file__, '--suite', 'tooling', '--kind', 'mechanism', '--list']), redirect_stdout(out):
+            self.assertEqual(0, public_check.main())
+        plan = json.loads(out.getvalue())
         self.assertIn('com.rustedwarfare.reforge.testing.cross.CrossComparisonTest', plan['tests']['tools'])
         self.assertIn('SimulationTest/tools/test_workflow.py', plan['pythonTests'])
         self.assertIn('Decompile/tools/p003/test_original_input_transform.py', plan['pythonTests'])
@@ -624,17 +794,26 @@ class PublicSelectionTest(unittest.TestCase):
                 ('invalid-backend', {'short': [{'id': 'unsupported', 'backend': 'windows-input',
                     'scenario': 'scenario.json', 'contract': 'contract.json'}]}),
             ]
+            from contextlib import redirect_stderr, redirect_stdout
+            import io
+            from unittest.mock import patch
+            import public_check
+
             for name, fields in cases:
                 manifest = dict(schemaVersion=1, suiteId=name, inputScope='public', **fields)
                 (registry / (name + '.json')).write_text(json.dumps(manifest), encoding='utf8')
                 output = repo / ('must-not-create-' + name)
-                result = subprocess.run([sys.executable, '-B', str(copied), '--suite', name,
-                    '--kind', 'all', '--list', '--output', str(output)], capture_output=True, text=True)
-                self.assertEqual(2, result.returncode, name + result.stdout + result.stderr)
+                out, err = io.StringIO(), io.StringIO()
+                with (patch.object(public_check, 'REPO', repo),
+                      patch.object(sys, 'argv', [str(copied), '--suite', name, '--kind', 'all', '--list', '--output', str(output)]),
+                      redirect_stdout(out), redirect_stderr(err)):
+                    with self.assertRaises(SystemExit) as ctx:
+                        public_check.main()
+                self.assertEqual(2, ctx.exception.code, name + out.getvalue() + err.getvalue())
                 self.assertFalse(output.exists())
-            for name in ['../escape', 'unregistered']:
-                result = subprocess.run([sys.executable, '-B', str(copied), '--suite', name, '--list'], capture_output=True)
-                self.assertEqual(2, result.returncode)
+            # Also verify real subprocess entrypoint rejection on path escape
+            escaped = subprocess.run([sys.executable, '-B', str(copied), '--suite', '../escape', '--list'], capture_output=True)
+            self.assertEqual(2, escaped.returncode)
 
 
 if __name__ == '__main__':

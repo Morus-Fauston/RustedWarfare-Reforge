@@ -17,7 +17,17 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     testImplementation(kotlin("test"))
 }
-application { mainClass.set("com.rustedwarfare.reforge.testing.MainKt") }
+application {
+    mainClass.set("com.rustedwarfare.reforge.testing.MainKt")
+    applicationDefaultJvmArgs = listOf(
+        "-Xmx512m",
+        "-XX:MaxMetaspaceSize=128m",
+        "-XX:ReservedCodeCacheSize=64m",
+        "-XX:MaxDirectMemorySize=32m",
+        "-XX:MaxHeapFreeRatio=35",
+        "-XX:MinHeapFreeRatio=15",
+    )
+}
 // Windows cmd expands every absolute JAR path before Java starts. Keep deep installs below its line limit.
 tasks.named<org.gradle.jvm.application.tasks.CreateStartScripts>("startScripts") {
     doLast {
@@ -44,7 +54,14 @@ gradle.projectsEvaluated {
 }
 tasks.test {
     useJUnitPlatform()
-    systemProperty("repo.root", projectDir.parentFile.absolutePath)
+    maxHeapSize = "768m"
+    jvmArgs("-XX:MaxMetaspaceSize=160m", "-XX:ReservedCodeCacheSize=160m")
+    val configuredForks = providers.gradleProperty("tools.test.maxParallelForks")
+        .orElse(providers.systemProperty("tools.test.maxParallelForks"))
+        .map { it.toInt().coerceAtLeast(1) }
+        .orElse((Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4))
+    maxParallelForks = configuredForks.get()
+    systemProperty("repo.root", System.getProperty("repo.root") ?: projectDir.parentFile.absolutePath)
     System.getProperty("evidence.dir")?.let { systemProperty("evidence.dir", it) }
 }
 

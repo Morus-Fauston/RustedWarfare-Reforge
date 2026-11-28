@@ -5,7 +5,9 @@ import java.nio.file.Path
 import kotlinx.serialization.json.*
 
 /** Called only for a separately validated archive freshly produced by the public scenario runner. */
-fun main(args: Array<String>) {
+fun main(args: Array<String>) = runPublicArchiveAssertions(args)
+
+internal fun runPublicArchiveAssertions(args: Array<String>) {
     require(args.size == 5) { "Expected family, scenario, contract, current archive and new output" }
     val (family, scenario, contract, original, root) = args
     val seed = Path.of(scenario)

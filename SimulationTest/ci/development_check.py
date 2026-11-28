@@ -11,7 +11,10 @@ import time
 import uuid
 import xml.etree.ElementTree as ET
 
-from public_check import REPO, MODULES, identities, plan_suite, source_files, test_forks, test_concurrency
+from public_check import (
+    REPO, MODULES, identities, plan_suite, python_source_closure,
+    repo_metadata_snapshot, source_files, test_forks, gradle_workers, test_concurrency,
+)
 from public_distribution import toolchain_identity
 
 sys.path.insert(0, str(REPO/'SimulationTest/tools'))
@@ -50,7 +53,7 @@ def plan_mechanisms(selections):
 
 
 def plan_development(repo, names):
-    sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
+    sources = python_source_closure(repo)
     return dict(schemaVersion=1, suites=names, **plan_mechanisms(
         (name, plan_suite(repo, name, 'mechanism', sources)) for name in names))
 
@@ -60,6 +63,7 @@ def collect_tests(folder, selected):
     coverage = []
     effective = json.loads((folder/'effective.json').read_text(encoding='utf8'))
     executions = json.loads((folder/'task-executions.json').read_text(encoding='utf8'))
+    selection_control = json.loads((folder/'selection.json').read_text(encoding='utf8')) if (folder/'selection.json').exists() else None
     for module, expected in selected.items():
         task = MODULES[module][0]
         leaf = folder/module
@@ -99,9 +103,21 @@ def collect_tests(folder, selected):
                  and config and set(config['classes']) == set(expected)
                  and all(config.get(key) == [] for key in ('excludePatterns','commandLineIncludePatterns','fileIncludes','fileExcludes'))
                  and config.get('junitOptions') == {key:[] for key in ('includeTags','excludeTags','includeEngines','excludeEngines')}
-                 and effective.get('testForks') in (1, 2, 4, 8)
-                 and effective.get('maxWorkers') == effective['testForks']
-                 and config.get('maxParallelForks') == (1 if module == 'pc' else effective['testForks'])
+                 and type(effective.get('testForks')) is int and effective.get('testForks') in (1, 2, 3, 4, 8)
+                 and type(effective.get('gradleWorkers', effective.get('testForks'))) is int
+                 and 1 <= effective.get('gradleWorkers', effective['testForks']) <= 16
+                 and type(effective.get('maxWorkers')) is int
+                 and effective.get('maxWorkers') == effective.get('gradleWorkers', effective['testForks'])
+                 and type(config.get('maxParallelForks')) is int
+                 and (module != 'pc' or config.get('maxParallelForks') == 1)
+                 and (selection_control is None or (
+                     task in selection_control.get('tasks', {}) and
+                     config.get('maxParallelForks') == selection_control['tasks'][task].get(
+                         'maxParallelForks', config.get('maxParallelForks'))))
+                 and config.get('maxParallelForks') == (
+                     (effective.get('moduleMaxParallelForks') or {}).get(
+                         task, 1 if module == 'pc' else min(effective['testForks'], effective['maxWorkers'])))
+                 and 1 <= config.get('maxParallelForks', 0) <= (1 if module == 'pc' else min(effective['testForks'], effective['maxWorkers']))
                  and config.get('forkEvery') == 0)
         coverage.append(dict(module=module, task=task, status='passed' if valid else 'incomplete',
                              classes=rows, methods=methods, expectedMethods=expected_methods,
@@ -110,12 +126,17 @@ def collect_tests(folder, selected):
                 coverage=coverage, effective=effective, tasks=executions)
 
 
-def execute_test_group(repo, folder, group, cold, forks, package=False, timeout=600):
+def execute_test_group(repo, folder, group, cold, forks=None, package=False, timeout=600, *, gradle_workers=None):
     """One selected Test execution; compilation may stay warm, results never do."""
     folder.mkdir()
     project = repo/'SimulationTest'
-    control = dict(group, output=str(folder), repo=str(repo), testForks=forks, archiveRun=uuid.uuid4().hex,
-                   tasks={MODULES[m][0]:dict(module=m, classes=classes)
+    concurrency = test_concurrency(group['tests'], forks, gradle_workers)
+    effective_forks = concurrency['requested']
+    max_workers = concurrency['maxWorkers']
+    control = dict(group, output=str(folder), repo=str(repo), testForks=effective_forks, gradleWorkers=max_workers,
+                   archiveRun=uuid.uuid4().hex,
+                   tasks={MODULES[m][0]:dict(module=m, classes=classes,
+                                             maxParallelForks=concurrency['modules'][m]['maxParallelForks'])
                           for m, classes in group['tests'].items()})
     (folder/'selection.json').write_text(json.dumps(control, ensure_ascii=True, indent=2), encoding='utf8')
     record = dict(selection=group, path=folder.name,
@@ -123,7 +144,7 @@ def execute_test_group(repo, folder, group, cold, forks, package=False, timeout=
                             for p in sorted((project/MODULES[m][1]).glob('TEST-*.xml'))])
     wrapper = [str(project/'gradlew.bat')] if os.name=='nt' else ['sh', str(project/'gradlew')]
     argv = wrapper + list(control['tasks']) + ([':installDist'] if package else []) + [
-        '--console=plain', '--max-workers='+str(forks), '--no-build-cache', '--init-script',
+        '--console=plain', '--max-workers='+str(max_workers), '--no-build-cache', '--init-script',
         str(repo/'SimulationTest/ci/development_tests.gradle'), '-Ddevelopment.selection='+str(folder/'selection.json')]
     argv += ['--no-daemon', '--rerun-tasks'] if cold else ['--daemon']
     record['command'] = execute_step(argv, project, folder/'command', timeout=timeout)
@@ -142,25 +163,38 @@ def method_owners(group, tests):
     ]
 
 
-def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=None, prepared=False, session_distribution=None):
+def run_development(repo, output, plan, cold, forks=None, timeout=600, *, admit=None, prepared=False,
+                    session_distribution=None, lock_wait_seconds=0, host_lock=False,
+                    workers_gradle=None, pinned_source=None):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
-    initial = identities(repo)
+    concurrency = test_concurrency({m: [] for g in plan['groups'] for m in g['tests']}, forks, workers_gradle)
+    effective_forks = concurrency['requested']
+    max_workers = concurrency['maxWorkers']
+    if pinned_source is not None:
+        initial, initial_meta = pinned_source
+        if repo_metadata_snapshot(repo) != initial_meta:
+            raise RuntimeError('Source changed before development check')
+    else:
+        initial = identities(repo)
+        initial_meta = None
     result = dict(schemaVersion=1, status='execution-failed', selection=plan, cold=cold,
-                  source=initial, testConcurrency=test_concurrency(
-                      {m: [] for g in plan['groups'] for m in g['tests']}, forks),
+                  source=initial, testConcurrency=concurrency,
                   groups=[], pythonCoverage=[], exclusions=['scenario-execution',
                   'distribution-packaging', 'platform-input', 'formal-performance'])
     try:
         toolchain = toolchain_identity()
         result['toolchainBefore'] = toolchain
-        project = repo/'SimulationTest'
         for index, group in enumerate(plan['groups']):
             folder = output/('group-'+str(index))
-            with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+            lock_names = (['host:heavy-verification'] if host_lock else []) + [
+                'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]
+            lock_ctx = resources(lock_names, wait_seconds=lock_wait_seconds) if host_lock else resources(lock_names)
+            with lock_ctx:
                 if admit is not None:
                     admit()
-                record = execute_test_group(repo, folder, group, cold, forks, timeout=timeout)
+                record = execute_test_group(repo, folder, group, cold, effective_forks, timeout=timeout,
+                                            gradle_workers=max_workers)
                 result['groups'].append(record)
                 if admit is not None:
                     admit()
@@ -187,8 +221,9 @@ def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=Non
                 return index, path, command, measured
 
             items = list(enumerate(plan['pythonTests']))
-            if forks > 1 and len(items) > 1:
-                with ThreadPoolExecutor(max_workers=min(forks, len(items))) as pool:
+            py_workers = min(max_workers, len(items))
+            if py_workers > 1 and len(items) > 1:
+                with ThreadPoolExecutor(max_workers=py_workers) as pool:
                     completed_py = list(pool.map(run_python_item, items))
             else:
                 completed_py = [run_python_item(item) for item in items]
@@ -203,7 +238,8 @@ def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=Non
                 if not command['passed'] or measured.get('status') != 'passed':
                     raise RuntimeError('Python mechanism did not pass: '+path)
         result['toolchainAfter'] = toolchain_identity()
-        if identities(repo) != initial or result['toolchainAfter'] != toolchain:
+        source_drifted = (repo_metadata_snapshot(repo) != initial_meta) if initial_meta is not None else (identities(repo) != initial)
+        if source_drifted or result['toolchainAfter'] != toolchain:
             raise RuntimeError('Source, input or toolchain changed during development check')
         result['status'] = 'passed'
     except Exception as error:
@@ -221,7 +257,8 @@ def main():
     parser.add_argument('--output', type=Path, help='New result directory; previous results are never consumed')
     parser.add_argument('--cold', action='store_true', help='Single-use daemon and full task rebuild')
     parser.add_argument('--isolated', action='store_true', help='Cold check in a fresh public source/project copy')
-    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2, 4 or 8; PC stays serial')
+    parser.add_argument('--test-forks', type=test_forks, default=None, help='Bound independent test JVMs: 1, 2, 3, 4 or 8; PC stays serial')
+    parser.add_argument('--gradle-workers', type=gradle_workers, default=None, help='Bound Gradle max workers independently (1..16)')
     args = parser.parse_args()
     try:
         plan = plan_development(REPO, args.suite)
@@ -229,7 +266,7 @@ def main():
         parser.error(str(error))
     if args.list:
         print(json.dumps(dict(plan, testConcurrency=test_concurrency(
-            {m: [] for g in plan['groups'] for m in g['tests']}, args.test_forks)), ensure_ascii=True))
+            {m: [] for g in plan['groups'] for m in g['tests']}, args.test_forks, args.gradle_workers)), ensure_ascii=True))
         return 0
     if args.output is None or args.output.exists():
         parser.error('--output must name a new result directory')
@@ -241,7 +278,8 @@ def main():
         for path in source_files(REPO):
             target = repo/path.relative_to(REPO); target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, target)
-    return run_development(repo, args.output.resolve(), plan, args.cold, args.test_forks)
+    return run_development(repo, args.output.resolve(), plan, args.cold, args.test_forks,
+                           workers_gradle=args.gradle_workers)
 
 
 if __name__ == '__main__':

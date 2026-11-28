@@ -7,83 +7,49 @@ data class Judgment(val exitCode: Int, val document: JsonObject) {
     val status: String get() = document.getValue("result").jsonPrimitive.content
 }
 
-/** Evaluates immutable raw records; the expected trace, if supplied, is a separate fixed input. */
+/** Evaluates immutable raw records via bounded-memory single-pass/dual-stream validation. */
 object TraceComparator {
-    fun evaluate(scenario: JsonObject, contract: JsonObject, actual: List<JsonObject>,
-                 expected: List<JsonObject>? = null): Judgment = try {
+    private val RESERVED_RAW_RECORD_KEYS = setOf("source", "layer", "coordinateModel", "timeModel", "angleUnit")
+
+    fun evaluate(
+        scenario: JsonObject,
+        contract: JsonObject,
+        actual: List<JsonObject>,
+        expected: List<JsonObject>? = null,
+    ): Judgment = evaluateSources(
+        scenario = scenario,
+        contract = contract,
+        actual = listTraceSource(actual),
+        expected = expected?.let(::listTraceSource),
+    )
+
+    internal fun evaluateSources(
+        scenario: JsonObject,
+        contract: JsonObject,
+        actual: TraceSource,
+        expected: TraceSource? = null,
+    ): Judgment = try {
         validateContract(scenario, contract)
-        val left = expected?.let { validateTrace(scenario, contract, it) }
-        val right = validateTrace(scenario, contract, actual)
-        val rules = contract.arrayAt("rules")
-        if (rules.isEmpty()) throw Incomplete("empty-rules", "No self-behavior assertions declared")
-        var evaluations = 0
-        var actionIndex = 0
-        var observations = 0
-        val actionPlan = scenario.arrayAt("actions").map { it.jsonObject }.sortedBy { it.integer("atStep") }
-        for ((index, row) in right.withIndex()) {
-            if (row.text("kind") == "action-result") {
-                val action = row.objectAt("action")
-                val declared = actionPlan[actionIndex++]
-                val boundary = scenario.objectAt("termination").arrayAt("steps")[observations - 1].jsonObject.required("stepIndex")
-                val difference = difference(declared, action, "action")
-                    ?: difference(declared.required("atStep"), row.required("atStep"), "atStep")
-                    ?: difference(boundary, row.required("atStep"), "input.effectiveBoundary")
-                if (difference != null) return divergence(contract, "input.schedule", difference, index, right, left, evaluations)
-            }
-            if (row.text("kind") == "observation") {
-                observations++
-                val view = normalize(row).objectAt("observation")
-                if (row["phase"] == s("initial")) {
-                    for (spawn in scenario.arrayAt("units").map { it.jsonObject }) {
-                        val unit = view.arrayAt("units").map { it.jsonObject }.single { it["unitId"] == spawn["unitId"] }
-                        val fields = obj("owner" to spawn.required("owner"), "type" to spawn.required("type"),
-                            "position" to spawn.required("position"), "heading" to spawn.required("heading"),
-                            "speed" to n(0), "angularVelocity" to n(0), "moveTarget" to JsonNull,
-                            "pathPoints" to array(emptyList()), "movementState" to s("idle"))
-                        for ((key, wanted) in fields) {
-                            val mismatch = difference(wanted, unit.required(key), "observation.units.${spawn.id("unitId")}.$key")
-                            if (mismatch != null) return divergence(contract, "input.initial-state", mismatch, index, right, left, evaluations)
-                        }
-                    }
-                }
-                for (rule in rules.map { it.jsonObject }) {
-                    if (!matches(rule["when"] as? JsonObject, row, right, index)) continue
-                    for (assertion in rule.arrayAt("assertions").map { it.jsonObject }) {
-                        evaluations++
-                        val path = assertion.text("path")
-                        val value = lookup(view, path)
-                        val wanted = assertion["value"] ?: JsonNull
-                        val passed = when (assertion.text("operator")) {
-                            "equals" -> value != null && difference(wanted, value, path) == null
-                            "absent-or-null" -> value == null || value == JsonNull
-                            "contains" -> value is JsonArray && value.any {
-                                difference(wanted, if (it is JsonObject) it["kind"] ?: it else it, path) == null
-                            }
-                            else -> false // All operators were validated before collection.
-                        }
-                        if (value == null && assertion.text("operator") != "absent-or-null") {
-                            throw Incomplete("missing-field", "Assertion field is missing: $path")
-                        }
-                        if (!passed) return divergence(contract, rule.id("ruleId"),
-                            Difference("observation.$path", wanted, value ?: JsonNull), index, right, left, evaluations,
-                            assertion.text("operator"))
+        val expectedCount = expected?.let { validateTraceStream(scenario, contract, it) }
+        val evaluator = StreamEvaluator(scenario, contract, expectedCount)
+        if (expected != null) {
+            actual.openIterator().use { actIter ->
+                expected.openIterator().use { expIter ->
+                    while (actIter.hasNext()) {
+                        val actRow = actIter.next()
+                        val expRow = if (expIter.hasNext()) expIter.next() else null
+                        evaluator.accept(actRow, expRow, compareExpected = true)
                     }
                 }
             }
-            if (left != null) {
-                val difference = difference(left.getOrNull(index)?.let(::normalize) ?: JsonNull, normalize(row), "")
-                if (difference != null) return divergence(contract, "trace.exact", difference, index, right, left, evaluations)
+        } else {
+            actual.openIterator().use { actIter ->
+                while (actIter.hasNext()) {
+                    evaluator.accept(actIter.next())
+                }
             }
         }
-        val untriggered = rules.map { it.jsonObject }.filter { rule -> right.withIndex().none { (i, row) ->
-            row.text("kind") == "observation" && matches(rule["when"] as? JsonObject, row, right, i)
-        } }
-        if (untriggered.isNotEmpty()) throw Incomplete("untriggered-rule", "Rule never evaluated: ${untriggered.map { it.id("ruleId") }}")
-        val result = judgment(0, "completed", contract, "exact-self-behavior", evaluations)
-        result.copy(document = JsonObject(result.document + ("comparison" to JsonObject(result.document.objectAt("comparison") + mapOf(
-            "traceCompared" to b(expected != null), "actualRecordCount" to n(actual.size),
-            "expectedRecordCount" to (expected?.size?.let(::n) ?: JsonNull), "observationCount" to n(observations),
-            "requiredSteps" to n(scenario.objectAt("termination").arrayAt("steps").size))))))
+        evaluator.finish({ actual }, expected?.let { { it } })
     } catch (failure: TraceFailure) {
         judgment(failure.code, if (failure.code == 4) "execution-failed" else "evidence-insufficient", contract,
             failure.category, reason = failure.message)
@@ -166,316 +132,663 @@ object TraceComparator {
         }
     }
 
-    private fun matches(condition: JsonObject?, row: JsonObject, rows: List<JsonObject>, index: Int): Boolean {
+    private fun matches(condition: JsonObject?, row: JsonObject, recentActions: List<JsonObject>): Boolean {
         if (condition == null) return true
         val observation = row.objectAt("observation")
         if (condition["phase"] != null && condition["phase"] != row["phase"]) return false
         if (condition["stepIndex"] != null && condition.integer("stepIndex") != observation.integer("stepIndex")) return false
         if (condition["event"] == null) return true
         val status = if (condition.text("event") == "action-accepted") "accepted" else "rejected"
-        val actions = rows.take(index).takeLastWhile { it.text("kind") != "observation" }.filter { it.text("kind") == "action-result" }
-        return actions.any { it.objectAt("result").text("status") == status &&
-            (condition["actionKind"] == null || it.objectAt("action")["kind"] == condition["actionKind"]) &&
-            (condition["actionId"] == null || it.objectAt("action")["actionId"] == condition["actionId"]) &&
-            (condition["unitId"] == null || it.objectAt("action")["unitId"] == condition["unitId"]) } &&
-            observation.arrayAt("actionResults").isNotEmpty()
+        return recentActions.any {
+            it.objectAt("result").text("status") == status &&
+                (condition["actionKind"] == null || it.objectAt("action")["kind"] == condition["actionKind"]) &&
+                (condition["actionId"] == null || it.objectAt("action")["actionId"] == condition["actionId"]) &&
+                (condition["unitId"] == null || it.objectAt("action")["unitId"] == condition["unitId"])
+        } && observation.arrayAt("actionResults").isNotEmpty()
     }
 
-    private fun validateTrace(scenario: JsonObject, contract: JsonObject, rows: List<JsonObject>): List<JsonObject> {
-        if (rows.isEmpty()) throw Incomplete("missing-start", "Empty trace")
-        try {
-            rows.forEach { row ->
-                if (row.integer("schemaVersion") != 1L) throw InputError("Unknown trace schema version")
-                finite(row)
-                if (row.keys.any { it in setOf("source", "layer", "coordinateModel", "timeModel", "angleUnit") }) {
-                    throw Incomplete("reserved-field", "Raw record contains normalized-layer metadata")
-                }
+    private sealed interface AssertionOutcome {
+        data class Diverged(
+            val ruleId: String,
+            val difference: Difference,
+            val index: Int,
+            val evaluations: Int,
+            val operator: String,
+        ) : AssertionOutcome
+        data class Failed(val error: RuntimeException) : AssertionOutcome
+    }
+
+    internal class StreamEvaluator(
+        private val scenario: JsonObject,
+        private val contract: JsonObject,
+        private val expectedRecordCount: Int? = null,
+    ) {
+        private val traceValidator = StreamTraceValidator(scenario, contract)
+        private val rules = contract.arrayAt("rules").map { it.jsonObject }
+        private val actionPlan = scenario.arrayAt("actions").map { it.jsonObject }.sortedBy { it.integer("atStep") }
+        private val scheduledSteps = scenario.objectAt("termination").arrayAt("steps").map { it.jsonObject }
+        private val spawnedUnits = scenario.arrayAt("units").map { it.jsonObject }
+        private var index = 0
+        private var evaluations = 0
+        private var actionIndex = 0
+        private var observations = 0
+        private val recentActionRows = mutableListOf<JsonObject>()
+        private val triggeredRuleIds = mutableSetOf<String>()
+        private var firstAssertionOutcome: AssertionOutcome? = null
+
+        fun accept(row: JsonObject, expectedRow: JsonObject? = null, compareExpected: Boolean = false) {
+            traceValidator.accept(row)
+            if (firstAssertionOutcome == null && !traceValidator.hasFailure() && rules.isNotEmpty()) {
+                evaluateRowAssertions(index, row, expectedRow, compareExpected)
             }
-            if (rows.first().text("kind") != "run-start") throw Incomplete("missing-start", "Missing run-start")
-            rows.first().id("runId"); rows.first().text("startedAt")
-            if (rows.last().text("kind") != "run-end") throw Incomplete("missing-completion", "Missing run-end or truncated trace")
-            val end = rows.last()
-            val status = end.text("status")
-            val exit = end.integer("exitCode")
-            if (status == "execution-failed" || exit == 4L) throw ExecutionFailure("Recorded execution failed")
-            if (exit == 64L) throw InputError("Recorded input error")
-            if (status !in setOf("completed", "assertion-failed", "evidence-insufficient", "cancelled") ||
-                (status == "completed" && exit != 0L) || (status == "assertion-failed" && exit != 2L) ||
-                (status in setOf("evidence-insufficient", "cancelled") && exit != 3L)) {
-                throw Incomplete("invalid-completion", "Inconsistent completion status and exit code")
-            }
-            if (end.required("complete") != b(true) || status == "cancelled") throw Incomplete("incomplete", "Collection is incomplete")
-            if (status == "evidence-insufficient") throw Incomplete("producer-evidence-insufficient", "Producer did not establish sufficient evidence")
-            val steps = scenario.objectAt("termination").arrayAt("steps").map { it.jsonObject }
-            if (steps.isEmpty() || end.integer("requiredSteps") != steps.size.toLong() || end.integer("observedSteps") != steps.size.toLong()) {
-                throw Incomplete("missing-step", "Completion counters do not match the independent schedule")
-            }
-            val samples = mutableSetOf<String>()
-            val eventIds = mutableSetOf<String>()
-            val actionIds = mutableSetOf<String>()
-            val declaredActions = scenario.arrayAt("actions").map { it.jsonObject }
-            val unitIds = scenario.arrayAt("units").map { it.jsonObject.id("unitId") }.toSet()
-            val products = ProductionDeclaration.products(scenario, contract)
-            val buildings = ConstructionDeclaration.buildings(scenario, contract)
-            val conversions = UpgradeDeclaration.conversions(scenario, contract)
-            val unitConversions = UnitActionDeclaration.conversions(scenario, contract)
-            val unitActionTypes = UnitActionDeclaration.types(scenario)
-            val blinkCompletions = blinkCompletions(scenario, contract)
-            val fixedActions = declaredActions.associateBy { it.id("actionId") }
-            val boostedTypes = UnitActionDeclaration.afterburnPairs(scenario).values
-            val nautilusTransitions = NautilusTraceValidator.validate(scenario, contract, rows) {
-                throw Incomplete("nautilus-transition", it)
-            }
-            val nuclearTransitions = NuclearTraceValidator.validate(scenario, contract, rows) {
-                throw Incomplete("nuclear-history", it)
-            }
-            val actionClocks = steps.runningFold(0) { now, declared ->
-                (now.toFloat() + declared.number("delta").toFloat() * 16.666666f).toInt()
-            }.drop(1)
-            val automaticCooldowns = (scenario.arrayAt("units").map { it.jsonObject } + products + buildings)
-                .filter { (it["typeId"] ?: it["type"])?.jsonPrimitive?.content in unitActionTypes }
-                .associate { declared ->
-                    val id = declared.id("unitId")
-                    var type = (declared["typeId"] ?: declared.required("type")).jsonPrimitive.content
-                    var remaining = 0f
-                    val changes = unitConversions.filter { it.id("unitId") == id }
-                        .associateBy { it.integer("completionStepIndex") }
-                    val birth = declared["birthStepIndex"]?.jsonPrimitive?.long ?: -1L
-                    id to steps.mapIndexed { index, scheduled ->
-                        if (index.toLong() > birth) {
-                            val change = changes[index.toLong()]
-                            if (change != null) type = change.id("targetTypeId")
-                            if (type in boostedTypes) remaining = maxOf(0f, remaining - scheduled.number("delta").toFloat())
-                            if (change?.get("actionId") == JsonNull) remaining = 60f
-                        }
-                        remaining
+            index++
+        }
+
+        private fun evaluateRowAssertions(
+            rowIndex: Int,
+            row: JsonObject,
+            expectedRow: JsonObject?,
+            compareExpected: Boolean,
+        ) {
+            try {
+                val kind = (row["kind"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                if (kind == "action-result") {
+                    recentActionRows += row
+                    val action = row.objectAt("action")
+                    val declared = actionPlan.getOrNull(actionIndex++) ?: return
+                    val boundary = scheduledSteps.getOrNull(observations - 1)?.required("stepIndex") ?: return
+                    val diff = difference(declared, action, "action")
+                        ?: difference(declared.required("atStep"), row.required("atStep"), "atStep")
+                        ?: difference(boundary, row.required("atStep"), "input.effectiveBoundary")
+                    if (diff != null) {
+                        firstAssertionOutcome = AssertionOutcome.Diverged("input.schedule", diff, rowIndex, evaluations, "exact")
+                        return
                     }
                 }
-            val removals = ReclaimDeclaration.removals(scenario, contract)
-            val acceptedActions = mutableSetOf<String>()
-            var sampleCount = 0
-            var time = BigDecimal.ZERO
-            var world: String? = null
-            val pendingActions = mutableListOf<JsonObject>()
-            var pendingEvents = emptyList<JsonObject>()
-            var current: JsonObject? = null
-            for (row in rows.drop(1).dropLast(1)) {
-                if (row.text("kind") != "event" && pendingEvents.isNotEmpty()) throw Incomplete("missing-event", "Missing exported event")
-                when (row.text("kind")) {
-                    "action-result" -> {
-                        if (sampleCount == 0 || sampleCount > steps.size) throw Incomplete("action-order", "Action outside sampling boundary")
-                        row.integer("atStep")
-                        val action = row.objectAt("action")
-                        val id = action.id("actionId")
-                        if (!actionIds.add(id) || declaredActions.none { it.id("actionId") == id }) throw Incomplete("action-identity", "Duplicate or unknown action")
-                        action.integer("atStep"); action.id("actor"); action.id("unitId"); action.text("kind")
-                        if (action.text("kind") == "move") point(action.objectAt("target"))
-                        val result = row.objectAt("result")
-                        actionResult(result)
-                        if (result.text("status") == "accepted") acceptedActions += id
-                        if (result.id("actionId") != id) throw Incomplete("action-identity", "Action/result ID mismatch")
-                        pendingActions += result
+                if (kind == "observation") {
+                    observations++
+                    val view = normalize(row).objectAt("observation")
+                    if (row["phase"] == s("initial")) {
+                        val unitsById = view.arrayAt("units").map { it.jsonObject }.associateBy { it["unitId"] }
+                        for (spawn in spawnedUnits) {
+                            val unit = unitsById[spawn["unitId"]] ?: return
+                            val fields = obj(
+                                "owner" to spawn.required("owner"),
+                                "type" to spawn.required("type"),
+                                "position" to spawn.required("position"),
+                                "heading" to spawn.required("heading"),
+                                "speed" to n(0),
+                                "angularVelocity" to n(0),
+                                "moveTarget" to JsonNull,
+                                "pathPoints" to array(emptyList()),
+                                "movementState" to s("idle"),
+                            )
+                            for ((key, wanted) in fields) {
+                                val actualVal = unit[key] ?: return
+                                val mismatch = difference(wanted, actualVal, "observation.units.${spawn.id("unitId")}.$key")
+                                if (mismatch != null) {
+                                    firstAssertionOutcome = AssertionOutcome.Diverged(
+                                        "input.initial-state", mismatch, rowIndex, evaluations, "exact",
+                                    )
+                                    recentActionRows.clear()
+                                    return
+                                }
+                            }
+                        }
                     }
-                    "observation" -> {
-                        val observation = row.objectAt("observation")
-                        val initial = sampleCount == 0
-                        if (row.text("phase") != if (initial) "initial" else "after-advance") throw Incomplete("sample-order", "Wrong sample phase")
-                        if (!samples.add(observation.id("sampleId"))) throw Incomplete("duplicate-sample", "Duplicate sample ID")
-                        val id = observation.id("worldId")
-                        if (world != null && world != id) throw Incomplete("world-identity", "World changed within a run")
-                        world = id
-                        if (observation.id("scenarioId") != scenario.id("scenarioId")) throw InputError("Scenario identity mismatch in observation")
-                        val step = if (initial) 0L else steps.getOrNull(sampleCount - 1)?.integer("stepIndex")
-                            ?: throw Incomplete("extra-step", "Unexpected sample beyond schedule")
-                        if (observation.integer("stepIndex") != step) throw Incomplete("missing-step", "Missing, duplicate or reordered step")
-                        if (!initial) time += decimal(steps[sampleCount - 1].required("delta"))
-                        if (decimal(observation.required("simulationTime")).compareTo(time) != 0) throw Incomplete("time-alignment", "Simulation time differs from explicit schedule")
-                        val born = ProductionDeclaration.born(products, row)
-                        val built = ProductionDeclaration.born(buildings, row)
-                        val removed = ProductionDeclaration.born(removals, row, "removalStepIndex")
-                        val removedIds = removed.map { it.id("unitId") }.toSet()
-                        val expectedIds = (unitIds + born.map { it.id("unitId") } + built.map { it.id("unitId") }) - removedIds
-                        if (scenario.containsKey("maintenanceContract")) {
-                            val registered = observation.arrayAt("reclaimedUnitIds").map { it.jsonPrimitive.content }
-                            if (registered.size != removedIds.size || registered.toSet() != removedIds ||
-                                removed.any { it.id("reclaimActionId") !in acceptedActions })
-                                throw Incomplete("reclaim-identity", "Missing, premature or unknown reclaim registration")
-                            for (removal in removed.filter { it.integer("removalStepIndex") == step && !initial }) {
-                                if (observation.arrayAt("events").none { it.jsonObject["kind"] == s("building-reclaimed") &&
-                                        it.jsonObject["unitId"] == removal["unitId"] })
-                                    throw Incomplete("reclaim-event", "Removal has no formal reclaim event at its declared boundary")
+                    for (rule in rules) {
+                        if (!matches(rule["when"] as? JsonObject, row, recentActionRows)) continue
+                        triggeredRuleIds += rule.id("ruleId")
+                        for (assertionElement in rule.arrayAt("assertions")) {
+                            val assertion = assertionElement.jsonObject
+                            evaluations++
+                            val path = assertion.text("path")
+                            val value = lookup(view, path)
+                            val wanted = assertion["value"] ?: JsonNull
+                            val operator = assertion.text("operator")
+                            val passed = when (operator) {
+                                "equals" -> value != null && difference(wanted, value, path) == null
+                                "absent-or-null" -> value == null || value == JsonNull
+                                "contains" -> value is JsonArray && value.any {
+                                    difference(wanted, if (it is JsonObject) it["kind"] ?: it else it, path) == null
+                                }
+                                else -> false // All operators were validated before collection.
+                            }
+                            if (value == null && operator != "absent-or-null") {
+                                throw Incomplete("missing-field", "Assertion field is missing: $path")
+                            }
+                            if (!passed) {
+                                firstAssertionOutcome = AssertionOutcome.Diverged(
+                                    rule.id("ruleId"),
+                                    Difference("observation.$path", wanted, value ?: JsonNull),
+                                    rowIndex,
+                                    evaluations,
+                                    operator,
+                                )
+                                break
                             }
                         }
-                        validatePlayerSamples(scenario, observation, expectedIds)
-                        val units = observation.arrayAt("units").map { it.jsonObject }
-                        if (units.map { it.id("unitId") }.toSet() != expectedIds || units.size != expectedIds.size) throw Incomplete("missing-object", "Missing, duplicate, early or unknown unit")
-                        if (products.isNotEmpty()) {
-                            val births = observation.objectAt("production").arrayAt("units").map { it.jsonObject }
-                            if (births.map { it.id("unitId") }.toSet() != born.map { it.id("unitId") }.toSet() || births.size != born.size)
-                                throw Incomplete("production-identity", "Missing or unexpected formal production result")
-                            for (product in born) {
-                                val birth = births.single { it.id("unitId") == product.id("unitId") }
-                                if (product.id("productionActionId") !in acceptedActions || birth.id("producerId") != product.id("producerId"))
-                                    throw Incomplete("production-identity", "Product differs from its accepted producer")
-                                if (product.id("unitId") in removedIds) continue
-                                val unit = units.single { it.id("unitId") == product.id("unitId") }
-                                if (
-                                    unit.id("ownerPlayerId") != product.id("owner") ||
-                                    unit.id("typeId") != UpgradeDeclaration.typeAt(product.id("unitId"), product.id("typeId"), conversions + unitConversions, row))
-                                    throw Incomplete("production-identity", "Product differs from its accepted producer, owner or type")
+                        if (firstAssertionOutcome != null) break
+                    }
+                    recentActionRows.clear()
+                }
+                if (firstAssertionOutcome == null && compareExpected) {
+                    val diff = difference(expectedRow?.let(::normalize) ?: JsonNull, normalize(row), "")
+                    if (diff != null) {
+                        firstAssertionOutcome = AssertionOutcome.Diverged("trace.exact", diff, rowIndex, evaluations, "exact")
+                    }
+                }
+            } catch (failure: TraceFailure) {
+                firstAssertionOutcome = AssertionOutcome.Failed(failure)
+            } catch (failure: InputError) {
+                firstAssertionOutcome = AssertionOutcome.Failed(failure)
+            } catch (failure: IllegalArgumentException) {
+                firstAssertionOutcome = AssertionOutcome.Failed(failure)
+            }
+        }
+
+        fun finish(
+            actualSource: () -> TraceSource,
+            expectedSource: (() -> TraceSource)? = null,
+        ): Judgment = try {
+            val actualCount = traceValidator.finish()
+            if (rules.isEmpty()) throw Incomplete("empty-rules", "No self-behavior assertions declared")
+            when (val outcome = firstAssertionOutcome) {
+                is AssertionOutcome.Failed -> throw outcome.error
+                is AssertionOutcome.Diverged -> return buildDivergence(contract, outcome, actualSource(), expectedSource?.invoke())
+                null -> Unit
+            }
+            val untriggered = rules.filter { it.id("ruleId") !in triggeredRuleIds }
+            if (untriggered.isNotEmpty()) {
+                throw Incomplete("untriggered-rule", "Rule never evaluated: ${untriggered.map { it.id("ruleId") }}")
+            }
+            val result = judgment(0, "completed", contract, "exact-self-behavior", evaluations)
+            result.copy(document = JsonObject(result.document + ("comparison" to JsonObject(result.document.objectAt("comparison") + mapOf(
+                "traceCompared" to b(expectedRecordCount != null),
+                "actualRecordCount" to n(actualCount),
+                "expectedRecordCount" to (expectedRecordCount?.let(::n) ?: JsonNull),
+                "observationCount" to n(observations),
+                "requiredSteps" to n(scheduledSteps.size),
+            )))))
+        } catch (failure: TraceFailure) {
+            judgment(failure.code, if (failure.code == 4) "execution-failed" else "evidence-insufficient", contract,
+                failure.category, reason = failure.message)
+        } catch (failure: InputError) {
+            judgment(64, "execution-failed", contract, "input-error", reason = failure.message)
+        } catch (failure: IllegalArgumentException) {
+            judgment(64, "execution-failed", contract, "input-error", reason = failure.message)
+        }
+    }
+
+    private fun validateTraceStream(scenario: JsonObject, contract: JsonObject, source: TraceSource): Int {
+        val validator = StreamTraceValidator(scenario, contract)
+        source.openIterator().use { iter ->
+            while (iter.hasNext()) {
+                validator.accept(iter.next())
+            }
+        }
+        return validator.finish()
+    }
+
+    private fun normalizeTraceException(failure: RuntimeException): RuntimeException = when (failure) {
+        is TraceFailure -> failure
+        is InputError -> {
+            if (failure.message?.contains("schema version") == true ||
+                failure.message?.contains("identity mismatch") == true ||
+                failure.message == "Recorded input error"
+            ) failure
+            else Incomplete("missing-or-invalid-field", failure.message ?: "Invalid trace field")
+        }
+        is IllegalArgumentException -> Incomplete("missing-or-invalid-field", failure.message ?: "Invalid trace field")
+        else -> failure
+    }
+
+    private class StreamTraceValidator(
+        private val scenario: JsonObject,
+        contract: JsonObject,
+    ) {
+        private val steps = scenario.objectAt("termination").arrayAt("steps").map { it.jsonObject }
+        private var rowCount = 0
+        private var firstRow: JsonObject? = null
+        private var pendingMiddleRow: JsonObject? = null
+
+        private var headerError: RuntimeException? = null
+        private var nautilusError: RuntimeException? = null
+        private var nuclearError: RuntimeException? = null
+        private var bodyError: RuntimeException? = null
+
+        private val nautilusSession: NautilusTraceValidator.Session? = try {
+            NautilusTraceValidator.Session(scenario, contract) { throw Incomplete("nautilus-transition", it) }
+        } catch (failure: RuntimeException) {
+            nautilusError = normalizeTraceException(failure)
+            null
+        }
+
+        private val nuclearSession: NuclearTraceValidator.Session? = try {
+            NuclearTraceValidator.Session(scenario, contract) { throw Incomplete("nuclear-history", it) }
+        } catch (failure: RuntimeException) {
+            nuclearError = normalizeTraceException(failure)
+            null
+        }
+
+        private val bodySession: BodyValidatorSession? = try {
+            BodyValidatorSession(
+                scenario = scenario,
+                contract = contract,
+                steps = steps,
+                nautilusTransitions = nautilusSession?.identities.orEmpty(),
+                nuclearTransitions = nuclearSession?.ids.orEmpty(),
+            )
+        } catch (failure: RuntimeException) {
+            bodyError = normalizeTraceException(failure)
+            null
+        }
+
+        fun hasFailure(): Boolean =
+            headerError != null || nautilusError != null || nuclearError != null || bodyError != null
+
+        fun accept(row: JsonObject) {
+            if (headerError == null) {
+                try {
+                    if (row.integer("schemaVersion") != 1L) throw InputError("Unknown trace schema version")
+                    finite(row)
+                    if (row.keys.any { it in RESERVED_RAW_RECORD_KEYS }) {
+                        throw Incomplete("reserved-field", "Raw record contains normalized-layer metadata")
+                    }
+                } catch (failure: RuntimeException) {
+                    headerError = normalizeTraceException(failure)
+                }
+            }
+            if (nautilusError == null) {
+                try {
+                    nautilusSession?.accept(row)
+                } catch (failure: RuntimeException) {
+                    nautilusError = normalizeTraceException(failure)
+                }
+            }
+            if (nuclearError == null) {
+                try {
+                    nuclearSession?.accept(row)
+                } catch (failure: RuntimeException) {
+                    nuclearError = normalizeTraceException(failure)
+                }
+            }
+            if (rowCount == 0) {
+                firstRow = row
+            } else {
+                if (rowCount >= 2 && bodyError == null) {
+                    try {
+                        bodySession?.acceptMiddleRow(pendingMiddleRow!!)
+                    } catch (failure: RuntimeException) {
+                        bodyError = normalizeTraceException(failure)
+                    }
+                }
+                pendingMiddleRow = row
+            }
+            rowCount++
+        }
+
+        fun finish(): Int {
+            if (rowCount == 0) throw Incomplete("missing-start", "Empty trace")
+            headerError?.let { throw it }
+            try {
+                val startRow = firstRow!!
+                val end = if (rowCount == 1) startRow else pendingMiddleRow!!
+                if (startRow.text("kind") != "run-start") throw Incomplete("missing-start", "Missing run-start")
+                startRow.id("runId"); startRow.text("startedAt")
+                if (end.text("kind") != "run-end") throw Incomplete("missing-completion", "Missing run-end or truncated trace")
+                val status = end.text("status")
+                val exit = end.integer("exitCode")
+                if (status == "execution-failed" || exit == 4L) throw ExecutionFailure("Recorded execution failed")
+                if (exit == 64L) throw InputError("Recorded input error")
+                if (status !in setOf("completed", "assertion-failed", "evidence-insufficient", "cancelled") ||
+                    (status == "completed" && exit != 0L) || (status == "assertion-failed" && exit != 2L) ||
+                    (status in setOf("evidence-insufficient", "cancelled") && exit != 3L)
+                ) {
+                    throw Incomplete("invalid-completion", "Inconsistent completion status and exit code")
+                }
+                if (end.required("complete") != b(true) || status == "cancelled") throw Incomplete("incomplete", "Collection is incomplete")
+                if (status == "evidence-insufficient") throw Incomplete("producer-evidence-insufficient", "Producer did not establish sufficient evidence")
+                if (steps.isEmpty() || end.integer("requiredSteps") != steps.size.toLong() || end.integer("observedSteps") != steps.size.toLong()) {
+                    throw Incomplete("missing-step", "Completion counters do not match the independent schedule")
+                }
+            } catch (failure: RuntimeException) {
+                throw normalizeTraceException(failure)
+            }
+            nautilusError?.let { throw it }
+            nuclearError?.let { throw it }
+            bodyError?.let { throw it }
+            try {
+                bodySession!!.finishBody()
+            } catch (failure: RuntimeException) {
+                throw normalizeTraceException(failure)
+            }
+            val total = rowCount
+            firstRow = null
+            pendingMiddleRow = null
+            return total
+        }
+    }
+
+    private class BodyValidatorSession(
+        private val scenario: JsonObject,
+        contract: JsonObject,
+        private val steps: List<JsonObject>,
+        private val nautilusTransitions: Set<String>,
+        private val nuclearTransitions: Set<String>,
+    ) {
+        private val samples = mutableSetOf<String>()
+        private val eventIds = mutableSetOf<String>()
+        private val actionIds = mutableSetOf<String>()
+        private val declaredActions = scenario.arrayAt("actions").map { it.jsonObject }
+        private val declaredActionIds = declaredActions.map { it.id("actionId") }.toSet()
+        private val spawnedUnits = scenario.arrayAt("units").map { it.jsonObject }
+        private val unitIds = spawnedUnits.map { it.id("unitId") }.toSet()
+        private val products = ProductionDeclaration.products(scenario, contract)
+        private val buildings = ConstructionDeclaration.buildings(scenario, contract)
+        private val conversions = UpgradeDeclaration.conversions(scenario, contract)
+        private val conversionsByUnitId = conversions.groupBy { it.id("unitId") }
+        private val allConversions = conversions + UnitActionDeclaration.conversions(scenario, contract)
+        private val unitConversions = UnitActionDeclaration.conversions(scenario, contract)
+        private val unitActionTypes = UnitActionDeclaration.types(scenario)
+        private val blinkCompletions = blinkCompletions(scenario, contract)
+        private val fixedActions = declaredActions.associateBy { it.id("actionId") }
+        private val boostedTypes = UnitActionDeclaration.afterburnPairs(scenario).values
+        private val actionClocks: IntArray = IntArray(steps.size).also { arr ->
+            var now = 0
+            for (i in steps.indices) {
+                now = (now.toFloat() + steps[i].number("delta").toFloat() * 16.666666f).toInt()
+                arr[i] = now
+            }
+        }
+        private val automaticCooldowns: Map<String, FloatArray> = (spawnedUnits + products + buildings)
+            .filter { (it["typeId"] ?: it["type"])?.jsonPrimitive?.content in unitActionTypes }
+            .associate { declared ->
+                val id = declared.id("unitId")
+                var type = (declared["typeId"] ?: declared.required("type")).jsonPrimitive.content
+                var remaining = 0f
+                val changes = unitConversions.filter { it.id("unitId") == id }
+                    .associateBy { it.integer("completionStepIndex") }
+                val birth = declared["birthStepIndex"]?.jsonPrimitive?.long ?: -1L
+                val schedule = FloatArray(steps.size)
+                for (index in steps.indices) {
+                    if (index.toLong() > birth) {
+                        val change = changes[index.toLong()]
+                        if (change != null) type = change.id("targetTypeId")
+                        if (type in boostedTypes) remaining = maxOf(0f, remaining - steps[index].number("delta").toFloat())
+                        if (change?.get("actionId") == JsonNull) remaining = 60f
+                    }
+                    schedule[index] = remaining
+                }
+                id to schedule
+            }
+        private val removals = ReclaimDeclaration.removals(scenario, contract)
+        private val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades", "mech-engineer"))
+        private val upgradeTypes = upgradeTypes(scenario)
+        private val authorTypes = typesLoadedBy(scenario, setOf("author-upgrading-producer"))
+        private val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer", "nautilus"))
+        private val hasConstructionFlag = hasConstruction(scenario)
+        private val scenarioId = scenario.id("scenarioId")
+
+        private val acceptedActions = mutableSetOf<String>()
+        private var sampleCount = 0
+        private var time = BigDecimal.ZERO
+        private var world: String? = null
+        private val pendingActions = mutableListOf<JsonObject>()
+        private val pendingEvents = ArrayDeque<JsonObject>()
+        private var hasCurrentSample = false
+        private var currentSampleId: JsonElement? = null
+        private var currentStepIndex: JsonElement? = null
+
+        fun acceptMiddleRow(row: JsonObject) {
+            if (row.text("kind") != "event" && pendingEvents.isNotEmpty()) {
+                throw Incomplete("missing-event", "Missing exported event")
+            }
+            when (row.text("kind")) {
+                "action-result" -> {
+                    if (sampleCount == 0 || sampleCount > steps.size) throw Incomplete("action-order", "Action outside sampling boundary")
+                    row.integer("atStep")
+                    val action = row.objectAt("action")
+                    val id = action.id("actionId")
+                    if (!actionIds.add(id) || id !in declaredActionIds) throw Incomplete("action-identity", "Duplicate or unknown action")
+                    action.integer("atStep"); action.id("actor"); action.id("unitId"); action.text("kind")
+                    if (action.text("kind") == "move") point(action.objectAt("target"))
+                    val result = row.objectAt("result")
+                    actionResult(result)
+                    if (result.text("status") == "accepted") acceptedActions += id
+                    if (result.id("actionId") != id) throw Incomplete("action-identity", "Action/result ID mismatch")
+                    pendingActions += result
+                }
+                "observation" -> {
+                    val observation = row.objectAt("observation")
+                    val initial = sampleCount == 0
+                    if (row.text("phase") != if (initial) "initial" else "after-advance") throw Incomplete("sample-order", "Wrong sample phase")
+                    if (!samples.add(observation.id("sampleId"))) throw Incomplete("duplicate-sample", "Duplicate sample ID")
+                    val id = observation.id("worldId")
+                    if (world != null && world != id) throw Incomplete("world-identity", "World changed within a run")
+                    world = id
+                    if (observation.id("scenarioId") != scenarioId) throw InputError("Scenario identity mismatch in observation")
+                    val step = if (initial) 0L else steps.getOrNull(sampleCount - 1)?.integer("stepIndex")
+                        ?: throw Incomplete("extra-step", "Unexpected sample beyond schedule")
+                    if (observation.integer("stepIndex") != step) throw Incomplete("missing-step", "Missing, duplicate or reordered step")
+                    if (!initial) time += decimal(steps[sampleCount - 1].required("delta"))
+                    if (decimal(observation.required("simulationTime")).compareTo(time) != 0) throw Incomplete("time-alignment", "Simulation time differs from explicit schedule")
+                    val born = ProductionDeclaration.born(products, row)
+                    val built = ProductionDeclaration.born(buildings, row)
+                    val removed = ProductionDeclaration.born(removals, row, "removalStepIndex")
+                    val removedIds = removed.map { it.id("unitId") }.toSet()
+                    val expectedIds = (unitIds + born.map { it.id("unitId") } + built.map { it.id("unitId") }) - removedIds
+                    if (scenario.containsKey("maintenanceContract")) {
+                        val registered = observation.arrayAt("reclaimedUnitIds").map { it.jsonPrimitive.content }
+                        if (registered.size != removedIds.size || registered.toSet() != removedIds ||
+                            removed.any { it.id("reclaimActionId") !in acceptedActions }
+                        ) {
+                            throw Incomplete("reclaim-identity", "Missing, premature or unknown reclaim registration")
+                        }
+                        for (removal in removed.filter { it.integer("removalStepIndex") == step && !initial }) {
+                            if (observation.arrayAt("events").none {
+                                    it.jsonObject["kind"] == s("building-reclaimed") &&
+                                        it.jsonObject["unitId"] == removal["unitId"]
+                                }) {
+                                throw Incomplete("reclaim-event", "Removal has no formal reclaim event at its declared boundary")
                             }
                         }
-                        if (buildings.isNotEmpty()) {
-                            for (building in built) {
-                                if (building.id("unitId") in removedIds) continue
-                                val unit = units.single { it.id("unitId") == building.id("unitId") }
-                                if (building.id("buildActionId") !in acceptedActions || unit.id("ownerPlayerId") != building.id("owner") ||
-                                    unit.id("typeId") != UpgradeDeclaration.typeAt(building.id("unitId"), building.id("typeId"), conversions, row))
-                                    throw Incomplete("construction-identity", "Building differs from its accepted command")
+                    }
+                    validatePlayerSamples(scenario, observation, expectedIds)
+                    val units = observation.arrayAt("units").map { it.jsonObject }
+                    if (units.map { it.id("unitId") }.toSet() != expectedIds || units.size != expectedIds.size) {
+                        throw Incomplete("missing-object", "Missing, duplicate, early or unknown unit")
+                    }
+                    val unitsById = units.associateBy { it.id("unitId") }
+                    if (products.isNotEmpty()) {
+                        val births = observation.objectAt("production").arrayAt("units").map { it.jsonObject }
+                        if (births.map { it.id("unitId") }.toSet() != born.map { it.id("unitId") }.toSet() || births.size != born.size) {
+                            throw Incomplete("production-identity", "Missing or unexpected formal production result")
+                        }
+                        val birthsById = births.associateBy { it.id("unitId") }
+                        for (product in born) {
+                            val pid = product.id("unitId")
+                            val birth = birthsById.getValue(pid)
+                            if (product.id("productionActionId") !in acceptedActions || birth.id("producerId") != product.id("producerId")) {
+                                throw Incomplete("production-identity", "Product differs from its accepted producer")
+                            }
+                            if (pid in removedIds) continue
+                            val unit = unitsById.getValue(pid)
+                            if (unit.id("ownerPlayerId") != product.id("owner") ||
+                                unit.id("typeId") != UpgradeDeclaration.typeAt(pid, product.id("typeId"), allConversions, row)
+                            ) {
+                                throw Incomplete("production-identity", "Product differs from its accepted producer, owner or type")
                             }
                         }
-                        for ((id, changes) in conversions.groupBy { it.id("unitId") }) {
-                            val unit = units.singleOrNull { it.id("unitId") == id } ?: continue
-                            val first = changes.minBy { it.integer("completionStepIndex") }
-                            val completed = ProductionDeclaration.born(changes, row, "completionStepIndex")
-                            if (completed.any { it.id("upgradeActionId") !in acceptedActions } || unit.id("typeId") !=
-                                UpgradeDeclaration.typeAt(id, first.id("sourceTypeId"), conversions, row))
-                                throw Incomplete("conversion-identity", "Converted unit differs from its accepted ordinary upgrade")
+                    }
+                    if (buildings.isNotEmpty()) {
+                        for (building in built) {
+                            val bid = building.id("unitId")
+                            if (bid in removedIds) continue
+                            val unit = unitsById.getValue(bid)
+                            if (building.id("buildActionId") !in acceptedActions || unit.id("ownerPlayerId") != building.id("owner") ||
+                                unit.id("typeId") != UpgradeDeclaration.typeAt(bid, building.id("typeId"), conversions, row)
+                            ) {
+                                throw Incomplete("construction-identity", "Building differs from its accepted command")
+                            }
                         }
-                        val actionObjects = (scenario.arrayAt("units").map { it.jsonObject } + born + built)
+                    }
+                    for ((uid, changes) in conversionsByUnitId) {
+                        val unit = unitsById[uid] ?: continue
+                        val first = changes.minBy { it.integer("completionStepIndex") }
+                        val completed = ProductionDeclaration.born(changes, row, "completionStepIndex")
+                        if (completed.any { it.id("upgradeActionId") !in acceptedActions } || unit.id("typeId") !=
+                            UpgradeDeclaration.typeAt(uid, first.id("sourceTypeId"), conversions, row)
+                        ) {
+                            throw Incomplete("conversion-identity", "Converted unit differs from its accepted ordinary upgrade")
+                        }
+                    }
+                    if (unitActionTypes.isNotEmpty()) {
+                        val actionObjects = (spawnedUnits + born + built)
                             .filter { (it["typeId"] ?: it["type"])?.jsonPrimitive?.content in unitActionTypes }
                         for (declared in actionObjects) {
                             val unitId = declared.id("unitId")
-                            val unit = units.singleOrNull { it.id("unitId") == unitId } ?: continue
+                            val unit = unitsById[unitId] ?: continue
                             val initialType = (declared["typeId"] ?: declared.required("type")).jsonPrimitive.content
                             val changes = unitConversions.filter { it.id("unitId") == unitId }
-                            if (unit.id("typeId") != UpgradeDeclaration.typeAt(unitId, initialType, changes, row))
+                            if (unit.id("typeId") != UpgradeDeclaration.typeAt(unitId, initialType, changes, row)) {
                                 throw Incomplete("unit-action-identity", "Unit form differs from its independent conversion boundary")
+                            }
                             val completed = ProductionDeclaration.born(changes, row, "completionStepIndex")
-                            if (completed.any { it["actionId"] != JsonNull && it.id("actionId") !in acceptedActions })
+                            if (completed.any { it["actionId"] != JsonNull && it.id("actionId") !in acceptedActions }) {
                                 throw Incomplete("unit-action-identity", "Conversion has no accepted unit action")
+                            }
                             if (initialType.startsWith("mechBunker")) {
                                 validateBunkerQueue(unit, declaredActions, acceptedActions, changes, step, initial)
                                 continue
                             }
                             val now = if (initial) 0 else actionClocks[step.toInt()]
-                            val cooldownEnd = completed.filter { change -> change["actionId"] != JsonNull &&
-                                declaredActions.single { it["actionId"] == change["actionId"] }["actionName"] == s("afterBurn") }
-                                .maxOfOrNull { actionClocks[it.integer("completionStepIndex").toInt()] + 25000 }
+                            val cooldownEnd = completed.filter { change ->
+                                change["actionId"] != JsonNull &&
+                                    fixedActions[change.id("actionId")]?.get("actionName") == s("afterBurn")
+                            }.maxOfOrNull { actionClocks[it.integer("completionStepIndex").toInt()] + 25000 }
                             val remaining = maxOf(0, (cooldownEnd ?: now) - now)
-                            if (unit.objectAt("unitActions").objectAt("actions").objectAt("afterBurn")["cooldownRemaining"] != n(remaining))
+                            if (unit.objectAt("unitActions").objectAt("actions").objectAt("afterBurn")["cooldownRemaining"] != n(remaining)) {
                                 throw Incomplete("unit-action-cooldown", "Cooldown differs from the independent integer action clock")
+                            }
                             val automatic = if (initial) 0.0 else automaticCooldowns.getValue(unitId)[step.toInt()].toDouble()
-                            if (unit.objectAt("unitActions").number("automaticCooldown") != automatic)
+                            if (unit.objectAt("unitActions").number("automaticCooldown") != automatic) {
                                 throw Incomplete("unit-action-cooldown", "Automatic cooldown differs from the declared conversion and input schedule")
-                        }
-                        val blinkAtStep = if (initial) emptyList() else blinkCompletions[step].orEmpty()
-                        var expectedActionEvents = if (initial) emptyList() else unitConversions.filter {
-                            it.integer("completionStepIndex") == step }.map {
-                            it.id("unitId") to if (it["actionId"] == JsonNull) "unit-action-automatic" else "unit-action-completed" }
-                        expectedActionEvents += blinkAtStep.map { it.id("unitId") to "unit-action-completed" }
-                        for (declared in blinkAtStep) {
-                            val actionId = declared.id("actionId")
-                            if (actionId !in acceptedActions)
-                                throw Incomplete("blink-completion", "A Blink completion has no accepted command")
-                            val action = fixedActions.getValue(actionId)
-                            if (action["actionName"] == s("blink")) {
-                                val caster = units.single { it.id("unitId") == action.id("unitId") }
-                                val target = action.objectAt("target")
-                                val location = caster.objectAt("position")
-                                if (listOf("x", "y").any { location.number(it).toFloat() != target.number(it).toFloat() } ||
-                                    observation.arrayAt("events").none {
-                                        it.jsonObject["kind"] == s("teleported") && it.jsonObject["unitId"] == action["unitId"]
-                                    }) throw Incomplete("blink-completion", "The unit did not teleport to the declared ground point")
                             }
                         }
-                        val actualActionEvents = observation.arrayAt("events").map { it.jsonObject }.filter {
-                            it["unitId"]?.jsonPrimitive?.content !in nautilusTransitions + nuclearTransitions &&
-                            it["kind"] in setOf(s("unit-action-completed"), s("unit-action-automatic")) }.map {
-                            it.id("unitId") to it.text("kind") }
-                        if (expectedActionEvents.sortedBy { it.first } != actualActionEvents.sortedBy { it.first })
-                            throw Incomplete("unit-action-event", "Missing, premature or undeclared unit action completion")
-                        units.forEach { validateUnitSample(it, scenario, initial = row["phase"] == s("initial")) }
-                        validateTransportSamples(units, scenario)
-                        validateBallisticSamples(observation, scenario, units)
-                        validateSubmarineProjectiles(observation, scenario, units)
-                        validateAmphibiousProjectiles(observation, scenario, units)
-                        validateAaBeamProjectiles(observation, scenario, units)
-                        if (hasConstruction(scenario)) validateConstructionSample(scenario, observation, units, built)
-                        val incomeTypes = typesLoadedBy(scenario, setOf("command-center", "economy", "economy-upgrades", "mech-engineer"))
+                    }
+                    val blinkAtStep = if (initial) emptyList() else blinkCompletions[step].orEmpty()
+                    var expectedActionEvents = if (initial) emptyList() else unitConversions.filter {
+                        it.integer("completionStepIndex") == step
+                    }.map {
+                        it.id("unitId") to if (it["actionId"] == JsonNull) "unit-action-automatic" else "unit-action-completed"
+                    }
+                    expectedActionEvents += blinkAtStep.map { it.id("unitId") to "unit-action-completed" }
+                    for (declared in blinkAtStep) {
+                        val actionId = declared.id("actionId")
+                        if (actionId !in acceptedActions) {
+                            throw Incomplete("blink-completion", "A Blink completion has no accepted command")
+                        }
+                        val action = fixedActions.getValue(actionId)
+                        if (action["actionName"] == s("blink")) {
+                            val caster = unitsById.getValue(action.id("unitId"))
+                            val target = action.objectAt("target")
+                            val location = caster.objectAt("position")
+                            if (listOf("x", "y").any { location.number(it).toFloat() != target.number(it).toFloat() } ||
+                                observation.arrayAt("events").none {
+                                    it.jsonObject["kind"] == s("teleported") && it.jsonObject["unitId"] == action["unitId"]
+                                }) {
+                                throw Incomplete("blink-completion", "The unit did not teleport to the declared ground point")
+                            }
+                        }
+                    }
+                    val actualActionEvents = observation.arrayAt("events").map { it.jsonObject }.filter {
+                        it["unitId"]?.jsonPrimitive?.content !in nautilusTransitions + nuclearTransitions &&
+                            it["kind"] in setOf(s("unit-action-completed"), s("unit-action-automatic"))
+                    }.map { it.id("unitId") to it.text("kind") }
+                    if (expectedActionEvents.sortedBy { it.first } != actualActionEvents.sortedBy { it.first }) {
+                        throw Incomplete("unit-action-event", "Missing, premature or undeclared unit action completion")
+                    }
+                    units.forEach { validateUnitSample(it, scenario, initial = row["phase"] == s("initial")) }
+                    validateTransportSamples(units, scenario)
+                    validateBallisticSamples(observation, scenario, units)
+                    validateSubmarineProjectiles(observation, scenario, units)
+                    validateAmphibiousProjectiles(observation, scenario, units)
+                    validateAaBeamProjectiles(observation, scenario, units)
+                    if (hasConstructionFlag) validateConstructionSample(scenario, observation, units, built)
+                    if (incomeTypes.isNotEmpty()) {
+                        val incomes = observation.arrayAt("incomeStates").map { it.jsonObject }
+                        val registered = spawnedUnits + born + built
+                        val expectedIncome = registered.filter {
+                            val type = (it["typeId"] ?: it.required("type")).jsonPrimitive.content
+                            UpgradeDeclaration.typeAt(it.id("unitId"), type, conversions, row) in incomeTypes
+                        }.map { it.id("unitId") }.toSet()
+                        if (incomes.size != expectedIncome.size || incomes.map { it.id("unitId") }.toSet() != expectedIncome) {
+                            throw Incomplete("income-state", "Missing or extra income phase")
+                        }
+                        incomes.forEach { it.number("elapsed") }
+                    }
+                    if (upgradeTypes.isNotEmpty()) {
+                        val queues = observation.objectAt("upgrades")
+                        val registered = spawnedUnits
+                            .filter { it.id("type") in upgradeTypes - authorTypes }.map { it.id("unitId") }.toSet() +
+                            built.filter { it.id("typeId") in upgradeTypes - authorTypes }.map { it.id("unitId") } +
+                            units.filter { it.id("typeId") in authorTypes }.map { it.id("unitId") }
+                        if (queues.keys != registered) throw Incomplete("missing-upgrades", "Missing or extra registered upgrade queue")
+                        validateUpgradeItems(queues, true)
+                    }
+                    if (scenario.containsKey("economyContract")) {
+                        val state = observation.objectAt("economy")
+                        val balances = state.objectAt("balances")
+                        if (balances.keys != scenario.objectAt("economyContract").objectAt("initialBalances").keys) {
+                            throw Incomplete("missing-economy", "Missing player balance")
+                        }
+                        balances.keys.forEach { balances.integer(it) }
                         if (incomeTypes.isNotEmpty()) {
-                            val incomes = observation.arrayAt("incomeStates").map { it.jsonObject }
-                            // Income phases belong to registered objects, including reclaimed ones.
-                            // Derive their identities from the independent declarations, never the filtered view.
-                            val registered = scenario.arrayAt("units").map { it.jsonObject } + born + built
-                            val expectedIncome = registered.filter {
-                                val type = (it["typeId"] ?: it.required("type")).jsonPrimitive.content
-                                UpgradeDeclaration.typeAt(it.id("unitId"), type, conversions, row) in incomeTypes
-                            }.map { it.id("unitId") }.toSet()
-                            if (incomes.size != expectedIncome.size || incomes.map { it.id("unitId") }.toSet() != expectedIncome)
-                                throw Incomplete("income-state", "Missing or extra income phase")
-                            incomes.forEach { it.number("elapsed") }
+                            val precise = state.objectAt("preciseBalances")
+                            if (precise.keys != balances.keys) throw Incomplete("missing-economy", "Missing precise account")
+                            precise.keys.forEach { precise.number(it) }
                         }
-                        val upgradeTypes = upgradeTypes(scenario)
-                        if (upgradeTypes.isNotEmpty()) {
-                            val queues = observation.objectAt("upgrades")
-                            val authorTypes = typesLoadedBy(scenario, setOf("author-upgrading-producer"))
-                            val registered = scenario.arrayAt("units").map { it.jsonObject }
-                                .filter { it.id("type") in upgradeTypes - authorTypes }.map { it.id("unitId") }.toSet() +
-                                built.filter { it.id("typeId") in upgradeTypes - authorTypes }.map { it.id("unitId") } +
-                                units.filter { it.id("typeId") in authorTypes }.map { it.id("unitId") }
-                            if (queues.keys != registered) throw Incomplete("missing-upgrades", "Missing or extra registered upgrade queue")
-                            validateUpgradeItems(queues, true)
-                        }
-                        if (scenario.containsKey("economyContract")) {
-                            val state = observation.objectAt("economy")
-                            val balances = state.objectAt("balances")
-                            if (balances.keys != scenario.objectAt("economyContract").objectAt("initialBalances").keys)
-                                throw Incomplete("missing-economy", "Missing player balance")
-                            balances.keys.forEach { balances.integer(it) }
-                            if (incomeTypes.isNotEmpty()) {
-                                val precise = state.objectAt("preciseBalances")
-                                if (precise.keys != balances.keys) throw Incomplete("missing-economy", "Missing precise account")
-                                precise.keys.forEach { precise.number(it) }
-                            }
-                            val queues = state.objectAt("queues")
-                            val factoryTypes = typesLoadedBy(scenario, setOf("factory", "command-center", "author-producer", "author-upgrading-producer", "nautilus"))
-                            val registeredFactories = (scenario.arrayAt("units").map { it.jsonObject }.filter { it.id("type") in factoryTypes }.map { it.id("unitId") } +
-                                (born + built).filter { it.id("typeId") in factoryTypes }.map { it.id("unitId") }).toSet()
-                            if (queues.keys != registeredFactories) throw Incomplete("missing-economy", "Missing or extra registered factory queue")
-                            queues.values.forEach { queue -> queue.jsonArray.forEach { element ->
+                        val queues = state.objectAt("queues")
+                        val registeredFactories = (spawnedUnits.filter { it.id("type") in factoryTypes }.map { it.id("unitId") } +
+                            (born + built).filter { it.id("typeId") in factoryTypes }.map { it.id("unitId") }).toSet()
+                        if (queues.keys != registeredFactories) throw Incomplete("missing-economy", "Missing or extra registered factory queue")
+                        queues.values.forEach { queue ->
+                            queue.jsonArray.forEach { element ->
                                 val item = element.jsonObject
                                 item.id("typeId"); item.id("unitNonce"); item.number("progress"); item.integer("cost"); item.number("rate")
-                            } }
+                            }
                         }
-                        val results = observation.arrayAt("actionResults").map { it.jsonObject.also(::actionResult) }
-                        if (results != pendingActions) throw Incomplete("action-order", "Observation action results differ from submitted records")
-                        pendingActions.clear()
-                        pendingEvents = observation.arrayAt("events").map { it.jsonObject.also(::event) }
-                        current = observation
-                        sampleCount++
                     }
-                    "event" -> {
-                        if (!eventIds.add(row.id("eventId"))) throw Incomplete("duplicate-event", "Duplicate event ID")
-                        if (current == null || row.required("sampleId") != current.required("sampleId") || row.required("stepIndex") != current.required("stepIndex")) {
-                            throw Incomplete("event-order", "Event does not reference the current sample")
-                        }
-                        val value = row.objectAt("event").also(::event)
-                        if (pendingEvents.firstOrNull() != value) throw Incomplete("event-order", "Unexpected or reordered exported event")
-                        pendingEvents = pendingEvents.drop(1)
-                    }
-                    else -> throw Incomplete("record-order", "Unknown, repeated or misplaced record kind")
+                    val results = observation.arrayAt("actionResults").map { it.jsonObject.also(::actionResult) }
+                    if (results != pendingActions) throw Incomplete("action-order", "Observation action results differ from submitted records")
+                    pendingActions.clear()
+                    pendingEvents.clear()
+                    observation.arrayAt("events").forEach { pendingEvents.addLast(it.jsonObject.also(::event)) }
+                    hasCurrentSample = true
+                    currentSampleId = observation.required("sampleId")
+                    currentStepIndex = observation.required("stepIndex")
+                    sampleCount++
                 }
+                "event" -> {
+                    if (!eventIds.add(row.id("eventId"))) throw Incomplete("duplicate-event", "Duplicate event ID")
+                    if (!hasCurrentSample || row.required("sampleId") != currentSampleId || row.required("stepIndex") != currentStepIndex) {
+                        throw Incomplete("event-order", "Event does not reference the current sample")
+                    }
+                    val value = row.objectAt("event").also(::event)
+                    if (pendingEvents.firstOrNull() != value) throw Incomplete("event-order", "Unexpected or reordered exported event")
+                    pendingEvents.removeFirst()
+                }
+                else -> throw Incomplete("record-order", "Unknown, repeated or misplaced record kind")
             }
-            if (sampleCount != steps.size + 1 || pendingActions.isNotEmpty()) throw Incomplete("missing-step", "Sampling plan or action collection is incomplete")
+        }
+
+        fun finishBody() {
+            if (sampleCount != steps.size + 1 || pendingActions.isNotEmpty()) {
+                throw Incomplete("missing-step", "Sampling plan or action collection is incomplete")
+            }
             if (pendingEvents.isNotEmpty()) throw Incomplete("missing-event", "Missing exported event at end")
-            if (actionIds != declaredActions.map { it.id("actionId") }.toSet()) throw Incomplete("missing-action", "Missing declared action result")
-            return rows
-        } catch (failure: InputError) {
-            if (failure.message?.contains("schema version") == true || failure.message?.contains("identity mismatch") == true || failure.message == "Recorded input error") throw failure
-            throw Incomplete("missing-or-invalid-field", failure.message ?: "Invalid trace field")
-        } catch (failure: IllegalArgumentException) {
-            throw Incomplete("missing-or-invalid-field", failure.message ?: "Invalid trace field")
+            if (actionIds != declaredActionIds) throw Incomplete("missing-action", "Missing declared action result")
         }
     }
 
@@ -1358,7 +1671,7 @@ object TraceComparator {
             val width = knowledge.integer("width"); val height = knowledge.integer("height")
             val cells = knowledge.objectAt("cells")
             if (width != expectedWidth || height != expectedHeight || width * height != cells.size.toLong() ||
-                cells.keys != (0 until height).flatMap { r -> (0 until width).map { c -> "c${c}r${r}" } }.toSet())
+                cells.keys != cachedGridKeys(width, height))
                 throw Incomplete("player-knowledge", "Incomplete player knowledge grid")
             cells.values.forEach { cell ->
                 val value = cell.jsonObject
@@ -1415,22 +1728,89 @@ object TraceComparator {
         return if (expected == actual) null else Difference(path, expected, actual)
     }
 
-    private fun divergence(contract: JsonObject, rule: String, difference: Difference, index: Int,
-                           actual: List<JsonObject>, expected: List<JsonObject>?, count: Int, operator: String = "exact"): Judgment {
-        fun context(rows: List<JsonObject>): JsonArray {
-            val before = (0 until minOf(index, rows.size)).lastOrNull { rows[it]["kind"] == s("observation") } ?: 0
-            val after = ((index + 1) until rows.size).firstOrNull { rows[it]["kind"] == s("observation") } ?: rows.lastIndex
-            val end = ((after + 1) until rows.size).firstOrNull { rows[it]["kind"] != s("event") }?.minus(1) ?: rows.lastIndex
-            return array((before..end).map { i ->
-            obj("line" to n(i + 1), "raw" to rows[i], "normalized" to normalize(rows[i]))
-            })
+    @Volatile
+    private var lastGridKeyEntry: Pair<Pair<Long, Long>, Set<String>>? = null
+
+    private fun cachedGridKeys(width: Long, height: Long): Set<String> {
+        val cached = lastGridKeyEntry
+        val dims = width to height
+        if (cached != null && cached.first == dims) return cached.second
+        val built = HashSet<String>((width * height).toInt())
+        for (r in 0 until height) {
+            for (c in 0 until width) {
+                built.add("c${c}r${r}")
+            }
         }
-        val first = obj("line" to n(index + 1), "rawActual" to actual[index], "normalizedActual" to normalize(actual[index]),
-            "rawExpected" to expected?.getOrNull(index), "normalizedExpected" to expected?.getOrNull(index)?.let(::normalize),
-            "actualContext" to context(actual), "expectedContext" to expected?.let(::context), "operator" to s(operator))
-        val base = judgment(2, "assertion-failed", contract, "divergence", count)
-        return base.copy(document = JsonObject(base.document + mapOf("firstDivergence" to first, "ruleId" to s(rule),
-            "path" to s(difference.path), "expected" to difference.expected, "actual" to difference.actual)))
+        lastGridKeyEntry = dims to built
+        return built
+    }
+
+    private data class DivergenceWindow(val rawAtTarget: JsonObject?, val context: JsonArray)
+
+    private fun extractDivergenceWindow(source: TraceSource, targetIndex: Int): DivergenceWindow {
+        val window = ArrayList<Pair<Int, JsonObject>>()
+        var rawAtTarget: JsonObject? = null
+        var seenAfterObservation = false
+        source.openIterator().use { iter ->
+            var i = 0
+            while (iter.hasNext()) {
+                val row = iter.next()
+                if (i < targetIndex) {
+                    if (i > 0 && row["kind"] == s("observation")) {
+                        window.clear()
+                    }
+                    window.add(i to row)
+                } else if (i == targetIndex) {
+                    rawAtTarget = row
+                    window.add(i to row)
+                } else {
+                    if (!seenAfterObservation) {
+                        window.add(i to row)
+                        if (row["kind"] == s("observation")) {
+                            seenAfterObservation = true
+                        }
+                    } else if (row["kind"] == s("event")) {
+                        window.add(i to row)
+                    } else {
+                        break
+                    }
+                }
+                i++
+            }
+        }
+        val context = array(window.map { (lineIdx, row) ->
+            obj("line" to n(lineIdx + 1), "raw" to row, "normalized" to normalize(row))
+        })
+        return DivergenceWindow(rawAtTarget, context)
+    }
+
+    private fun buildDivergence(
+        contract: JsonObject,
+        diverged: AssertionOutcome.Diverged,
+        actualSource: TraceSource,
+        expectedSource: TraceSource?,
+    ): Judgment {
+        val actualWin = extractDivergenceWindow(actualSource, diverged.index)
+        val expectedWin = expectedSource?.let { extractDivergenceWindow(it, diverged.index) }
+        val actualRow = actualWin.rawAtTarget ?: throw Incomplete("missing-step", "Divergence index outside trace")
+        val first = obj(
+            "line" to n(diverged.index + 1),
+            "rawActual" to actualRow,
+            "normalizedActual" to normalize(actualRow),
+            "rawExpected" to expectedWin?.rawAtTarget,
+            "normalizedExpected" to expectedWin?.rawAtTarget?.let(::normalize),
+            "actualContext" to actualWin.context,
+            "expectedContext" to expectedWin?.context,
+            "operator" to s(diverged.operator),
+        )
+        val base = judgment(2, "assertion-failed", contract, "divergence", diverged.evaluations)
+        return base.copy(document = JsonObject(base.document + mapOf(
+            "firstDivergence" to first,
+            "ruleId" to s(diverged.ruleId),
+            "path" to s(diverged.difference.path),
+            "expected" to diverged.difference.expected,
+            "actual" to diverged.difference.actual,
+        )))
     }
 
     internal fun judgment(code: Int, status: String, contract: JsonObject?, category: String, count: Int = 0, reason: String? = null): Judgment =

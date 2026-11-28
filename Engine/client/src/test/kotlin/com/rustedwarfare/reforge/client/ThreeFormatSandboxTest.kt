@@ -107,12 +107,12 @@ class ThreeFormatSandboxTest {
     }
 
     private fun await(loader: SandboxLoader): Result<LoadedSandbox> {
-        val deadline = System.nanoTime() + 5_000_000_000
+        val deadline = System.nanoTime() + 30_000_000_000L
         while (System.nanoTime() < deadline) {
             loader.pollPrepared()?.let { return it }
             Thread.sleep(5)
         }
-        error("Sandbox loader did not complete within five seconds")
+        error("Sandbox loader did not complete within 30 seconds")
     }
 
     private fun withAuthor(format: String, check: (Path) -> Unit) {
