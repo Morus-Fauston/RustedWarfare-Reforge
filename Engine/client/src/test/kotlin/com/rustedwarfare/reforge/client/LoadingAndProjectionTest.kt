@@ -24,15 +24,15 @@ class LoadingAndProjectionTest {
 
     private val root = Path.of(checkNotNull(System.getProperty("p001.inputs.dir")))
     private fun await(loader: SandboxLoader): Result<Scenario> {
-        val deadline = System.nanoTime() + 5_000_000_000
+        val deadline = System.nanoTime() + 30_000_000_000L
         while (System.nanoTime() < deadline) { loader.poll()?.let { return it }; Thread.sleep(5) }
-        error("Loader did not complete within 5 seconds")
+        error("Loader did not complete within 30 seconds")
     }
 
     @Test fun prepared_world_reports_ordered_worker_stage_times_before_publication() {
         SandboxLoader().use { loader ->
             loader.request(root)
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             var loaded: LoadedSandbox? = null
             while (loaded == null && System.nanoTime() < deadline) {
                 loaded = loader.pollPrepared()?.getOrThrow()

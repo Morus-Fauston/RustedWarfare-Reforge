@@ -1,5 +1,7 @@
 """Developer selection uses the public registry and preserves distinct input contexts."""
+from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -7,31 +9,115 @@ import tempfile
 import unittest
 
 from development_check import collect_tests
+from public_check import test_concurrency, default_build_workers
 
 
 class DevelopmentSelectionTest(unittest.TestCase):
+    def test_cloud_and_local_pool_decouple_gradle_workers_while_keeping_pc_serial(self):
+        mods = {'core': [], 'client': [], 'tools': [], 'pc': []}
+        cloud = test_concurrency(mods, forks=4, workers=None, cloud=True, cpu_count=4)
+        self.assertEqual(4, cloud['requested'])
+        self.assertEqual(4, cloud['maxWorkers'])
+        self.assertEqual({'core': 4, 'client': 4, 'tools': 4, 'pc': 1},
+                         {k: v['maxParallelForks'] for k, v in cloud['modules'].items()})
+        self.assertEqual(4, default_build_workers(None, cloud=True, cpu_count=24))
+        self.assertEqual(12, default_build_workers(None, cloud=False, cpu_count=24))
+
+        local_pool = test_concurrency(mods, forks=None, workers=None, cloud=False, cpu_count=24)
+        self.assertEqual(3, local_pool['requested'])
+        self.assertEqual(8, local_pool['maxWorkers'])
+        self.assertEqual({'core': 3, 'client': 2, 'tools': 2, 'pc': 1},
+                         {k: v['maxParallelForks'] for k, v in local_pool['modules'].items()})
+        self.assertLessEqual(sum(v['maxParallelForks'] for v in local_pool['modules'].values()), 8)
+
+        local_three = test_concurrency(mods, forks=3, workers=None, cloud=False, cpu_count=12)
+        self.assertEqual(3, local_three['requested'])
+        self.assertEqual(6, local_three['maxWorkers'])
+        self.assertEqual({'core': 3, 'client': 2, 'tools': 2, 'pc': 1},
+                         {k: v['maxParallelForks'] for k, v in local_three['modules'].items()})
+        self.assertLessEqual(sum(v['maxParallelForks'] for v in local_three['modules'].values()), 8)
+
+        explicit = test_concurrency(mods, forks=4, workers=12, cloud=False, cpu_count=24)
+        self.assertEqual(4, explicit['requested'])
+        self.assertEqual(12, explicit['maxWorkers'])
+        self.assertEqual({'core': 3, 'client': 2, 'tools': 2, 'pc': 1},
+                         {k: v['maxParallelForks'] for k, v in explicit['modules'].items()})
+        self.assertEqual(8, sum(v['maxParallelForks'] for v in explicit['modules'].values()))
+
+        high_explicit = test_concurrency(mods, forks=8, workers=16, cloud=False, cpu_count=24)
+        self.assertEqual(8, high_explicit['requested'])
+        self.assertEqual(16, high_explicit['maxWorkers'])
+        self.assertEqual({'core': 3, 'client': 2, 'tools': 2, 'pc': 1},
+                         {k: v['maxParallelForks'] for k, v in high_explicit['modules'].items()})
+        self.assertEqual(8, sum(v['maxParallelForks'] for v in high_explicit['modules'].values()))
+
+        two_mods = test_concurrency({'core': [], 'client': []}, forks=4, workers=12, cloud=False, cpu_count=24)
+        self.assertEqual({'core': 4, 'client': 4},
+                         {k: v['maxParallelForks'] for k, v in two_mods['modules'].items()})
+
     def test_cli_fork_budget_is_bounded_explicit_and_listing_is_read_only(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        import io
+        from unittest.mock import patch
+        import development_check
+        import public_batch
+        import public_check
+
+        def invoke_inproc(mod, argv):
+            out, err = io.StringIO(), io.StringIO()
+            with patch.object(sys, 'argv', [mod.__file__, *argv]), redirect_stdout(out), redirect_stderr(err):
+                try:
+                    code = mod.main()
+                except SystemExit as exc:
+                    code = exc.code if isinstance(exc.code, int) else 1
+            return code, out.getvalue(), err.getvalue()
+
         ci = Path(__file__).parent
         with tempfile.TemporaryDirectory(prefix='reforge-fork-cli-') as temporary:
             output = Path(temporary)/'must-not-exist'
-            for entry, selection in [('development_check.py', ['--suite', 'production-combat']),
-                                     ('public_check.py', ['--suite', 'production-combat', '--kind', 'pr']),
-                                     ('public_batch.py', ['--kind', 'pr'])]:
-                for forks in (1, 2, 4, 8):
-                    result = subprocess.run([sys.executable, '-B', str(ci/entry), *selection,
-                        '--test-forks', str(forks), '--list', '--output', str(output)],
-                        capture_output=True, text=True, encoding='utf8')
-                    self.assertEqual(0, result.returncode, entry+result.stderr)
-                    budget = json.loads(result.stdout)['testConcurrency']
+            for entry, mod, selection in [
+                ('development_check.py', development_check, ['--suite', 'production-combat']),
+                ('public_check.py', public_check, ['--suite', 'production-combat', '--kind', 'pr']),
+                ('public_batch.py', public_batch, ['--kind', 'pr']),
+            ]:
+                # Real subprocess CLI smoke for valid decoupled flags and invalid rejection
+                ok_proc = subprocess.run(
+                    [sys.executable, '-B', str(ci/entry), *selection,
+                     '--test-forks', '2', '--gradle-workers', '6', '--list', '--output', str(output)],
+                    capture_output=True, text=True, encoding='utf8',
+                )
+                self.assertEqual(0, ok_proc.returncode, entry + ok_proc.stderr)
+                budget = json.loads(ok_proc.stdout)['testConcurrency']
+                self.assertEqual(2, budget['requested'])
+                self.assertEqual(6, budget['maxWorkers'])
+                self.assertEqual(6, budget['gradleWorkers'])
+                self.assertEqual(1, budget['modules']['pc']['maxParallelForks'])
+                self.assertEqual(2, budget['modules']['tools']['maxParallelForks'])
+
+                bad_proc = subprocess.run(
+                    [sys.executable, '-B', str(ci/entry), *selection, '--gradle-workers', '17', '--output', str(output)],
+                    capture_output=True,
+                )
+                self.assertEqual(2, bad_proc.returncode, entry)
+
+                for forks in (1, 2, 3, 4, 8):
+                    code, stdout_text, stderr_text = invoke_inproc(
+                        mod, [*selection, '--test-forks', str(forks), '--list', '--output', str(output)])
+                    self.assertEqual(0, code, entry + stderr_text)
+                    budget = json.loads(stdout_text)['testConcurrency']
                     self.assertEqual(forks, budget['requested'])
-                    self.assertEqual(forks, budget['maxWorkers'])
+                    self.assertGreaterEqual(budget['maxWorkers'], forks)
+                    self.assertLessEqual(budget['maxWorkers'], 16)
                     self.assertEqual(1, budget['modules']['pc']['maxParallelForks'])
-                    self.assertEqual(forks, budget['modules']['tools']['maxParallelForks'])
+                    self.assertLessEqual(budget['modules']['tools']['maxParallelForks'], forks)
                     self.assertFalse(output.exists())
-                for forks in ('0', '3', '5', '9', '-1', 'two'):
-                    result = subprocess.run([sys.executable, '-B', str(ci/entry), *selection,
-                        '--test-forks', forks, '--output', str(output)], capture_output=True)
-                    self.assertEqual(2, result.returncode, entry)
+                for forks in ('0', '5', '9', '-1', 'two'):
+                    code, _, _ = invoke_inproc(mod, [*selection, '--test-forks', forks, '--output', str(output)])
+                    self.assertEqual(2, code, entry)
+                    self.assertFalse(output.exists())
+                for invalid_gw in ('0', '17', '-1', 'many'):
+                    code, _, _ = invoke_inproc(mod, [*selection, '--gradle-workers', invalid_gw, '--output', str(output)])
+                    self.assertEqual(2, code, entry)
                     self.assertFalse(output.exists())
 
     def test_production_regression_is_in_fixed_public_selection(self):
@@ -120,6 +206,25 @@ class DevelopmentSelectionTest(unittest.TestCase):
             self.assertEqual('incomplete', collect_tests(folder, {'client':['OwnedTest']})['status'])
             executions.write_text(executions.read_text(encoding='utf8').replace('"upToDate": true', '"upToDate": false'), encoding='utf8')
             effective = folder/'effective.json'
+            decoupled = json.loads(original_config)
+            decoupled.update(testForks=3, gradleWorkers=8, maxWorkers=8,
+                             moduleMaxParallelForks={':client:test': 3})
+            decoupled['tests'][0]['maxParallelForks'] = 3
+            effective.write_text(json.dumps(decoupled), encoding='utf8')
+            self.assertEqual('passed', collect_tests(folder, {'client':['OwnedTest']})['status'])
+            decoupled['maxWorkers'] = 7
+            effective.write_text(json.dumps(decoupled), encoding='utf8')
+            self.assertEqual('incomplete', collect_tests(folder, {'client':['OwnedTest']})['status'])
+            decoupled['maxWorkers'] = 8
+            decoupled['gradleWorkers'] = True
+            effective.write_text(json.dumps(decoupled), encoding='utf8')
+            self.assertEqual('incomplete', collect_tests(folder, {'client':['OwnedTest']})['status'])
+            decoupled['gradleWorkers'] = 8
+            (folder/'selection.json').write_text(json.dumps({'tasks': {':client:test': {'maxParallelForks': 2}}}), encoding='utf8')
+            effective.write_text(json.dumps(decoupled), encoding='utf8')
+            self.assertEqual('incomplete', collect_tests(folder, {'client':['OwnedTest']})['status'])
+            (folder/'selection.json').unlink()
+            effective.write_bytes(original_config)
             effective.write_text(effective.read_text(encoding='utf8').replace('"maxWorkers": 2', '"maxWorkers": 1'), encoding='utf8')
             self.assertEqual('incomplete', collect_tests(folder, {'client':['OwnedTest']})['status'])
 

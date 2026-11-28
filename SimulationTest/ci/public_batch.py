@@ -10,7 +10,10 @@ import sys
 import tempfile
 import time
 
-from public_check import REPO, identities, plan_suite, source_files, build_shared_distribution, command_timeout, test_forks, test_concurrency
+from public_check import (
+    REPO, identities, plan_suite, python_source_closure, repo_metadata_snapshot,
+    source_files, build_shared_distribution, command_timeout, test_forks, gradle_workers, test_concurrency,
+)
 from public_check import scenario_workers, scenario_concurrency, lock_wait_seconds
 
 
@@ -26,7 +29,7 @@ LAYERS = {
 
 def plan_layer(repo, kind):
     rows = []
-    public_sources = {p.relative_to(repo).as_posix() for p in source_files(repo)}
+    public_sources = python_source_closure(repo) if kind in ('mechanism', 'pr') else set()
     for name in LAYERS[kind]:
         selected_kind = 'mechanism' if name == 'tooling' and kind == 'pr' else kind
         plan = plan_suite(repo, name, selected_kind, public_sources)
@@ -67,40 +70,78 @@ def verify_mechanism_receipt(repo, folder, plan, source):
     return measured
 
 
-def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1, workers=2, lock_wait=1800):
+def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=None, workers=2, lock_wait=1800,
+              workers_gradle=None):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
-    source = identities(repo)
+    measured_checks = {}
+
+    def measure_check(phase, fn):
+        t0 = time.monotonic()
+        try:
+            return fn()
+        finally:
+            slot = measured_checks.setdefault(phase, dict(count=0, elapsedSeconds=0.0))
+            slot['count'] += 1
+            slot['elapsedSeconds'] += time.monotonic() - t0
+
+    source = measure_check('initial-source-sha256', lambda: identities(repo))
+    base_source_meta = measure_check('initial-source-meta', lambda: repo_metadata_snapshot(repo))
+    concurrency = test_concurrency(
+        {m: [] for row in plan['suites'] for m in row['plan']['tests']}, forks, workers_gradle)
+    effective_forks = concurrency['requested']
+    effective_gradle_workers = concurrency['maxWorkers']
     result = dict(schemaVersion=1, status='execution-failed', selection=plan, source=source,
                   isolated=isolated, suites=[], cloudRun=os.environ.get('GITHUB_ACTIONS') == 'true',
                   commandTimeoutSeconds=command_timeout_seconds, scenarioConcurrency=scenario_concurrency(workers),
-                  testConcurrency=test_concurrency(
-                      {m: [] for row in plan['suites'] for m in row['plan']['tests']}, forks))
+                  testConcurrency=concurrency)
     try:
         shared = None
+        pinned_artifact_meta = None
+        pinned_package_meta = None
         if plan['kind'] in ('short', 'pr', 'long'):
             if plan['kind'] in ('short', 'long') and any(row['plan']['tests'] or row['plan'].get('pythonTests') for row in plan['suites']):
                 raise ValueError(f"Shared {plan['kind']} distribution cannot skip selected mechanism tests")
             sys.path.insert(0, str(REPO/'SimulationTest/tools'))
             from workflow import resources
+            from public_distribution import artifact_metadata_snapshot, package_metadata_snapshot
             with resources(['host:heavy-verification', 'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')],
                            wait_seconds=lock_wait):
-                shared = build_shared_distribution(repo, output/'shared-distribution', source, command_timeout_seconds,
-                    preparation_plan=plan if plan['kind'] == 'pr' else None, forks=forks, kind=plan['kind'])
+                shared = build_shared_distribution(
+                    repo, output/'shared-distribution', source, command_timeout_seconds,
+                    preparation_plan=plan if plan['kind'] == 'pr' else None, forks=effective_forks,
+                    kind=plan['kind'], workers_gradle=workers_gradle, source_meta=base_source_meta)
             result['sharedBuild'] = shared
             if shared['status'] != 'passed':
                 raise RuntimeError(shared.get('error', 'Shared distribution build failed'))
+            if shared.get('preparation'):
+                pinned_artifact_meta = artifact_metadata_snapshot(
+                    r['path'] for r in shared['preparation']['artifacts'])
+            pinned_package_meta = package_metadata_snapshot(Path(shared['receipt']).parent / 'package')
+
+        def verify_mid_batch(suite_plan):
+            from public_distribution import verify_fast, toolchain_identity
+            def _check():
+                if repo_metadata_snapshot(repo) != base_source_meta:
+                    raise ValueError('Public source changed during batch')
+                if shared is not None:
+                    verify_fast(shared['receipt'], shared['sha256'], source, toolchain_identity(),
+                                kind=plan['kind'], plan=suite_plan, repo=repo,
+                                expected_artifact_meta=pinned_artifact_meta,
+                                expected_package_meta=pinned_package_meta)
+            measure_check('mid-batch-fast', _check)
+
         if plan['kind'] == 'pr':
             from development_check import plan_mechanisms, run_development
-            from public_distribution import verify
             mechanisms = plan_mechanisms((row['name'], row['plan']) for row in plan['suites'])
             proof_directory = output/'mechanisms'
             pin = shared['receipt'], shared['sha256']
             def admit_mechanisms():
-                verify(*pin, identities(repo), kind='pr', plan=plan['suites'][0]['plan'], repo=repo)
-            code = run_development(repo, proof_directory, mechanisms, False, forks, command_timeout_seconds,
-                                   admit=admit_mechanisms, prepared=True,
-                                   lock_wait_seconds=lock_wait, host_lock=True)
+                verify_mid_batch(plan['suites'][0]['plan'])
+            code = run_development(
+                repo, proof_directory, mechanisms, False, effective_forks, command_timeout_seconds,
+                admit=admit_mechanisms, prepared=True, lock_wait_seconds=lock_wait, host_lock=True,
+                workers_gradle=effective_gradle_workers, pinned_source=(source, base_source_meta))
             result['mechanisms'] = dict(result='mechanisms/result.json', exitCode=code)
             if code:
                 raise RuntimeError('Current batch mechanisms failed')
@@ -121,11 +162,11 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             child = output / name
             argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/public_check.py'),
                     '--suite', name, '--kind', row['plan']['kind'], '--output', str(child),
-                    '--command-timeout',str(command_timeout_seconds), '--test-forks', str(forks),
-                    '--scenario-workers',str(workers), '--lock-wait-seconds', str(lock_wait)]
+                    '--command-timeout', str(command_timeout_seconds), '--test-forks', str(effective_forks),
+                    '--gradle-workers', str(effective_gradle_workers),
+                    '--scenario-workers', str(workers), '--lock-wait-seconds', str(lock_wait)]
             if shared is not None:
-                from public_distribution import verify
-                verify(shared['receipt'], shared['sha256'], identities(repo), kind=plan['kind'], plan=row['plan'], repo=repo)
+                verify_mid_batch(row['plan'])
                 argv += ['--distribution-receipt', shared['receipt'], '--distribution-sha256', shared['sha256']]
             record = dict(name=name, result=name+'/result.json', exitCode=None)
             if plan['kind'] != 'pr':
@@ -134,11 +175,16 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             with (output/(name+'.log')).open('w', encoding='utf8') as log:
                 # The existing runner bounds each actual command. Do not kill only the
                 # intermediate Python process and leave its Gradle/JVM child running.
-                if plan['kind'] == 'pr':
+                if plan['kind'] in ('pr', 'short', 'long'):
                     from public_check import run as run_suite
                     with redirect_stdout(log):
-                        record['exitCode'] = run_suite(repo, child, row['plan'], pin, command_timeout_seconds,
-                                                       forks, workers, scenarios_only=True, lock_wait=lock_wait)
+                        record['exitCode'] = run_suite(
+                            repo, child, row['plan'],
+                            (shared['receipt'], shared['sha256']) if shared is not None else None,
+                            command_timeout_seconds, effective_forks, workers,
+                            scenarios_only=(plan['kind'] == 'pr'), lock_wait=lock_wait,
+                            workers_gradle=effective_gradle_workers,
+                            pinned_source=(source, base_source_meta))
                 else:
                     process = subprocess.run(argv, cwd=repo, stdout=log, stderr=subprocess.STDOUT)
                     record['exitCode'] = process.returncode
@@ -171,12 +217,19 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
                 record['mechanismCoverage'] = mechanism_checks[name]
             record.update(status='passed', elapsedSeconds=measured['elapsedSeconds'])
             if shared is not None:
-                verify(shared['receipt'], shared['sha256'], identities(repo), kind=plan['kind'], plan=row['plan'], repo=repo)
-        if identities(repo) != source:
+                verify_mid_batch(row['plan'])
+        final_source = measure_check('final-source-sha256', lambda: identities(repo))
+        if final_source != source:
             raise RuntimeError('Public source changed during batch')
+        if shared is not None:
+            from public_distribution import verify
+            measure_check('final-distribution-sha256', lambda: verify(
+                shared['receipt'], shared['sha256'], final_source, kind=plan['kind'],
+                plan=plan['suites'][0]['plan'], repo=repo))
         result['status'] = 'passed'
     except Exception as error:
         result['error'] = str(error)
+    result['identityChecks'] = measured_checks
     result['elapsedSeconds'] = time.monotonic() - started
     (output/'result.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n', encoding='utf8')
     print(json.dumps(dict(status=result['status'], output=str(output), error=result.get('error'))))
@@ -197,7 +250,8 @@ def main():
     parser.add_argument('--output', type=Path, help='New immutable batch directory')
     parser.add_argument('--list', action='store_true', help='List fixed complete layer without execution')
     parser.add_argument('--isolated', action='store_true', help='Copy only authored public source closure')
-    parser.add_argument('--test-forks', type=test_forks, default=1, help='Bound independent test JVMs: 1, 2, 4 or 8; PC stays serial')
+    parser.add_argument('--test-forks', type=test_forks, default=None, help='Bound independent test JVMs: 1, 2, 3, 4 or 8; PC stays serial')
+    parser.add_argument('--gradle-workers', type=gradle_workers, default=None, help='Bound Gradle max workers independently (1..16)')
     parser.add_argument('--scenario-workers', type=scenario_workers, default=None, help='Bound independent headless scenarios after tests: 1, 2, 4 or 8')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Per-command seconds forwarded to every suite and shared build; at most 3600')
@@ -211,7 +265,7 @@ def main():
         parser.error(str(error))
     if args.list:
         print(json.dumps(dict(plan, testConcurrency=test_concurrency(
-            {m: [] for row in plan['suites'] for m in row['plan']['tests']}, args.test_forks),
+            {m: [] for row in plan['suites'] for m in row['plan']['tests']}, args.test_forks, args.gradle_workers),
             scenarioConcurrency=scenario_concurrency(workers))))
         return 0
     if args.output is None:
@@ -229,15 +283,18 @@ def main():
         # The batch also imports its executor from the frozen public closure.
         bootstrap = ('import sys; from pathlib import Path; '
                      'from public_batch import REPO, plan_layer, run_layer; '
-                     'kind, output, timeout, forks, workers, lock_wait = sys.argv[1:]; '
+                     'kind, output, timeout, forks, workers, lock_wait, gw = sys.argv[1:]; '
                      'raise SystemExit(run_layer(REPO, Path(output), plan_layer(REPO, kind), '
-                     'True, float(timeout), int(forks), int(workers), float(lock_wait)))')
+                     'True, float(timeout), None if forks == "none" else int(forks), '
+                     'int(workers), float(lock_wait), None if gw == "none" else int(gw)))')
         return subprocess.run([sys.executable, '-B', '-c', bootstrap, args.kind, str(output),
-                               str(args.command_timeout), str(args.test_forks), str(workers),
-                               str(args.lock_wait_seconds)],
+                               str(args.command_timeout),
+                               'none' if args.test_forks is None else str(args.test_forks),
+                               str(workers), str(args.lock_wait_seconds),
+                               'none' if args.gradle_workers is None else str(args.gradle_workers)],
                               cwd=repo/'SimulationTest/ci').returncode
     return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks, workers,
-                     args.lock_wait_seconds)
+                     args.lock_wait_seconds, args.gradle_workers)
 
 
 if __name__ == '__main__':

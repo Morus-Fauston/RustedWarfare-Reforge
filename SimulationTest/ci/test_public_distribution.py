@@ -193,6 +193,43 @@ class PublicDistributionTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'receipt changed'):
                 verify(receipt, pinned, source, toolchain)
 
+    def test_fast_metadata_check_detects_structural_and_mtime_drift_while_closeout_verify_catches_same_mtime_tamper(self):
+        from public_distribution import (
+            artifact_identities, artifact_metadata_snapshot,
+            package_metadata_snapshot, verify_fast,
+        )
+        with self.fixture() as (root, distribution, _, source, toolchain, _):
+            compiled = root/'compiled'; compiled.mkdir()
+            cls_file = compiled/'Example.class'
+            cls_file.write_bytes(b'owned compiled fixture')
+            plan = dict(suiteId='owned-pr', kind='pr', inputScope='public',
+                        fixture='inputs/one', tests={'core': ['Example']}, pythonTests=[], scenarios=[])
+            preparation = dict(repo=str(root.resolve()), selection=[plan],
+                tasks=[':core:testClasses', ':installDist'],
+                executions=[dict(task=':core:compileTestKotlin', failure=None)],
+                artifacts=artifact_identities([compiled]))
+            receipt = root/'pr-distribution.json'
+            pinned = seal(distribution, receipt, source, toolchain, kind='pr', preparation=preparation)
+            art_meta = artifact_metadata_snapshot([compiled])
+            pkg_meta = package_metadata_snapshot(distribution)
+            self.assertEqual(
+                distribution.resolve(),
+                verify_fast(receipt, pinned, source, toolchain, kind='pr', plan=plan, repo=root,
+                            expected_artifact_meta=art_meta, expected_package_meta=pkg_meta),
+            )
+            extra = distribution/'lib/injected.jar'
+            extra.write_bytes(b'x')
+            with self.assertRaisesRegex(ValueError, 'members or dependency bytes changed'):
+                verify_fast(receipt, pinned, source, toolchain, kind='pr', plan=plan, repo=root,
+                            expected_artifact_meta=art_meta, expected_package_meta=pkg_meta)
+            extra.unlink()
+            st = cls_file.stat()
+            orig_bytes = cls_file.read_bytes()
+            cls_file.write_bytes(bytes([orig_bytes[0] ^ 1]) + orig_bytes[1:])
+            os.utime(cls_file, ns=(st.st_atime_ns, st.st_mtime_ns))
+            with self.assertRaisesRegex(ValueError, 'prepared artifacts changed'):
+                verify(receipt, pinned, source, toolchain, kind='pr', plan=plan, repo=root)
+
 
 if __name__ == '__main__':
     unittest.main()

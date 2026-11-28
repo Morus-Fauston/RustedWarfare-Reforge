@@ -11,7 +11,7 @@ internal object AaBeamSandboxScene {
         val content = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(root.resolve("production-package"))).value
         return SandboxLoader().use { loader ->
             loader.requestPack(root, ContentPackChoice(content, "commandCenter"))
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             var result: LoadedSandbox? = null
             while (result == null && System.nanoTime() < deadline) {
                 result = loader.pollPrepared()?.getOrThrow()

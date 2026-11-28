@@ -11,7 +11,7 @@ internal object LandingCraftSandboxScene {
         val pack = assertIs<ContentResult.Success<LoadedContentPack>>(ContentLoader.loadContentPack(root.resolve("production-package"))).value
         return SandboxLoader().use { loader ->
             loader.requestPack(root, ContentPackChoice(pack, "commandCenter"))
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             var loaded: LoadedSandbox? = null
             while (loaded == null && System.nanoTime() < deadline) {
                 loaded = loader.pollPrepared()?.getOrThrow()

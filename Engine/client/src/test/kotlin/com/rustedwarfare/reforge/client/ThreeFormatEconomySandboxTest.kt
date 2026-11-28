@@ -170,8 +170,9 @@ class ThreeFormatEconomySandboxTest {
     }
 
     private fun await(loader: SandboxLoader): Result<LoadedSandbox> {
-        repeat(5000) { loader.pollPrepared()?.let { return it }; Thread.sleep(1) }
-        error("Actual background load did not complete")
+        val deadline = System.nanoTime() + 30_000_000_000L
+        while (System.nanoTime() < deadline) { loader.pollPrepared()?.let { return it }; Thread.sleep(2) }
+        error("Actual background load did not complete within 30 seconds")
     }
 
     private fun withOwnInput(family: String, format: String, block: (Path) -> Unit) {

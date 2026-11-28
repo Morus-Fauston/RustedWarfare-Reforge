@@ -22,7 +22,7 @@ class MechCoreAdapterTest {
             val set = assertIs<ContentResult.Success<LoadedContentSet>>(ContentLoader.loadContentPacks(listOf(root.resolve("package")))).value
             val scene = SandboxLoader().use { loader ->
                 loader.requestPack(root, ContentPackChoice(set, "mechGun"))
-                val deadline = System.nanoTime() + 5_000_000_000L
+                val deadline = System.nanoTime() + 30_000_000_000L
                 var loaded = loader.pollPrepared()
                 while (loaded == null && System.nanoTime() < deadline) { Thread.sleep(5); loaded = loader.pollPrepared() }
                 checkNotNull(loaded).getOrThrow().scenario

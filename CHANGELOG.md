@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.6.11 (2026-11-28 20:02)
+
+### 新增
+
+- **Gradle 跨模块并发调度池与单模块测试子 JVM 解耦（`development_tests.gradle` / `public_check.py` / `development_check.py` / `public_batch.py` / `quick_test.py`）**：解除 `gradle.startParameter.maxWorkerCount == testForks` 硬捆绑，新增有界 `--gradle-workers`（`1..16`）参数与 `allocate_module_test_forks` 跨模块内存池分配器；`:pc:test` 全链路保持 `maxParallelForks == 1` 串行不变，云端 `GITHUB_ACTIONS=true` 与低核环境保持既有行为不超配，本地多核环境下准备构建默认并行扩展至最多 `12` 路、机制测试跨模块常驻子 JVM 总和严格封顶 `<= 8`（如 4 模块同跑配 `core=3, client=2, tools=2, pc=1`），同步扩展 `effective.json` 与 `collect_tests` 交叉校验契约。
+
+### 架构改进
+
+- **分层源码与分发包防篡改身份校验（`public_distribution.py` / `public_check.py` / `development_check.py` / `public_batch.py`）**：保留批次启动与批次/独立运行收口时的完整字节级 SHA-256 守卫（覆盖全仓公开源码闭包、编译产物、`distribution` 成员及独立包 `final-package` 终检），将同批中间步骤与逐场景外围重扫收敛为基于 `os.scandir` 的 `(path, size, mtime_ns)` 快速元数据快照、每套件首次字节验包及当前场景直接输入文件精确字节 SHA-256 校验，并在全路径显式拦截符号链接与 Windows 目录联接（Junction），在完整保留同长度同时间戳篡改检测能力的同时大幅消除全仓重复扫盘开销。
+
+### 调整
+
+- **异步沙盒与设置准备超时上限统一放宽至 30 秒**：将 `PlatformSessionRunner` 默认加载等待上限及 `Engine/client`、`SimulationTest` 测试套件中 34 处硬编码 `5s` 异步准备轮询截止时间统一提升至 `30s`，消除高并发磁盘 I/O 瞬时抖动诱发的假阴性超时。
+- **消除 Python CI 单测临时仓库空文件风暴**：重构 `test_public_check.py`、`test_development_check.py` 与 `test_public_batch.py` 的临时仓库构造夹具，以最小合法合成闭包替代逐测试循环创建与哈希数千个空文件，在完整保留真实 CLI 与子进程超时/防篡改断言的前提下将 41 项 Python 机制段墙钟压降至 `10.69s`。
+
+### 技术
+
+- **跨模块真并行、分层防篡改与主机内存预算实测核验**：补充符号链接与目录联接拒绝、独立包同统计量篡改收口拦截、跨模块常驻子 JVM 总和 `<= 8` 封顶及 `selection.json` 交叉校验单测；`SimulationTest/ci` 全集（`78/78`，其中 `test_public_check.py` 降至 `7.35s`）与 `test_quick_test.py`（`9/9`）全绿，实跑全量 `public_batch.py --kind pr --scenario-workers 4` 全 7 套机制与 163 条公开短测 `passed`（批次级外围校验总耗时降至 `14.41s`，主机物理内存最大净增量 `5.996 GB`，Daemon 子进程与单场景进程内存均严格受控），双根 `workspace_layout.py` 全绿，经全新上下文独立非作者整审与 R02 定向复核 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `SimulationTest/ci/development_tests.gradle` | 解耦 `gradleWorkers` 与模块 `maxParallelForks`，写出 `moduleMaxParallelForks` 并锁死 `:pc:test` 串行 |
+| `SimulationTest/ci/public_distribution.py` | 新增 `os.scandir` 元数据快照、`verify_fast` 及符号链接/目录联接拦截 |
+| `SimulationTest/ci/public_check.py` | 实装跨模块 `<= 8` 常驻测试子 JVM 分配器、分层身份校验、独立包终检与链接拦截 |
+| `SimulationTest/ci/development_check.py` | 支持 `--gradle-workers`、固定源码快照透传及 `effective.json` / `selection.json` 严格整型交叉校验 |
+| `SimulationTest/ci/public_batch.py` | 支持 `--gradle-workers`、首尾全量字节 SHA-256 + 中间快速快照及 `identityChecks` 分项计时 |
+| `SimulationTest/build.gradle.kts` | 为 `:test` 任务补充 `tools.test.maxParallelForks` 属性透传 |
+| `SimulationTest/tools/quick_test.py` | 新增 `--gradle-workers` 并统一 `allocate_module_test_forks` 跨模块内存池规则 |
+| `SimulationTest/tools/test_quick_test.py` | 新增 `--gradle-workers` 边界与跨模块子 JVM 池一致性单测 |
+| `SimulationTest/ci/test_public_check.py` | 消除空文件风暴并新增符号链接/目录联接拦截与同统计量独立包篡改终检单测 |
+| `SimulationTest/ci/test_development_check.py` | 消除空文件风暴并新增跨模块池封顶、云端兼容与布尔/配置不匹配拒绝单测 |
+| `SimulationTest/ci/test_public_batch.py` | 消除空文件风暴并保持真实子进程超时与批次失败收据校验 |
+| `SimulationTest/ci/test_public_distribution.py` | 新增 `verify_fast` 元数据篡改与链接拦截单测 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/PlatformSessionRunner.kt` | 将默认沙盒加载超时上限放宽至 `30s` |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/*.kt` | 将 `MechCoreAdapterTest` 与 `NamedWeaponCoreAdapterTest` 异步加载等待上限放宽至 `30s` |
+| `Engine/client/src/test/kotlin/com/rustedwarfare/reforge/client/*.kt` | 将客户端 32 个沙盒与资源会话测试文件的异步准备等待上限统一放宽至 `30s` |
+
+---
+
 ## v0.6.10 (2026-11-28 18:20)
 
 ### 新增

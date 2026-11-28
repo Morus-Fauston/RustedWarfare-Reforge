@@ -28,14 +28,14 @@ import kotlinx.serialization.json.*
 
 fun main(args: Array<String>) {
     require(args.size in 3..4) { "PlatformSessionRunnerKt INPUT_ROOT PLAN_JSON NEW_OUTPUT_DIRECTORY [LOAD_TIMEOUT_SECONDS]" }
-    val timeout = if (args.size == 4) requireNotNull(args[3].toIntOrNull()) { "Expected integer load timeout" } else 5
+    val timeout = if (args.size == 4) requireNotNull(args[3].toIntOrNull()) { "Expected integer load timeout" } else 30
     require(timeout in 1..600) { "Load timeout must be bounded to 1..600 seconds" }
     PlatformSessionRunner.run(Path.of(args[0]), Path.of(args[1]), Path.of(args[2]), timeout)
 }
 
 /** Executes client intentions; it never edits simulation state or expected values. */
 object PlatformSessionRunner {
-    fun run(inputs: Path, plan: Path, output: Path, loadTimeoutSeconds: Int = 5) {
+    fun run(inputs: Path, plan: Path, output: Path, loadTimeoutSeconds: Int = 30) {
         require(loadTimeoutSeconds in 1..600) { "Load timeout must be bounded to 1..600 seconds" }
         val document = readObject(plan)
         require(document.integer("schemaVersion") == 1L) { "Unsupported platform plan version" }

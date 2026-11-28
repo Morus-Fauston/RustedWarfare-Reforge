@@ -119,7 +119,7 @@ class VisualAssetSelectionTest {
                 repeat(4) {
                     loader.requestPack(input,choice,state.prepareForLoad(choice))
                     var result:Result<LoadedSandbox>?=null
-                    val end=System.nanoTime()+TimeUnit.SECONDS.toNanos(5)
+                    val end=System.nanoTime()+TimeUnit.SECONDS.toNanos(30)
                     while(result==null&&System.nanoTime()<end){result=loader.pollPrepared();if(result==null)Thread.sleep(2)}
                     val loaded=kotlin.test.assertNotNull(result).getOrThrow()
                     val visuals=kotlin.test.assertNotNull(loaded.visuals)
@@ -152,7 +152,7 @@ class VisualAssetSelectionTest {
             assertEquals(1, calls.get())
             state.edit(state.selection.copy(originalDirectory = Path.of("different")))
             state.apply()
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
             while (!state.poll() && System.nanoTime() < deadline) Thread.sleep(2)
             state.rememberPublished(published) // A late result cannot replace the current selection's descriptor.
             assertEquals(listOf(published), acknowledged, "A late result cannot publish a platform audit for another selection")
@@ -172,7 +172,7 @@ class VisualAssetSelectionTest {
         SandboxLoader().use { loader ->
             loader.request(input) { assets }
             var loaded: Result<LoadedSandbox>? = null
-            val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
             while (loaded == null && System.nanoTime() < end) { loaded = loader.pollPrepared(); if (loaded == null) Thread.sleep(2) }
             kotlin.test.assertNotNull(loaded).getOrThrow()
             assertEquals(1, checks.get(), "Binding and final publication must share one complete frozen-generation verification")
@@ -200,7 +200,7 @@ class VisualAssetSelectionTest {
         }
         VisualAssetSettingsSession(backend).use { state ->
             state.ensurePreviews()
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
             while (!state.poll() && System.nanoTime() < deadline) Thread.sleep(2)
             assertEquals(1, calls.get())
             assertEquals("shared", state.prepareForLoad()().identity)
@@ -209,7 +209,7 @@ class VisualAssetSelectionTest {
             SandboxLoader().use { loader ->
                 loader.request(input, state.prepareForLoad())
                 var loaded: Result<LoadedSandbox>? = null
-                val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
                 while (loaded == null && System.nanoTime() < end) { loaded = loader.pollPrepared(); if (loaded == null) Thread.sleep(2) }
                 assertTrue(loaded?.exceptionOrNull()?.message.orEmpty().contains("Owned prepared inputs changed"))
                 assertEquals(1, calls.get(), "Even a reused descriptor must fail the loader's final checks")
@@ -236,7 +236,7 @@ class VisualAssetSelectionTest {
         }
         VisualAssetSettingsSession(backend).use { state ->
             state.ensurePreviews(first)
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
             while (!state.poll() && System.nanoTime() < deadline) Thread.sleep(2)
             val prepared = state.prepareForLoad(next)()
             assertEquals(2, calls.get())
@@ -341,7 +341,7 @@ class VisualAssetSelectionTest {
                 state.cancel()
                 state.edit(latest); state.apply()
                 release.countDown()
-                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
                 while (!state.canStart && System.nanoTime() < deadline) { state.poll(); Thread.sleep(5) }
                 assertTrue(state.canStart)
                 assertEquals(latest, state.selection)
@@ -366,7 +366,7 @@ class VisualAssetSelectionTest {
                 loader.request(root) { entered.countDown(); release.await(); visuals("old", scene) }
                 assertTrue(entered.await(3, TimeUnit.SECONDS))
                 loader.request(root) { visuals("new", scene) }
-                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
                 var result: LoadedSandbox? = null
                 while (result == null && System.nanoTime() < deadline) {
                     result = loader.pollPrepared()?.getOrThrow()

@@ -39,10 +39,14 @@ class QuickTestRunnerTest(unittest.TestCase):
         self.assertEqual(2, quick_test.default_test_forks(6))
         self.assertEqual(4, quick_test.default_test_forks(8))
         self.assertEqual(4, quick_test.default_test_forks(16))
-        for allowed in (1, 2, 4, 8):
+        for allowed in (1, 2, 3, 4, 8):
             self.assertEqual(allowed, quick_test.parse_test_forks(str(allowed)))
+        for gw in (1, 4, 8, 12, 16):
+            self.assertEqual(gw, quick_test.parse_gradle_workers(str(gw)))
         with self.assertRaises(quick_test.argparse.ArgumentTypeError):
             quick_test.parse_test_forks('9')
+        with self.assertRaises(quick_test.argparse.ArgumentTypeError):
+            quick_test.parse_gradle_workers('17')
 
     def test_high_core_eight_forks_propagates_to_core_and_suites_while_keeping_pc_serial(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -53,14 +57,50 @@ class QuickTestRunnerTest(unittest.TestCase):
                 pc=['WindowsLaunchOptionsTest'],
                 suites=['tooling'],
                 forks=8,
+                gradle_workers=10,
                 is_windows=True,
             )
             self.assertEqual(8, plan['testForks'])
+            self.assertEqual(10, plan['gradleWorkers'])
             argv = plan['steps'][0]['argv']
-            self.assertIn('-Pcore.test.maxParallelForks=8', argv)
+            self.assertIn('--max-workers=10', argv)
+            # Active modules are core + pc -> pc=1, core=7 so total resident JUnit JVMs <= 8
+            self.assertIn('-Pcore.test.maxParallelForks=7', argv)
+            self.assertIn('-Ptools.test.maxParallelForks=1', argv)
             self.assertNotIn('-Ppc.test.maxParallelForks=8', argv)
             suite_argv = plan['steps'][1]['argv']
             self.assertEqual('8', suite_argv[suite_argv.index('--test-forks') + 1])
+            self.assertEqual('10', suite_argv[suite_argv.index('--gradle-workers') + 1])
+
+            single_mod = quick_test.build_plan(
+                repo, core=['OpenGroundPlanningTest'], forks=8, gradle_workers=10, is_windows=True)
+            self.assertIn('-Pcore.test.maxParallelForks=8', single_mod['steps'][0]['argv'])
+
+            all_four = quick_test.build_plan(
+                repo,
+                core=['OpenGroundPlanningTest'],
+                client=['ConstructionQTest'],
+                pc=['WindowsLaunchOptionsTest'],
+                tools=['StreamTraceEvaluationTest'],
+                forks=8,
+                gradle_workers=12,
+                is_windows=True,
+            )
+            all_argv = all_four['steps'][0]['argv']
+            self.assertIn('-Pcore.test.maxParallelForks=3', all_argv)
+            self.assertIn('-Pclient.test.maxParallelForks=2', all_argv)
+            self.assertIn('-Ptools.test.maxParallelForks=2', all_argv)
+
+            ci_dir = Path(__file__).resolve().parents[1] / 'ci'
+            if str(ci_dir) not in sys.path:
+                sys.path.insert(0, str(ci_dir))
+            import public_check
+            for subset in [('core',), ('core', 'pc'), ('core', 'client', 'tools'), ('core', 'client', 'tools', 'pc')]:
+                for cap in (1, 2, 3, 4, 8):
+                    self.assertEqual(
+                        public_check.allocate_module_test_forks(subset, cap, is_cloud=False),
+                        quick_test.allocate_module_test_forks(subset, cap, is_cloud=False),
+                    )
 
     def test_targeted_client_and_core_plan_uses_warm_simulation_root_and_public_fixture(self):
         with tempfile.TemporaryDirectory() as tmp:

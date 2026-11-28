@@ -38,8 +38,9 @@ def expectedMethods = { task, classes ->
 
 def plan = new JsonSlurper().parse(new File(System.getProperty('development.selection')))
 def output = new File(plan.output)
-if (!(plan.testForks in [1, 2, 4, 8]) || gradle.startParameter.maxWorkerCount != plan.testForks)
-    throw new GradleException('Test forks must match the bounded Gradle worker budget')
+def expectedWorkers = (plan.gradleWorkers != null ? plan.gradleWorkers : plan.testForks) as int
+if (!(plan.testForks in [1, 2, 3, 4, 8]) || !(expectedWorkers in (1..16)) || gradle.startParameter.maxWorkerCount != expectedWorkers)
+    throw new GradleException('Test forks and Gradle workers must match the bounded concurrency budget')
 def preparedClasspathRoots = []
 gradle.projectsEvaluated {
     if (plan.mode == 'prepare') {
@@ -58,7 +59,12 @@ gradle.projectsEvaluated {
             def selection = plan.tasks[task.path]
             if (selection != null) {
                 task.filter.setIncludePatterns(selection.classes as String[])
-                maxParallelForks = task.path == ':pc:test' ? 1 : plan.testForks
+                def configuredForks = (selection.maxParallelForks != null
+                    ? selection.maxParallelForks
+                    : (task.path == ':pc:test' ? 1 : Math.min(plan.testForks as int, expectedWorkers))) as int
+                if (task.path == ':pc:test' && configuredForks != 1)
+                    throw new GradleException('PC test task must remain serial')
+                maxParallelForks = configuredForks
                 forkEvery = 0
                 maxHeapSize = '768m'
                 jvmArgs('-XX:MaxMetaspaceSize=160m', '-XX:ReservedCodeCacheSize=64m')
@@ -142,7 +148,12 @@ gradle.taskGraph.whenReady { graph ->
         if (task.filter.excludePatterns || task.filter.commandLineIncludePatterns || task.includes || task.excludes ||
             framework.values().any { !it.isEmpty() })
             throw new GradleException('Unexpected test exclusion or narrowed discovery filter')
-        if (task.maxParallelForks != (task.path == ':pc:test' ? 1 : plan.testForks) || task.forkEvery != 0)
+        def expectedTaskForks = (selection.maxParallelForks != null
+            ? selection.maxParallelForks
+            : (task.path == ':pc:test' ? 1 : Math.min(plan.testForks as int, expectedWorkers))) as int
+        if (task.path == ':pc:test' && expectedTaskForks != 1)
+            throw new GradleException('PC test task must remain serial')
+        if (task.maxParallelForks != expectedTaskForks || task.forkEvery != 0)
             throw new GradleException('Effective test forks differ from budget')
         if (task.systemProperties['repo.root'] != plan.repo || (plan.fixture != null &&
             (task.systemProperties['p001.inputs.dir'] != new File(plan.repo, 'SimulationTest/public/'+plan.fixture).absolutePath ||
@@ -155,7 +166,10 @@ gradle.taskGraph.whenReady { graph ->
          maxParallelForks:task.maxParallelForks, forkEvery:task.forkEvery,
          javaLauncher:task.javaLauncher.get().executablePath.asFile.absolutePath]
     }
-    new File(output, 'effective.json').text = JsonOutput.toJson([tests:rows, testForks:plan.testForks, maxWorkers:gradle.startParameter.maxWorkerCount,
+    def moduleForks = rows.collectEntries { [(it.task): it.maxParallelForks] }
+    new File(output, 'effective.json').text = JsonOutput.toJson([tests:rows, testForks:plan.testForks,
+        gradleWorkers:expectedWorkers, maxWorkers:gradle.startParameter.maxWorkerCount,
+        moduleMaxParallelForks:moduleForks,
         mode:plan.mode ?: 'test', preparationTasks:plan.preparationTasks ?: [],
         daemonPid:ProcessHandle.current().pid(), javaHome:System.getProperty('java.home'),
         gradleUserHome:gradle.gradleUserHomeDir.absolutePath])

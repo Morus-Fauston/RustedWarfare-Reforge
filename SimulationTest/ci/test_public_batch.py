@@ -1,4 +1,5 @@
 """Fixed public layer CLI contracts; listing never starts a build or writes output."""
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import shutil
@@ -7,6 +8,33 @@ import sys
 import tempfile
 import unittest
 import os
+
+
+def _populate_minimal_batch_repo(repo):
+    from public_check import REPO, _EXPLICIT_BUILD_FILES, _EXPLICIT_TOOL_NAMES, _EXPLICIT_DEC_TOOL_NAMES
+    ci = repo / 'SimulationTest/ci'
+    ci.mkdir(parents=True, exist_ok=True)
+    for filename in ('public_batch.py', 'public_check.py', 'development_check.py', 'public_distribution.py'):
+        shutil.copyfile(REPO / 'SimulationTest/ci' / filename, ci / filename)
+    for name in ('workflow.py', 'workflow_inputs.py'):
+        target = repo / 'SimulationTest/tools' / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / 'SimulationTest/tools' / name, target)
+    for rel in _EXPLICIT_BUILD_FILES:
+        target = repo / rel
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('', encoding='utf8')
+    for name in _EXPLICIT_TOOL_NAMES:
+        target = repo / 'SimulationTest/tools' / name
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('', encoding='utf8')
+    for name in _EXPLICIT_DEC_TOOL_NAMES:
+        target = repo / 'Decompile/tools' / name
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text('', encoding='utf8')
 
 
 class PublicBatchTest(unittest.TestCase):
@@ -26,25 +54,9 @@ class PublicBatchTest(unittest.TestCase):
         self.assertEqual({'first.py': ['one', 'two'], 'second.py': ['two', 'three']}, plan['pythonOwners'])
 
     def test_bounded_command_timeout_kills_the_spawned_tree_and_stops_the_batch(self):
-        from public_check import REPO,source_files
         with tempfile.TemporaryDirectory(prefix='reforge-layer-timeout-') as tmp:
             repo=Path(tmp)
-            # Minimal authored source closure, with the actual process executor.
-            for source in source_files(REPO):
-                relative=source.relative_to(REPO)
-                if str(relative).replace('\\','/') not in {
-                    'SimulationTest/ci/public_batch.py','SimulationTest/ci/public_check.py',
-                    'SimulationTest/ci/development_check.py','SimulationTest/ci/public_distribution.py',
-                    'SimulationTest/tools/workflow.py','SimulationTest/tools/workflow_inputs.py'}:
-                    if source.name not in {'gradlew','gradlew.bat','build.gradle.kts','settings.gradle.kts','gradle.properties'}:continue
-                target=repo/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,target)
-            # Explicit nonimported identity members may be empty in this CLI-only fixture.
-            for source in source_files(REPO):
-                target=repo/source.relative_to(REPO)
-                if not target.exists() and source.parent==REPO/'SimulationTest/tools':
-                    target.parent.mkdir(parents=True,exist_ok=True);target.write_text('',encoding='utf8')
-            for name in ['verify_dec_evidence.py','test_verify_dec_evidence.py']:
-                p=repo/'Decompile/tools'/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('',encoding='utf8')
+            _populate_minimal_batch_repo(repo)
             suites=repo/'SimulationTest/public/suites';suites.mkdir(parents=True)
             for name in ['content-movement-knowledge','production-combat','build-economy','maintenance-defense','platform-basics','content-three-formats','tooling']:
                 (suites/(name+'.json')).write_text(json.dumps(dict(schemaVersion=1,suiteId=name,inputScope='public',tests={'tools':['ProbeTest']})),encoding='utf8')
@@ -128,29 +140,16 @@ class PublicBatchTest(unittest.TestCase):
                 self.assertFalse(output.exists())
 
     def test_child_build_failure_preserves_receipts_and_does_not_run_later_suites(self):
-        from public_check import REPO, source_files
-
         with tempfile.TemporaryDirectory(prefix='reforge-layer-failure-') as tmp:
             repo = Path(tmp)
+            _populate_minimal_batch_repo(repo)
             ci = repo/'SimulationTest/ci'
-            ci.mkdir(parents=True)
-            for filename in ['public_batch.py', 'public_check.py', 'development_check.py', 'public_distribution.py']:
-                shutil.copyfile(Path(__file__).with_name(filename), ci/filename)
             public = repo/'SimulationTest/public'
             (public/'suites').mkdir(parents=True)
             for name in ['content-movement-knowledge', 'production-combat', 'build-economy',
                          'maintenance-defense', 'platform-basics', 'content-three-formats', 'tooling']:
                 (public/'suites'/(name+'.json')).write_text(json.dumps(dict(schemaVersion=1,
                     suiteId=name, inputScope='public', tests={'tools': ['ProbeTest']})), encoding='utf8')
-            for name in ['workflow.py','workflow_inputs.py']:
-                target = repo/'SimulationTest/tools'/name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(REPO/'SimulationTest/tools'/name, target)
-            # Populate the required files using the production selector on this fixture.
-            for path in source_files(repo):
-                if not path.exists():
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.touch()
             (repo/'SimulationTest/gradlew').write_text('#!/bin/sh\nexit 9\n', encoding='utf8')
             (repo/'SimulationTest/gradlew.bat').write_text('@exit /b 9\n', encoding='utf8')
             output=repo/'batch'
@@ -182,10 +181,6 @@ class PublicBatchTest(unittest.TestCase):
                     suiteId=name, inputScope='public', short=[dict(id=name+'-s', scenario='s.json', contract='c.json')])), encoding='utf8')
             (public/'s.json').write_text('{}', encoding='utf8')
             (public/'c.json').write_text('{}', encoding='utf8')
-            for path in source_files(repo):
-                if not path.exists():
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.touch()
             short_output = repo/'short-batch'
             short_failure = subprocess.run([sys.executable, '-B', str(ci/'public_batch.py'),
                 '--kind', 'short', '--output', str(short_output)], capture_output=True, text=True, timeout=30)

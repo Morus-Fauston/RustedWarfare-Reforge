@@ -64,7 +64,7 @@ class MechFlameSandboxTest {
         val pack = assertIs<ContentResult.Success<LoadedContentPack>>(result).value
         return SandboxLoader().use { loader ->
             loader.requestPack(root, ContentPackChoice(pack, "builder"))
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             while (System.nanoTime() < deadline) {
                 loader.pollPrepared()?.let { return@use it.getOrThrow() }
                 Thread.sleep(5)

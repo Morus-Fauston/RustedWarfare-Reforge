@@ -40,9 +40,66 @@ def default_test_forks(cpu_count=None):
 
 
 def parse_test_forks(value):
-    if str(value) not in ('1', '2', '4', '8'):
-        raise argparse.ArgumentTypeError('Test forks must be 1, 2, 4 or 8')
+    if str(value) not in ('1', '2', '3', '4', '8'):
+        raise argparse.ArgumentTypeError('Test forks must be 1, 2, 3, 4 or 8')
     return int(value)
+
+
+def parse_gradle_workers(value):
+    text = str(value).strip()
+    if not text.isdigit():
+        raise argparse.ArgumentTypeError('Gradle workers must be an integer between 1 and 16')
+    parsed = int(text)
+    if not 1 <= parsed <= 16:
+        raise argparse.ArgumentTypeError('Gradle workers must be an integer between 1 and 16')
+    return parsed
+
+
+MAX_LOCAL_TEST_JVMS = 8
+_MODULE_FORK_PRIORITY = ('core', 'client', 'tools')
+
+
+def allocate_module_test_forks(modules, per_module_cap, *, is_cloud=False, max_resident_jvms=MAX_LOCAL_TEST_JVMS):
+    active = list(modules)
+    if not active:
+        return {}
+    per_cap = max(1, int(per_module_cap))
+    alloc = {}
+    if 'pc' in active:
+        alloc['pc'] = 1
+    non_pc = [m for m in _MODULE_FORK_PRIORITY if m in active] + [
+        m for m in active if m != 'pc' and m not in _MODULE_FORK_PRIORITY
+    ]
+    if not non_pc:
+        return alloc
+    if is_cloud:
+        for mod in non_pc:
+            alloc[mod] = per_cap
+        return alloc
+    budget = max(len(non_pc), max_resident_jvms - alloc.get('pc', 0))
+    for mod in non_pc:
+        alloc[mod] = 1
+    remaining = budget - len(non_pc)
+    while remaining > 0:
+        progressed = False
+        for mod in non_pc:
+            if remaining <= 0:
+                break
+            if alloc[mod] < per_cap:
+                alloc[mod] += 1
+                remaining -= 1
+                progressed = True
+        if not progressed:
+            break
+    return alloc
+
+
+def default_gradle_workers(forks, *, cloud=None, cpu_count=None):
+    is_cloud = (os.environ.get('GITHUB_ACTIONS') == 'true') if cloud is None else bool(cloud)
+    cores = (os.cpu_count() or 2) if cpu_count is None else cpu_count
+    if is_cloud or cores <= 4 or forks == 1:
+        return forks
+    return max(forks, min(8, cores // 2))
 
 
 def gradle_wrapper(project_dir, is_windows=None):
@@ -105,7 +162,7 @@ def new_temp_dir(prefix, base_dir=None):
 
 
 def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=False,
-               forks=None, rerun=False, temp_root=None, is_windows=None):
+               forks=None, gradle_workers=None, rerun=False, temp_root=None, is_windows=None):
     repo = Path(repo).resolve()
     sim_dir = repo / 'SimulationTest'
     public_p001 = repo / PUBLIC_P001_RELATIVE
@@ -115,15 +172,21 @@ def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=F
         raise ValueError('Missing public P001 fixture directory: ' + str(public_p001))
 
     effective_forks = default_test_forks() if forks is None else parse_test_forks(forks)
+    effective_gradle_workers = (
+        default_gradle_workers(effective_forks)
+        if gradle_workers is None else parse_gradle_workers(gradle_workers)
+    )
     wrapper = gradle_wrapper(sim_dir, is_windows=is_windows)
     steps = []
 
     selected_modules = {'core': core, 'client': client, 'pc': pc, 'tools': tools}
     test_tasks = []
+    active_modules = []
     for module_name, task_path in MODULE_TASKS:
         patterns = [validate_filter(p) for p in selected_modules[module_name]]
         if not patterns:
             continue
+        active_modules.append(module_name)
         test_tasks.append(task_path)
         for pattern in patterns:
             test_tasks.extend(['--tests', pattern])
@@ -131,15 +194,18 @@ def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=F
             test_tasks.append('--rerun')
 
     if test_tasks:
+        is_cloud = os.environ.get('GITHUB_ACTIONS') == 'true'
+        per_module_cap = max(1, min(effective_forks, effective_gradle_workers))
+        allocated = allocate_module_test_forks(active_modules, per_module_cap, is_cloud=is_cloud)
+        fork_props = [f'-P{mod}.test.maxParallelForks={allocated.get(mod, 1)}' for mod in ('core', 'client', 'tools')]
         argv = (
             wrapper
             + test_tasks
             + [
                 '--daemon',
                 '--console=plain',
-                f'--max-workers={effective_forks}',
-                f'-Pcore.test.maxParallelForks={effective_forks}',
-                f'-Pclient.test.maxParallelForks={effective_forks}',
+                f'--max-workers={effective_gradle_workers}',
+                *fork_props,
                 f'-Dpublic.inputs.dir={public_p001}',
             ]
         )
@@ -156,7 +222,11 @@ def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=F
         argv = [sys.executable, '-B', str(sim_dir / 'ci' / 'development_check.py')]
         for name in suite_names:
             argv.extend(['--suite', name])
-        argv.extend(['--test-forks', str(effective_forks), '--output', str(suite_out)])
+        argv.extend([
+            '--test-forks', str(effective_forks),
+            '--gradle-workers', str(effective_gradle_workers),
+            '--output', str(suite_out),
+        ])
         steps.append(dict(
             name='mechanism-suites',
             layer='L1',
@@ -174,7 +244,7 @@ def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=F
                 ':movementProbe',
                 '--daemon',
                 '--console=plain',
-                f'--max-workers={effective_forks}',
+                f'--max-workers={effective_gradle_workers}',
                 f'--args=--scene dev-ab --assert true --output {quoted_out}',
             ]
         )
@@ -193,6 +263,7 @@ def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=F
         schemaVersion=1,
         repo=str(repo),
         testForks=effective_forks,
+        gradleWorkers=effective_gradle_workers,
         steps=steps,
     )
 
@@ -253,7 +324,9 @@ def build_parser():
     parser.add_argument('--dev-ab', action='store_true',
                         help='Run SimulationTest :movementProbe --scene dev-ab --assert true on the same warm daemon')
     parser.add_argument('--test-forks', type=parse_test_forks, default=None,
-                        help='Bounded Gradle workers / test forks: 1, 2 or 4 (defaults from CPU count)')
+                        help='Bounded module test forks: 1, 2, 3, 4 or 8; PC stays serial')
+    parser.add_argument('--gradle-workers', type=parse_gradle_workers, default=None,
+                        help='Bounded Gradle max workers (1..16, defaults independently from CPU count)')
     parser.add_argument('--rerun', action='store_true',
                         help='Force re-execution of targeted test task(s) via --rerun without recompiling upstream')
     parser.add_argument('--temp-root', type=Path, default=None,
@@ -276,6 +349,7 @@ def main(argv=None):
             suites=args.suite,
             dev_ab=args.dev_ab,
             forks=args.test_forks,
+            gradle_workers=args.gradle_workers,
             rerun=args.rerun,
             temp_root=args.temp_root,
         )

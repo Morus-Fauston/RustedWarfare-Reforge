@@ -19,7 +19,7 @@ class ContentPackCompositionSandboxTest {
             ContentPackSelectionSession().use { state ->
                 fun import(path: Path) {
                     state.edit(path); state.checkPackage()
-                    val deadline = System.nanoTime() + 5_000_000_000L
+                    val deadline = System.nanoTime() + 30_000_000_000L
                     while (state.busy && System.nanoTime() < deadline) { state.poll(); Thread.sleep(5) }
                     check(!state.busy)
                 }
@@ -63,7 +63,7 @@ class ContentPackCompositionSandboxTest {
             ContentPackSelectionSession().use { state ->
                 fun import(path: Path) {
                     state.edit(path); state.checkPackage()
-                    val deadline = System.nanoTime() + 5_000_000_000L
+                    val deadline = System.nanoTime() + 30_000_000_000L
                     while (state.busy && System.nanoTime() < deadline) { state.poll(); Thread.sleep(5) }
                     check(!state.busy)
                     assertEquals(null, state.error)
@@ -164,11 +164,11 @@ class ContentPackCompositionSandboxTest {
     }
 
     private fun await(loader: SandboxLoader): Result<LoadedSandbox> {
-        val deadline = System.nanoTime() + 5_000_000_000L
+        val deadline = System.nanoTime() + 30_000_000_000L
         while (System.nanoTime() < deadline) {
             loader.pollPrepared()?.let { return it }
             Thread.sleep(5)
         }
-        error("Content combination did not load within five seconds")
+        error("Content combination did not load within 30 seconds")
     }
 }

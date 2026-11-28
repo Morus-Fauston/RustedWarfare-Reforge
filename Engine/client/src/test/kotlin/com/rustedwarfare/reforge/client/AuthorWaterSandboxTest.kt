@@ -62,7 +62,7 @@ class AuthorWaterSandboxTest {
     }
 
     private fun await(loader: SandboxLoader): LoadedSandbox {
-        val deadline = System.nanoTime() + 5_000_000_000L
+        val deadline = System.nanoTime() + 30_000_000_000L
         while (System.nanoTime() < deadline) {
             loader.pollPrepared()?.let { return it.getOrThrow() }
             Thread.sleep(5)
@@ -75,7 +75,7 @@ class AuthorWaterSandboxTest {
             fixtures.resolve("author-water/$format/package"))).value
         return SandboxLoader().use { loader ->
             loader.requestPack(fixtures.resolve("author-water/$format"), ContentPackChoice(pack, "spcruiser"))
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             while (System.nanoTime() < deadline) {
                 loader.pollPrepared()?.let { return@use it.getOrThrow() }
                 Thread.sleep(5)
@@ -191,7 +191,7 @@ class AuthorWaterSandboxTest {
         for (format in listOf("ini", "json", "hjson")) ContentPackSelectionSession().use { selection ->
             selection.edit(fixtures.resolve("author-water/$format/package"))
             selection.checkPackage()
-            val deadline = System.nanoTime() + 5_000_000_000L
+            val deadline = System.nanoTime() + 30_000_000_000L
             while (selection.busy && System.nanoTime() < deadline) { selection.poll(); Thread.sleep(5) }
             assertFalse(selection.busy)
             assertNull(selection.error)

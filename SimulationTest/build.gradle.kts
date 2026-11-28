@@ -53,6 +53,11 @@ tasks.test {
     useJUnitPlatform()
     maxHeapSize = "768m"
     jvmArgs("-XX:MaxMetaspaceSize=160m", "-XX:ReservedCodeCacheSize=64m")
+    val configuredForks = providers.gradleProperty("tools.test.maxParallelForks")
+        .orElse(providers.systemProperty("tools.test.maxParallelForks"))
+        .map { it.toInt().coerceAtLeast(1) }
+        .orElse((Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4))
+    maxParallelForks = configuredForks.get()
     systemProperty("repo.root", System.getProperty("repo.root") ?: projectDir.parentFile.absolutePath)
     System.getProperty("evidence.dir")?.let { systemProperty("evidence.dir", it) }
 }
