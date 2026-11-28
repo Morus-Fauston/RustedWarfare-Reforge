@@ -1,3 +1,9 @@
+v0.6.14 (2026-11-29 00:43)
+  修复: 在 public_scenarios.py 新增 core_long_timeout_ms 为 kind == 'long' 的 Core 连续长测向 CLI（--timeout-ms）与常驻池载荷（timeoutMs）同步透传上限 600_000 ms 的协作超时预算（short 场景保持 120_000 ms 默认不变），修复云端 4-vCPU Runner 并发跑满 4 Worker 时 phase-five-*-core-chain 在 120s 默认阈值处误触发 RunTimedOut（exitCode=4）的问题
+  技术: 在 test_public_check.py 新增双路径超时透传与 LPT 保序单测并通过 SimulationTest/ci 全集（79/79）及布局检查，经原独立非作者终审子代理定向复核 APPROVE（0 必修）
+
+====
+
 v0.6.13 (2026-11-29 00:08)
   修复: 为 quick_test.build_plan 补充可选显式 cloud 参数（默认仍读取 GITHUB_ACTIONS 保持 CLI 行为不变），并在 test_quick_test.py 中分别显式断言 cloud=False 本地跨模块 <= 8 常驻子 JVM 池与 cloud=True 云端直通分支，消除云端 GITHUB_ACTIONS=true 环境变量引发的单测断言耦合
   技术: 在 GITHUB_ACTIONS=true 与本地双环境下通过 test_quick_test.py（9/9）与 SimulationTest/ci 全集（78/78）及布局检查，经原独立非作者终审子代理 R02 定向复核 APPROVE（0 必修）

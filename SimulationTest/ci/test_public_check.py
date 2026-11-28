@@ -815,6 +815,53 @@ class PublicSelectionTest(unittest.TestCase):
             escaped = subprocess.run([sys.executable, '-B', str(copied), '--suite', '../escape', '--list'], capture_output=True)
             self.assertEqual(2, escaped.returncode)
 
+    def test_core_long_scenarios_forward_extended_cooperative_timeout_ms_while_short_keeps_default(self):
+        from public_scenarios import core_long_timeout_ms, run_scenarios, session_timeout_seconds
+
+        self.assertIsNone(core_long_timeout_ms({'id': 's', 'kind': 'short'}, 600))
+        self.assertIsNone(core_long_timeout_ms({'id': 'l', 'kind': 'long'}, 120))
+        self.assertEqual(570_000, core_long_timeout_ms({'id': 'l', 'kind': 'long'}, 600))
+        self.assertEqual(600_000, core_long_timeout_ms({'id': 'l', 'kind': 'long'}, 900))
+        self.assertEqual(300, session_timeout_seconds({'id': 'l', 'kind': 'long'}, 900))
+        self.assertEqual(180, session_timeout_seconds({'id': 's', 'kind': 'short'}, 600))
+
+        with tempfile.TemporaryDirectory(prefix='reforge-long-timeout-') as tmp:
+            root = Path(tmp)
+            project = root / 'SimulationTest'
+            (project / 'public').mkdir(parents=True)
+            (project / 'public/s.json').write_text('{}', encoding='utf8')
+            (project / 'public/c.json').write_text('{}', encoding='utf8')
+            dist = root / 'dist'
+            (dist / 'bin').mkdir(parents=True)
+            (dist / 'lib').mkdir(parents=True)
+            (dist / 'lib/simulation-test.jar').write_bytes(b'stub')
+            cases = [
+                {'id': 'short-core', 'kind': 'short', 'scenario': 's.json', 'contract': 'c.json'},
+                {'id': 'long-core', 'kind': 'long', 'scenario': 's.json', 'contract': 'c.json'},
+            ]
+            seen_by_name = {}
+
+            class FakePool:
+                def execute_core_step(self, output, name, logical_argv, payload, timeout, *, priority=0.0):
+                    seen_by_name[name] = (list(logical_argv), dict(payload))
+                    batch = Path(output) / name / 'run-fixed'
+                    (batch / 'comparison').mkdir(parents=True)
+                    (batch / 'comparison/result.json').write_text('{"exitCode":0}', encoding='utf8')
+                    (batch / 'manifest.json').write_text('{"complete":true}', encoding='utf8')
+                    return dict(argv=[str(a) for a in logical_argv], exitCode=0, elapsedSeconds=0.01,
+                                startedUnix=1.0, endedUnix=1.01, firstError=None, passed=True)
+
+            out = root / 'out'
+            out.mkdir()
+            res = run_scenarios(root, out, cases, dist, 1, 900, lambda _: None, lambda *a: None,
+                                shared_worker_pool=FakePool())
+            self.assertEqual('passed', res['status'], res)
+            self.assertEqual(['short-core', 'long-core'], [r['id'] for r in res['items']])
+            self.assertNotIn('--timeout-ms', seen_by_name['short-core'][0])
+            self.assertNotIn('timeoutMs', seen_by_name['short-core'][1])
+            self.assertEqual(['--timeout-ms', '600000'], seen_by_name['long-core'][0][-2:])
+            self.assertEqual(600_000, seen_by_name['long-core'][1]['timeoutMs'])
+
 
 if __name__ == '__main__':
     unittest.main()

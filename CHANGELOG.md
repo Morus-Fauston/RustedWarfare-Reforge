@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.14 (2026-11-29 00:43)
+
+### 修复
+
+- **连续长测 Core 场景协作超时上限透传（`public_scenarios.py`）**：修复在云端 4-vCPU Runner 并发运行 `public-long` 分片时，虽外层已配置 `LONG_COMMAND_TIMEOUT = 900s`（且 `session` 长测已通过 `session_timeout_seconds` 放宽至 `300s`），但 `core` 长测未向 CLI 与 `BatchScenarioWorker` 显式透传 `timeoutMs` 而沿用短测默认 `120_000 ms` 协作超时，导致 `phase-five-*-core-chain` 在 `~125s` 处误触发 `RunTimedOut (exitCode=4)` 的问题；新增 `core_long_timeout_ms` 对 `kind == 'long'` 且 `timeout > 120` 的场景同步透传 `--timeout-ms` 与 `batch_payload['timeoutMs']`（上限 `600_000 ms`），`short` 场景与短超时测试保持原默认不变。
+
+### 技术
+
+- **超时透传单测与定向复核核验**：在 `test_public_check.py` 新增 `test_core_long_scenarios_forward_extended_cooperative_timeout_ms_while_short_keeps_default` 覆盖 CLI 与常驻池载荷双路径超时透传及 LPT 重排输出保序，`SimulationTest/ci` 全套单测（`79/79`）与工作树布局检查通过，经原独立非作者终审子代理定向复核 `APPROVE`（0 必修、0 建议）。
+
+---
+
 ## v0.6.13 (2026-11-29 00:08)
 
 ### 修复
