@@ -11,7 +11,7 @@ import tempfile
 import time
 
 from public_check import REPO, identities, plan_suite, source_files, build_shared_distribution, command_timeout, test_forks, test_concurrency
-from public_check import scenario_workers, scenario_concurrency
+from public_check import scenario_workers, scenario_concurrency, lock_wait_seconds
 
 
 SUITES = ('content-movement-knowledge', 'production-combat', 'build-economy',
@@ -67,7 +67,7 @@ def verify_mechanism_receipt(repo, folder, plan, source):
     return measured
 
 
-def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1, workers=2):
+def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1, workers=2, lock_wait=1800):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     source = identities(repo)
@@ -83,7 +83,8 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
                 raise ValueError(f"Shared {plan['kind']} distribution cannot skip selected mechanism tests")
             sys.path.insert(0, str(REPO/'SimulationTest/tools'))
             from workflow import resources
-            with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+            with resources(['host:heavy-verification', 'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')],
+                           wait_seconds=lock_wait):
                 shared = build_shared_distribution(repo, output/'shared-distribution', source, command_timeout_seconds,
                     preparation_plan=plan if plan['kind'] == 'pr' else None, forks=forks, kind=plan['kind'])
             result['sharedBuild'] = shared
@@ -98,7 +99,8 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             def admit_mechanisms():
                 verify(*pin, identities(repo), kind='pr', plan=plan['suites'][0]['plan'], repo=repo)
             code = run_development(repo, proof_directory, mechanisms, False, forks, command_timeout_seconds,
-                                   admit=admit_mechanisms, prepared=True)
+                                   admit=admit_mechanisms, prepared=True,
+                                   lock_wait_seconds=lock_wait, host_lock=True)
             result['mechanisms'] = dict(result='mechanisms/result.json', exitCode=code)
             if code:
                 raise RuntimeError('Current batch mechanisms failed')
@@ -120,7 +122,7 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
             argv = [sys.executable, '-B', str(repo/'SimulationTest/ci/public_check.py'),
                     '--suite', name, '--kind', row['plan']['kind'], '--output', str(child),
                     '--command-timeout',str(command_timeout_seconds), '--test-forks', str(forks),
-                    '--scenario-workers',str(workers)]
+                    '--scenario-workers',str(workers), '--lock-wait-seconds', str(lock_wait)]
             if shared is not None:
                 from public_distribution import verify
                 verify(shared['receipt'], shared['sha256'], identities(repo), kind=plan['kind'], plan=row['plan'], repo=repo)
@@ -136,7 +138,7 @@ def run_layer(repo, output, plan, isolated, command_timeout_seconds=600, forks=1
                     from public_check import run as run_suite
                     with redirect_stdout(log):
                         record['exitCode'] = run_suite(repo, child, row['plan'], pin, command_timeout_seconds,
-                                                       forks, workers, scenarios_only=True)
+                                                       forks, workers, scenarios_only=True, lock_wait=lock_wait)
                 else:
                     process = subprocess.run(argv, cwd=repo, stdout=log, stderr=subprocess.STDOUT)
                     record['exitCode'] = process.returncode
@@ -199,6 +201,8 @@ def main():
     parser.add_argument('--scenario-workers', type=scenario_workers, default=None, help='Bound independent headless scenarios after tests: 1, 2, 4 or 8')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Per-command seconds forwarded to every suite and shared build; at most 3600')
+    parser.add_argument('--lock-wait-seconds', type=lock_wait_seconds, default=1800,
+                        help='Max seconds to wait on host:heavy-verification queue (0 fails fast); default 1800')
     args = parser.parse_args()
     workers = default_scenario_workers(args.kind, args.scenario_workers)
     try:
@@ -225,13 +229,15 @@ def main():
         # The batch also imports its executor from the frozen public closure.
         bootstrap = ('import sys; from pathlib import Path; '
                      'from public_batch import REPO, plan_layer, run_layer; '
-                     'kind, output, timeout, forks, workers = sys.argv[1:]; '
+                     'kind, output, timeout, forks, workers, lock_wait = sys.argv[1:]; '
                      'raise SystemExit(run_layer(REPO, Path(output), plan_layer(REPO, kind), '
-                     'True, float(timeout), int(forks), int(workers)))')
+                     'True, float(timeout), int(forks), int(workers), float(lock_wait)))')
         return subprocess.run([sys.executable, '-B', '-c', bootstrap, args.kind, str(output),
-                               str(args.command_timeout), str(args.test_forks), str(workers)],
+                               str(args.command_timeout), str(args.test_forks), str(workers),
+                               str(args.lock_wait_seconds)],
                               cwd=repo/'SimulationTest/ci').returncode
-    return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks, workers)
+    return run_layer(repo, output, plan, args.isolated, args.command_timeout, args.test_forks, workers,
+                     args.lock_wait_seconds)
 
 
 if __name__ == '__main__':

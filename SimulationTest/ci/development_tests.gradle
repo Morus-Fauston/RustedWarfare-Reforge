@@ -60,7 +60,7 @@ gradle.projectsEvaluated {
                 task.filter.setIncludePatterns(selection.classes as String[])
                 maxParallelForks = task.path == ':pc:test' ? 1 : plan.testForks
                 forkEvery = 0
-                maxHeapSize = '1024m'
+                maxHeapSize = '768m'
                 jvmArgs('-XX:MaxMetaspaceSize=160m', '-XX:ReservedCodeCacheSize=64m')
                 outputs.upToDateWhen { false }
                 outputs.cacheIf { false }

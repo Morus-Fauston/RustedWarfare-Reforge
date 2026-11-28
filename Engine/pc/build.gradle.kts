@@ -44,6 +44,8 @@ tasks.named<JavaExec>("run") {
 
 tasks.test {
     useJUnitPlatform()
+    maxHeapSize = "768m"
+    jvmArgs("-XX:MaxMetaspaceSize=160m", "-XX:ReservedCodeCacheSize=64m")
     // PC tests stay serial to avoid shared desktop/audio/resource-pack fixture contention.
     maxParallelForks = 1
     val repoRoot = rootProject.projectDir.parentFile

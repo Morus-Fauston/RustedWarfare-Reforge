@@ -142,7 +142,8 @@ def method_owners(group, tests):
     ]
 
 
-def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=None, prepared=False, session_distribution=None):
+def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=None, prepared=False,
+                    session_distribution=None, lock_wait_seconds=0, host_lock=False):
     output.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     initial = identities(repo)
@@ -157,7 +158,10 @@ def run_development(repo, output, plan, cold, forks=1, timeout=600, *, admit=Non
         project = repo/'SimulationTest'
         for index, group in enumerate(plan['groups']):
             folder = output/('group-'+str(index))
-            with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+            lock_names = (['host:heavy-verification'] if host_lock else []) + [
+                'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]
+            lock_ctx = resources(lock_names, wait_seconds=lock_wait_seconds) if host_lock else resources(lock_names)
+            with lock_ctx:
                 if admit is not None:
                     admit()
                 record = execute_test_group(repo, folder, group, cold, forks, timeout=timeout)

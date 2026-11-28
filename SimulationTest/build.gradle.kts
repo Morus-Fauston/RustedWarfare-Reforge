@@ -17,7 +17,14 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     testImplementation(kotlin("test"))
 }
-application { mainClass.set("com.rustedwarfare.reforge.testing.MainKt") }
+application {
+    mainClass.set("com.rustedwarfare.reforge.testing.MainKt")
+    applicationDefaultJvmArgs = listOf(
+        "-Xmx512m",
+        "-XX:MaxMetaspaceSize=160m",
+        "-XX:ReservedCodeCacheSize=64m",
+    )
+}
 // Windows cmd expands every absolute JAR path before Java starts. Keep deep installs below its line limit.
 tasks.named<org.gradle.jvm.application.tasks.CreateStartScripts>("startScripts") {
     doLast {
@@ -44,7 +51,9 @@ gradle.projectsEvaluated {
 }
 tasks.test {
     useJUnitPlatform()
-    systemProperty("repo.root", projectDir.parentFile.absolutePath)
+    maxHeapSize = "768m"
+    jvmArgs("-XX:MaxMetaspaceSize=160m", "-XX:ReservedCodeCacheSize=64m")
+    systemProperty("repo.root", System.getProperty("repo.root") ?: projectDir.parentFile.absolutePath)
     System.getProperty("evidence.dir")?.let { systemProperty("evidence.dir", it) }
 }
 

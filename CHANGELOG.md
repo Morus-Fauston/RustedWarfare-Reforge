@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.6.10 (2026-11-28 18:20)
+
+### 新增
+
+- **跨工作树主机级重型验证排队锁与孤儿锁自动回收（`workflow.py` / `public_batch.py` / `public_check.py` / `development_check.py`）**：新增固定落位于系统临时目录的主机级全局互斥锁 `host:heavy-verification` 及 `--lock-wait-seconds` 参数（默认排队等待 `1800s`、传 `0` 立即拒绝），结合跨平台 `(pid, processCreateTime)` 进程存活核验与 `.stale` 原子重命名安全回收已退出进程及 PID 复用遗留孤儿锁，消除多工作树重型验证批次静默叠加导致的物理内存耗尽。
+
+### 架构改进
+
+- **Core 轨迹采集与双流比较流式化（`RunArchive` / `Runner` / `TraceComparator` / `TraceFiles` / `NautilusTraceValidator` / `NuclearTraceValidator`）**：移除 `RunArchive.records` 全历史帧 `JsonObject` 强引用列表与 `Runner` 尾记录拼接全量拷贝，实装单遍流式评估器 `StreamEvaluator`、单拍延迟状态机 `StreamTraceValidator`、`BodyValidatorSession` 与双流同步逐行归档比对（失败时按行号经 `extractDivergenceWindow` 局部回读上下文窗口），将 15,000+ 步连续长测的比较堆驻留从线性增长降为常数窗口，完整保持 6 层错误优先级、退出码（`0 / 2 / 3 / 4 / 64`）、`comparison/result.json` 结构与开放 `Action` / `UnitTask` 校验规则。
+- **Session 诊断归档流式扫描与单次流偏移索引（`platform_scenario.py`）**：新增 `iter_jsonl_records` 与基于 `ExitStack` 单次打开流构建紧凑偏移数组的 `JsonlRecordSequence`（配单遍 SHA-256 校验与有界 LRU 解析缓存），消除 `client-diagnostic.jsonl` 全文一次性展开为字典列表的高内存峰值，保持防 TOCTOU 单次打开审计与锚点/契约判定语义不变。
+
+### 调整
+
+- **全链路测试 JVM 与构建守护进程显式内存封顶**：为 `SimulationTest` 启动脚本配置默认 `-Xmx512m -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=64m`（置于 `SIMULATION_TEST_OPTS` 之前以保留外部显式覆盖能力），将 `Engine` 与 `SimulationTest` 各模块 JUnit 测试子 JVM 默认上限统一设为 `-Xmx768m`，并将双根 Gradle 与 Kotlin Daemon 堆上限收敛至 `-Xmx1536m` / `-Xmx2g`。
+
+### 技术
+
+- **流式等价性、主机排队锁与 `-Xmx512m` 全量长测内存实测核验**：新增 `StreamTraceEvaluationTest`（含反射校验 `RunArchive` 零集合驻留及流式正反例）、`test_workflow.py` 跨工作树排队与死 PID / PID 复用锁回收单测及 `JsonlRecordSequence` 缓存上限单测；全套工具链 JUnit 与 Python 单测全绿，默认 `-Xmx512m` 实跑 `public_batch.py --kind long --scenario-workers 4` 全量 `33/33` 条连续长测零 OOM 通过（单 `simulation-test` 进程峰值工作集降至 `608.69 MB`，较此前降幅约 `89%`），会话流式归档经无损压缩校验通过，双根 `workspace_layout.py` 全绿，经全新上下文独立非作者整审 `APPROVE`（0 必修）。
+
+### 文件变更表
+
+| 文件 | 变更 |
+|:-----|:------|
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/RunArchive.kt` | 移除全历史 `records` 列表驻留并补充 `flush()` |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/Runner.kt` | 改为逐帧流式喂入 `StreamEvaluator` 并隔离 `captureArchive` 与 `comparison` 阶段计时 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceComparator.kt` | 实装 `StreamEvaluator`、`StreamTraceValidator`、双流 `evaluateSources` 与局部差异窗口回读 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/TraceFiles.kt` | 新增流式 `TraceSource`、双流同步 `verifyArchive` 与尾记录流拼接 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/NautilusTraceValidator.kt` | 提取逐帧有状态 `Session` 消除整局列表依赖 |
+| `SimulationTest/src/main/kotlin/com/rustedwarfare/reforge/testing/NuclearTraceValidator.kt` | 提取逐帧有状态 `Session` 消除整局列表依赖 |
+| `SimulationTest/src/test/kotlin/com/rustedwarfare/reforge/testing/StreamTraceEvaluationTest.kt` | **新增** — 流式轨迹评估等价性、错误优先级、开放任务校验与零历史驻留单测 |
+| `SimulationTest/tools/platform_scenario.py` | 新增 `iter_jsonl_records` 与单次流偏移索引 `JsonlRecordSequence` |
+| `SimulationTest/tools/test_platform_scenario.py` | 新增 `JsonlRecordSequence` 有界缓存、随机切片与截断尾行拒绝单测 |
+| `SimulationTest/tools/workflow.py` | 新增 `host:heavy-verification` 排队锁、`(pid, processCreateTime)` 核验与孤儿锁原子回收 |
+| `SimulationTest/tools/test_workflow.py` | 新增跨工作树排队、快速失败与死 PID / PID 复用锁回收单测 |
+| `SimulationTest/ci/public_batch.py` | 接入主机级重型验证锁与 `--lock-wait-seconds` 参数 |
+| `SimulationTest/ci/public_check.py` | 接入主机级重型验证锁与 `--lock-wait-seconds` 参数 |
+| `SimulationTest/ci/development_check.py` | 支持受控透传主机级重型验证锁与排队等待超时 |
+| `SimulationTest/ci/test_public_batch.py` | 新增 `--lock-wait-seconds` 边界参数校验单测 |
+| `SimulationTest/build.gradle.kts` | 配置应用默认 `-Xmx512m`、测试子 JVM `-Xmx768m` 并透传 `repo.root` |
+| `SimulationTest/ci/development_tests.gradle` | 统一机制测试子 JVM 堆与元空间上限为 `768m` / `160m` |
+| `SimulationTest/gradle.properties` | 收敛 Gradle / Kotlin Daemon 堆上限至 `-Xmx1536m` / `-Xmx2g` |
+| `Engine/gradle.properties` | 收敛 Gradle / Kotlin Daemon 堆上限至 `-Xmx1536m` / `-Xmx2g` |
+| `Engine/core/build.gradle.kts` | 统一核心模块测试子 JVM 堆与元空间上限为 `768m` / `160m` |
+| `Engine/client/build.gradle.kts` | 统一客户端模块测试子 JVM 堆与元空间上限为 `768m` / `160m` |
+| `Engine/pc/build.gradle.kts` | 统一桌面模块测试子 JVM 堆与元空间上限为 `768m` / `160m` |
+
+---
+
 ## v0.6.9 (2026-11-28 16:15)
 
 ### 修复

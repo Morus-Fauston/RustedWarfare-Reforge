@@ -1293,6 +1293,47 @@ assert all(count == 1 for count in reads.values()), reads
         self.assertEqual(3, result['actionSequence'])
         self.assertEqual(4, result['sampleSequence'])
 
+    def test_streaming_jsonl_record_sequence_bounds_cache_and_rejects_truncated_tail(self):
+        from platform_scenario import JsonlRecordSequence, iter_jsonl_records, session_anchors
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'diagnostic.jsonl'
+            rows = [
+                dict(sequence=0, kind='observation', phase='initial', sample=dict(worldId='w', stepIndex=0, simulationTime=0, units=[])),
+                dict(sequence=1, kind='intent-start', intentId='i1'),
+                dict(sequence=2, kind='observation', phase='before-action', sample=dict(worldId='w', stepIndex=0, simulationTime=0, units=[dict(unitId='u1', ownerPlayerId='p1', typeId='builder')])),
+                dict(sequence=3, kind='action', type='SelectAction', unitId='u1', actorPlayerId='p1', result=dict(actionId='a1', accepted=True)),
+                dict(sequence=4, kind='observation', phase='after-action', sample=dict(worldId='w', stepIndex=0, simulationTime=0, units=[dict(unitId='u1', ownerPlayerId='p1', typeId='builder')])),
+                dict(sequence=5, kind='intent-end', intentId='i1'),
+                dict(sequence=6, kind='observation', phase='before-close', sample=dict(worldId='w', stepIndex=0, simulationTime=0, units=[])),
+                dict(sequence=7, kind='closed'),
+            ]
+            path.write_text(''.join(json.dumps(r) + '\n' for r in rows), encoding='utf8')
+            anchors = session_anchors(iter_jsonl_records(path))
+            self.assertEqual([dict(intentId='i1', afterSequence=1, endSequence=4)], anchors)
+
+            seq = JsonlRecordSequence(path, cache_size=3)
+            self.assertEqual(len(rows), len(seq))
+            for idx in range(len(rows)):
+                self.assertEqual(rows[idx], seq[idx])
+                self.assertLessEqual(len(seq._cache), 3)
+            self.assertEqual(rows[-1], seq[-1])
+            self.assertEqual(rows[2:5], seq[2:5])
+            self.assertEqual(list(reversed(rows)), list(reversed(seq)))
+            plan = dict(scenarioId='s1', intents=[dict(intentId='i1', kind='select', unitId='u1', waitSteps=0)])
+            contract = dict(scenarioId='s1', rules=[dict(
+                intentId='i1', actionType='SelectAction', unitId='u1', accepted=True,
+                assertions=[dict(path='units.u1.typeId', operator='equals', value='builder')],
+            )])
+            self.assertEqual('passed', compare_run(seq, plan, contract, anchors)['status'])
+
+            truncated = Path(folder) / 'truncated.jsonl'
+            truncated.write_text('{"sequence":0}', encoding='utf8')
+            with self.assertRaisesRegex(PlatformError, 'truncated'):
+                JsonlRecordSequence(truncated)
+            with self.assertRaisesRegex(PlatformError, 'truncated'):
+                list(iter_jsonl_records(truncated))
+
 
 if __name__ == '__main__':
     unittest.main()

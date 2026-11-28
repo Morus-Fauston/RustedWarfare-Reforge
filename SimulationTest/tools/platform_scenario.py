@@ -1,10 +1,13 @@
 """Shared client-intent judgments for session and real Windows input evidence."""
 import argparse
+from array import array as _uint_array
+from collections import OrderedDict
 import hashlib
 import json
 import math
 import os
 import re
+from contextlib import ExitStack
 from fnmatch import fnmatch
 from pathlib import Path
 import shutil
@@ -481,17 +484,30 @@ def compare_resource_sounds(records, expected):
     if (len(requests) < expected['minimumRequests'] or
             any(row.get('kind') == 'sound-play-failed' for row in records)):
         raise PlatformError('sound-output', 'Missing authorized playback request or backend failure', 2)
-    loads = [row for row in records if row.get('kind') == 'load-ready']
-    world = [row for row in records if row.get('kind') in ('observation','action','closed')]
+    loads = []
     playback = backend + requests
+    world_has_generation = False
+    world_bad_generation = set()
+    for row in records:
+        kind = row.get('kind')
+        if kind == 'load-ready':
+            loads.append(row)
+        elif kind in ('observation', 'action', 'closed'):
+            if 'generation' in row:
+                world_has_generation = True
+                world_bad_generation.add(row.get('generation'))
+            else:
+                world_bad_generation.add(None)
     # Older producers labelled the prepared assets but not playback or world records.
     generation_rows = loads + ready
-    if any('generation' in row for row in playback + world):
-        generation_rows += playback + world
-    if any('generation' in row for row in generation_rows):
+    check_world = world_has_generation or any('generation' in row for row in playback)
+    if check_world:
+        generation_rows += playback
+    if check_world or any('generation' in row for row in generation_rows):
         generation = ready[0].get('generation')
         if (len(loads) != 1 or type(generation) is not int or generation < 1 or
-                any(type(row.get('generation')) is not int or row['generation'] != generation for row in generation_rows)):
+                any(type(row.get('generation')) is not int or row['generation'] != generation for row in generation_rows) or
+                (check_world and world_bad_generation - {generation})):
             raise PlatformError('sound-generation', 'Playback and preparation must match the loaded generation', 2)
     frames = set()
     allowed = {'sequence', 'kind', 'generation', 'eventId', 'resourceId', 'path', 'sha256', 'volume', 'pitch', 'pan',
@@ -1665,11 +1681,14 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
         starts={a['afterSequence']+1:a['intentId'] for a in native_anchors}
         ends={a['endSequence']:a['intentId'] for a in native_anchors}
         intent_end_sequences = {intent_id: sequence for sequence, intent_id in ends.items()}
-        stream=[]
-        for row in records:
-            if row['sequence'] in starts:stream.append(dict(kind='intent-start',intentId=starts[row['sequence']]))
-            stream.append(row)
-            if row['sequence'] in ends:stream.append(dict(kind='intent-end',intentId=ends[row['sequence']]))
+        def _native_stream():
+            for item in records:
+                if item['sequence'] in starts:
+                    yield dict(kind='intent-start', intentId=starts[item['sequence']])
+                yield item
+                if item['sequence'] in ends:
+                    yield dict(kind='intent-end', intentId=ends[item['sequence']])
+        stream = _native_stream()
     for row in stream:
         if row.get('kind') == 'intent-start':
             if (active is not None or completed >= len(plan['intents']) or
@@ -1995,8 +2014,37 @@ def compare_history(records, plan, policy, native_anchors=None, geometry=None):
 def compare_run(records, plan, contract, anchors, geometry=None):
     intents, rules = plan['intents'], contract['rules']
     ids = [intent['intentId'] for intent in intents]
-    if (not records or not ids or len(anchors) != len(ids) or
-            not any(row.get('kind') == 'closed' for row in records)):
+    total_records = len(records)
+    close_sequences = []
+    sequence_ok = True
+    world_has_generation = False
+    world_generations = set()
+    load_ready_generations = set()
+    worlds = set()
+    has_app_error = False
+    actions = []
+    resizes = []
+    for idx, row in enumerate(records):
+        if row.get('sequence') != idx:
+            sequence_ok = False
+        kind = row.get('kind', '')
+        if kind == 'closed':
+            close_sequences.append(row.get('sequence'))
+        if kind in ('observation', 'action', 'closed'):
+            if 'generation' in row:
+                world_has_generation = True
+            world_generations.add(row.get('generation'))
+        elif kind == 'load-ready':
+            load_ready_generations.add(row.get('generation'))
+        elif kind == 'resize':
+            resizes.append(row)
+        if kind == 'observation':
+            worlds.add(row['sample'].get('worldId'))
+        elif kind == 'action':
+            actions.append(row)
+        if isinstance(kind, str) and ('error' in kind or kind in ('load-failed', 'capture-failed')):
+            has_app_error = True
+    if not total_records or not ids or len(anchors) != len(ids) or not close_sequences:
         raise PlatformError('incomplete-run', 'Missing calls or normal Session closing tail')
     if (len(set(ids)) != len(ids) or [rule['intentId'] for rule in rules] != ids or
             [anchor['intentId'] for anchor in anchors] != ids or
@@ -2004,28 +2052,25 @@ def compare_run(records, plan, contract, anchors, geometry=None):
         raise PlatformError('input-contract', 'Plan, contract, and intent boundaries differ', 1)
     if 'testScene' in plan:
         validate_paired_schedule(plan)
-    if [row.get('sequence') for row in records] != list(range(len(records))):
+    if not sequence_ok:
         raise PlatformError('record-sequence', 'Diagnostic records are truncated or out of order')
     # Old Session archives did not label observations. Keep that reader, but a
     # labelled run must never mix unlabelled or stale observations from a reopen.
-    world_rows = [r for r in records if r.get('kind') in ('observation', 'action', 'closed')]
-    if any('generation' in r for r in world_rows):
-        generations = [r.get('generation') for r in world_rows]
-        if (any(type(g) is not int or g < 1 for g in generations) or
-                len(set(generations)) != 1 or any(
-                    r.get('generation') != generations[0] for r in records if r.get('kind') == 'load-ready')):
+    if world_has_generation:
+        if (any(type(g) is not int or g < 1 for g in world_generations) or
+                len(world_generations) != 1 or
+                load_ready_generations - world_generations):
             raise PlatformError('world-generation', 'Current observations, actions and closing tail must share one loaded generation')
-    worlds = {row['sample']['worldId'] for row in records if row.get('kind') == 'observation'}
     if len(worlds) != 1 or not next(iter(worlds), None):
         raise PlatformError('world-identity', 'A short scenario must remain in one nonempty world')
-    if any('error' in row.get('kind', '') or row.get('kind') in ('load-failed', 'capture-failed') for row in records):
+    if has_app_error:
         raise PlatformError('closing-tail', 'An application or capture error invalidates the completed scenario')
-    closes = [row for row in records if row.get('kind') == 'closed']
-    if len(closes) != 1 or closes[0]['sequence'] <= anchors[-1]['endSequence']:
+    if len(close_sequences) != 1 or close_sequences[0] <= anchors[-1]['endSequence']:
         raise PlatformError('closing-tail', 'Exactly one closing record must follow the final intent')
-    close_index = closes[0]['sequence']
-    if (close_index < 1 or records[close_index-1].get('phase') != 'before-close' or
-            records[close_index-1].get('kind') != 'observation'):
+    close_index = close_sequences[0]
+    before_close = records[close_index-1] if close_index >= 1 else {}
+    if (close_index < 1 or before_close.get('phase') != 'before-close' or
+            before_close.get('kind') != 'observation'):
         raise PlatformError('closing-tail', 'Session close lacks its adjacent final observation')
     if geometry is not None:
         lifecycle = ['match-exit', 'presentation-released', 'application-disposed', 'process-completed']
@@ -2033,16 +2078,15 @@ def compare_run(records, plan, contract, anchors, geometry=None):
         if ([row.get('kind') for row in tail] != lifecycle or tail[-1].get('status') != 'normal'):
             raise PlatformError('closing-tail', 'Windows process did not finish its normal lifecycle in order')
         first_start = anchors[0]['afterSequence']
-        viewport = next((row for row in reversed(records) if row.get('kind') == 'resize' and
-                         row['sequence'] <= first_start), None)
+        viewport = next((row for row in reversed(resizes) if row['sequence'] <= first_start), None)
         if (viewport is None or (viewport.get('width'), viewport.get('height')) not in ((1200, 800), (960, 640)) or
                 viewport.get('screenWidth') != viewport['width'] or viewport.get('screenHeight') != viewport['height']):
             raise PlatformError('input-geometry', 'No registered actual viewport before input delivery')
         keys = ('width', 'height', 'screenWidth', 'screenHeight', 'screenX', 'screenY')
-        if any(any(row.get(key) != viewport.get(key) for key in keys) for row in records
-               if row.get('kind') == 'resize' and row['sequence'] > first_start):
+        if any(any(row.get(key) != viewport.get(key) for key in keys) for row in resizes
+               if row['sequence'] > first_start):
             raise PlatformError('input-geometry', 'Viewport changed during the fixed platform scenario')
-    elif close_index != len(records)-1:
+    elif close_index != total_records - 1:
         raise PlatformError('closing-tail', 'Unexpected records after Session close')
     if 'history' in contract:
         return compare_history(records, plan, contract['history'], anchors if geometry is not None else None, geometry)
@@ -2050,19 +2094,18 @@ def compare_run(records, plan, contract, anchors, geometry=None):
     previous_end = -1
     for intent, rule, anchor in zip(intents, rules, anchors):
         start, end = anchor['afterSequence'], anchor['endSequence']
-        if type(start) is not int or type(end) is not int or not previous_end < start < end < len(records):
+        if type(start) is not int or type(end) is not int or not previous_end < start < end < total_records:
             raise PlatformError('intent-boundary', 'Invalid or overlapping intent boundaries')
-        window = [row for row in records if start < row['sequence'] <= end]
+        window = records[start + 1:end + 1]
         context = None
         if geometry is not None:
-            viewport = next((row for row in reversed(records) if row.get('kind') == 'resize' and row['sequence'] <= start), None)
+            viewport = next((row for row in reversed(resizes) if row['sequence'] <= start), None)
             if viewport is None:
                 raise PlatformError('input-geometry', 'No actual viewport before platform delivery')
             context = dict(geometry, viewport=viewport)
         judgment = compare_intent(window, intent, rule, start, context)
         judgments.append(dict(intentId=intent['intentId'], **judgment))
         previous_end = end
-    actions = [row for row in records if row.get('kind') == 'action']
     if ({row['sequence'] for row in actions} != {j['actionSequence'] for j in judgments} or
             len({j['actionId'] for j in judgments}) != len(judgments)):
         raise PlatformError('action-identity', 'Unclaimed or reused formal actions')
@@ -2105,6 +2148,146 @@ def tree_paths(root):
 
 def tree(root):
     return [dict(path=name, sha256=sha(path)) for name, path in tree_paths(root).items()]
+
+
+def _check_diagnostic_newline(path):
+    path = Path(path)
+    size = path.stat().st_size
+    if size == 0:
+        return False
+    with path.open('rb') as stream:
+        stream.seek(size - 1)
+        if stream.read(1) != b'\n':
+            raise PlatformError('incomplete-run', 'Diagnostic final line is truncated')
+    return True
+
+
+def iter_jsonl_records(path):
+    path = Path(path)
+    if not _check_diagnostic_newline(path):
+        return
+    with path.open('rb') as stream:
+        for line in stream:
+            yield json.loads(line)
+
+
+class JsonlRecordSequence:
+    """Replayable file-backed JSONL sequence with O(1) row memory and compact offset index."""
+
+    def __init__(self, path=None, cache_size=16, *, stream=None, offsets=None):
+        self.path = Path(path) if path is not None else None
+        self._stream = stream
+        self._cache_size = cache_size
+        self._cache = OrderedDict()
+        if offsets is not None:
+            self._offsets = offsets
+            return
+        self._offsets = _uint_array('Q')
+        if not _check_diagnostic_newline(self.path):
+            return
+        with self.path.open('rb') as handle:
+            offset = 0
+            for line in handle:
+                self._offsets.append(offset)
+                offset += len(line)
+
+    @classmethod
+    def from_open_stream_with_sha256(cls, stream, cache_size=16):
+        hasher = hashlib.sha256()
+        offsets = _uint_array('Q')
+        offset = 0
+        last_byte = None
+        while True:
+            line = stream.readline()
+            if not line:
+                break
+            hasher.update(line)
+            offsets.append(offset)
+            offset += len(line)
+            last_byte = line[-1:]
+        return cls(stream=stream, offsets=offsets, cache_size=cache_size), hasher.hexdigest(), last_byte == b'\n'
+
+    def __len__(self):
+        return len(self._offsets)
+
+    def __bool__(self):
+        return bool(self._offsets)
+
+    def __iter__(self):
+        if not self._offsets:
+            return
+        if self._stream is not None:
+            for idx in range(len(self._offsets)):
+                self._stream.seek(self._offsets[idx])
+                yield json.loads(self._stream.readline())
+            return
+        with self.path.open('rb') as handle:
+            for line in handle:
+                yield json.loads(line)
+
+    def __reversed__(self):
+        if not self._offsets:
+            return
+        if self._stream is not None:
+            for idx in range(len(self._offsets) - 1, -1, -1):
+                self._stream.seek(self._offsets[idx])
+                yield json.loads(self._stream.readline())
+            return
+        with self.path.open('rb') as handle:
+            for idx in range(len(self._offsets) - 1, -1, -1):
+                handle.seek(self._offsets[idx])
+                yield json.loads(handle.readline())
+
+    def _read_at(self, idx):
+        cached = self._cache.get(idx)
+        if cached is not None:
+            self._cache.move_to_end(idx)
+            return cached
+        if self._stream is not None:
+            self._stream.seek(self._offsets[idx])
+            row = json.loads(self._stream.readline())
+        else:
+            with self.path.open('rb') as handle:
+                handle.seek(self._offsets[idx])
+                row = json.loads(handle.readline())
+        self._cache[idx] = row
+        if len(self._cache) > self._cache_size:
+            self._cache.popitem(last=False)
+        return row
+
+    def __getitem__(self, item):
+        n = len(self._offsets)
+        if isinstance(item, slice):
+            indices = range(*item.indices(n))
+            if not indices:
+                return []
+            if self._stream is not None:
+                rows = []
+                for idx in indices:
+                    self._stream.seek(self._offsets[idx])
+                    rows.append(json.loads(self._stream.readline()))
+                return rows
+            with self.path.open('rb') as handle:
+                rows = []
+                for idx in indices:
+                    handle.seek(self._offsets[idx])
+                    rows.append(json.loads(handle.readline()))
+                return rows
+        idx = item + n if item < 0 else item
+        if not 0 <= idx < n:
+            raise IndexError('Diagnostic record index out of range')
+        return self._read_at(idx)
+
+
+def _streams_equal(left_stream, right_stream):
+    left_stream.seek(0)
+    right_stream.seek(0)
+    while True:
+        ca, cb = left_stream.read(65536), right_stream.read(65536)
+        if ca != cb:
+            return False
+        if not ca:
+            return True
 
 
 def session_anchors(records):
@@ -2216,79 +2399,88 @@ def compare_archive_locked(output, expected_scenario=None, expected_contract=Non
     actual.pop('result.json', None)
     if len(names) != len(set(names)) or set(names) != actual.keys() or not required <= actual.keys():
         raise PlatformError('archive-identity', 'Archive file closure is incomplete or duplicated')
-    consume = {'manifest.json', 'scenario.json', 'contract.json', 'intents.json', 'session/client-diagnostic.jsonl'}
+    consume = {'manifest.json', 'scenario.json', 'contract.json', 'intents.json'}
     if started_after is not None:
         if not math.isfinite(started_after):
             raise PlatformError('input-contract', 'Expected finite current scenario start time', 1)
         consume.add('execution.json')
     maps = {}
     if backend == 'windows-input':
-        consume.update(('input.jsonl', 'runtime/reforge/client-diagnostic.jsonl'))
+        consume.add('input.jsonl')
         maps = {name: Path(name).name for name in actual
                 if Path(name).parent == Path('inputSnapshot/maps') and fnmatch(Path(name).name, '*.tmx')}
         consume.update(maps)
-    captured, digests = {}, {}
-    resolved_output = output.resolve()
-    for item in files:
-        name = item['path']
-        path = actual[name].resolve()
-        if not path.is_relative_to(resolved_output) or path.relative_to(resolved_output).as_posix() != name:
-            raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
-        if name in consume:
-            captured[name] = path.read_bytes()
-            digest = hashlib.sha256(captured[name]).hexdigest()
-        else:
-            with path.open('rb') as stream:
-                digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-        if digest != item['sha256']:
-            raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
-        digests[name] = digest
-    inputs = [dict(path=name.removeprefix('inputSnapshot/'), sha256=digests[name])
-              for name in sorted(digests) if name.startswith('inputSnapshot/')]
-    manifest = read_document(captured['manifest.json'])
-    if (manifest.get('backend') != backend or not manifest.get('packageFiles') or
-            manifest.get('scenarioSha256') != digests['scenario.json'] or
-            manifest.get('contractSha256') != digests['contract.json'] or
-            not manifest.get('inputFiles') or
-            sorted(manifest['inputFiles'], key=lambda item: item['path']) != inputs):
-        raise PlatformError('archive-identity', 'Manifest, fixed inputs, scenario or contract identity differs')
-    if expected_scenario is not None and (sha(expected_scenario) != digests['scenario.json']
-            or sha(expected_contract) != digests['contract.json']):
-        raise PlatformError('archive-identity', 'Archive differs from the current scenario or contract')
-    if started_after is not None:
-        execution = read_document(captured.get('execution.json', b'{}'))
-        start = execution.get('startedUnix')
-        if (backend != 'session' or execution.get('status') != 'passed' or execution.get('exitCode') != 0 or
-                type(start) not in (int, float) or not math.isfinite(start) or start < started_after):
-            raise PlatformError('archive-identity', 'Archive execution predates the current scenario command')
-    plan = read_document(captured['scenario.json'])
-    if backend == 'windows-input':
-        pictures = {intent['intentId']+'.png' for intent in plan['intents']}
-        pictures |= {intent['intentId']+'-preview.png' for intent in plan['intents'] if intent['kind'] == 'build'}
-        if not {'input.jsonl', 'runtime/reforge/client-diagnostic.jsonl', *pictures} <= set(names):
-            raise PlatformError('archive-identity', 'Windows input, screenshots or runtime diagnostic is missing')
-        if captured['runtime/reforge/client-diagnostic.jsonl'] != captured['session/client-diagnostic.jsonl']:
-            raise PlatformError('archive-identity', 'Runtime and compared diagnostic differ')
-        input_rows = [json.loads(line) for line in captured['input.jsonl'].decode('utf8').splitlines()]
-        if [r.get('intentId') for r in input_rows if r.get('kind') == 'intent-dispatch'] != [i['intentId'] for i in plan['intents']]:
-            raise PlatformError('archive-identity', 'Actual input delivery records differ from the fixed intents')
-        captures = {Path(r['path']).name for r in input_rows if r.get('kind') == 'captured-owned-no-activation'}
-        if not pictures <= captures or not any(r.get('kind') == 'owned-input-down' for r in input_rows):
-            raise PlatformError('archive-identity', 'Actual input or capture receipts are missing')
-        restored = [r for r in input_rows if r.get('kind') == 'foreground-restoration']
-        if len(restored) != 1 or restored[0].get('restored') is False:
-            raise PlatformError('closing-tail', 'Missing or failed foreground restoration')
-    raw = captured['session/client-diagnostic.jsonl']
-    if not raw.endswith(b'\n'):
-        raise PlatformError('incomplete-run', 'Diagnostic final line is truncated')
-    records = [json.loads(line) for line in raw.splitlines()]
-    geometry = None
-    if backend == 'windows-input':
-        geometry = windows_geometry(output, records, {name: captured[path] for path, name in maps.items()})
-    contract = read_document(captured['contract.json'])
-    verify_frozen_transport(plan, contract, actual, digests)
-    anchors = read_document(captured['intents.json'])
-    return compare_run(records, plan, contract, anchors, geometry)
+    with ExitStack() as stack:
+        captured, digests = {}, {}
+        diag_records, diag_newline_ok = None, False
+        diag_stream, runtime_stream = None, None
+        resolved_output = output.resolve()
+        for item in files:
+            name = item['path']
+            path = actual[name].resolve()
+            if not path.is_relative_to(resolved_output) or path.relative_to(resolved_output).as_posix() != name:
+                raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
+            if name == 'session/client-diagnostic.jsonl':
+                diag_stream = stack.enter_context(path.open('rb'))
+                diag_records, digest, diag_newline_ok = JsonlRecordSequence.from_open_stream_with_sha256(diag_stream)
+            elif backend == 'windows-input' and name == 'runtime/reforge/client-diagnostic.jsonl':
+                runtime_stream = stack.enter_context(path.open('rb'))
+                digest = hashlib.file_digest(runtime_stream, 'sha256').hexdigest()
+            elif name in consume:
+                captured[name] = path.read_bytes()
+                digest = hashlib.sha256(captured[name]).hexdigest()
+            else:
+                with path.open('rb') as stream:
+                    digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if digest != item['sha256']:
+                raise PlatformError('archive-identity', 'Archived evidence differs: '+name)
+            digests[name] = digest
+        inputs = [dict(path=name.removeprefix('inputSnapshot/'), sha256=digests[name])
+                  for name in sorted(digests) if name.startswith('inputSnapshot/')]
+        manifest = read_document(captured['manifest.json'])
+        if (manifest.get('backend') != backend or not manifest.get('packageFiles') or
+                manifest.get('scenarioSha256') != digests['scenario.json'] or
+                manifest.get('contractSha256') != digests['contract.json'] or
+                not manifest.get('inputFiles') or
+                sorted(manifest['inputFiles'], key=lambda item: item['path']) != inputs):
+            raise PlatformError('archive-identity', 'Manifest, fixed inputs, scenario or contract identity differs')
+        if expected_scenario is not None and (sha(expected_scenario) != digests['scenario.json']
+                or sha(expected_contract) != digests['contract.json']):
+            raise PlatformError('archive-identity', 'Archive differs from the current scenario or contract')
+        if started_after is not None:
+            execution = read_document(captured.get('execution.json', b'{}'))
+            start = execution.get('startedUnix')
+            if (backend != 'session' or execution.get('status') != 'passed' or execution.get('exitCode') != 0 or
+                    type(start) not in (int, float) or not math.isfinite(start) or start < started_after):
+                raise PlatformError('archive-identity', 'Archive execution predates the current scenario command')
+        plan = read_document(captured['scenario.json'])
+        if backend == 'windows-input':
+            pictures = {intent['intentId']+'.png' for intent in plan['intents']}
+            pictures |= {intent['intentId']+'-preview.png' for intent in plan['intents'] if intent['kind'] == 'build'}
+            if not {'input.jsonl', 'runtime/reforge/client-diagnostic.jsonl', *pictures} <= set(names):
+                raise PlatformError('archive-identity', 'Windows input, screenshots or runtime diagnostic is missing')
+            if (digests['runtime/reforge/client-diagnostic.jsonl'] != digests['session/client-diagnostic.jsonl'] or
+                    not _streams_equal(runtime_stream, diag_stream)):
+                raise PlatformError('archive-identity', 'Runtime and compared diagnostic differ')
+            input_rows = [json.loads(line) for line in captured['input.jsonl'].decode('utf8').splitlines()]
+            if [r.get('intentId') for r in input_rows if r.get('kind') == 'intent-dispatch'] != [i['intentId'] for i in plan['intents']]:
+                raise PlatformError('archive-identity', 'Actual input delivery records differ from the fixed intents')
+            captures = {Path(r['path']).name for r in input_rows if r.get('kind') == 'captured-owned-no-activation'}
+            if not pictures <= captures or not any(r.get('kind') == 'owned-input-down' for r in input_rows):
+                raise PlatformError('archive-identity', 'Actual input or capture receipts are missing')
+            restored = [r for r in input_rows if r.get('kind') == 'foreground-restoration']
+            if len(restored) != 1 or restored[0].get('restored') is False:
+                raise PlatformError('closing-tail', 'Missing or failed foreground restoration')
+        if not diag_newline_ok:
+            raise PlatformError('incomplete-run', 'Diagnostic final line is truncated')
+        records = diag_records
+        geometry = None
+        if backend == 'windows-input':
+            geometry = windows_geometry(output, records, {name: captured[path] for path, name in maps.items()})
+        contract = read_document(captured['contract.json'])
+        verify_frozen_transport(plan, contract, actual, digests)
+        anchors = read_document(captured['intents.json'])
+        return compare_run(records, plan, contract, anchors, geometry)
 
 
 def run_session(scenario, contract, distribution, output, java='java', timeout=60):
@@ -2338,8 +2530,7 @@ def run_session_locked(scenario, contract, distribution, output, java, timeout):
         save(output/'execution.json', result['execution'])
         if process.returncode != 0:
             raise PlatformError('adapter-process', 'Session adapter failed: '+str(process.returncode))
-        records = [json.loads(line) for line in (output/'session/client-diagnostic.jsonl').read_text(encoding='utf8').splitlines()]
-        save(output/'intents.json', session_anchors(records))
+        save(output/'intents.json', session_anchors(iter_jsonl_records(output/'session/client-diagnostic.jsonl')))
         save(output/'archive.json', dict(complete=True, backend='session', files=tree(output)))
         result['sealing'] = dict(status='sealed-complete')
         result['consumption'] = dict(status='running')

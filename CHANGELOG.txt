@@ -1,3 +1,11 @@
+v0.6.10 (2026-11-28 18:20)
+  新增: 新增落位于系统临时目录的跨工作树主机级重型验证排队锁 host:heavy-verification 与 --lock-wait-seconds 参数（默认 1800s 排队、0s 快速拒绝），结合跨平台 (pid, processCreateTime) 核验与原子重命名回收孤儿锁
+  架构改进: 移除 RunArchive 全历史帧列表驻留与尾记录全量拷贝，实装 TraceComparator.StreamEvaluator 单遍流式评估、双流逐行比对与局部差异窗口按需回读（保持 6 层错误优先级、退出码与开放 Action/UnitTask 校验不变） / 在 platform_scenario.py 新增 iter_jsonl_records 与单次流偏移索引 JsonlRecordSequence（兼容防 TOCTOU 单次打开审计与有界 LRU 缓存），消除会话诊断 JSONL 全文列表驻留
+  调整: 为 simulation-test 配置默认 -Xmx512m（保留 SIMULATION_TEST_OPTS 覆盖），将各模块 JUnit 测试子 JVM 收敛至 -Xmx768m 并将双根 Gradle/Kotlin Daemon 上限收敛为 -Xmx1536m/-Xmx2g
+  技术: 新增流式评估等价性与跨工作树排队及孤儿锁回收单测，工具链与 Python 单测全绿，默认 -Xmx512m 实跑 33/33 条 public-long 零 OOM 通过（单场景进程峰值工作集降至 608.69 MB），会话归档无损压缩与双根布局检查通过，经独立非作者整审 APPROVE（0 必修）
+
+====
+
 v0.6.9 (2026-11-28 16:15)
   修复: 将自动探测到的本地 Steam 等非默认原版目录同步补入 VisualAssetSettingsSession 并在异步扫描与预览完成时保持，修复启用本地原版表现资源包后因默认路径缺失锁死开始对局的问题 / 无有效原版目录时禁用移入按钮并透出后台资源准备进度提示 / 补齐临时 CLI 覆盖不写盘守卫、统一取消后台 PREVIEW 并在启动 CATALOG 期间延后对账以保留外部资源包校验记录
   技术: 更新版本号至 v0.6.9，新增 Steam 65 单位直启与临时 CLI 零写盘及 CATALOG 对账回归测试，通过公开短测 6/6、PC 安装包、Android Debug APK 校验及双根布局检查，经独立非作者 R02 定向复核 APPROVE（0 必修）

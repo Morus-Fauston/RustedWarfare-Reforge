@@ -100,6 +100,12 @@ class PublicBatchTest(unittest.TestCase):
                 for invalid in ['0','-1','nan','inf','3601']:
                     rejected=subprocess.run(argv+['--command-timeout',invalid],capture_output=True,text=True,timeout=20)
                     self.assertEqual(2,rejected.returncode)
+                with_lock_wait=subprocess.run(argv+['--lock-wait-seconds','0'],capture_output=True,text=True,timeout=20)
+                self.assertEqual(0,with_lock_wait.returncode,with_lock_wait.stderr)
+                self.assertEqual(json.loads(baseline.stdout),json.loads(with_lock_wait.stdout))
+                for invalid_wait in ['-1','nan','inf','86401']:
+                    rejected_wait=subprocess.run(argv+['--lock-wait-seconds',invalid_wait],capture_output=True,text=True,timeout=20)
+                    self.assertEqual(2,rejected_wait.returncode)
                 self.assertFalse(output.exists())
     def test_pr_and_long_select_all_applicable_suites_without_private_or_legacy_duplicates(self):
         entry = Path(__file__).with_name('public_batch.py')

@@ -24,6 +24,13 @@ def command_timeout(value):
     return seconds
 
 
+def lock_wait_seconds(value):
+    seconds = float(value)
+    if not math.isfinite(seconds) or not 0 <= seconds <= 86400:
+        raise argparse.ArgumentTypeError('Lock wait timeout must be between 0 and 86400 seconds')
+    return seconds
+
+
 def execute_command(output, name, argv, cwd, timeout):
     """Keep the existing process-tree executor and its unmodified first-error receipt."""
     sys.path.insert(0,str(REPO/'SimulationTest/tools'))
@@ -297,7 +304,7 @@ def build_shared_distribution(repo, output, source, command_timeout_seconds=600,
 
 
 def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=600, forks=1, workers=2,
-        *, scenarios_only=False):
+        *, scenarios_only=False, lock_wait=1800):
     output.mkdir(parents=True, exist_ok=False)
     initial = identities(repo)
     result = dict(schemaVersion=1, suite=plan['suiteId'], selection=plan, status='execution-failed',
@@ -353,7 +360,8 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
         sys.path.insert(0, str(REPO/'SimulationTest/tools'))
         from workflow import resources
         from public_distribution import package_files, read_receipt, verify_members
-        with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+        with resources(['host:heavy-verification', 'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')],
+                       wait_seconds=lock_wait):
             project = repo / 'SimulationTest'
             if prepared_distribution is not None:
                 if plan['kind'] not in ('pr', 'mechanism', 'short', 'long') or plan['inputScope'] != 'public':
@@ -402,7 +410,8 @@ def run(repo, output, plan, prepared_distribution=None, command_timeout_seconds=
                 raise RuntimeError('Python mechanism evidence is incomplete: ' + relative)
             result['pythonCoverage'].append(dict(path=relative, result=name+'.json', **measured))
         from public_scenarios import run_scenarios
-        with resources(['build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')]):
+        with resources(['host:heavy-verification', 'build:'+str(repo/'Engine'), 'build:'+str(repo/'SimulationTest')],
+                       wait_seconds=lock_wait):
             # Only the admitted package, source and toolchain are consumed by
             # scenario commands. Prepared classes stay in the locked build tree.
             scenario_pin = None
@@ -457,6 +466,8 @@ def main():
     parser.add_argument('--scenario-workers', type=scenario_workers, default=2, help='Bound independent headless scenarios after tests: 1, 2, 4 or 8')
     parser.add_argument('--command-timeout',type=command_timeout,default=600,
                         help='Explicit per-command seconds, at most 3600; default 600. Selection is unchanged.')
+    parser.add_argument('--lock-wait-seconds', type=lock_wait_seconds, default=1800,
+                        help='Max seconds to wait on host:heavy-verification queue (0 fails fast); default 1800')
     parser.add_argument('--distribution-receipt', type=Path, help='Same-batch fixed public PR preparation or long package receipt')
     parser.add_argument('--distribution-sha256', help='Receipt digest pinned by the parent batch')
     args = parser.parse_args()
@@ -484,7 +495,8 @@ def main():
             shutil.copy2(source, target)
         print('Isolated public source:', repo)
     prepared = (args.distribution_receipt, args.distribution_sha256) if args.distribution_receipt else None
-    return run(repo, output, plan, prepared, args.command_timeout, args.test_forks, args.scenario_workers)
+    return run(repo, output, plan, prepared, args.command_timeout, args.test_forks, args.scenario_workers,
+               lock_wait=args.lock_wait_seconds)
 
 
 if __name__ == '__main__':

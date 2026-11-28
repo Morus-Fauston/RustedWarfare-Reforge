@@ -107,40 +107,225 @@ def execute_step(argv, cwd, output, timeout=600, expected=0, env=None, cwd_is_ou
     return result
 
 
+HOST_HEAVY_LOCK = 'host:heavy-verification'
+
+
+def process_create_time(pid):
+    """Return integer OS process creation timestamp if pid is currently alive, else None."""
+    if type(pid) is not int or pid <= 0:
+        return None
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+
+        class FILETIME(ctypes.Structure):
+            _fields_ = [('dwLowDateTime', wintypes.DWORD), ('dwHighDateTime', wintypes.DWORD)]
+
+        kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.GetProcessTimes.argtypes = [
+            wintypes.HANDLE, ctypes.POINTER(FILETIME), ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME), ctypes.POINTER(FILETIME),
+        ]
+        kernel32.GetProcessTimes.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
+        handle = kernel32.OpenProcess(0x1000 | 0x00100000, False, pid)
+        used_sync = True
+        if not handle:
+            err = ctypes.get_last_error()
+            if err == 87:  # ERROR_INVALID_PARAMETER: PID does not exist
+                return None
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            used_sync = False
+            if not handle:
+                return None
+        try:
+            if used_sync:
+                if kernel32.WaitForSingleObject(handle, 0) != 258:  # WAIT_TIMEOUT
+                    return None
+            else:
+                code = wintypes.DWORD()
+                if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) or code.value != 259:
+                    return None
+            creation, exit_t, kernel_t, user_t = FILETIME(), FILETIME(), FILETIME(), FILETIME()
+            if not kernel32.GetProcessTimes(handle, ctypes.byref(creation), ctypes.byref(exit_t),
+                                            ctypes.byref(kernel_t), ctypes.byref(user_t)):
+                return None
+            return (int(creation.dwHighDateTime) << 32) | int(creation.dwLowDateTime)
+        finally:
+            kernel32.CloseHandle(handle)
+
+    stat_path = Path('/proc') / str(pid) / 'stat'
+    if stat_path.exists():
+        try:
+            raw = stat_path.read_text(encoding='utf-8', errors='replace')
+            after_comm = raw.rsplit(')', 1)[1].split()
+            if after_comm[0] == 'Z':
+                return None
+            return int(after_comm[19])
+        except (OSError, IndexError, ValueError):
+            return None
+    try:
+        os.kill(pid, 0)
+        return 0
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        return -1
+
+
+def lock_owner_alive(record):
+    if not isinstance(record, dict):
+        return False
+    pid = record.get('pid')
+    actual_ctime = process_create_time(pid)
+    if actual_ctime is None:
+        return False
+    recorded_ctime = record.get('processCreateTime')
+    if recorded_ctime is not None and actual_ctime != recorded_ctime:
+        return False
+    return True
+
+
+def _read_lock_record(path):
+    try:
+        raw = path.read_text(encoding='utf-8')
+    except OSError:
+        return None, 'missing'
+    if not raw.strip():
+        try:
+            age = time.time() - path.stat().st_mtime
+        except OSError:
+            return None, 'missing'
+        return None, ('writing' if age < 1.0 else 'corrupt')
+    try:
+        return json.loads(raw), 'ok'
+    except ValueError:
+        try:
+            age = time.time() - path.stat().st_mtime
+        except OSError:
+            return None, 'missing'
+        return None, ('writing' if age < 1.0 else 'corrupt')
+
+
+def _try_cleanup_orphan_lock(path):
+    record, state = _read_lock_record(path)
+    if state == 'missing':
+        return True
+    if state == 'writing':
+        return False
+    if state == 'ok' and lock_owner_alive(record):
+        return False
+    stale = path.with_name(f'{path.name}.stale.{uuid.uuid4().hex}')
+    try:
+        os.rename(path, stale)
+    except OSError:
+        return not path.exists()
+    rechecked, re_state = _read_lock_record(stale)
+    if re_state == 'ok' and lock_owner_alive(rechecked):
+        try:
+            os.rename(stale, path)
+        except OSError:
+            stale.unlink(missing_ok=True)
+        return False
+    stale.unlink(missing_ok=True)
+    return True
+
+
+def _lock_file_for(directory, normalized_name):
+    if normalized_name == HOST_HEAVY_LOCK:
+        return directory / 'host-heavy-verification.lock'
+    return directory / (hashlib.sha256(normalized_name.encode()).hexdigest() + '.lock')
+
+
 @contextmanager
-def resources(names,formal=False):
-    """Machine-wide managed locks. Never take over an existing lock."""
-    directory = Path(tempfile.gettempdir())/'rw-reforge-workflow-locks'
+def resources(names, formal=False, wait_seconds=0):
+    """Machine-wide managed locks with orphan dead-PID recovery and bounded host queuing."""
+    import math
+    wait_budget = float(wait_seconds)
+    if not math.isfinite(wait_budget) or wait_budget < 0:
+        raise ValueError('Lock wait timeout must be finite and non-negative')
+    directory = Path(tempfile.gettempdir()) / 'rw-reforge-workflow-locks'
     directory.mkdir(exist_ok=True)
+    my_pid = os.getpid()
+    my_ctime = process_create_time(my_pid)
+    my_cwd = os.getcwd()
     owned = []
     try:
         # Dual registration prevents a formal/functional start race without a
         # queue: formal claims its gate before checking leases; functional
         # creates its lease before checking the formal gate. At worst both refuse.
-        gate=directory/'formal-performance.lock'
-        lease=gate if formal else directory/('functional-'+uuid.uuid4().hex+'.lease')
+        gate = directory / 'formal-performance.lock'
+        if gate.exists():
+            _try_cleanup_orphan_lock(gate)
+        for old_lease in list(directory.glob('functional-*.lease')):
+            _try_cleanup_orphan_lock(old_lease)
+        lease = gate if formal else directory / ('functional-' + uuid.uuid4().hex + '.lease')
         try:
-            with lease.open('x',encoding='utf8') as stream:
-                json.dump(dict(pid=os.getpid(),formal=formal,startedUnix=time.time()),stream)
+            with lease.open('x', encoding='utf8') as stream:
+                json.dump(dict(pid=my_pid, processCreateTime=my_ctime, cwd=my_cwd,
+                               formal=formal, startedUnix=time.time()), stream)
         except FileExistsError:
             raise ValueError('Resource occupied: formal performance window') from None
         owned.append(lease)
-        if formal and any(directory.glob('functional-*.lease')):
-            raise ValueError('Resource occupied: managed functional task; formal performance never queues')
-        if not formal and gate.exists():
+        if formal:
+            for active_lease in list(directory.glob('functional-*.lease')):
+                if not _try_cleanup_orphan_lock(active_lease):
+                    raise ValueError('Resource occupied: managed functional task; formal performance never queues')
+        if not formal and gate.exists() and not _try_cleanup_orphan_lock(gate):
             raise ValueError('Resource occupied: formal performance window')
-        for name in sorted(set(os.path.normcase(n) for n in names)):
-            path = directory/(hashlib.sha256(name.encode()).hexdigest()+'.lock')
-            try:
-                with path.open('x', encoding='utf-8') as stream:
-                    json.dump({'resource': name, 'pid': os.getpid(), 'startedUnix': time.time()}, stream)
-            except FileExistsError:
-                raise ValueError(f'Resource occupied: {name}') from None
-            owned.append(path)
+
+        normalized = sorted(
+            {HOST_HEAVY_LOCK if n.lower() == HOST_HEAVY_LOCK else os.path.normcase(n) for n in names},
+            key=lambda item: (0 if item == HOST_HEAVY_LOCK else 1, item),
+        )
+        for name in normalized:
+            path = _lock_file_for(directory, name)
+            item_budget = wait_budget if (name == HOST_HEAVY_LOCK and not formal) else 0.0
+            wait_started = time.monotonic()
+            next_log_at = wait_started
+            while True:
+                try:
+                    with path.open('x', encoding='utf-8') as stream:
+                        json.dump({
+                            'resource': name,
+                            'pid': my_pid,
+                            'processCreateTime': my_ctime,
+                            'cwd': my_cwd,
+                            'startedUnix': time.time(),
+                        }, stream)
+                    owned.append(path)
+                    break
+                except FileExistsError:
+                    if _try_cleanup_orphan_lock(path):
+                        continue
+                    now = time.monotonic()
+                    elapsed = now - wait_started
+                    if elapsed >= item_budget:
+                        raise ValueError(f'Resource occupied: {name}') from None
+                    if now >= next_log_at:
+                        holder, _ = _read_lock_record(path)
+                        holder_pid = holder.get('pid') if isinstance(holder, dict) else 'unknown'
+                        holder_cwd = holder.get('cwd') if isinstance(holder, dict) else 'unknown'
+                        print(
+                            f'[workflow-lock] Waiting for {name} held by pid={holder_pid} cwd={holder_cwd} '
+                            f'({elapsed:.1f}s/{item_budget:.0f}s)',
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        next_log_at = now + 15.0
+                    time.sleep(min(0.2, max(0.01, item_budget - elapsed)))
         yield
     finally:
         for path in reversed(owned):
-            path.unlink()
+            path.unlink(missing_ok=True)
 
 
 def run_jobs(jobs, output, workers=4):

@@ -34,7 +34,8 @@ object Runner {
         var scenario: JsonObject? = null
         val output = request.output.toAbsolutePath().normalize()
         RunArchive(output, costs).use { archive ->
-            archive.write(record("run-start", "runId" to s(output.fileName.toString()), "startedAt" to s(started.toString())))
+            val startRecord = record("run-start", "runId" to s(output.fileName.toString()), "startedAt" to s(started.toString()))
+            archive.write(startRecord)
             try {
                 costs.measure("captureArchive") {
                     archive.snapshot(request.scenario, "scenario.json")
@@ -47,7 +48,11 @@ object Runner {
                 val input = loaded
                 contract = input.contractDocument
                 scenario = input.scenarioDocument
-                costs.measure("loadInitialize") { costs.detail("inputValidation") { TraceComparator.validateContract(scenario, contract) } }
+                val evaluator = costs.measure("loadInitialize") { costs.detail("inputValidation") {
+                    TraceComparator.validateContract(scenario, contract)
+                    TraceComparator.StreamEvaluator(scenario, contract)
+                } }
+                costs.measure("comparison") { costs.detail("comparison") { evaluator.accept(startRecord) } }
                 required = input.steps.size
                 if (sha256(output.resolve("inputs/scenario.json")) != input.scenarioIdentity.sha256 ||
                     sha256(output.resolve("inputs/contract.json")) != input.contractIdentity.sha256) {
@@ -57,19 +62,23 @@ object Runner {
                     if (request.cancelled()) throw RunCancelled()
                     if ((System.nanoTime() - startNanos) / 1_000_000 >= request.timeoutMillis) throw RunTimedOut()
                 }
+                val actionsByStep = input.actions.groupBy { it.integer("atStep") }
                 checkExecution()
                 costs.measure("loadInitialize") { costs.detail("initialization") { CoreAdapter(input) } }.use { core ->
                     val initial = costs.measure("coreSimulation") { costs.detail("samplingIncludingPlayerJson") { core.initial() } }
                     initialStateChecked = true
                     val initialPlayers = costs.measure("coreSimulation") { costs.detail("samplingIncludingPlayerJson") { core.playerViews() } }
-                    costs.measure("captureArchive") { archive.observation(initial, "initial", input, initialPlayers) }
+                    val initialEmitted = costs.measure("captureArchive") { archive.observation(initial, "initial", input, initialPlayers) }
+                    costs.measure("comparison") { costs.detail("comparison") { initialEmitted.forEach(evaluator::accept) } }
                     for (step in input.steps) {
                         checkExecution()
-                        input.actions.filter { it.integer("atStep") == step.stepIndex }.forEach { action ->
+                        actionsByStep[step.stepIndex]?.forEach { action ->
                             checkExecution()
                             val result = costs.measure("coreSimulation") { core.submit(action) }
-                            costs.measure("captureArchive") { archive.write(record("action-result", "atStep" to n(step.stepIndex), "action" to action,
-                                "result" to result.json()), input) }
+                            val actionRow = record("action-result", "atStep" to n(step.stepIndex), "action" to action,
+                                "result" to result.json())
+                            costs.measure("captureArchive") { archive.write(actionRow, input) }
+                            costs.measure("comparison") { costs.detail("comparison") { evaluator.accept(actionRow) } }
                         }
                         val observation = costs.measure("coreSimulation") { costs.detail("coreAdvanceIncludingHostSample") { core.advance(step) } }
                         if (observation.stepIndex != step.stepIndex || observation.scenarioId != input.core.scenarioId ||
@@ -77,7 +86,8 @@ object Runner {
                             throw CaptureError("Observation does not match the requested simulation boundary")
                         }
                         val players = costs.measure("coreSimulation") { costs.detail("samplingIncludingPlayerJson") { core.playerViews() } }
-                        costs.measure("captureArchive") { archive.observation(observation, "after-advance", input, players) }
+                        val stepEmitted = costs.measure("captureArchive") { archive.observation(observation, "after-advance", input, players) }
+                        costs.measure("comparison") { costs.detail("comparison") { stepEmitted.forEach(evaluator::accept) } }
                         observed++
                     }
                 }
@@ -89,11 +99,13 @@ object Runner {
                     throw InputError("Scenario/contract input identity changed during execution")
                 }
                 collectionStatus = "collected"
-                // Validate the completed capture in memory before writing its final judgment/footer.
+                archive.flush()
+                // Validate the completed stream with bounded window state before writing the final judgment/footer.
                 val completion = record("run-end", "status" to s("completed"), "exitCode" to n(0),
                     "observedSteps" to n(observed), "requiredSteps" to n(required), "complete" to b(true))
                 judgment = costs.measure("comparison") { costs.detail("comparison") {
-                    TraceComparator.evaluate(scenario, contract, archive.records + completion)
+                    evaluator.accept(completion)
+                    evaluator.finish({ rawWithAppendedRecordSource(output.resolve("reforge/raw.jsonl"), completion) })
                 } }
                 status = judgment.status
                 exitCode = judgment.exitCode
