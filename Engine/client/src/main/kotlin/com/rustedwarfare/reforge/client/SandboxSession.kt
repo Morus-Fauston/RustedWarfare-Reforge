@@ -52,6 +52,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         private set
     val canDeploy: Boolean get() = isOpen && options.deploymentEnabled
 
+    internal fun prewarmNavigationTerrains() {
+        context.prewarmNavigationTerrains()
+    }
+
     internal fun updateCamera(camera: OfflineCameraController) {
         val view = observation
         camera.advance(view.stepIndex, commandHost.takeCameraMotions(view.playerId)) { id ->
@@ -204,8 +208,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
     fun groupCount(index: Int): Int {
         if (!isOpen) return 0
-        val visible = observation.units.filter { it.alive }.map { it.unitId }.toSet()
-        return selection.groupMembers(index).count { it in visible }
+        val members = selection.groupMembers(index)
+        if (members.isEmpty()) return 0
+        var alive = 0
+        val units = observation.units
+        for (i in 0 until units.size) {
+            val u = units[i]
+            if (u.alive && u.unitId in members) alive++
+        }
+        return alive
     }
     fun recallGroup(index: Int, additive: Boolean = false): Position? {
         if (!isOpen) return null
@@ -773,6 +784,8 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     fun tick() = tick(publishRenderFrame = true)
 
+    private var hasUnpublishedStep = false
+
     fun tick(publishRenderFrame: Boolean) {
         val effectivePublish = publishRenderFrame || requiresPerStepObservation(false)
         commandHost.advance(Step(nextStep, 1.0, "sim-tick"), materializeObservation = effectivePublish)
@@ -791,7 +804,15 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 "projectiles" to samples.map { mapOf("objectId" to it.objectId, "kind" to it.kind,
                     "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
         }
+        hasUnpublishedStep = true
         if (!effectivePublish) return
+        flushPendingRenderFrame()
+    }
+
+    /** Publishes the end-of-frame observation if an intermediate substep finished early due to frame-budget pacing. */
+    fun flushPendingRenderFrame() {
+        if (!hasUnpublishedStep) return
+        hasUnpublishedStep = false
         publishFrame()
         val ingestStart = System.nanoTime()
         if (pendingUnloadTargets.isNotEmpty()) {
@@ -969,7 +990,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val map = scenario.map
         val knowledge = view.knowledge
         val previous = latestFrame
-        if (previous != null && knowledge?.cells == terrainKnowledge) return previous.withObservation(view)
+        if (previous != null && (knowledge?.cells === terrainKnowledge || knowledge?.cells == terrainKnowledge)) return previous.withObservation(view)
         // NoFog alone explicitly authorizes the local host's entire ground layout.
         val ground = if (knowledge == null) map.groundGids else null
         val terrain = List(map.widthTiles * map.heightTiles) { index ->

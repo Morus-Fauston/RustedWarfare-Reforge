@@ -40,7 +40,7 @@ internal object HoverMotion : VerticalPoseController {
         if (unit.heightPhase > 360.0) unit.heightPhase -= 360.0
         val desired = profile.targetHeight + sin(Math.toRadians(unit.heightPhase)) * profile.heightDrift
         val limit = profile.heightChangeRate * delta
-        check(listOf(unit.heightPhase, desired, limit, unit.height - desired).all { it.isFinite() }) {
+        check(unit.heightPhase.isFinite() && desired.isFinite() && limit.isFinite() && (unit.height - desired).isFinite()) {
             "Non-finite hover pose for ${unit.unitId}"
         }
         unit.height = approach(unit.height, desired, limit)

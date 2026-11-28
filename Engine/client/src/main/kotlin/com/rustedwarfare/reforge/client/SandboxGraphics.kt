@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
+import com.badlogic.gdx.graphics.g2d.SpriteCache
 import com.badlogic.gdx.graphics.g2d.TextureRegion
 import com.badlogic.gdx.graphics.glutils.ShaderProgram
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
@@ -69,6 +70,7 @@ class SandboxGraphics private constructor(
     }
     private val owned = mutableListOf<Texture>()
     private val tiles = mutableMapOf<Int, TextureRegion>()
+    private var tileByGid: Array<TextureRegion?> = emptyArray()
     private val tileAverageColors = mutableMapOf<Int, TileAverageColor>()
     internal var loadedTerrainTextureCount: Int = 0
         private set
@@ -76,6 +78,14 @@ class SandboxGraphics private constructor(
     private var minimapTexture: Texture? = null
     private var minimapVisibilityState: ByteArray? = null
     private var minimapGroundSnapshot: IntArray? = null
+    private var minimapLastTerrainRef: Any? = null
+    private var terrainCacheSourceRef: Any? = null
+    private var terrainCacheAllKnownVisible: Boolean = false
+    private var terrainSpriteCache: SpriteCache? = null
+    private var terrainChunkIds: IntArray = IntArray(0)
+    private var terrainChunksX: Int = 0
+    private var terrainChunksY: Int = 0
+    private val terrainCacheTransform = com.badlogic.gdx.math.Matrix4()
     private val resourcePoolFlags: BooleanArray = run {
         val count = resources.widthTiles * resources.heightTiles
         BooleanArray(count) { index ->
@@ -118,6 +128,7 @@ class SandboxGraphics private constructor(
         ?: units[typeId]
 
     companion object {
+        private const val TERRAIN_CACHE_CHUNK_TILES = 32
         internal val DESKTOP_MINIMAP_AREA = MapArea(752.0, 464.0, 184.0, 160.0)
 
         fun load(
@@ -169,6 +180,14 @@ class SandboxGraphics private constructor(
                 graphics.loadImages(root, activeGids)
                 for (gid in activeGids) {
                     require(graphics.tiles.containsKey(gid)) { "Missing tile image for gid=$gid" }
+                }
+                val maxGid = graphics.tiles.keys.maxOrNull() ?: 0
+                if (maxGid in 1..65536) {
+                    val arr = arrayOfNulls<TextureRegion>(maxGid + 1)
+                    for ((k, v) in graphics.tiles) {
+                        if (k in 0..maxGid) arr[k] = v
+                    }
+                    graphics.tileByGid = arr
                 }
                 graphics.playerColorShader = MatchPlayerColors.createPlayerColorShader()
                 return graphics
@@ -422,41 +441,96 @@ class SandboxGraphics private constructor(
         val bounds = TerrainTileColorSampler.visibleBounds(
             projection, resources.widthTiles, resources.heightTiles, resources.tileWidth, resources.tileHeight, padTiles = 1,
         )
-        val drawW = (resources.tileWidth * projection.scale).toFloat()
-        val drawH = (resources.tileHeight * projection.scale).toFloat()
         val layers = resources.visualLayers
         val hasVisualLayers = layers.isNotEmpty() && frame.terrain.size == resources.widthTiles * resources.heightTiles
+        if (hasVisualLayers && Gdx.gl != null && tryDrawCachedStaticTerrain(
+                batch, frame, bounds.minCol, bounds.maxCol, bounds.minRow, bounds.maxRow, layers,
+            )
+        ) {
+            return
+        }
+        val drawW = (resources.tileWidth * projection.scale).toFloat()
+        val drawH = (resources.tileHeight * projection.scale).toFloat()
+        val tileArr = tileByGid
+        val tileArrSize = tileArr.size
+        var lastShade = -1f
         if (hasVisualLayers) {
+            val terrainCells = frame.terrain
+            val widthTiles = resources.widthTiles
+            val tileW = resources.tileWidth.toDouble()
+            val tileH = resources.tileHeight.toDouble()
+            val minCol = bounds.minCol
+            val maxCol = bounds.maxCol
+            val minRow = bounds.minRow
+            val maxRow = bounds.maxRow
+            val startX = projection.x(minCol.toDouble() * tileW)
             val groundLayer = layers.firstOrNull { it.kind == MapVisualLayerKind.GROUND }
-            for (layer in layers) {
-                for (row in bounds.minRow..bounds.maxRow) {
-                    val rowOffset = row * resources.widthTiles
-                    val y = projection.y((row + 1.0) * resources.tileHeight)
-                    for (col in bounds.minCol..bounds.maxCol) {
+            for (layerIdx in 0 until layers.size) {
+                val layer = layers[layerIdx]
+                val isGround = layer === groundLayer
+                for (row in minRow..maxRow) {
+                    val rowOffset = row * widthTiles
+                    val y = projection.y((row + 1.0) * tileH)
+                    var x = startX
+                    for (col in minCol..maxCol) {
                         val index = rowOffset + col
-                        val cell = frame.terrain[index]
-                        if (!cell.known) continue
-                        val rawGid = if (layer === groundLayer) {
-                            val cellGid = cell.gid ?: continue
-                            val cleanCell = GroundRules.stripFlipFlags(cellGid)
+                        val rawGid: Int
+                        val visibleCell: Boolean
+                        if (isGround) {
+                            val cell = terrainCells[index]
+                            if (!cell.known) {
+                                x += drawW
+                                continue
+                            }
+                            val cellGid = cell.gid
+                            if (cellGid == null) {
+                                x += drawW
+                                continue
+                            }
+                            visibleCell = cell.visible
                             val layerRaw = layer.rawGidAt(index)
-                            if (GroundRules.stripFlipFlags(layerRaw) == cleanCell) layerRaw else cellGid
+                            rawGid = if (layerRaw == cellGid || GroundRules.stripFlipFlags(layerRaw) == GroundRules.stripFlipFlags(cellGid)) {
+                                layerRaw
+                            } else {
+                                cellGid
+                            }
                         } else {
-                            layer.rawGidAt(index)
+                            val layerRaw = layer.rawGidAt(index)
+                            if (layerRaw == 0) {
+                                x += drawW
+                                continue
+                            }
+                            val cell = terrainCells[index]
+                            if (!cell.known) {
+                                x += drawW
+                                continue
+                            }
+                            visibleCell = cell.visible
+                            rawGid = layerRaw
                         }
-                        val cleanGid = GroundRules.stripFlipFlags(rawGid)
-                        if (cleanGid == 0) continue
-                        val region = tiles[cleanGid] ?: continue
-                        val shade = if (cell.visible) 1f else 0.3f
-                        batch.setColor(shade, shade, shade, 1f)
-                        val x = projection.x(col.toDouble() * resources.tileWidth)
                         val flags = GroundRules.flipFlags(rawGid)
+                        val cleanGid = if (flags == 0) rawGid else GroundRules.stripFlipFlags(rawGid)
+                        if (cleanGid == 0) {
+                            x += drawW
+                            continue
+                        }
+                        val region = if (cleanGid in 0 until tileArrSize) tileArr[cleanGid] else tiles[cleanGid]
+                        if (region == null) {
+                            x += drawW
+                            continue
+                        }
+                        val shade = if (visibleCell) 1f else 0.3f
+                        if (shade != lastShade) {
+                            batch.setColor(shade, shade, shade, 1f)
+                            lastShade = shade
+                        }
                         if (flags == 0) {
                             batch.draw(region, x, y, drawW, drawH)
                         } else {
                             val (rot, sx, sy) = TerrainTileColorSampler.decodeTiledTransform(flags)
                             batch.draw(region, x, y, drawW * 0.5f, drawH * 0.5f, drawW, drawH, sx, sy, rot)
                         }
+                        x += drawW
                     }
                 }
             }
@@ -464,14 +538,17 @@ class SandboxGraphics private constructor(
             for (cell in frame.terrain) {
                 if (cell.column !in bounds.minCol..bounds.maxCol || cell.row !in bounds.minRow..bounds.maxRow) continue
                 val rawGid = cell.gid ?: continue
-                val cleanGid = GroundRules.stripFlipFlags(rawGid)
+                val flags = GroundRules.flipFlags(rawGid)
+                val cleanGid = if (flags == 0) rawGid else GroundRules.stripFlipFlags(rawGid)
                 if (cleanGid == 0) continue
-                val region = tiles[cleanGid] ?: continue
+                val region = (if (cleanGid in 0 until tileArrSize) tileArr[cleanGid] else tiles[cleanGid]) ?: continue
                 val shade = if (cell.visible) 1f else 0.3f
-                batch.setColor(shade, shade, shade, 1f)
+                if (shade != lastShade) {
+                    batch.setColor(shade, shade, shade, 1f)
+                    lastShade = shade
+                }
                 val x = projection.x(cell.column.toDouble() * resources.tileWidth)
                 val y = projection.y((cell.row + 1.0) * resources.tileHeight)
-                val flags = GroundRules.flipFlags(rawGid)
                 if (flags == 0) {
                     batch.draw(region, x, y, drawW, drawH)
                 } else {
@@ -481,6 +558,162 @@ class SandboxGraphics private constructor(
             }
         }
         batch.color = Color.WHITE
+    }
+
+    private fun tryDrawCachedStaticTerrain(
+        batch: SpriteBatch,
+        frame: SandboxFrame,
+        minCol: Int,
+        maxCol: Int,
+        minRow: Int,
+        maxRow: Int,
+        layers: List<com.rustedwarfare.reforge.core.content.MapVisualLayer>,
+    ): Boolean {
+        val terrainCells = frame.terrain
+        if (terrainCacheSourceRef !== terrainCells) {
+            terrainCacheSourceRef = terrainCells
+            var allVisible = true
+            for (i in 0 until terrainCells.size) {
+                val c = terrainCells[i]
+                if (!c.known || !c.visible) {
+                    allVisible = false
+                    break
+                }
+            }
+            terrainCacheAllKnownVisible = allVisible
+            if (!allVisible) {
+                terrainSpriteCache?.dispose()
+                terrainSpriteCache = null
+                terrainChunkIds = IntArray(0)
+                return false
+            }
+            rebuildStaticTerrainSpriteCache(frame, layers)
+        }
+        val cache = terrainSpriteCache ?: return false
+        if (!terrainCacheAllKnownVisible) return false
+        val chunkTiles = TERRAIN_CACHE_CHUNK_TILES
+        val cMinX = (minCol / chunkTiles).coerceIn(0, terrainChunksX - 1)
+        val cMaxX = (maxCol / chunkTiles).coerceIn(0, terrainChunksX - 1)
+        val cMinY = (minRow / chunkTiles).coerceIn(0, terrainChunksY - 1)
+        val cMaxY = (maxRow / chunkTiles).coerceIn(0, terrainChunksY - 1)
+        val scale = projection.scale.toFloat()
+        terrainCacheTransform
+            .setToTranslation(projection.x(0.0), projection.y(projection.worldHeight), 0f)
+            .scale(scale, scale, 1f)
+        batch.end()
+        Gdx.gl.glEnable(GL20.GL_BLEND)
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA)
+        cache.projectionMatrix = batch.projectionMatrix
+        cache.transformMatrix = terrainCacheTransform
+        cache.begin()
+        for (cy in cMinY..cMaxY) {
+            val rowOff = cy * terrainChunksX
+            for (cx in cMinX..cMaxX) {
+                val id = terrainChunkIds[rowOff + cx]
+                if (id >= 0) cache.draw(id)
+            }
+        }
+        cache.end()
+        batch.begin()
+        batch.color = Color.WHITE
+        return true
+    }
+
+    private fun rebuildStaticTerrainSpriteCache(
+        frame: SandboxFrame,
+        layers: List<com.rustedwarfare.reforge.core.content.MapVisualLayer>,
+    ) {
+        val terrainCells = frame.terrain
+        terrainSpriteCache?.dispose()
+        terrainSpriteCache = null
+        val w = resources.widthTiles
+        val h = resources.heightTiles
+        val tileW = resources.tileWidth.toFloat()
+        val tileH = resources.tileHeight.toFloat()
+        val worldH = h * tileH
+        val tileArr = tileByGid
+        val tileArrSize = tileArr.size
+        val groundLayer = layers.firstOrNull { it.kind == MapVisualLayerKind.GROUND }
+        var totalSprites = 0
+        for (layerIdx in 0 until layers.size) {
+            val layer = layers[layerIdx]
+            val isGround = layer === groundLayer
+            for (idx in 0 until w * h) {
+                val rawGid = if (isGround) {
+                    val cellGid = terrainCells[idx].gid ?: continue
+                    val layerRaw = layer.rawGidAt(idx)
+                    if (layerRaw == cellGid || GroundRules.stripFlipFlags(layerRaw) == GroundRules.stripFlipFlags(cellGid)) layerRaw else cellGid
+                } else {
+                    val layerRaw = layer.rawGidAt(idx)
+                    if (layerRaw == 0) continue
+                    layerRaw
+                }
+                val cleanGid = GroundRules.stripFlipFlags(rawGid)
+                if (cleanGid == 0) continue
+                val region = if (cleanGid in 0 until tileArrSize) tileArr[cleanGid] else tiles[cleanGid]
+                if (region != null) totalSprites++
+            }
+        }
+        if (totalSprites <= 0) {
+            terrainChunkIds = IntArray(0)
+            terrainChunksX = 0
+            terrainChunksY = 0
+            return
+        }
+        val chunkTiles = TERRAIN_CACHE_CHUNK_TILES
+        val cxCount = (w + chunkTiles - 1) / chunkTiles
+        val cyCount = (h + chunkTiles - 1) / chunkTiles
+        val cache = SpriteCache(totalSprites, false)
+        val ids = IntArray(cxCount * cyCount) { -1 }
+        cache.setColor(1f, 1f, 1f, 1f)
+        for (cy in 0 until cyCount) {
+            val r0 = cy * chunkTiles
+            val r1 = minOf(h - 1, r0 + chunkTiles - 1)
+            for (cx in 0 until cxCount) {
+                val c0 = cx * chunkTiles
+                val c1 = minOf(w - 1, c0 + chunkTiles - 1)
+                var chunkCount = 0
+                cache.beginCache()
+                for (layerIdx in 0 until layers.size) {
+                    val layer = layers[layerIdx]
+                    val isGround = layer === groundLayer
+                    for (row in r0..r1) {
+                        val rowOffset = row * w
+                        val y = worldH - (row + 1) * tileH
+                        for (col in c0..c1) {
+                            val index = rowOffset + col
+                            val rawGid = if (isGround) {
+                                val cellGid = terrainCells[index].gid ?: continue
+                                val layerRaw = layer.rawGidAt(index)
+                                if (layerRaw == cellGid || GroundRules.stripFlipFlags(layerRaw) == GroundRules.stripFlipFlags(cellGid)) layerRaw else cellGid
+                            } else {
+                                val layerRaw = layer.rawGidAt(index)
+                                if (layerRaw == 0) continue
+                                layerRaw
+                            }
+                            val flags = GroundRules.flipFlags(rawGid)
+                            val cleanGid = if (flags == 0) rawGid else GroundRules.stripFlipFlags(rawGid)
+                            if (cleanGid == 0) continue
+                            val region = (if (cleanGid in 0 until tileArrSize) tileArr[cleanGid] else tiles[cleanGid]) ?: continue
+                            val x = col * tileW
+                            if (flags == 0) {
+                                cache.add(region, x, y, tileW, tileH)
+                            } else {
+                                val (rot, sx, sy) = TerrainTileColorSampler.decodeTiledTransform(flags)
+                                cache.add(region, x, y, tileW * 0.5f, tileH * 0.5f, tileW, tileH, sx, sy, rot)
+                            }
+                            chunkCount++
+                        }
+                    }
+                }
+                val cacheId = cache.endCache()
+                if (chunkCount > 0) ids[cy * cxCount + cx] = cacheId
+            }
+        }
+        terrainSpriteCache = cache
+        terrainChunkIds = ids
+        terrainChunksX = cxCount
+        terrainChunksY = cyCount
     }
 
     fun drawEntities(batch: SpriteBatch, frame: SandboxFrame, construction: ConstructionPreview? = null,
@@ -1061,6 +1294,11 @@ class SandboxGraphics private constructor(
         val w = resources.widthTiles
         val h = resources.heightTiles
         if (w <= 0 || h <= 0) return null
+        val existingTex = minimapTexture
+        val terrainList = frame.terrain
+        if (existingTex != null && minimapLastTerrainRef === terrainList) {
+            return existingTex
+        }
         val cellCount = w * h
         val pixmap = minimapPixmap ?: Pixmap(w, h, Pixmap.Format.RGBA8888).also {
             it.blending = Pixmap.Blending.None
@@ -1070,9 +1308,10 @@ class SandboxGraphics private constructor(
         }
         val stateCache = minimapVisibilityState ?: ByteArray(cellCount) { -1 }.also { minimapVisibilityState = it }
         val gidCache = minimapGroundSnapshot ?: IntArray(cellCount) { -1 }.also { minimapGroundSnapshot = it }
-        var dirty = minimapTexture == null
+        var dirty = existingTex == null
 
-        for (cell in frame.terrain) {
+        for (i in 0 until terrainList.size) {
+            val cell = terrainList[i]
             val col = cell.column
             val row = cell.row
             if (col !in 0 until w || row !in 0 until h) continue
@@ -1102,8 +1341,9 @@ class SandboxGraphics private constructor(
             pixmap.drawPixel(col, row, rgba)
             dirty = true
         }
+        minimapLastTerrainRef = terrainList
 
-        val tex = minimapTexture
+        val tex = existingTex
         if (tex == null) {
             val created = Texture(pixmap).also {
                 it.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest)
@@ -1249,6 +1489,10 @@ class SandboxGraphics private constructor(
         playerColorShader?.let { sp ->
             try { sp.dispose() } catch (error: Exception) { if (failure == null) failure = error else failure.addSuppressed(error) }
         }
+        terrainSpriteCache?.let { sc ->
+            try { sc.dispose() } catch (error: Exception) { if (failure == null) failure = error else failure.addSuppressed(error) }
+        }
+        terrainSpriteCache = null; terrainCacheSourceRef = null; terrainChunkIds = IntArray(0)
         playerColorShader = null
         minimapPixmap = null; minimapTexture = null; minimapVisibilityState = null; minimapGroundSnapshot = null
         owned.clear(); tiles.clear(); tileAverageColors.clear(); loadedTerrainTextureCount = 0

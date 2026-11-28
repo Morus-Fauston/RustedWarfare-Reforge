@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.5.91 (2026-11-28 16:15)
+
+### 性能优化
+
+- **`350×350` 大地图 `4x` 模拟内核零分配与分段热点清零**：针对原版 `[z;p10]Many Islands Large (10p)`（`122,500` 格、170+ 在场单位、`4x` 倍速）后台真 GL 压测定位到的逐帧热点，完成全链路零分配与算法收口：
+  - `WorldSpatialIndex` 改用原语链表与双槽 ping-pong `FrozenSpatialUnit` 复用（严格保持 `StepState.fork` 隔离）、中心外扩 Chebyshev 环剪枝 Top-K 查询与 $S^1$ 圆锥对向车流剪枝；
+  - `LocomotionModule` 拆分 7 项中粒度子方法以避开 HotSpot C2 `8,000 B` 大方法上限，并将 2D ORCA 半平面 LP1/LP2/LP3 求解与墙体扫描收口至线程隔离原始数组；
+  - `NavigationGuidance` 与 `PlanningTerrain` 落地增量变更格掩码（`lastDeltaCells`）、大地图（`cellCount > 16,384`）单步影子重建配额、无拥堵 O(1) 跳过与包含立即换场保护的轻量级原子回滚；
+  - `CircularTerrain`、`PlanningSegmentClearance` 与 `UnitContact` 增设长线段走廊带早停、圆形开阔地形零分配快检与盘-盘原语扫掠；
+  - `SimulationContext`、`BuildingTerrain`、`CombatTargetQuery` 与 `MissileTargetIndex` 新增活体建筑快径、步初阵营包围盒索敌剪枝（活体/残骸卸客与闪现即时失效）、`SimulationKernelWarmup` 离场 JIT 预热与 `Model` 热点导航标量原子化。
+- **客户端大地图渲染与 `4x` 步进调度提速**：`SandboxGraphics` 引入静态地形 `SpriteCache` 批绘制、`SpriteBatch(8191)` 与视口内可见单位裁剪，`OfflineStepClock` 增设单渲染帧时间预算守卫（保证每帧至少推进 1 步且末步必出图），同步优化 `BootstrapScreen`、`Minimap` 与 `SelectionState` 大单位集开销。
+
+### 修复
+
+- **极端高密碰撞与盲测退化收口**：修复 `WorldSpatialIndex.mightHaveOpposingMover` 在 $A + B \ge \pi$ 时的余弦回绕假阴性；修复 `NavigationGuidance` 小地图影子重建限流、出口门洞梯度保护余量与自格通行费扣减；收敛 `UnitContact` 二维片状外法线推挤在纯在途无静止体邻接独立车流与 `41px` 近目标松弛盘内的轴向传递及静止车群死锁回退；修正 `contactLayerAt` 水下闭区间边界（`<=`）、`SHORE_REJOIN` 路点弹栈 `localProgressTime` 清零及 `BuildingTerrain` 慢路径 `liveEntries` 同步。
+
+### 技术
+
+- **七期 SP 无人值守 `4x` 实窗压测硬门禁与整期全量回归收官**：新增 `SimulationKernelWarmupTest` 与 `OfflineStepClockTest` 帧预算守卫单测，扩充 `live_hotspot_stress.py` 至 170+ 在场单位与 15 次跨岛普通/`Alt` 编队综合压测；原版 Steam 资源（`rw.pc.steam.9902063.images.v8.mapped`）后台真 GL `1920×1080` `4x` 压测 4,704 步实测 `frameWorkMs` P50 `5.51 ms` / P95 `13.24 ms`（`<= 16.7 ms`） / P99 `20.60 ms`（`<= 25.0 ms`）、有效倍速 `3.9987x`（`>= 3.8x`）、不抢焦点且进程干净退出；全量 `public_batch.py --kind pr`（7 套机制与全部公开短测）、`public_batch.py --kind long`（33 条公开长测）、`dev-ab` 全 12 场景、Holdout v3 盲测全 12 场景、`:pc:installDist`、Android Debug/Test 编译与双根布局校验全绿，经独立全新上下文视觉审阅（R2）与非作者代码整审（R2+增补）双双 `APPROVE`（0 必修）。
+
+---
+
 ## v0.5.90 (2026-11-28 07:48)
 
 ### 新增

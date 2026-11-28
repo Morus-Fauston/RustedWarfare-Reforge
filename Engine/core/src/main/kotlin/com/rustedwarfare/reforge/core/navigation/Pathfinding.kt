@@ -78,23 +78,20 @@ internal class PathClearanceCache(
     val reuseApproach: Boolean = true,
     private val rectangleChecks: RectangleChecks = RectangleChecks(),
     private val departureNeighbors: MutableMap<DepartureSource, List<PathGridKey>> = HashMap(),
+    private var sharedPool: ArrayDeque<PrimitiveGridFrontier> = ArrayDeque(2),
 ) {
     private data class Approach(val terrain: PlanningTerrain, val radius: Double, val start: Position,
                                 val path: List<Position>)
     private var approach: Approach? = null
-    private val frontierPool: ArrayDeque<PrimitiveGridFrontier> = ArrayDeque(2)
 
     // Share the same frontierPool across candidate forks: checkouts register rollback.record(release),
     // and releases register rollback.onCommit(release) so an uncommitted/aborted step NEVER exposes
     // a still-live frontier to another search while committed steps reuse the primitive IntArrays.
     fun fork(): PathClearanceCache = PathClearanceCache(
-        HashMap(grids), reuseApproach, rectangleChecks, departureNeighbors,
+        HashMap(grids), reuseApproach, rectangleChecks, departureNeighbors, sharedPool,
     ).also {
         it.approach = approach
-        it.sharedPool = sharedPool
     }
-
-    private var sharedPool: ArrayDeque<PrimitiveGridFrontier> = frontierPool
 
     internal val pooledFrontierCount: Int get() = sharedPool.size
 
@@ -870,12 +867,14 @@ class ClearanceAStarPolicy internal constructor(
             val point = if (legal(end)) end else {
                 var low = 0.0
                 var high = 1.0
+                val segDx = end.x - from.x
+                val segDy = end.y - from.y
                 repeat(48) {
-                    val mid = (low + high) / 2.0
-                    val candidate = Position(from.x + (end.x - from.x) * mid, from.y + (end.y - from.y) * mid)
+                    val mid = (low + high) * 0.5
+                    val candidate = Position(from.x + segDx * mid, from.y + segDy * mid)
                     if (legal(candidate)) low = mid else high = mid
                 }
-                Position(from.x + (end.x - from.x) * low, from.y + (end.y - from.y) * low)
+                Position(from.x + segDx * low, from.y + segDy * low)
             }
             if (!legal(point)) return
             val probes = listOf(point, Position(point.x, target.y), Position(target.x, point.y))

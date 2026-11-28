@@ -111,6 +111,68 @@ internal object CombatTargetQuery {
         return chosen
     }
 
+    /**
+     * Zero-allocation exact equivalent of `nearestEnemy(actor, spatialIndex.queryAllLayersCenterBox(...), ...)`
+     * breaking exact distance ties by ascending `updateKey` (matching `UNIT_KEY_COMPARATOR` order).
+     */
+    fun nearestEnemyInSpatialIndex(
+        actor: MutableUnit,
+        spatialIndex: WorldSpatialIndex,
+        players: List<Player>,
+        map: MapDefinition,
+    ): MutableUnit? {
+        actor.definition.combat ?: return null
+        val actorOwner = actor.ownerPlayerId
+        var actorTeam: String? = null
+        for (i in 0 until players.size) {
+            val p = players[i]
+            if (p.playerId == actorOwner) {
+                actorTeam = p.teamId
+                break
+            }
+        }
+        val range = UnitCombat.range(actor)
+        val rangeSquared = range * range
+        var chosen: MutableUnit? = null
+        var chosenDistance = 0.0
+        var chosenArmed = false
+        spatialIndex.forEachInAllLayersCenterBoxUnordered(actor.position, range + 1e-6) { candidate ->
+            if (!candidate.alive || candidate.carriedBy != null || candidate.health == null) return@forEachInAllLayersCenterBoxUnordered
+            val candOwner = candidate.ownerPlayerId
+            if (candOwner == actorOwner) return@forEachInAllLayersCenterBoxUnordered
+            if (actorTeam != null) {
+                var candTeam: String? = null
+                for (i in 0 until players.size) {
+                    val p = players[i]
+                    if (p.playerId == candOwner) {
+                        candTeam = p.teamId
+                        break
+                    }
+                }
+                if (candTeam == actorTeam) return@forEachInAllLayersCenterBoxUnordered
+            }
+            if (!canAttackAirCategory(actor, candidate, map)) return@forEachInAllLayersCenterBoxUnordered
+            val distance = ScreenPlane.distanceSquared(actor.position, candidate.position)
+            if (!(distance < rangeSquared)) return@forEachInAllLayersCenterBoxUnordered
+            val armed = candidate.definition.combat != null
+            val curChosen = chosen
+            val better = if (curChosen == null) {
+                true
+            } else if (armed != chosenArmed) {
+                armed
+            } else {
+                val cmp = distance.compareTo(chosenDistance)
+                cmp < 0 || (cmp == 0 && candidate.updateKey < curChosen.updateKey)
+            }
+            if (better) {
+                chosen = candidate
+                chosenDistance = distance
+                chosenArmed = armed
+            }
+        }
+        return chosen
+    }
+
     fun patrolEnemy(actor: MutableUnit, candidates: Collection<MutableUnit>, players: List<Player>,
                     visible: (String, Position) -> Boolean, map: MapDefinition): MutableUnit? {
         val weapon = actor.definition.combat ?: return null

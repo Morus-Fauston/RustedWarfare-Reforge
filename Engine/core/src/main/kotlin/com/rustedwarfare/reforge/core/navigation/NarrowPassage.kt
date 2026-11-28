@@ -71,10 +71,12 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
         entranceTracker: MutableMap<String, PassageEntry> = HashMap(),
     ): Set<String> {
         if (twoHullWidth <= 0.0) return emptySet()
-        val eligibleById = HashMap<String, MutableUnit>()
+        val eligibleById = HashMap<String, MutableUnit>(units.size)
+        val eligibleList = ArrayList<MutableUnit>(units.size)
         for (u in units) {
             if (isEligibleMover(u)) {
                 eligibleById[u.unitId] = u
+                eligibleList.add(u)
             } else {
                 if (u.passageEntry != null) u.updateNavigation { it.withPassageEntry(null) }
                 entranceTracker.remove(u.unitId)
@@ -88,19 +90,92 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
                 if (u == null || u.originMoveId != prev.commandId) iter.remove()
             }
         }
-        if (eligibleById.isEmpty()) return emptySet()
+        if (eligibleList.isEmpty()) return emptySet()
 
         val ruledOut = HashMap<String, Double>()
-        val ownTerrain = HashMap<String, PlanningTerrain>(eligibleById.size)
+        val ownTerrain = HashMap<String, PlanningTerrain>(eligibleList.size)
         val proposals = LinkedHashMap<String, Approach>()
-        for (unit in units) {
-            if (eligibleById[unit.unitId] == null) continue
+        // O(N) global codirectional cone check per contact layer (zero HashMap / DoubleArray boxing):
+        // If every eligible mover on a layer has both its goal direction and immediate aim direction within
+        // arccos(0.83) (~33.9 deg) of the first mover's goal direction, then by triangle inequality on S^1
+        // every pair (i, j) satisfies dot >= cos(67.8 deg) > 0.35, proving zero opposing pairs exist on that
+        // layer without executing the spatial scan in `hasNearbyOpposingMover`.
+        var surfRefX = 0.0; var surfRefY = 0.0; var surfHasRef = false; var surfAllCodir = true
+        var subRefX = 0.0; var subRefY = 0.0; var subHasRef = false; var subAllCodir = true
+        for (idx in 0 until eligibleList.size) {
+            if (!surfAllCodir && !subAllCodir) break
+            val u = eligibleList[idx]
+            val cl = UnitContact.layer(u) ?: continue
+            if (cl == ContactLayer.SURFACE && !surfAllCodir) continue
+            if (cl == ContactLayer.SUBMERGED && !subAllCodir) continue
+            val oAim = u.pathPoints.firstOrNull() ?: u.moveTarget ?: continue
+            val oGoal = u.moveTarget ?: oAim
+            val gx = oGoal.x - u.position.x
+            val gy = oGoal.y - u.position.y
+            val glen = kotlin.math.sqrt(gx * gx + gy * gy)
+            val dx = if (glen > 1e-6) gx / glen else 0.0
+            val dy = if (glen > 1e-6) gy / glen else 0.0
+            val ax = oAim.x - u.position.x
+            val ay = oAim.y - u.position.y
+            val alen = kotlin.math.sqrt(ax * ax + ay * ay)
+            val adx = if (alen > 1e-6) ax / alen else dx
+            val ady = if (alen > 1e-6) ay / alen else dy
+            if (cl == ContactLayer.SURFACE) {
+                if (!surfHasRef) {
+                    if (glen > 1e-6) {
+                        surfRefX = dx; surfRefY = dy; surfHasRef = true
+                        if (adx * surfRefX + ady * surfRefY < 0.83) surfAllCodir = false
+                    } else surfAllCodir = false
+                } else {
+                    if (dx * surfRefX + dy * surfRefY < 0.83 || adx * surfRefX + ady * surfRefY < 0.83) {
+                        surfAllCodir = false
+                    }
+                }
+            } else {
+                if (!subHasRef) {
+                    if (glen > 1e-6) {
+                        subRefX = dx; subRefY = dy; subHasRef = true
+                        if (adx * subRefX + ady * subRefY < 0.83) subAllCodir = false
+                    } else subAllCodir = false
+                } else {
+                    if (dx * subRefX + dy * subRefY < 0.83 || adx * subRefX + ady * subRefY < 0.83) {
+                        subAllCodir = false
+                    }
+                }
+            }
+        }
+        for (idx in 0 until eligibleList.size) {
+            val unit = eligibleList[idx]
             val type = UnitLocomotion.movement(unit).type
             val terrain = terrainFor(unit, type)
             ownTerrain[unit.unitId] = terrain
+            // Exact O(1) open-field pruning: if unit has no active/tracked passage entry and its Chebyshev
+            // obstacle clearance exceeds the full approach horizon plus half the narrow-passage max width,
+            // no narrow passage can intersect the unit's lookahead segment on this step.
+            if (unit.passageEntry == null && entranceTracker[unit.unitId] == null) {
+                val minTile = min(terrain.tileWidth, terrain.tileHeight).toDouble()
+                val tile = max(terrain.tileWidth, terrain.tileHeight).toDouble()
+                val shape = unit.definition.movementCollision
+                val mv = UnitLocomotion.movement(unit)
+                val travel = UnitLocomotion.effectiveMaximumSpeed(unit, mv) * step.delta
+                val turnRoom = if (longestHull > tile) longestHull + tile else tile
+                val maxHorizon = turnRoom + travelLength(shape) * 0.5 + travel + tile + shape.boundingRadius
+                val safeRings = ceil((maxHorizon + twoHullWidth * 0.5) / minTile).toInt() + 2
+                val uCol = kotlin.math.floor(unit.position.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
+                val uRow = kotlin.math.floor(unit.position.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
+                if (terrain.clearanceRings(uCol, uRow) >= safeRings) {
+                    continue
+                }
+            }
+            val contactLayer = UnitContact.layer(unit)
+            val layerCodir = when (contactLayer) {
+                ContactLayer.SURFACE -> surfAllCodir
+                ContactLayer.SUBMERGED -> subAllCodir
+                null -> true
+            }
             val allowSurvey = unit.passageEntry != null ||
                 entranceTracker[unit.unitId]?.surveyWidth != null ||
-                hasNearbyOpposingMover(unit, spatialIndex, step.delta, knows)
+                (!layerCodir && contactLayer != null && hasNearbyOpposingMover(unit, contactLayer, spatialIndex, step.delta, knows))
             val next = approach(
                 unit = unit,
                 terrain = terrain,
@@ -230,24 +305,24 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
      */
     private fun hasNearbyOpposingMover(
         unit: MutableUnit,
+        contactLayer: ContactLayer,
         spatialIndex: WorldSpatialIndex,
         delta: Double,
         knows: (MutableUnit, MutableUnit) -> Boolean,
     ): Boolean {
-        val contactLayer = UnitContact.layer(unit) ?: return false
-        val layer = SpatialLayer.fromContact(contactLayer)
         val ownAim = unit.pathPoints.firstOrNull() ?: unit.moveTarget ?: return false
         val ownGoal = unit.moveTarget ?: ownAim
-        val ax = ownAim.x - unit.position.x
-        val ay = ownAim.y - unit.position.y
         val gx = ownGoal.x - unit.position.x
         val gy = ownGoal.y - unit.position.y
-        val ownLen = hypot(gx, gy)
-        val dirX = if (ownLen > 1e-6) gx / ownLen else 0.0
-        val dirY = if (ownLen > 1e-6) gy / ownLen else 0.0
-        val aimLen = hypot(ax, ay)
-        val aimX = if (aimLen > 1e-6) ax / aimLen else dirX
-        val aimY = if (aimLen > 1e-6) ay / aimLen else dirY
+        val glen = kotlin.math.sqrt(gx * gx + gy * gy)
+        val dirX = if (glen > 1e-6) gx / glen else 0.0
+        val dirY = if (glen > 1e-6) gy / glen else 0.0
+        val ax = ownAim.x - unit.position.x
+        val ay = ownAim.y - unit.position.y
+        val alen = kotlin.math.sqrt(ax * ax + ay * ay)
+        val aimX = if (alen > 1e-6) ax / alen else dirX
+        val aimY = if (alen > 1e-6) ay / alen else dirY
+        val layer = SpatialLayer.fromContact(contactLayer)
 
         val maxSpd = UnitLocomotion.effectiveMaximumSpeed(unit, UnitLocomotion.movement(unit))
         val safeDelta = if (delta.isFinite()) delta.coerceIn(0.0, 10.0) else 1.0
@@ -260,28 +335,28 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
             minY = unit.position.y - reach,
             maxY = unit.position.y + reach,
         ) { other ->
-            if (other === unit || !isEligibleMover(other)) return@forEachInBoundsUnordered false
-            if (!UnitContact.shareLayer(unit, other)) return@forEachInBoundsUnordered false
-            if (!knows(unit, other) || !knows(other, unit)) return@forEachInBoundsUnordered false
-            val oGoal = other.moveTarget ?: other.pathPoints.lastOrNull() ?: return@forEachInBoundsUnordered false
+            if (other === unit || other.originMoveId == null || other.pathPoints.isEmpty()) return@forEachInBoundsUnordered false
+            if (other.ownerPlayerId == unit.ownerPlayerId && other.originMoveId == unit.originMoveId) return@forEachInBoundsUnordered false
+            if (!isEligibleMover(other) || UnitContact.layer(other) != contactLayer) return@forEachInBoundsUnordered false
+            val oAim = other.pathPoints.firstOrNull() ?: other.moveTarget ?: return@forEachInBoundsUnordered false
+            val oGoal = other.moveTarget ?: oAim
             val ogx = oGoal.x - other.position.x
             val ogy = oGoal.y - other.position.y
-            val oglen = hypot(ogx, ogy)
-            val oDirX = if (oglen > 1e-6) ogx / oglen else 0.0
-            val oDirY = if (oglen > 1e-6) ogy / oglen else 0.0
-            val oAim = other.pathPoints.firstOrNull() ?: oGoal
+            val oglen = kotlin.math.sqrt(ogx * ogx + ogy * ogy)
+            val odx = if (oglen > 1e-6) ogx / oglen else 0.0
+            val ody = if (oglen > 1e-6) ogy / oglen else 0.0
             val oax = oAim.x - other.position.x
             val oay = oAim.y - other.position.y
-            val oalen = hypot(oax, oay)
-            val oAimX = if (oalen > 1e-6) oax / oalen else oDirX
-            val oAimY = if (oalen > 1e-6) oay / oalen else oDirY
-            // Either overall command directions or immediate approach segments are non-codirectional (dot < 0.35),
-            // which covers straight head-on bridges AND L-shaped bent single-lane passages (90-deg mouths).
-            val goalDot = dirX * oDirX + dirY * oDirY
-            val aimDot = aimX * oAimX + aimY * oAimY
+            val oalen = kotlin.math.sqrt(oax * oax + oay * oay)
+            val oadx = if (oalen > 1e-6) oax / oalen else odx
+            val oady = if (oalen > 1e-6) oay / oalen else ody
+            val goalDot = dirX * odx + dirY * ody
+            val aimDot = aimX * oadx + aimY * oady
             if (goalDot < 0.35 || aimDot < 0.35) {
-                found = true
-                return@forEachInBoundsUnordered true
+                if (knows(unit, other) && knows(other, unit)) {
+                    found = true
+                    return@forEachInBoundsUnordered true
+                }
             }
             false
         }
@@ -368,7 +443,8 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
         val gate = turnRoom + travelLength(shape) / 2.0 + travel
         val horizon = gate + tile + maxOf(halfX, halfY)
         val increment = minTile / 2.0
-        val known = geometry.getOrPut(terrain) { KnownPassages(twoHullWidth) }
+        var known: KnownPassages? = null
+        val wideRingsThreshold = ceil(twoHullWidth / minTile).toInt()
         val driverWidth = 2.0 * width
         val localWidth = if (!allowSurvey) null else if (required != null) required.surveyWidth else driverWidth.takeIf {
             shape is MovementCollisionShape.Circle && it < twoHullWidth && it > minTile
@@ -397,7 +473,16 @@ internal class PassageAdmission(definitions: Collection<UnitDefinition>) {
                 lastColumn = column
                 lastRow = row
                 val shared = required?.takeIf { it.terrain === terrain }
-                val tileInfo = if (shared == null && required?.surveyWidth == null) known.tileAt(terrain, column, row) else null
+                val tileInfo = if (shared == null && required?.surveyWidth == null) {
+                    if (column in 0 until terrain.widthTiles && row in 0 until terrain.heightTiles &&
+                        terrain.clearanceRings(column, row) >= wideRingsThreshold
+                    ) {
+                        KnownPassages.WIDE_TILE
+                    } else {
+                        val k = known ?: geometry.getOrPut(terrain) { KnownPassages(twoHullWidth) }.also { known = it }
+                        k.tileAt(terrain, column, row)
+                    }
+                } else null
                 val global = tileInfo?.passage
                 val passage = when {
                     shared != null -> shared.passage.takeIf { it.contains(column, row) }

@@ -27,7 +27,7 @@ internal object NamedWeaponRuntime {
                 } ?: true)
         }
     }
-    fun usesNamedState(combat: CombatProfile): Boolean = WeaponAssembly.requiresNamedState(combat)
+    fun usesNamedState(combat: CombatProfile): Boolean = combat.weaponAssembly.usesNamedState
 
     fun initialStates(combat: CombatProfile?, heading: Double, primary: MutableCombat?): MutableMap<String, MutableCombat>? =
         combat?.takeIf(::usesNamedState)?.weaponAssembly?.slots?.mapIndexed { index, slot ->

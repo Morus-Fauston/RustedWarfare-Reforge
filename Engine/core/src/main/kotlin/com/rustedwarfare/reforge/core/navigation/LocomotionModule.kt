@@ -50,7 +50,7 @@ internal object LocomotionModule {
         /** 2D cross product (a.x * b.y - a.y * b.x) in ScreenPlane (x-right, y-down). */
         fun det(o: Vec2): Double = x * o.y - y * o.x
         fun lengthSq(): Double = x * x + y * y
-        fun length(): Double = hypot(x, y)
+        fun length(): Double = sqrt(x * x + y * y)
         fun normalized(): Vec2 {
             val len = length()
             return if (len > EPS) Vec2(x / len, y / len) else ZERO
@@ -165,9 +165,44 @@ internal object LocomotionModule {
         val wallLines: ArrayList<HalfPlane> = ArrayList(16)
         val dynamicLines: ArrayList<HalfPlane> = ArrayList(TOP_K_NEIGHBORS)
         val dynamicPushable: BooleanArray = BooleanArray(TOP_K_NEIGHBORS)
-        val allLines: ArrayList<HalfPlane> = ArrayList(40)
-        val projLines: ArrayList<HalfPlane> = ArrayList(40)
+        // Zero-allocation primitive dynamic ORCA plane buffers (eliminates Vec2 & HalfPlane boxing in hot loop)
+        val dynPx: DoubleArray = DoubleArray(TOP_K_NEIGHBORS)
+        val dynPy: DoubleArray = DoubleArray(TOP_K_NEIGHBORS)
+        val dynNx: DoubleArray = DoubleArray(TOP_K_NEIGHBORS)
+        val dynNy: DoubleArray = DoubleArray(TOP_K_NEIGHBORS)
+        val dynDx: DoubleArray = DoubleArray(TOP_K_NEIGHBORS)
+        val dynDy: DoubleArray = DoubleArray(TOP_K_NEIGHBORS)
+        var dynCount: Int = 0
+        val allLines: ArrayList<HalfPlane> = ArrayList(32)
+        val projLines: ArrayList<HalfPlane> = ArrayList(32)
+        // Zero-allocation primitive LP buffers
+        val lpPx: DoubleArray = DoubleArray(64)
+        val lpPy: DoubleArray = DoubleArray(64)
+        val lpNx: DoubleArray = DoubleArray(64)
+        val lpNy: DoubleArray = DoubleArray(64)
+        val lpDx: DoubleArray = DoubleArray(64)
+        val lpDy: DoubleArray = DoubleArray(64)
+        val projPx: DoubleArray = DoubleArray(64)
+        val projPy: DoubleArray = DoubleArray(64)
+        val projNx: DoubleArray = DoubleArray(64)
+        val projNy: DoubleArray = DoubleArray(64)
+        val projDx: DoubleArray = DoubleArray(64)
+        val projDy: DoubleArray = DoubleArray(64)
+        val lpOutXY: DoubleArray = DoubleArray(2)
         val lpOut: Array<Vec2> = Array(1) { Vec2.ZERO }
+        // Reusable scalar accumulators for split solveGroundLocomotion phases (zero allocation)
+        var sepX: Double = 0.0
+        var sepY: Double = 0.0
+        var rightShift: Double = 0.0
+        var overtakeShift: Double = 0.0
+        var activeDynamicConstraints: Int = 0
+        var hasExistingHardOverlap: Boolean = false
+        var hasDirectImmovableContact: Boolean = false
+        var hasClosePushableBlocker: Boolean = false
+        var clusterOutwardSign: Double = 1.0
+        var ownLeftClear: Double = 0.0
+        var ownRightClear: Double = 0.0
+        var pairSpanState: Int = 0
     }
 
     private val DUMMY_PLANE = HalfPlane(Vec2.ZERO, Vec2(1.0, 0.0))
@@ -227,26 +262,8 @@ internal object LocomotionModule {
             admittedOutletDepth < scale.hardRadius * 0.5
 
         val scratch = scratchPool.get()
-        val neighborsBuf = scratch.neighbors
-        val opposingBuf = scratch.opposing
-
-        // 1. Fog-of-war isolated Top-K neighbor sampling from the step-start frozen snapshot (zero heap allocation).
-        // Note: `queryFrozenTopKInto` already queries the exact step-start `spatialLayer` bucket; do NOT re-read
-        // mutable `UnitContact.layer(peerUnit)` so simultaneous submarine diving stays update-order independent.
         val queryRadius = scale.perceptionRadius + scale.hardRadius * 2.0
-        val neighborCount = host.spatialIndex.queryFrozenTopKInto(
-            observer = unit,
-            layer = spatialLayer,
-            radius = queryRadius,
-            limit = TOP_K_NEIGHBORS,
-            includeBufferPadding = true,
-            outUnits = neighborsBuf,
-            outDistSq = scratch.neighborsDistSq,
-        ) { candidate ->
-            if (candidate.hardRadius <= 0.0) return@queryFrozenTopKInto false
-            candidate.ownerPlayerId == unit.ownerPlayerId ||
-                host.isVisibleTo(unit.ownerPlayerId, candidate.position, candidate.nativeTransportPlacement)
-        }
+        val neighborCount = queryVisibleNeighbors(host, unit, spatialLayer, queryRadius, scratch)
 
         // Bounded closing-time opposing-flow lookahead query (fog-of-war isolated, capped to avoid map-wide scans).
         val opposingLookahead = clamp(
@@ -255,27 +272,7 @@ internal object LocomotionModule {
             max(185.0, scale.hardRadius * 24.0),
         )
         val opposingCount = if (distToTarget > scale.hardRadius * 4.0 && dockingFade > 0.25) {
-            host.spatialIndex.queryFrozenTopKInto(
-                observer = unit,
-                layer = spatialLayer,
-                radius = opposingLookahead,
-                limit = TOP_K_OPPOSING,
-                includeBufferPadding = false,
-                outUnits = opposingBuf,
-                outDistSq = scratch.opposingDistSq,
-            ) { candidate ->
-                if (candidate.hardRadius <= 0.0 || !candidate.moving || candidate.speed <= 0.12 * maximumSpeed) {
-                    return@queryFrozenTopKInto false
-                }
-                val pDir = Vec2.fromHeading(candidate.heading, 1.0)
-                if (desiredDir.dot(pDir) >= -0.25) return@queryFrozenTopKInto false
-                val rx = candidate.position.x - unit.position.x
-                val ry = candidate.position.y - unit.position.y
-                val fwd = rx * desiredDir.x + ry * desiredDir.y
-                if (fwd < -scale.hardRadius * 2.0) return@queryFrozenTopKInto false
-                candidate.ownerPlayerId == unit.ownerPlayerId ||
-                    host.isVisibleTo(unit.ownerPlayerId, candidate.position, candidate.nativeTransportPlacement)
-            }
+            queryOpposingLookahead(host, unit, spatialLayer, opposingLookahead, maximumSpeed, desiredDir, scale.hardRadius, scratch)
         } else 0
 
         if (neighborCount == 0 && opposingCount == 0) {
@@ -292,9 +289,9 @@ internal object LocomotionModule {
         // Measure actual perpendicular passable span across our travel direction so 2-tile / 3-tile corridors
         // where hulls can pass side-by-side keep lateral Boids & 2D ORCA overtaking active even in outer lanes,
         // attenuating to 0.0 ONLY inside true single-lane 1-tile pinches.
-        val localClearanceWorld = estimateTransverseClearanceWorld(terrain, ownPos, rightVec)
-        val leftWallClear = estimateRayClearDistance(terrain, ownPos, rightVec, -1.0)
-        val rightWallClear = estimateRayClearDistance(terrain, ownPos, rightVec, 1.0)
+        val localClearanceWorld = estimateTransverseClearanceWorldWithSides(terrain, ownPos, rightVec, scratch)
+        val leftWallClear = scratch.ownLeftClear
+        val rightWallClear = scratch.ownRightClear
         val selfHalfWidth = transverseHalfWidth(collision, unit.heading, rightVec)
         val singleLaneWidth = max(min(terrain.tileWidth, terrain.tileHeight).toDouble() * 1.15, 3.2 * selfHalfWidth)
         val wideOpenWidth = max(singleLaneWidth + 16.0, 5.8 * selfHalfWidth)
@@ -304,6 +301,208 @@ internal object LocomotionModule {
             1.0,
         )
 
+        evaluateNeighborsIntoScratch(
+            unit = unit,
+            terrain = terrain,
+            movement = movement,
+            contactLayer = contactLayer,
+            scale = scale,
+            desiredTarget = desiredTarget,
+            desiredDir = desiredDir,
+            rightVec = rightVec,
+            distToTarget = distToTarget,
+            desiredSpeed = desiredSpeed,
+            maximumSpeed = maximumSpeed,
+            finalPoint = finalPoint,
+            delta = delta,
+            terminalDockingWeight = terminalDockingWeight,
+            dockingFade = dockingFade,
+            ignoredContactUnitId = ignoredContactUnitId,
+            engagementArcCenter = engagementArcCenter,
+            engagementArcRadius = engagementArcRadius,
+            protectedClusterKey = protectedClusterKey,
+            isAdmittedSingleLane = isAdmittedSingleLane,
+            ownPos = ownPos,
+            ownVel = ownVel,
+            localClearanceWorld = localClearanceWorld,
+            leftWallClear = leftWallClear,
+            rightWallClear = rightWallClear,
+            selfHalfWidth = selfHalfWidth,
+            corridorOpenness = corridorOpenness,
+            neighborCount = neighborCount,
+            scratch = scratch,
+        )
+
+        // Apply opposing-flow right-hand lane shift from bounded opposing query when corridor allows two lanes.
+        if (!isAdmittedSingleLane && opposingCount > 0 && localClearanceWorld >= selfHalfWidth * 3.6) {
+            val oppShift = computeOpposingRightShift(
+                ownPos = ownPos,
+                desiredDir = desiredDir,
+                rightVec = rightVec,
+                hardRadius = scale.hardRadius,
+                opposingLookahead = opposingLookahead,
+                corridorOpenness = corridorOpenness,
+                maximumSpeed = maximumSpeed,
+                ignoredContactUnitId = ignoredContactUnitId,
+                opposingBuf = scratch.opposing,
+                opposingCount = opposingCount,
+            )
+            if (oppShift > scratch.rightShift) scratch.rightShift = oppShift
+        }
+
+        val neighborsBuf = scratch.neighbors
+        val opposingBuf = scratch.opposing
+        for (i in 0 until neighborCount) neighborsBuf[i] = null
+        for (i in 0 until opposingCount) opposingBuf[i] = null
+
+        return finalizeGroundLocomotion(
+            unit = unit,
+            terrain = terrain,
+            scale = scale,
+            desiredTarget = desiredTarget,
+            baseSpeedTarget = baseSpeedTarget,
+            desiredDir = desiredDir,
+            rightVec = rightVec,
+            distToTarget = distToTarget,
+            desiredSpeed = desiredSpeed,
+            basePrefVel = basePrefVel,
+            maximumSpeed = maximumSpeed,
+            finalPoint = finalPoint,
+            delta = delta,
+            terminalDockingWeight = terminalDockingWeight,
+            ownPos = ownPos,
+            corridorOpenness = corridorOpenness,
+            neighborCount = neighborCount,
+            scratch = scratch,
+        )
+    }
+
+    private fun queryVisibleNeighbors(
+        host: UnitMovementHost,
+        unit: MutableUnit,
+        spatialLayer: SpatialLayer,
+        queryRadius: Double,
+        scratch: Scratch,
+    ): Int = host.spatialIndex.queryFrozenTopKInto(
+        observer = unit,
+        layer = spatialLayer,
+        radius = queryRadius,
+        limit = TOP_K_NEIGHBORS,
+        includeBufferPadding = true,
+        outUnits = scratch.neighbors,
+        outDistSq = scratch.neighborsDistSq,
+    ) { candidate ->
+        if (candidate.hardRadius <= 0.0) return@queryFrozenTopKInto false
+        candidate.ownerPlayerId == unit.ownerPlayerId ||
+            host.isVisibleTo(unit.ownerPlayerId, candidate.position, candidate.nativeTransportPlacement)
+    }
+
+    private fun queryOpposingLookahead(
+        host: UnitMovementHost,
+        unit: MutableUnit,
+        spatialLayer: SpatialLayer,
+        opposingLookahead: Double,
+        maximumSpeed: Double,
+        desiredDir: Vec2,
+        hardRadius: Double,
+        scratch: Scratch,
+    ): Int {
+        if (!host.spatialIndex.mightHaveOpposingMover(spatialLayer, desiredDir.x, desiredDir.y, -0.25)) {
+            return 0
+        }
+        return host.spatialIndex.queryFrozenTopKInto(
+            observer = unit,
+            layer = spatialLayer,
+            radius = opposingLookahead,
+            limit = TOP_K_OPPOSING,
+            includeBufferPadding = false,
+            outUnits = scratch.opposing,
+            outDistSq = scratch.opposingDistSq,
+        ) { candidate ->
+            if (candidate.hardRadius <= 0.0 || !candidate.moving || candidate.speed <= 0.12 * maximumSpeed) {
+                return@queryFrozenTopKInto false
+            }
+            val spd = candidate.velSpeed
+            if (spd <= 1e-7 || (desiredDir.x * candidate.velX + desiredDir.y * candidate.velY) / spd >= -0.25) {
+                return@queryFrozenTopKInto false
+            }
+            val rx = candidate.position.x - unit.position.x
+            val ry = candidate.position.y - unit.position.y
+            val fwd = rx * desiredDir.x + ry * desiredDir.y
+            if (fwd < -hardRadius * 2.0) return@queryFrozenTopKInto false
+            candidate.ownerPlayerId == unit.ownerPlayerId ||
+                host.isVisibleTo(unit.ownerPlayerId, candidate.position, candidate.nativeTransportPlacement)
+        }
+    }
+
+    private fun computeOpposingRightShift(
+        ownPos: Position,
+        desiredDir: Vec2,
+        rightVec: Vec2,
+        hardRadius: Double,
+        opposingLookahead: Double,
+        corridorOpenness: Double,
+        maximumSpeed: Double,
+        ignoredContactUnitId: String?,
+        opposingBuf: Array<FrozenSpatialUnit?>,
+        opposingCount: Int,
+    ): Double {
+        var oppAccum = 0.0
+        for (i in 0 until opposingCount) {
+            val peer = checkNotNull(opposingBuf[i])
+            if (ignoredContactUnitId != null && peer.unitId == ignoredContactUnitId) continue
+            val relPos = Vec2(peer.position.x - ownPos.x, peer.position.y - ownPos.y)
+            val forwardProj = relPos.dot(desiredDir)
+            val lateralOffset = relPos.dot(rightVec)
+            val combinedHard = hardRadius + peer.hardRadius
+            val laneBand = max(combinedHard * 3.5, opposingLookahead * (0.28 + 0.30 * corridorOpenness))
+            if (forwardProj > -combinedHard && forwardProj < opposingLookahead &&
+                lateralOffset > -laneBand * 0.55 && lateralOffset < laneBand
+            ) {
+                val urgency = clamp(1.0 - max(0.0, forwardProj) / opposingLookahead, 0.25, 1.0)
+                val sideFactor = if (lateralOffset >= -combinedHard * 1.2) 1.0 else {
+                    clamp(1.0 - (-lateralOffset - combinedHard * 1.2) / max(1.0, laneBand * 0.55), 0.15, 1.0)
+                }
+                oppAccum += urgency * sideFactor
+            }
+        }
+        return if (oppAccum > 0.0) {
+            min(1.0, oppAccum / 1.5) * (0.65 + 0.55 * max(0.35, corridorOpenness)) * maximumSpeed
+        } else 0.0
+    }
+
+    private fun evaluateNeighborsIntoScratch(
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        movement: MovementProfile,
+        contactLayer: ContactLayer,
+        scale: KinematicScale,
+        desiredTarget: Position,
+        desiredDir: Vec2,
+        rightVec: Vec2,
+        distToTarget: Double,
+        desiredSpeed: Double,
+        maximumSpeed: Double,
+        finalPoint: Boolean,
+        delta: Double,
+        terminalDockingWeight: Double,
+        dockingFade: Double,
+        ignoredContactUnitId: String?,
+        engagementArcCenter: Position?,
+        engagementArcRadius: Double,
+        protectedClusterKey: Any?,
+        isAdmittedSingleLane: Boolean,
+        ownPos: Position,
+        ownVel: Vec2,
+        localClearanceWorld: Double,
+        leftWallClear: Double,
+        rightWallClear: Double,
+        selfHalfWidth: Double,
+        corridorOpenness: Double,
+        neighborCount: Int,
+        scratch: Scratch,
+    ) {
+        val neighborsBuf = scratch.neighbors
         val isRangedPursuer = engagementArcCenter != null && engagementArcRadius > scale.hardRadius * 4.0
 
         var sepX = 0.0
@@ -315,9 +514,8 @@ internal object LocomotionModule {
         var hasDirectImmovableContact = false
         var hasClosePushableBlocker = false
 
-        val dynamicLines = scratch.dynamicLines
         val dynamicPushable = scratch.dynamicPushable
-        dynamicLines.clear()
+        scratch.dynCount = 0
 
         // Pure geometric centroid of nearby stationary obstacles from step-start frozen snapshot (zero allocation,
         // zero mutable peer reads, zero upper-command state) so tangential symmetry-breaking always peels outward
@@ -352,8 +550,9 @@ internal object LocomotionModule {
 
             if (ignoredContactUnitId != null && peer.unitId == ignoredContactUnitId) continue
 
-            val relPos = Vec2(peer.position.x - ownPos.x, peer.position.y - ownPos.y)
-            val distSq = relPos.lengthSq()
+            val relX = peer.position.x - ownPos.x
+            val relY = peer.position.y - ownPos.y
+            val distSq = relX * relX + relY * relY
             val dist = sqrt(distSq)
             val combinedHard = scale.hardRadius + peer.hardRadius
             if (dist < combinedHard - 1e-4) {
@@ -363,8 +562,6 @@ internal object LocomotionModule {
                 scale.comfortSpacing + peer.hardRadius * 1.15,
                 scale.bufferRadius + peer.bufferRadius + 0.15 * min(scale.hardRadius, peer.hardRadius),
             )
-            val peerVel = frozenVelocity(peer)
-
             val peerAnchored = peer.anchored
             val peerMoving = !peerAnchored
             val maxInteractDist = if (peerAnchored) {
@@ -373,25 +570,29 @@ internal object LocomotionModule {
                 max(scale.perceptionRadius + peer.hardRadius, combinedComfort * 2.2)
             }
             if (dist > maxInteractDist) continue
+            val peerVx = peer.velX
+            val peerVy = peer.velY
+            val peerSpeed = peer.velSpeed
 
-            val fwdDot = relPos.dot(desiredDir)
-            val latSigned = relPos.dot(rightVec)
+            val fwdDot = relX * desiredDir.x + relY * desiredDir.y
+            val latSigned = relX * rightVec.x + relY * rightVec.y
             val latAbs = abs(latSigned)
             val peerHalfWidth = transverseHalfWidth(peer.collisionShape, peer.heading, rightVec)
             val sideBySideSpan = (selfHalfWidth + peerHalfWidth) * 2.0 + 4.0
-            val peerClearanceWorld = estimateTransverseClearanceWorld(terrain, peer.position, rightVec)
-            val pairCanPassSideBySide = min(localClearanceWorld, peerClearanceWorld) >= sideBySideSpan
+            scratch.pairSpanState = if (localClearanceWorld < sideBySideSpan) 1 else 0 // 0=lazy, 1=false, 2=true
 
-            val peerToGoal = hypot(peer.position.x - desiredTarget.x, peer.position.y - desiredTarget.y)
-            val peerVerySlow = peerAnchored || peerVel.length() < 0.05 * maximumSpeed
+            val ptgDx = peer.position.x - desiredTarget.x
+            val ptgDy = peer.position.y - desiredTarget.y
+            val peerToGoal = sqrt(ptgDx * ptgDx + ptgDy * ptgDy)
+            val peerVerySlow = peerAnchored || peerSpeed < 0.05 * maximumSpeed
 
             // Single-lane admitted vehicle: ignore waiting opposing traffic outside the mouth and push opposing
             // stragglers inside the lane per ADR-009 (even while they are being displaced backward!), while preserving
             // full 2D ORCA car-following behind same-lane codirectional front vehicles and all static terrain wall half-planes.
             if (isAdmittedSingleLane) {
-                val peerHeadingDir = Vec2.fromHeading(peer.heading, 1.0)
-                val peerOpposing = peerHeadingDir.dot(desiredDir) < 0.15 ||
-                    (peerMoving && peerVel.dot(desiredDir) < -0.10)
+                val pRad = Math.toRadians(peer.heading)
+                val peerOpposing = (sin(pRad) * desiredDir.x - cos(pRad) * desiredDir.y) < 0.15 ||
+                    (peerMoving && (peerVx * desiredDir.x + peerVy * desiredDir.y) < -0.10)
                 val skipPinnedAnchor = peerVerySlow &&
                     unit.hardContactLimitedTicks >= 18L &&
                     localClearanceWorld >= selfHalfWidth * 2.2
@@ -403,95 +604,62 @@ internal object LocomotionModule {
             }
 
             // Pure geometric cluster-perimeter vs isolated-contact classification (identical for single & group moves!):
-            // When approaching a multi-unit stationary cluster (`anchorCount >= 2`), an immovable anchored structure
-            // (`!peer.displaceableInContact`), or an open centroid neighborhood before contact (`!finalPoint && dist > 1.03*H`),
-            // glide around the outer perimeter with tight ORCA skin instead of ramming into the middle.
             val clusterPerimeterPeer = peerAnchored && !isRangedPursuer && (
                 !peer.displaceableInContact ||
                     anchorCount >= 2 ||
                     (!finalPoint && dist > combinedHard * 1.03 && distToTarget <= scale.hardRadius * 12.0)
                 )
 
-            // Pure kinematic ADR-009 single-lane & contact/push harmony (zero `passthrough`, zero command-identity checks):
-            if (!pairCanPassSideBySide) {
-                if (peerAnchored && fwdDot > 0.0 && latAbs < combinedHard &&
-                    (unit.hardContactLimitedTicks < 18L || localClearanceWorld < selfHalfWidth * 2.2)
-                ) {
-                    continue
-                }
-                if (corridorOpenness <= 0.05 &&
-                    fwdDot > 0.0 && latAbs < combinedHard * 1.25 &&
-                    peerMoving && peerVel.length() > EPS && abs(peerVel.normalized().dot(desiredDir)) < 0.35
-                ) {
-                    continue
-                }
-            }
-            if (peerAnchored && fwdDot > 0.0 && latAbs < combinedHard * 0.5 && dist < combinedHard * 3.0) {
-                val leftPos = Position(ownPos.x - rightVec.x * combinedHard * 1.15, ownPos.y - rightVec.y * combinedHard * 1.15)
-                val rightPos = Position(ownPos.x + rightVec.x * combinedHard * 1.15, ownPos.y + rightVec.y * combinedHard * 1.15)
-                val leftCol = floor(leftPos.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
-                val leftRow = floor(leftPos.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
-                val rightCol = floor(rightPos.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
-                val rightRow = floor(rightPos.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
-                if (terrain.isBlocked(leftCol, leftRow) && terrain.isBlocked(rightCol, rightRow)) {
-                    continue
-                }
-            }
-            val peerMass = peer.mass
-            val heavyDominance = selfMass != null && peerMass != null &&
-                (selfMass >= peerMass * 8.0 || (dist <= combinedHard * 1.05 && selfMass >= peerMass * 3.0))
-            if (heavyDominance && fwdDot > 0.0 && latAbs < combinedHard * 0.45 &&
-                canPushMassFrozen(selfMass, peerMass) && peer.displaceableInContact
-            ) {
+            val deferAction = shouldDeferNeighborToContact(
+                unit = unit,
+                terrain = terrain,
+                contactLayer = contactLayer,
+                scale = scale,
+                selfMass = selfMass,
+                peer = peer,
+                peerAnchored = peerAnchored,
+                peerMoving = peerMoving,
+                peerVerySlow = peerVerySlow,
+                peerVx = peerVx,
+                peerVy = peerVy,
+                peerSpeed = peerSpeed,
+                desiredDir = desiredDir,
+                rightVec = rightVec,
+                ownPos = ownPos,
+                dist = dist,
+                distToTarget = distToTarget,
+                peerToGoal = peerToGoal,
+                combinedHard = combinedHard,
+                fwdDot = fwdDot,
+                latAbs = latAbs,
+                selfHalfWidth = selfHalfWidth,
+                localClearanceWorld = localClearanceWorld,
+                corridorOpenness = corridorOpenness,
+                sideBySideSpan = sideBySideSpan,
+                scratch = scratch,
+                clusterPerimeterPeer = clusterPerimeterPeer,
+                isRangedPursuer = isRangedPursuer,
+                finalPoint = finalPoint,
+                terminalDockingWeight = terminalDockingWeight,
+                neighborCount = neighborCount,
+            )
+            if (deferAction != 0) {
+                if (deferAction == 2) hasDirectImmovableContact = true
                 continue
-            }
-            if (peerAnchored && contactLayer == ContactLayer.SUBMERGED && neighborCount == 1 &&
-                fwdDot > 0.0 && latAbs < combinedHard * 0.25 &&
-                canPushMassFrozen(selfMass, peerMass) && peer.displaceableInContact
-            ) {
-                continue
-            }
-            if (peerVerySlow && fwdDot > 0.0 && latAbs <= scale.hardRadius * 0.12 && peer.hasAttachments) {
-                continue
-            }
-            // Direct bow-on contact (already touching at dist <= 1.005 * combinedHard): defer to ADR-009
-            // `UnitContact` so mass-weighted pushing, contact-blocked route repair, and planning rebases fire cleanly
-            // without synthetic ORCA swerves around already-touching hulls.
-            if (peerAnchored && dist <= combinedHard * 1.005 && fwdDot > 0.0 && latAbs < combinedHard * 0.35 && !isRangedPursuer) {
-                if (!peer.displaceableInContact) {
-                    hasDirectImmovableContact = true
-                }
-                continue
-            }
-            if (!clusterPerimeterPeer) {
-                if (finalPoint && peerVerySlow && !isRangedPursuer && peerToGoal <= combinedHard + 6.0) {
-                    continue
-                }
-                if (peerAnchored && dist <= combinedHard * 1.03 && fwdDot > 0.0 && latAbs < combinedHard * 0.35 &&
-                    !isRangedPursuer &&
-                    (unit.hardContactLimitedTicks < 18L || localClearanceWorld < selfHalfWidth * 2.2)
-                ) {
-                    continue
-                }
-            }
-            if (finalPoint && peerAnchored && !isRangedPursuer && peerToGoal < combinedHard * 0.98 && dist <= combinedHard * 2.2 &&
-                (!clusterPerimeterPeer || terminalDockingWeight > 0.05)
-            ) {
-                continue
-            }
-            if (terminalDockingWeight > 0.05 && peerAnchored && distToTarget <= scale.hardRadius * 3.0) {
-                if (fwdDot <= 0.0 || latAbs > combinedHard * 0.98) {
-                    continue
-                }
             }
 
             val ownWeight = computeResponsibility(selfMass, scale.hardRadius, movement, peer, peerAnchored)
 
             // --- Boids soft separation ---
-            // Keep lateral separation active whenever the pair can pass side-by-side (`pairOpenness > 0`).
-            val pairOpenness = if (pairCanPassSideBySide) max(0.35, corridorOpenness) else corridorOpenness
-            val sameFlow = peerMoving && peerVel.length() > 0.1 * maximumSpeed &&
-                peerVel.normalized().dot(desiredDir) > 0.35
+            val pairOpenness = if (corridorOpenness >= 0.35) {
+                corridorOpenness
+            } else if (resolvePairCanPass(scratch, terrain, peer.position, rightVec, sideBySideSpan)) {
+                0.35
+            } else {
+                corridorOpenness
+            }
+            val sameFlow = peerMoving && peerSpeed > 0.1 * maximumSpeed &&
+                ((peerVx * desiredDir.x + peerVy * desiredDir.y) / peerSpeed) > 0.35
             val baseApproachFade = when {
                 clusterPerimeterPeer && terminalDockingWeight > 0.05 -> 0.0
                 clusterPerimeterPeer -> 0.35 * dockingFade
@@ -505,34 +673,35 @@ internal object LocomotionModule {
                 peerAnchored -> combinedComfort * (1.10 + 0.25 * pairOpenness)
                 else -> combinedComfort * (1.20 + 0.40 * pairOpenness)
             }
-            // Pure geometric docking bound: if `desiredTarget` sits adjacent to a stationary peer (e.g. a
-            // nearest-reachable tangent stance or bay), soft repulsion must never push the mover farther away
-            // from `peer` than `desiredTarget` itself!
             if (finalPoint && peerAnchored && !isRangedPursuer) {
                 softRange = min(softRange, max(combinedHard * 1.005, peerToGoal - 0.5))
             }
 
             if (dist < softRange && baseApproachFade > 0.02) {
-                val away = if (dist > EPS) {
-                    Vec2(-relPos.x / dist, -relPos.y / dist)
+                val awayX: Double
+                val awayY: Double
+                if (dist > EPS) {
+                    awayX = -relX / dist
+                    awayY = -relY / dist
                 } else {
                     val angle = if (unit.updateKey < peer.updateKey) 0.0 else PI
-                    Vec2(cos(angle), sin(angle))
+                    awayX = cos(angle)
+                    awayY = sin(angle)
                 }
                 val closeness = clamp((softRange - dist) / max(1.0, softRange - combinedHard * 0.7), 0.0, 1.25)
-                val along = away.dot(desiredDir)
-                val lateral = away.dot(rightVec)
+                val along = awayX * desiredDir.x + awayY * desiredDir.y
+                val lateral = awayX * rightVec.x + awayY * rightVec.y
 
                 val lateralGain = if (clusterPerimeterPeer) max(0.08 + 0.92 * corridorOpenness, pairOpenness) else pairOpenness
                 val flowScale = if (sameFlow) 0.55 + 0.12 * pairOpenness else 1.0
                 val sepGain = (0.38 + 0.42 * ownWeight) * flowScale * closeness * closeness * maximumSpeed * baseApproachFade
                 val alongWeight = if (sameFlow) 0.25 else 0.50
-                // Never push backward away from a stationary cluster perimeter or nearby final point;
-                // convert head-on stationary contact into smooth tangential deflection instead.
                 val effAlong = if ((clusterPerimeterPeer || (peerAnchored && finalPoint && !isRangedPursuer && distToTarget < scale.hardRadius * 6.0)) && along < 0.0) {
                     0.0
                 } else along * alongWeight
-                val rawEffLateral = if (clusterPerimeterPeer && dist >= combinedHard && abs(lateral) < 0.25 && pairCanPassSideBySide) {
+                val rawEffLateral = if (clusterPerimeterPeer && dist >= combinedHard && abs(lateral) < 0.25 &&
+                    resolvePairCanPass(scratch, terrain, peer.position, rightVec, sideBySideSpan)
+                ) {
                     clusterOutwardSign * 0.75
                 } else lateral
                 val effLateral = when {
@@ -540,24 +709,19 @@ internal object LocomotionModule {
                     rawEffLateral > 0.0 && rightWallClear < selfHalfWidth * 2.1 -> 0.0
                     else -> rawEffLateral
                 }
-                val pushX = desiredDir.x * effAlong + rightVec.x * (effLateral * lateralGain)
-                val pushY = desiredDir.y * effAlong + rightVec.y * (effLateral * lateralGain)
-                sepX += pushX * sepGain
-                sepY += pushY * sepGain
+                sepX += (desiredDir.x * effAlong + rightVec.x * (effLateral * lateralGain)) * sepGain
+                sepY += (desiredDir.y * effAlong + rightVec.y * (effLateral * lateralGain)) * sepGain
             }
 
             // --- Preemptive right-hand bias for head-on / opposing traffic ---
-            // Matches the kinematic `dockingFade < 0.25` deep-docking band used by `opposingCount` and
-            // `overtakeShift`: preserves full right-hand lane shift during en-route crossings and outer
-            // cluster gliding (`dockingFade >= 0.25`), while smoothly damping swirl to 0 under deep docking.
             val rightShiftFade = if (dockingFade < 0.25) clamp(dockingFade / 0.25, 0.0, 1.0) else 1.0
             if (peerMoving && !isAdmittedSingleLane && rightShiftFade > 0.05) {
-                val peerSpeed = peerVel.length()
                 if (peerSpeed > 0.10 * maximumSpeed) {
-                    val peerDir = Vec2(peerVel.x / peerSpeed, peerVel.y / peerSpeed)
-                    val headOnCos = desiredDir.dot(peerDir)
+                    val headOnCos = (peerVx * desiredDir.x + peerVy * desiredDir.y) / peerSpeed
                     val headOnRange = max(combinedHard * 11.0, (maximumSpeed + peerSpeed) * scale.timeHorizon * 1.45)
-                    if (headOnCos < -0.20 && fwdDot > -combinedHard * 0.8 && fwdDot < headOnRange && pairCanPassSideBySide) {
+                    if (headOnCos < -0.20 && fwdDot > -combinedHard * 0.8 && fwdDot < headOnRange &&
+                        resolvePairCanPass(scratch, terrain, peer.position, rightVec, sideBySideSpan)
+                    ) {
                         val laneMargin = combinedComfort * (1.85 + 2.15 * pairOpenness)
                         if (latSigned > -laneMargin && latSigned < laneMargin * 1.15) {
                             val urgency = clamp(1.0 - max(0.0, fwdDot) / headOnRange, 0.25, 1.0)
@@ -571,114 +735,51 @@ internal object LocomotionModule {
                 }
             }
 
-            // --- Wide-road real-time 0-stop oblique overtaking (including same-group slower vehicles!) ---
-            if (pairCanPassSideBySide && !clusterPerimeterPeer && dockingFade > 0.25) {
-                val peerAlongSpeed = peerVel.dot(desiredDir)
-                val closingRate = desiredSpeed - peerAlongSpeed
-                val wantsPass = peerVerySlow ||
-                    (sameFlow && closingRate > max(0.12 * maximumSpeed, 0.18 * desiredSpeed))
-                val overtakeHorizon = min(distToTarget, max(combinedHard * 5.0, max(0.1, closingRate) * scale.timeHorizon * 1.65))
-                val overtakeLatLimit = if (peerVerySlow) combinedHard * 1.15 else (selfHalfWidth + peerHalfWidth) * 1.35 + 4.0
-                if (wantsPass && fwdDot > 0.0 && fwdDot < overtakeHorizon &&
-                    latAbs < overtakeLatLimit
-                ) {
-                    val passClear = peerHalfWidth + selfHalfWidth + max(4.0, selfHalfWidth * 0.45)
-                    val rightProbe = Position(
-                        peer.position.x + rightVec.x * passClear,
-                        peer.position.y + rightVec.y * passClear,
-                    )
-                    val leftProbe = Position(
-                        peer.position.x - rightVec.x * passClear,
-                        peer.position.y - rightVec.y * passClear,
-                    )
-                    val checkR = max(0.0, scale.terrainRadius * 0.92)
-                    val rightTerrainClear = isPointClearOnTerrain(terrain, rightProbe, checkR) &&
-                        PlanningSegmentClearance.allowsClearance(terrain, ownPos, rightProbe, checkR)
-                    val leftTerrainClear = isPointClearOnTerrain(terrain, leftProbe, checkR) &&
-                        PlanningSegmentClearance.allowsClearance(terrain, ownPos, leftProbe, checkR)
-                    val rightFree = if (isRangedPursuer) {
-                        rightTerrainClear && isProbeClearOfAnchoredPeers(
-                            rightProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
-                        )
-                    } else rightTerrainClear
-                    val leftFree = if (isRangedPursuer) {
-                        leftTerrainClear && isProbeClearOfAnchoredPeers(
-                            leftProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
-                        )
-                    } else leftTerrainClear
-                    if (rightTerrainClear || leftTerrainClear) {
-                        val sideSign = when {
-                            rightFree && !leftFree -> 1.0
-                            leftFree && !rightFree -> -1.0
-                            !rightFree && !leftFree -> when {
-                                rightTerrainClear && !leftTerrainClear -> 1.0
-                                leftTerrainClear && !rightTerrainClear -> -1.0
-                                else -> clusterOutwardSign
-                            }
-                            latSigned > selfHalfWidth * 0.25 -> -1.0 // peer is on our right -> pass on left
-                            latSigned < -selfHalfWidth * 0.25 -> 1.0 // peer is on our left -> pass on right
-                            else -> if ((stableTieHash(unit.updateKey) and 1L) == 0L) -1.0 else 1.0
-                        }
-                        val urgency = clamp(1.0 - max(0.0, fwdDot) / max(1.0, overtakeHorizon), 0.30, 1.0)
-                        val overlapAlign = clamp(1.0 - latAbs / max(1.0, overtakeLatLimit), 0.25, 1.0)
-                        val shiftMag = (0.58 + 0.37 * pairOpenness) * urgency * overlapAlign * desiredSpeed
-                        overtakeShift += sideSign * shiftMag
-                    }
-                }
-            }
-
-            // --- Combat ranged-arc natural flanking spread ---
-            if (engagementArcCenter != null && engagementArcRadius > scale.hardRadius * 4.0 &&
-                peer.ownerPlayerId == unit.ownerPlayerId
-            ) {
-                val distToEnemy = hypot(engagementArcCenter.x - ownPos.x, engagementArcCenter.y - ownPos.y)
-                if (distToEnemy > engagementArcRadius * 0.95 && distToEnemy < engagementArcRadius * 2.4) {
-                    if (fwdDot > 0.0 && fwdDot < combinedComfort * 3.0 && latAbs < combinedComfort * 1.45 &&
-                        (peerAnchored || peerVel.length() < 0.25 * maximumSpeed)
-                    ) {
-                        val passClear = peerHalfWidth + selfHalfWidth + max(4.0, selfHalfWidth * 0.45)
-                        val rightProbe = Position(
-                            peer.position.x + rightVec.x * passClear,
-                            peer.position.y + rightVec.y * passClear,
-                        )
-                        val leftProbe = Position(
-                            peer.position.x - rightVec.x * passClear,
-                            peer.position.y - rightVec.y * passClear,
-                        )
-                        val checkR = max(0.0, scale.terrainRadius * 0.92)
-                        val rightTerrainClear = isPointClearOnTerrain(terrain, rightProbe, checkR)
-                        val leftTerrainClear = isPointClearOnTerrain(terrain, leftProbe, checkR)
-                        val rightFree = rightTerrainClear && isProbeClearOfAnchoredPeers(
-                            rightProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
-                        )
-                        val leftFree = leftTerrainClear && isProbeClearOfAnchoredPeers(
-                            leftProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
-                        )
-                        val fanSign = when {
-                            rightFree && !leftFree -> 1.0
-                            leftFree && !rightFree -> -1.0
-                            !rightFree && !leftFree -> when {
-                                rightTerrainClear && !leftTerrainClear -> 1.0
-                                leftTerrainClear && !rightTerrainClear -> -1.0
-                                else -> clusterOutwardSign
-                            }
-                            latSigned > scale.hardRadius * 0.2 -> -1.0
-                            latSigned < -scale.hardRadius * 0.2 -> 1.0
-                            else -> if ((stableTieHash(unit.updateKey) and 1L) == 0L) -1.0 else 1.0
-                        }
-                        val arcPush = fanSign * (0.78 * desiredSpeed) * clamp(1.0 - fwdDot / (combinedComfort * 3.0), 0.35, 1.0)
-                        overtakeShift += arcPush
-                    }
-                }
-            }
+            // --- Wide-road overtaking & ranged-arc flanking ---
+            overtakeShift += computeOvertakeAndFlankShift(
+                unit = unit,
+                terrain = terrain,
+                scale = scale,
+                ownPos = ownPos,
+                peer = peer,
+                peerVx = peerVx,
+                peerVy = peerVy,
+                peerSpeed = peerSpeed,
+                peerAnchored = peerAnchored,
+                peerVerySlow = peerVerySlow,
+                sameFlow = sameFlow,
+                desiredDir = desiredDir,
+                rightVec = rightVec,
+                desiredSpeed = desiredSpeed,
+                maximumSpeed = maximumSpeed,
+                distToTarget = distToTarget,
+                combinedHard = combinedHard,
+                combinedComfort = combinedComfort,
+                fwdDot = fwdDot,
+                latSigned = latSigned,
+                latAbs = latAbs,
+                selfHalfWidth = selfHalfWidth,
+                peerHalfWidth = peerHalfWidth,
+                sideBySideSpan = sideBySideSpan,
+                scratch = scratch,
+                pairOpenness = pairOpenness,
+                clusterPerimeterPeer = clusterPerimeterPeer,
+                dockingFade = dockingFade,
+                isRangedPursuer = isRangedPursuer,
+                clusterOutwardSign = clusterOutwardSign,
+                engagementArcCenter = engagementArcCenter,
+                engagementArcRadius = engagementArcRadius,
+                neighborsBuf = neighborsBuf,
+                neighborCount = neighborCount,
+                ignoredContactUnitId = ignoredContactUnitId,
+            )
 
             // --- 3. Full 2D ORCA half-plane for this peer ---
             if (terminalDockingWeight > 0.5 && dist > combinedHard * 1.35) continue
             if (clusterPerimeterPeer && dist > combinedHard * 1.85) continue
-            // Inside a true 1-tile pinch where side-by-side passing is impossible, skip ORCA lateral deflection
-            // for a peer clearing perpendicular off the centerline so the unit tracks the corridor axis cleanly.
-            if (!pairCanPassSideBySide && corridorOpenness <= 0.05 && latAbs < combinedHard * 1.25 &&
-                peerMoving && peerVel.length() > EPS && abs(peerVel.normalized().dot(desiredDir)) < 0.35
+            if (corridorOpenness <= 0.05 && latAbs < combinedHard * 1.25 &&
+                peerMoving && peerSpeed > EPS && abs((peerVx * desiredDir.x + peerVy * desiredDir.y) / peerSpeed) < 0.35 &&
+                !resolvePairCanPass(scratch, terrain, peer.position, rightVec, sideBySideSpan)
             ) {
                 continue
             }
@@ -690,30 +791,40 @@ internal object LocomotionModule {
                 finalPoint && distToTarget < scale.hardRadius * 4.0 -> 1.01
                 else -> 1.05
             }
-            val orcaPlane = buildDynamicOrcaPlane(
-                relPos = relPos,
-                ownVel = ownVel,
-                peerVel = peerVel,
-                combinedRadius = combinedHard * skinFactor,
-                timeHorizon = when {
-                    clusterPerimeterPeer || terminalDockingWeight > 0.25 -> scale.timeHorizon * 0.45
-                    peerAnchored -> scale.timeHorizon * 0.65
-                    peerMoving && peerVel.length() > EPS && peerVel.normalized().dot(desiredDir) < -0.2 -> scale.timeHorizon * 1.25
-                    else -> scale.timeHorizon * 0.85
-                },
-                delta = delta,
-                responsibility = ownWeight,
-                desiredDir = desiredDir,
-                peerMoving = peerMoving,
-                tieBreakSign = if (unit.updateKey < peer.updateKey) 1.0 else -1.0,
-            )
-            if (orcaPlane != null) {
+            val lineIdx = scratch.dynCount
+            val addedOrca = if (lineIdx < scratch.dynPx.size) {
+                buildDynamicOrcaPlaneIntoPrim(
+                    relX = relX,
+                    relY = relY,
+                    ownVx = ownVel.x,
+                    ownVy = ownVel.y,
+                    peerVx = peerVx,
+                    peerVy = peerVy,
+                    combinedRadius = combinedHard * skinFactor,
+                    timeHorizon = when {
+                        clusterPerimeterPeer || terminalDockingWeight > 0.25 -> scale.timeHorizon * 0.45
+                        peerAnchored -> scale.timeHorizon * 0.65
+                        peerMoving && peerSpeed > EPS &&
+                            (peerVx * desiredDir.x + peerVy * desiredDir.y) / peerSpeed < -0.2 -> scale.timeHorizon * 1.25
+                        else -> scale.timeHorizon * 0.85
+                    },
+                    delta = delta,
+                    responsibility = ownWeight,
+                    desDirX = desiredDir.x,
+                    desDirY = desiredDir.y,
+                    peerMoving = peerMoving,
+                    tieBreakSign = if (unit.updateKey < peer.updateKey) 1.0 else -1.0,
+                    outIdx = lineIdx,
+                    scratch = scratch,
+                )
+            } else false
+            if (addedOrca) {
                 val sameClusterParked = protectedClusterKey != null &&
                     peer.parkedClusterKey === protectedClusterKey
                 val canPushPeerBase = peerAnchored &&
                     peer.displaceableInContact &&
                     !sameClusterParked &&
-                    canPushMassFrozen(selfMass, peerMass)
+                    canPushMassFrozen(selfMass, peer.mass)
                 val peerWallPinned = if (canPushPeerBase) {
                     val probeDist = peer.hardRadius + 6.0
                     !isPointClearOnTerrain(
@@ -724,8 +835,7 @@ internal object LocomotionModule {
                     )
                 } else false
                 val isPushableStationary = canPushPeerBase && !peerWallPinned
-                val lineIdx = dynamicLines.size
-                dynamicLines.add(orcaPlane)
+                scratch.dynCount = lineIdx + 1
                 if (lineIdx < dynamicPushable.size) dynamicPushable[lineIdx] = isPushableStationary
                 if (isPushableStationary && dist <= combinedHard * 1.45 && fwdDot > -0.25) {
                     hasClosePushableBlocker = true
@@ -734,42 +844,348 @@ internal object LocomotionModule {
             }
         }
 
-        // Apply opposing-flow right-hand lane shift from bounded opposing query when corridor allows two lanes.
-        if (!isAdmittedSingleLane && opposingCount > 0 && localClearanceWorld >= selfHalfWidth * 3.6) {
-            var oppAccum = 0.0
-            for (i in 0 until opposingCount) {
-                val peer = checkNotNull(opposingBuf[i])
-                if (ignoredContactUnitId != null && peer.unitId == ignoredContactUnitId) continue
-                val relPos = Vec2(peer.position.x - ownPos.x, peer.position.y - ownPos.y)
-                val forwardProj = relPos.dot(desiredDir)
-                val lateralOffset = relPos.dot(rightVec)
-                val combinedHard = scale.hardRadius + peer.hardRadius
-                val laneBand = max(combinedHard * 3.5, opposingLookahead * (0.28 + 0.30 * corridorOpenness))
-                if (forwardProj > -combinedHard && forwardProj < opposingLookahead &&
-                    lateralOffset > -laneBand * 0.55 && lateralOffset < laneBand
-                ) {
-                    val urgency = clamp(1.0 - max(0.0, forwardProj) / opposingLookahead, 0.25, 1.0)
-                    val sideFactor = if (lateralOffset >= -combinedHard * 1.2) 1.0 else {
-                        clamp(1.0 - (-lateralOffset - combinedHard * 1.2) / max(1.0, laneBand * 0.55), 0.15, 1.0)
-                    }
-                    oppAccum += urgency * sideFactor
-                }
+        scratch.sepX = sepX
+        scratch.sepY = sepY
+        scratch.rightShift = rightShift
+        scratch.overtakeShift = overtakeShift
+        scratch.activeDynamicConstraints = activeDynamicConstraints
+        scratch.hasExistingHardOverlap = hasExistingHardOverlap
+        scratch.hasDirectImmovableContact = hasDirectImmovableContact
+        scratch.hasClosePushableBlocker = hasClosePushableBlocker
+        scratch.clusterOutwardSign = clusterOutwardSign
+    }
+
+    private fun resolvePairCanPass(
+        scratch: Scratch,
+        terrain: PlanningTerrain,
+        peerPos: Position,
+        rightVec: Vec2,
+        sideBySideSpan: Double,
+    ): Boolean {
+        val s = scratch.pairSpanState
+        if (s != 0) return s == 2
+        val ok = peerHasTransverseSpan(terrain, peerPos, rightVec, sideBySideSpan)
+        scratch.pairSpanState = if (ok) 2 else 1
+        return ok
+    }
+
+    private fun peerHasTransverseSpan(
+        terrain: PlanningTerrain,
+        peerPos: Position,
+        rightVec: Vec2,
+        sideBySideSpan: Double,
+    ): Boolean {
+        val tw = terrain.tileWidth.toDouble()
+        val th = terrain.tileHeight.toDouble()
+        val minTile = min(tw, th)
+        val halfSpan = sideBySideSpan * 0.5
+        val neededRings = kotlin.math.ceil(halfSpan / minTile).toInt() + 2
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
+        val pCol = floor(peerPos.x / tw).toInt().coerceIn(0, w - 1)
+        val pRow = floor(peerPos.y / th).toInt().coerceIn(0, h - 1)
+        val margin = halfSpan + minTile
+        val worldW = w * tw
+        val worldH = h * th
+        val cf = terrain.clearanceField()
+        val isSub1 = cf.width == w && cf.height == h
+        val centerRings = if (isSub1) cf.clearanceRingsAt(pRow * w + pCol) else terrain.clearanceRings(pCol, pRow)
+        if (centerRings >= neededRings &&
+            peerPos.x > margin && peerPos.x < worldW - margin &&
+            peerPos.y > margin && peerPos.y < worldH - margin
+        ) {
+            return true
+        }
+        // Keep `capReach` an exact multiple of `step = minTile * 0.5` so walls near `sideBySideSpan`
+        // are never stepped past by `estimateRayClearDistanceXY`.
+        val capReach = minTile * 5.0
+        val fwdX = rightVec.y
+        val fwdY = -rightVec.x
+        val bx = peerPos.x - fwdX * minTile
+        val by = peerPos.y - fwdY * minTile
+        val lHere = estimateSideClearAtXY(terrain, cf, isSub1, peerPos.x, peerPos.y, rightVec, -1.0, capReach)
+        val rHere = estimateSideClearAtXY(terrain, cf, isSub1, peerPos.x, peerPos.y, rightVec, 1.0, capReach)
+        val lBehind = estimateSideClearAtXY(terrain, cf, isSub1, bx, by, rightVec, -1.0, capReach)
+        val rBehind = estimateSideClearAtXY(terrain, cf, isSub1, bx, by, rightVec, 1.0, capReach)
+        if (min(lHere, lBehind) + min(rHere, rBehind) >= sideBySideSpan) return true
+        if (max(lHere, lBehind) + max(rHere, rBehind) < sideBySideSpan) return false
+        val ax = peerPos.x + fwdX * minTile
+        val ay = peerPos.y + fwdY * minTile
+        val lAhead = estimateSideClearAtXY(terrain, cf, isSub1, ax, ay, rightVec, -1.0, capReach)
+        val rAhead = estimateSideClearAtXY(terrain, cf, isSub1, ax, ay, rightVec, 1.0, capReach)
+        val medLeft = max(min(lBehind, lHere), min(max(lBehind, lHere), lAhead))
+        val medRight = max(min(rBehind, rHere), min(max(rBehind, rHere), rAhead))
+        return medLeft + medRight >= sideBySideSpan
+    }
+
+    /** Returns 0 = keep peer in ORCA/Boids, 1 = defer to UnitContact, 2 = defer + mark direct immovable contact. */
+    private fun shouldDeferNeighborToContact(
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        contactLayer: ContactLayer,
+        scale: KinematicScale,
+        selfMass: Double?,
+        peer: FrozenSpatialUnit,
+        peerAnchored: Boolean,
+        peerMoving: Boolean,
+        peerVerySlow: Boolean,
+        peerVx: Double,
+        peerVy: Double,
+        peerSpeed: Double,
+        desiredDir: Vec2,
+        rightVec: Vec2,
+        ownPos: Position,
+        dist: Double,
+        distToTarget: Double,
+        peerToGoal: Double,
+        combinedHard: Double,
+        fwdDot: Double,
+        latAbs: Double,
+        selfHalfWidth: Double,
+        localClearanceWorld: Double,
+        corridorOpenness: Double,
+        sideBySideSpan: Double,
+        scratch: Scratch,
+        clusterPerimeterPeer: Boolean,
+        isRangedPursuer: Boolean,
+        finalPoint: Boolean,
+        terminalDockingWeight: Double,
+        neighborCount: Int,
+    ): Int {
+        if (peerAnchored && fwdDot > 0.0 && latAbs < combinedHard &&
+            (unit.hardContactLimitedTicks < 18L || localClearanceWorld < selfHalfWidth * 2.2) &&
+            !resolvePairCanPass(scratch, terrain, peer.position, rightVec, sideBySideSpan)
+        ) {
+            return 1
+        }
+        if (corridorOpenness <= 0.05 &&
+            fwdDot > 0.0 && latAbs < combinedHard * 1.25 &&
+            peerMoving && peerSpeed > EPS && abs((peerVx * desiredDir.x + peerVy * desiredDir.y) / peerSpeed) < 0.35 &&
+            !resolvePairCanPass(scratch, terrain, peer.position, rightVec, sideBySideSpan)
+        ) {
+            return 1
+        }
+        if (peerAnchored && fwdDot > 0.0 && latAbs < combinedHard * 0.5 && dist < combinedHard * 3.0) {
+            val leftCol = floor((ownPos.x - rightVec.x * combinedHard * 1.15) / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
+            val leftRow = floor((ownPos.y - rightVec.y * combinedHard * 1.15) / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
+            val rightCol = floor((ownPos.x + rightVec.x * combinedHard * 1.15) / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
+            val rightRow = floor((ownPos.y + rightVec.y * combinedHard * 1.15) / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
+            if (terrain.isBlocked(leftCol, leftRow) && terrain.isBlocked(rightCol, rightRow)) {
+                return 1
             }
-            if (oppAccum > 0.0) {
-                val scaledOpp = min(1.0, oppAccum / 1.5) * (0.65 + 0.55 * max(0.35, corridorOpenness)) * maximumSpeed
-                rightShift = max(rightShift, scaledOpp)
+        }
+        val peerMass = peer.mass
+        val heavyDominance = selfMass != null && peerMass != null &&
+            (selfMass >= peerMass * 8.0 || (dist <= combinedHard * 1.05 && selfMass >= peerMass * 3.0))
+        if (heavyDominance && fwdDot > 0.0 && latAbs < combinedHard * 0.45 &&
+            canPushMassFrozen(selfMass, peerMass) && peer.displaceableInContact
+        ) {
+            return 1
+        }
+        if (peerAnchored && contactLayer == ContactLayer.SUBMERGED && neighborCount == 1 &&
+            fwdDot > 0.0 && latAbs < combinedHard * 0.25 &&
+            canPushMassFrozen(selfMass, peerMass) && peer.displaceableInContact
+        ) {
+            return 1
+        }
+        if (peerVerySlow && fwdDot > 0.0 && latAbs <= scale.hardRadius * 0.12 && peer.hasAttachments) {
+            return 1
+        }
+        // Direct bow-on contact (already touching at dist <= 1.005 * combinedHard): defer to ADR-009 UnitContact.
+        if (peerAnchored && dist <= combinedHard * 1.005 && fwdDot > 0.0 && latAbs < combinedHard * 0.35 && !isRangedPursuer) {
+            return if (!peer.displaceableInContact) 2 else 1
+        }
+        if (!clusterPerimeterPeer) {
+            if (finalPoint && peerVerySlow && !isRangedPursuer && peerToGoal <= combinedHard + 6.0) {
+                return 1
+            }
+            if (peerAnchored && dist <= combinedHard * 1.03 && fwdDot > 0.0 && latAbs < combinedHard * 0.35 &&
+                !isRangedPursuer &&
+                (unit.hardContactLimitedTicks < 18L || localClearanceWorld < selfHalfWidth * 2.2)
+            ) {
+                return 1
+            }
+        }
+        if (finalPoint && peerAnchored && !isRangedPursuer && peerToGoal < combinedHard * 0.98 && dist <= combinedHard * 2.2 &&
+            (!clusterPerimeterPeer || terminalDockingWeight > 0.05)
+        ) {
+            return 1
+        }
+        if (terminalDockingWeight > 0.05 && peerAnchored && distToTarget <= scale.hardRadius * 3.0) {
+            if (fwdDot <= 0.0 || latAbs > combinedHard * 0.98) {
+                return 1
+            }
+        }
+        return 0
+    }
+
+    private fun computeOvertakeAndFlankShift(
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        scale: KinematicScale,
+        ownPos: Position,
+        peer: FrozenSpatialUnit,
+        peerVx: Double,
+        peerVy: Double,
+        peerSpeed: Double,
+        peerAnchored: Boolean,
+        peerVerySlow: Boolean,
+        sameFlow: Boolean,
+        desiredDir: Vec2,
+        rightVec: Vec2,
+        desiredSpeed: Double,
+        maximumSpeed: Double,
+        distToTarget: Double,
+        combinedHard: Double,
+        combinedComfort: Double,
+        fwdDot: Double,
+        latSigned: Double,
+        latAbs: Double,
+        selfHalfWidth: Double,
+        peerHalfWidth: Double,
+        sideBySideSpan: Double,
+        scratch: Scratch,
+        pairOpenness: Double,
+        clusterPerimeterPeer: Boolean,
+        dockingFade: Double,
+        isRangedPursuer: Boolean,
+        clusterOutwardSign: Double,
+        engagementArcCenter: Position?,
+        engagementArcRadius: Double,
+        neighborsBuf: Array<FrozenSpatialUnit?>,
+        neighborCount: Int,
+        ignoredContactUnitId: String?,
+    ): Double {
+        var shift = 0.0
+        if (!clusterPerimeterPeer && dockingFade > 0.25) {
+            val peerAlongSpeed = peerVx * desiredDir.x + peerVy * desiredDir.y
+            val closingRate = desiredSpeed - peerAlongSpeed
+            val wantsPass = peerVerySlow ||
+                (sameFlow && closingRate > max(0.12 * maximumSpeed, 0.18 * desiredSpeed))
+            val overtakeHorizon = min(distToTarget, max(combinedHard * 5.0, max(0.1, closingRate) * scale.timeHorizon * 1.65))
+            val overtakeLatLimit = if (peerVerySlow) combinedHard * 1.15 else (selfHalfWidth + peerHalfWidth) * 1.35 + 4.0
+            if (wantsPass && fwdDot > 0.0 && fwdDot < overtakeHorizon && latAbs < overtakeLatLimit &&
+                resolvePairCanPass(scratch, terrain, peer.position, rightVec, sideBySideSpan)
+            ) {
+                val passClear = peerHalfWidth + selfHalfWidth + max(4.0, selfHalfWidth * 0.45)
+                val rightProbe = Position(peer.position.x + rightVec.x * passClear, peer.position.y + rightVec.y * passClear)
+                val leftProbe = Position(peer.position.x - rightVec.x * passClear, peer.position.y - rightVec.y * passClear)
+                val checkR = max(0.0, scale.terrainRadius * 0.92)
+                val rightTerrainClear = isPointClearOnTerrain(terrain, rightProbe, checkR) &&
+                    PlanningSegmentClearance.allowsClearance(terrain, ownPos, rightProbe, checkR)
+                val leftTerrainClear = isPointClearOnTerrain(terrain, leftProbe, checkR) &&
+                    PlanningSegmentClearance.allowsClearance(terrain, ownPos, leftProbe, checkR)
+                val rightFree = if (isRangedPursuer) {
+                    rightTerrainClear && isProbeClearOfAnchoredPeers(
+                        rightProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
+                    )
+                } else rightTerrainClear
+                val leftFree = if (isRangedPursuer) {
+                    leftTerrainClear && isProbeClearOfAnchoredPeers(
+                        leftProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
+                    )
+                } else leftTerrainClear
+                if (rightTerrainClear || leftTerrainClear) {
+                    val sideSign = when {
+                        rightFree && !leftFree -> 1.0
+                        leftFree && !rightFree -> -1.0
+                        !rightFree && !leftFree -> when {
+                            rightTerrainClear && !leftTerrainClear -> 1.0
+                            leftTerrainClear && !rightTerrainClear -> -1.0
+                            else -> clusterOutwardSign
+                        }
+                        latSigned > selfHalfWidth * 0.25 -> -1.0
+                        latSigned < -selfHalfWidth * 0.25 -> 1.0
+                        else -> if ((stableTieHash(unit.updateKey) and 1L) == 0L) -1.0 else 1.0
+                    }
+                    val urgency = clamp(1.0 - max(0.0, fwdDot) / max(1.0, overtakeHorizon), 0.30, 1.0)
+                    val overlapAlign = clamp(1.0 - latAbs / max(1.0, overtakeLatLimit), 0.25, 1.0)
+                    shift += sideSign * (0.58 + 0.37 * pairOpenness) * urgency * overlapAlign * desiredSpeed
+                }
             }
         }
 
-        for (i in 0 until neighborCount) neighborsBuf[i] = null
-        for (i in 0 until opposingCount) opposingBuf[i] = null
+        if (engagementArcCenter != null && engagementArcRadius > scale.hardRadius * 4.0 &&
+            peer.ownerPlayerId == unit.ownerPlayerId
+        ) {
+            val dxE = engagementArcCenter.x - ownPos.x
+            val dyE = engagementArcCenter.y - ownPos.y
+            val distToEnemy = sqrt(dxE * dxE + dyE * dyE)
+            if (distToEnemy > engagementArcRadius * 0.95 && distToEnemy < engagementArcRadius * 2.4 &&
+                fwdDot > 0.0 && fwdDot < combinedComfort * 3.0 && latAbs < combinedComfort * 1.45 &&
+                (peerAnchored || peerSpeed < 0.25 * maximumSpeed)
+            ) {
+                val passClear = peerHalfWidth + selfHalfWidth + max(4.0, selfHalfWidth * 0.45)
+                val rightProbe = Position(peer.position.x + rightVec.x * passClear, peer.position.y + rightVec.y * passClear)
+                val leftProbe = Position(peer.position.x - rightVec.x * passClear, peer.position.y - rightVec.y * passClear)
+                val checkR = max(0.0, scale.terrainRadius * 0.92)
+                val rightTerrainClear = isPointClearOnTerrain(terrain, rightProbe, checkR)
+                val leftTerrainClear = isPointClearOnTerrain(terrain, leftProbe, checkR)
+                val rightFree = rightTerrainClear && isProbeClearOfAnchoredPeers(
+                    rightProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
+                )
+                val leftFree = leftTerrainClear && isProbeClearOfAnchoredPeers(
+                    leftProbe, peer.unitId, selfHalfWidth, neighborsBuf, neighborCount, ignoredContactUnitId,
+                )
+                val fanSign = when {
+                    rightFree && !leftFree -> 1.0
+                    leftFree && !rightFree -> -1.0
+                    !rightFree && !leftFree -> when {
+                        rightTerrainClear && !leftTerrainClear -> 1.0
+                        leftTerrainClear && !rightTerrainClear -> -1.0
+                        else -> clusterOutwardSign
+                    }
+                    latSigned > scale.hardRadius * 0.2 -> -1.0
+                    latSigned < -scale.hardRadius * 0.2 -> 1.0
+                    else -> if ((stableTieHash(unit.updateKey) and 1L) == 0L) -1.0 else 1.0
+                }
+                shift += fanSign * (0.78 * desiredSpeed) * clamp(1.0 - fwdDot / (combinedComfort * 3.0), 0.35, 1.0)
+            }
+        }
+        return shift
+    }
 
-        if (activeDynamicConstraints == 0 && hypot(sepX, sepY) <= EPS && rightShift <= EPS && abs(overtakeShift) <= EPS) {
+    private fun finalizeGroundLocomotion(
+        unit: MutableUnit,
+        terrain: PlanningTerrain,
+        scale: KinematicScale,
+        desiredTarget: Position,
+        baseSpeedTarget: Double,
+        desiredDir: Vec2,
+        rightVec: Vec2,
+        distToTarget: Double,
+        desiredSpeed: Double,
+        basePrefVel: Vec2,
+        maximumSpeed: Double,
+        finalPoint: Boolean,
+        delta: Double,
+        terminalDockingWeight: Double,
+        ownPos: Position,
+        corridorOpenness: Double,
+        neighborCount: Int,
+        scratch: Scratch,
+    ): SolveResult {
+        val sepX = scratch.sepX
+        val sepY = scratch.sepY
+        val rightShift = scratch.rightShift
+        val overtakeShift = scratch.overtakeShift
+        val activeDynamicConstraints = scratch.activeDynamicConstraints
+        val hasExistingHardOverlap = scratch.hasExistingHardOverlap
+        val hasDirectImmovableContact = scratch.hasDirectImmovableContact
+        val hasClosePushableBlocker = scratch.hasClosePushableBlocker
+        val clusterOutwardSign = scratch.clusterOutwardSign
+        val dynCount = scratch.dynCount
+        val dynPx = scratch.dynPx; val dynPy = scratch.dynPy
+        val dynNx = scratch.dynNx; val dynNy = scratch.dynNy
+        val dynDx = scratch.dynDx; val dynDy = scratch.dynDy
+        val dynamicPushable = scratch.dynamicPushable
+
+        val rawSepLen = sqrt(sepX * sepX + sepY * sepY)
+        if (activeDynamicConstraints == 0 && rawSepLen <= EPS && rightShift <= EPS && abs(overtakeShift) <= EPS) {
             return passthrough(unit, desiredTarget, baseSpeedTarget, maximumSpeed)
         }
 
         val maxSepMag = maximumSpeed * (0.45 + 0.35 * corridorOpenness)
-        val rawSepLen = hypot(sepX, sepY)
         var clampedSep = if (rawSepLen > maxSepMag && rawSepLen > EPS) {
             Vec2(sepX * (maxSepMag / rawSepLen), sepY * (maxSepMag / rawSepLen))
         } else Vec2(sepX, sepY)
@@ -811,21 +1227,24 @@ internal object LocomotionModule {
             outLines = wallLines,
         )
 
-        val allLines = scratch.allLines
-        allLines.clear()
-        for (i in 0 until wallLines.size) allLines.add(wallLines[i])
-        for (i in 0 until dynamicLines.size) allLines.add(dynamicLines[i])
         val numFixed = wallLines.size
-
-        val lpOut = solveLinearProgramScratch(allLines, numFixed, maximumSpeed, prefVel, scratch.projLines, scratch.lpOut)
+        val lpOut = solveLinearProgramWallAndDynPrim(
+            wallLines = wallLines,
+            dynCount = dynCount,
+            skipPushable = false,
+            dynamicPushable = dynamicPushable,
+            maxSpeed = maximumSpeed,
+            prefVel = prefVel,
+            scratch = scratch,
+        )
         val vSolved = lpOut.velocity
 
         // Tangential LP-feasible nudge around stationary blocker arcs (pure tie-break, zero upper-command reads).
         var vFinal = if (!hasExistingHardOverlap && vSolved.length() < 0.08 * maximumSpeed && desiredSpeed > 0.1 * maximumSpeed && terminalDockingWeight < 0.75) {
             val worstDyn = if (lpOut.used3dFallback) {
                 var minM = Double.POSITIVE_INFINITY
-                for (i in 0 until dynamicLines.size) {
-                    val m = dynamicLines[i].signedMargin(vSolved)
+                for (i in 0 until dynCount) {
+                    val m = (vSolved.x - dynPx[i]) * dynNx[i] + (vSolved.y - dynPy[i]) * dynNy[i]
                     if (m < minM) minM = m
                 }
                 if (minM.isFinite()) minM else 0.0
@@ -842,7 +1261,7 @@ internal object LocomotionModule {
                     4 -> (desiredDir * -0.25 + rightVec * (0.97 * prefSign)).normalized() * (spd * 0.8)
                     else -> (desiredDir * -0.25 - rightVec * (0.97 * prefSign)).normalized() * (spd * 0.8)
                 }
-                if (isCandidateLpFeasible(cand, wallLines, dynamicLines, worstDyn)) {
+                if (isCandidateLpFeasiblePrim(cand, wallLines, dynCount, dynPx, dynPy, dynNx, dynNy, worstDyn)) {
                     chosen = cand
                     break
                 }
@@ -850,10 +1269,6 @@ internal object LocomotionModule {
             chosen ?: vSolved
         } else vSolved
 
-        // Pure kinematic push-through release: when boxed in against pushable stationary units (NOT walls,
-        // NOT immovable/anchored structures, NOT same-group parked peers) so that ORCA chokes forward progress
-        // near zero, re-solve keeping ALL wall, immovable, moving, and same-group constraints intact so ADR-009
-        // UnitContact physical pushing parts the pushable stationary units cleanly instead of decaying to 0.
         val stalledPushInTransit = (!finalPoint || distToTarget > scale.hardRadius * 6.0) &&
             unit.hardContactLimitedTicks >= 18L
         if (!hasDirectImmovableContact && hasClosePushableBlocker &&
@@ -862,23 +1277,20 @@ internal object LocomotionModule {
             terminalDockingWeight < 0.25 &&
             vFinal.dot(desiredDir) < 0.18 * desiredSpeed
         ) {
-            allLines.clear()
-            for (i in 0 until wallLines.size) allLines.add(wallLines[i])
-            for (i in 0 until dynamicLines.size) {
-                if (i >= dynamicPushable.size || !dynamicPushable[i]) allLines.add(dynamicLines[i])
-            }
-            val pushVel = solveLinearProgramScratch(
-                allLines, numFixed, maximumSpeed, basePrefVel, scratch.projLines, scratch.lpOut,
+            val pushVel = solveLinearProgramWallAndDynPrim(
+                wallLines = wallLines,
+                dynCount = dynCount,
+                skipPushable = true,
+                dynamicPushable = dynamicPushable,
+                maxSpeed = maximumSpeed,
+                prefVel = basePrefVel,
+                scratch = scratch,
             ).velocity
             if (pushVel.dot(desiredDir) > vFinal.dot(desiredDir) + 0.08 * maximumSpeed) {
                 vFinal = pushVel
             }
         }
 
-        // If boxed-in with an existing hard body overlap (3D LP ~0) or pinned in direct bow-on contact against an
-        // immovable blocker, solve the wall-only LP strictly against ALL static wall half-planes (`wallLines`) with
-        // `basePrefVel` (falling back to 3D LP in concave corners) so wall safety is never bypassed while ADR-009
-        // `UnitContact` receives the exact bow-on contact step to emit `movement-blocked` / trigger queued `ROUTE_REPAIR`.
         if (hasDirectImmovableContact || (vFinal.length() <= 0.05 * maximumSpeed && lpOut.used3dFallback && hasExistingHardOverlap)) {
             vFinal = solveLinearProgramScratch(
                 wallLines, 0, maximumSpeed, basePrefVel, scratch.projLines, scratch.lpOut,
@@ -897,12 +1309,12 @@ internal object LocomotionModule {
                 wallConstraintCount = wallLines.size,
                 used3dFallback = lpOut.used3dFallback,
                 headingErrorDeg = 0.0,
-                nextAvoidHeadingDeg = unit.nav.lastAvoidHeadingDeg,
+                nextAvoidHeadingDeg = unit.lastAvoidHeadingDeg,
             )
         }
 
         val rawTargetHeading = headingFromVector(vFinal)
-        val prevAvoid = unit.nav.lastAvoidHeadingDeg
+        val prevAvoid = unit.lastAvoidHeadingDeg
         val travelHeading = if (unit.reversing) ScreenPlane.normalize(unit.heading + 180.0) else unit.heading
         val rawDiffFromCurrent = ScreenPlane.difference(rawTargetHeading, travelHeading)
 
@@ -955,6 +1367,198 @@ internal object LocomotionModule {
         )
     }
 
+    private fun isCandidateLpFeasiblePrim(
+        cand: Vec2,
+        wallLines: ArrayList<HalfPlane>,
+        dynCount: Int,
+        dynPx: DoubleArray,
+        dynPy: DoubleArray,
+        dynNx: DoubleArray,
+        dynNy: DoubleArray,
+        worstDyn: Double,
+    ): Boolean {
+        for (i in 0 until wallLines.size) {
+            if (wallLines[i].signedMargin(cand) < -1e-4) return false
+        }
+        for (i in 0 until dynCount) {
+            if ((cand.x - dynPx[i]) * dynNx[i] + (cand.y - dynPy[i]) * dynNy[i] < worstDyn - 1e-3) return false
+        }
+        return true
+    }
+
+    private fun solveLinearProgramWallAndDynPrim(
+        wallLines: ArrayList<HalfPlane>,
+        dynCount: Int,
+        skipPushable: Boolean,
+        dynamicPushable: BooleanArray,
+        maxSpeed: Double,
+        prefVel: Vec2,
+        scratch: Scratch,
+    ): LpResult {
+        val px = scratch.lpPx; val py = scratch.lpPy
+        val nx = scratch.lpNx; val ny = scratch.lpNy
+        val dx = scratch.lpDx; val dy = scratch.lpDy
+        val numFixed = wallLines.size
+        var n = 0
+        for (i in 0 until numFixed) {
+            if (n >= px.size) break
+            val hp = wallLines[i]
+            px[n] = hp.point.x; py[n] = hp.point.y
+            nx[n] = hp.normal.x; ny[n] = hp.normal.y
+            dx[n] = hp.direction.x; dy[n] = hp.direction.y
+            n++
+        }
+        val dPx = scratch.dynPx; val dPy = scratch.dynPy
+        val dNx = scratch.dynNx; val dNy = scratch.dynNy
+        val dDx = scratch.dynDx; val dDy = scratch.dynDy
+        for (i in 0 until dynCount) {
+            if (skipPushable && i < dynamicPushable.size && dynamicPushable[i]) continue
+            if (n >= px.size) break
+            px[n] = dPx[i]; py[n] = dPy[i]
+            nx[n] = dNx[i]; ny[n] = dNy[i]
+            dx[n] = dDx[i]; dy[n] = dDy[i]
+            n++
+        }
+        val res = scratch.lpOutXY
+        val lineFail = linearProgram2Prim(
+            px, py, nx, ny, dx, dy, n, maxSpeed,
+            prefVel.x, prefVel.y, directionOpt = false,
+            tieX = prefVel.x, tieY = prefVel.y, outXY = res,
+        )
+        if (lineFail < n) {
+            linearProgram3Prim(
+                px, py, nx, ny, dx, dy, n, numFixed, lineFail, maxSpeed,
+                prefVel.x, prefVel.y,
+                scratch.projPx, scratch.projPy, scratch.projNx, scratch.projNy, scratch.projDx, scratch.projDy,
+                outXY = res,
+            )
+            return LpResult(Vec2(res[0], res[1]), used3dFallback = true)
+        }
+        return LpResult(Vec2(res[0], res[1]), used3dFallback = false)
+    }
+
+    /** Zero-allocation primitive ORCA half-plane writer mathematically identical to [buildDynamicOrcaPlane]. */
+    private fun buildDynamicOrcaPlaneIntoPrim(
+        relX: Double,
+        relY: Double,
+        ownVx: Double,
+        ownVy: Double,
+        peerVx: Double,
+        peerVy: Double,
+        combinedRadius: Double,
+        timeHorizon: Double,
+        delta: Double,
+        responsibility: Double,
+        desDirX: Double,
+        desDirY: Double,
+        peerMoving: Boolean,
+        tieBreakSign: Double,
+        outIdx: Int,
+        scratch: Scratch,
+    ): Boolean {
+        val distSq = relX * relX + relY * relY
+        val combinedRadiusSq = combinedRadius * combinedRadius
+        val relVx = ownVx - peerVx
+        val relVy = ownVy - peerVy
+        val invTau = 1.0 / max(delta, timeHorizon)
+
+        val ux: Double
+        val uy: Double
+        val normX: Double
+        val normY: Double
+
+        if (distSq > combinedRadiusSq) {
+            val wx = relVx - relX * invTau
+            val wy = relVy - relY * invTau
+            val wLenSq = wx * wx + wy * wy
+            val dotProduct1 = wx * relX + wy * relY
+
+            if (dotProduct1 < 0.0 && dotProduct1 * dotProduct1 > combinedRadiusSq * wLenSq) {
+                val wLen = sqrt(wLenSq)
+                val unitWx: Double
+                val unitWy: Double
+                if (wLen > EPS) {
+                    unitWx = wx / wLen; unitWy = wy / wLen
+                } else {
+                    unitWx = -desDirY; unitWy = desDirX
+                }
+                normX = unitWx; normY = unitWy
+                val scaleU = combinedRadius * invTau - wLen
+                ux = unitWx * scaleU; uy = unitWy * scaleU
+            } else {
+                val leg = sqrt(max(0.0, distSq - combinedRadiusSq))
+                val cross = relX * wy - relY * wx
+                val peerSpeed = sqrt(peerVx * peerVx + peerVy * peerVy)
+                val opposing = peerMoving && peerSpeed > EPS &&
+                    (peerVx * desDirX + peerVy * desDirY) / peerSpeed < -0.20
+                val dist = sqrt(distSq)
+                val wLen = sqrt(wLenSq)
+                val biasThreshold = when {
+                    opposing -> 0.42 * dist * max(0.25, wLen)
+                    peerMoving -> 0.18 * dist * max(0.2, wLen)
+                    else -> 0.04 * dist * max(0.1, wLen)
+                }
+                val chooseRightLeg = when {
+                    cross > biasThreshold -> true
+                    cross < -biasThreshold -> false
+                    else -> if (opposing) true else tieBreakSign >= 0.0
+                }
+                val rawLx: Double
+                val rawLy: Double
+                if (chooseRightLeg) {
+                    rawLx = (relX * leg - relY * combinedRadius) / distSq
+                    rawLy = (relX * combinedRadius + relY * leg) / distSq
+                } else {
+                    rawLx = (relX * leg + relY * combinedRadius) / distSq
+                    rawLy = (-relX * combinedRadius + relY * leg) / distSq
+                }
+                val lLen = sqrt(rawLx * rawLx + rawLy * rawLy)
+                val legDirX = if (lLen > EPS) rawLx / lLen else 0.0
+                val legDirY = if (lLen > EPS) rawLy / lLen else 0.0
+                if (chooseRightLeg) {
+                    normX = -legDirY; normY = legDirX
+                } else {
+                    normX = legDirY; normY = -legDirX
+                }
+                val proj = relVx * legDirX + relVy * legDirY
+                ux = legDirX * proj - relVx
+                uy = legDirY * proj - relVy
+            }
+        } else {
+            val invStep = 1.0 / max(delta, 2.0)
+            val wx = relVx - relX * invStep
+            val wy = relVy - relY * invStep
+            val wLen = sqrt(wx * wx + wy * wy)
+            val unitWx: Double
+            val unitWy: Double
+            if (wLen > EPS) {
+                unitWx = wx / wLen; unitWy = wy / wLen
+            } else {
+                val dist = sqrt(distSq)
+                if (dist > EPS) {
+                    unitWx = -relX / dist; unitWy = -relY / dist
+                } else {
+                    unitWx = -desDirY; unitWy = desDirX
+                }
+            }
+            normX = unitWx; normY = unitWy
+            val scaleU = combinedRadius * invStep - wLen
+            ux = unitWx * scaleU; uy = unitWy * scaleU
+        }
+
+        val nLen = sqrt(normX * normX + normY * normY)
+        if (nLen <= EPS) return false
+        val unx = normX / nLen
+        val uny = normY / nLen
+        scratch.dynPx[outIdx] = ownVx + ux * responsibility
+        scratch.dynPy[outIdx] = ownVy + uy * responsibility
+        scratch.dynNx[outIdx] = unx
+        scratch.dynNy[outIdx] = uny
+        scratch.dynDx[outIdx] = uny
+        scratch.dynDy[outIdx] = -unx
+        return true
+    }
+
     private fun isCandidateLpFeasible(
         cand: Vec2,
         wallLines: ArrayList<HalfPlane>,
@@ -981,45 +1585,142 @@ internal object LocomotionModule {
             }
         }
 
-    internal fun estimateRayClearDistance(terrain: PlanningTerrain, pos: Position, rightVec: Vec2, sign: Double): Double {
+    internal fun estimateRayClearDistance(
+        terrain: PlanningTerrain,
+        pos: Position,
+        rightVec: Vec2,
+        sign: Double,
+        maxReachOverride: Double = Double.NaN,
+    ): Double {
+        val cf = terrain.clearanceField()
+        val isSub1 = cf.width == terrain.widthTiles && cf.height == terrain.heightTiles
+        val minTile = min(terrain.tileWidth.toDouble(), terrain.tileHeight.toDouble())
+        val maxReach = if (maxReachOverride.isFinite()) maxReachOverride else minTile * 5.0
+        return estimateRayClearDistanceXY(terrain, cf, isSub1, pos.x, pos.y, rightVec, sign, maxReach)
+    }
+
+    private fun estimateRayClearDistanceXY(
+        terrain: PlanningTerrain,
+        cf: TerrainClearanceField,
+        isSub1: Boolean,
+        posX: Double,
+        posY: Double,
+        rightVec: Vec2,
+        sign: Double,
+        maxReach: Double,
+    ): Double {
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
         val tw = terrain.tileWidth.toDouble()
         val th = terrain.tileHeight.toDouble()
-        val worldW = terrain.widthTiles * tw
-        val worldH = terrain.heightTiles * th
+        val worldW = w * tw
+        val worldH = h * th
         val minTile = min(tw, th)
+        val pCol = floor(posX / tw).toInt().coerceIn(0, w - 1)
+        val pRow = floor(posY / th).toInt().coerceIn(0, h - 1)
+        val startRings = if (isSub1) cf.clearanceRingsAt(pRow * w + pCol) else terrain.clearanceRings(pCol, pRow)
+        val safeRings = kotlin.math.ceil(maxReach / minTile).toInt() + 2
+        if (startRings >= safeRings &&
+            posX > maxReach && posX < worldW - maxReach &&
+            posY > maxReach && posY < worldH - maxReach
+        ) {
+            return maxReach
+        }
         val step = minTile * 0.5
-        val maxReach = minTile * 5.0
+        val rdx = rightVec.x * sign
+        val rdy = rightVec.y * sign
         var d = step
         while (d <= maxReach) {
-            val px = pos.x + rightVec.x * sign * d
-            val py = pos.y + rightVec.y * sign * d
-            if (px <= 0.0 || px >= worldW || py <= 0.0 || py >= worldH) {
-                return d - step * 0.5
-            }
-            val col = floor(px / tw).toInt().coerceIn(0, terrain.widthTiles - 1)
-            val row = floor(py / th).toInt().coerceIn(0, terrain.heightTiles - 1)
-            if (terrain.isBlocked(col, row)) {
+            val px = posX + rdx * d
+            val py = posY + rdy * d
+            if (px <= 0.0 || px >= worldW || py <= 0.0 || py >= worldH) return d - step * 0.5
+            val col = floor(px / tw).toInt().coerceIn(0, w - 1)
+            val row = floor(py / th).toInt().coerceIn(0, h - 1)
+            val blocked = if (isSub1) cf.clearanceRingsAt(row * w + col) == 0 else terrain.isBlocked(col, row)
+            if (blocked) {
                 val loX = col * tw
                 val hiX = loX + tw
                 val loY = row * th
                 val hiY = loY + th
-                val cx = pos.x.coerceIn(loX, hiX)
-                val cy = pos.y.coerceIn(loY, hiY)
-                return hypot(pos.x - cx, pos.y - cy)
+                val cx = posX.coerceIn(loX, hiX)
+                val cy = posY.coerceIn(loY, hiY)
+                val dx = posX - cx
+                val dy = posY - cy
+                return sqrt(dx * dx + dy * dy)
             }
             d += step
         }
         return maxReach
     }
 
-    private fun estimateSideClearAt(terrain: PlanningTerrain, pos: Position, rightVec: Vec2, sign: Double): Double {
-        val worldW = terrain.widthTiles * terrain.tileWidth.toDouble()
-        val worldH = terrain.heightTiles * terrain.tileHeight.toDouble()
-        if (pos.x <= 0.0 || pos.x >= worldW || pos.y <= 0.0 || pos.y >= worldH) return 0.0
-        val col = floor(pos.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
-        val row = floor(pos.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
-        if (terrain.isBlocked(col, row)) return 0.0
-        return max(0.0, estimateRayClearDistance(terrain, pos, rightVec, sign))
+    private fun estimateSideClearAtXY(
+        terrain: PlanningTerrain,
+        cf: TerrainClearanceField,
+        isSub1: Boolean,
+        posX: Double,
+        posY: Double,
+        rightVec: Vec2,
+        sign: Double,
+        maxReach: Double,
+    ): Double {
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
+        val tw = terrain.tileWidth.toDouble()
+        val th = terrain.tileHeight.toDouble()
+        val worldW = w * tw
+        val worldH = h * th
+        if (posX <= 0.0 || posX >= worldW || posY <= 0.0 || posY >= worldH) return 0.0
+        val col = floor(posX / tw).toInt().coerceIn(0, w - 1)
+        val row = floor(posY / th).toInt().coerceIn(0, h - 1)
+        val blocked = if (isSub1) cf.clearanceRingsAt(row * w + col) == 0 else terrain.isBlocked(col, row)
+        if (blocked) return 0.0
+        return max(0.0, estimateRayClearDistanceXY(terrain, cf, isSub1, posX, posY, rightVec, sign, maxReach))
+    }
+
+    private fun estimateTransverseClearanceWorldWithSides(
+        terrain: PlanningTerrain,
+        pos: Position,
+        rightVec: Vec2,
+        scratch: Scratch,
+    ): Double {
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
+        val tw = terrain.tileWidth.toDouble()
+        val th = terrain.tileHeight.toDouble()
+        val minTile = min(tw, th)
+        val maxReach = minTile * 5.0
+        val margin = maxReach + minTile
+        val worldW = w * tw
+        val worldH = h * th
+        val cf = terrain.clearanceField()
+        val isSub1 = cf.width == w && cf.height == h
+        if (pos.x > margin && pos.x < worldW - margin && pos.y > margin && pos.y < worldH - margin) {
+            val pCol = floor(pos.x / tw).toInt().coerceIn(0, w - 1)
+            val pRow = floor(pos.y / th).toInt().coerceIn(0, h - 1)
+            val rings = if (isSub1) cf.clearanceRingsAt(pRow * w + pCol) else terrain.clearanceRings(pCol, pRow)
+            if (rings >= 8) {
+                scratch.ownLeftClear = maxReach
+                scratch.ownRightClear = maxReach
+                return 2.0 * maxReach
+            }
+        }
+        val fwdX = rightVec.y
+        val fwdY = -rightVec.x
+        val lHere = estimateSideClearAtXY(terrain, cf, isSub1, pos.x, pos.y, rightVec, -1.0, maxReach)
+        val rHere = estimateSideClearAtXY(terrain, cf, isSub1, pos.x, pos.y, rightVec, 1.0, maxReach)
+        scratch.ownLeftClear = lHere
+        scratch.ownRightClear = rHere
+        val bx = pos.x - fwdX * minTile
+        val by = pos.y - fwdY * minTile
+        val ax = pos.x + fwdX * minTile
+        val ay = pos.y + fwdY * minTile
+        val lBehind = estimateSideClearAtXY(terrain, cf, isSub1, bx, by, rightVec, -1.0, maxReach)
+        val lAhead = estimateSideClearAtXY(terrain, cf, isSub1, ax, ay, rightVec, -1.0, maxReach)
+        val rBehind = estimateSideClearAtXY(terrain, cf, isSub1, bx, by, rightVec, 1.0, maxReach)
+        val rAhead = estimateSideClearAtXY(terrain, cf, isSub1, ax, ay, rightVec, 1.0, maxReach)
+        val medLeft = max(min(lBehind, lHere), min(max(lBehind, lHere), lAhead))
+        val medRight = max(min(rBehind, rHere), min(max(rBehind, rHere), rAhead))
+        return medLeft + medRight
     }
 
     /**
@@ -1029,17 +1730,37 @@ internal object LocomotionModule {
      * canal do not masquerade as multi-lane corridors.
      */
     internal fun estimateTransverseClearanceWorld(terrain: PlanningTerrain, pos: Position, rightVec: Vec2): Double {
-        val minTile = min(terrain.tileWidth, terrain.tileHeight).toDouble()
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
+        val tw = terrain.tileWidth.toDouble()
+        val th = terrain.tileHeight.toDouble()
+        val minTile = min(tw, th)
+        val maxReach = minTile * 5.0
+        val margin = maxReach + minTile
+        val worldW = w * tw
+        val worldH = h * th
+        val cf = terrain.clearanceField()
+        val isSub1 = cf.width == w && cf.height == h
+        if (pos.x > margin && pos.x < worldW - margin && pos.y > margin && pos.y < worldH - margin) {
+            val pCol = floor(pos.x / tw).toInt().coerceIn(0, w - 1)
+            val pRow = floor(pos.y / th).toInt().coerceIn(0, h - 1)
+            val rings = if (isSub1) cf.clearanceRingsAt(pRow * w + pCol) else terrain.clearanceRings(pCol, pRow)
+            if (rings >= 8) {
+                return 2.0 * maxReach
+            }
+        }
         val fwdX = rightVec.y
         val fwdY = -rightVec.x
-        val behindPos = Position(pos.x - fwdX * minTile, pos.y - fwdY * minTile)
-        val aheadPos = Position(pos.x + fwdX * minTile, pos.y + fwdY * minTile)
-        val lHere = estimateSideClearAt(terrain, pos, rightVec, -1.0)
-        val lBehind = estimateSideClearAt(terrain, behindPos, rightVec, -1.0)
-        val lAhead = estimateSideClearAt(terrain, aheadPos, rightVec, -1.0)
-        val rHere = estimateSideClearAt(terrain, pos, rightVec, 1.0)
-        val rBehind = estimateSideClearAt(terrain, behindPos, rightVec, 1.0)
-        val rAhead = estimateSideClearAt(terrain, aheadPos, rightVec, 1.0)
+        val bx = pos.x - fwdX * minTile
+        val by = pos.y - fwdY * minTile
+        val ax = pos.x + fwdX * minTile
+        val ay = pos.y + fwdY * minTile
+        val lHere = estimateSideClearAtXY(terrain, cf, isSub1, pos.x, pos.y, rightVec, -1.0, maxReach)
+        val lBehind = estimateSideClearAtXY(terrain, cf, isSub1, bx, by, rightVec, -1.0, maxReach)
+        val lAhead = estimateSideClearAtXY(terrain, cf, isSub1, ax, ay, rightVec, -1.0, maxReach)
+        val rHere = estimateSideClearAtXY(terrain, cf, isSub1, pos.x, pos.y, rightVec, 1.0, maxReach)
+        val rBehind = estimateSideClearAtXY(terrain, cf, isSub1, bx, by, rightVec, 1.0, maxReach)
+        val rAhead = estimateSideClearAtXY(terrain, cf, isSub1, ax, ay, rightVec, 1.0, maxReach)
         val medLeft = max(min(lBehind, lHere), min(max(lBehind, lHere), lAhead))
         val medRight = max(min(rBehind, rHere), min(max(rBehind, rHere), rAhead))
         return medLeft + medRight
@@ -1189,6 +1910,12 @@ internal object LocomotionModule {
         val centerCol = floor(pos.x / tw).toInt()
         val centerRow = floor(pos.y / th).toInt()
         val scanTiles = max(MAX_WALL_TILES_RADIUS, (wallReach / min(tw, th)).toInt().coerceAtMost(3))
+        if (centerCol in 0 until terrain.widthTiles &&
+            centerRow in 0 until terrain.heightTiles &&
+            terrain.clearanceRings(centerCol, centerRow) > scanTiles
+        ) {
+            return
+        }
         val c0 = max(0, centerCol - scanTiles)
         val c1 = min(terrain.widthTiles - 1, centerCol + scanTiles)
         val r0 = max(0, centerRow - scanTiles)
@@ -1206,7 +1933,7 @@ internal object LocomotionModule {
                 val closestY = pos.y.coerceIn(minY, maxY)
                 val dx = pos.x - closestX
                 val dy = pos.y - closestY
-                val dist = hypot(dx, dy)
+                val dist = sqrt(dx * dx + dy * dy)
                 if (dist > wallReach) continue
 
                 val normal = if (dist > EPS) {
@@ -1285,12 +2012,202 @@ internal object LocomotionModule {
         projLinesBuf: ArrayList<HalfPlane>,
         out: Array<Vec2>,
     ): LpResult {
+        val n = lines.size
+        val scratch = scratchPool.get()
+        if (n <= scratch.lpPx.size) {
+            val px = scratch.lpPx
+            val py = scratch.lpPy
+            val nx = scratch.lpNx
+            val ny = scratch.lpNy
+            val dx = scratch.lpDx
+            val dy = scratch.lpDy
+            for (i in 0 until n) {
+                val hp = lines[i]
+                px[i] = hp.point.x
+                py[i] = hp.point.y
+                nx[i] = hp.normal.x
+                ny[i] = hp.normal.y
+                dx[i] = hp.direction.x
+                dy[i] = hp.direction.y
+            }
+            val res = scratch.lpOutXY
+            val lineFail = linearProgram2Prim(
+                px, py, nx, ny, dx, dy, n, maxSpeed,
+                prefVelocity.x, prefVelocity.y, directionOpt = false,
+                tieX = prefVelocity.x, tieY = prefVelocity.y, outXY = res,
+            )
+            if (lineFail < n) {
+                linearProgram3Prim(
+                    px, py, nx, ny, dx, dy, n, numFixed, lineFail, maxSpeed,
+                    prefVelocity.x, prefVelocity.y,
+                    scratch.projPx, scratch.projPy, scratch.projNx, scratch.projNy, scratch.projDx, scratch.projDy,
+                    outXY = res,
+                )
+                return LpResult(Vec2(res[0], res[1]), used3dFallback = true)
+            }
+            return LpResult(Vec2(res[0], res[1]), used3dFallback = false)
+        }
         val lineFail = linearProgram2(lines, maxSpeed, prefVelocity, directionOpt = false, tieBreakPref = prefVelocity, result = out)
         if (lineFail < lines.size) {
             linearProgram3(lines, numFixed, lineFail, maxSpeed, prefVelocity, projLinesBuf, out)
             return LpResult(out[0], used3dFallback = true)
         }
         return LpResult(out[0], used3dFallback = false)
+    }
+
+    private fun linearProgram1Prim(
+        px: DoubleArray, py: DoubleArray, dx: DoubleArray, dy: DoubleArray,
+        lineNo: Int, radius: Double,
+        optX: Double, optY: Double, directionOpt: Boolean,
+        tieX: Double, tieY: Double, outXY: DoubleArray,
+    ): Boolean {
+        val lpx = px[lineNo]; val lpy = py[lineNo]
+        val ldx = dx[lineNo]; val ldy = dy[lineNo]
+        val dotProduct = lpx * ldx + lpy * ldy
+        val discriminant = dotProduct * dotProduct + radius * radius - (lpx * lpx + lpy * lpy)
+        if (discriminant < 0.0) return false
+
+        val sqrtDisc = sqrt(discriminant)
+        var tLeft = -dotProduct - sqrtDisc
+        var tRight = -dotProduct + sqrtDisc
+
+        for (i in 0 until lineNo) {
+            val odx = dx[i]; val ody = dy[i]
+            val denominator = ldx * ody - ldy * odx
+            val diffX = lpx - px[i]; val diffY = lpy - py[i]
+            val numerator = odx * diffY - ody * diffX
+            if (abs(denominator) <= EPS) {
+                if (numerator < 0.0) return false
+                continue
+            }
+            val t = numerator / denominator
+            if (denominator >= 0.0) {
+                if (t < tRight) tRight = t
+            } else {
+                if (t > tLeft) tLeft = t
+            }
+            if (tLeft > tRight) return false
+        }
+
+        val tChosen = if (directionOpt) {
+            val dirProj = optX * ldx + optY * ldy
+            when {
+                dirProj > EPS -> tRight
+                dirProj < -EPS -> tLeft
+                else -> clamp(ldx * (tieX - lpx) + ldy * (tieY - lpy), tLeft, tRight)
+            }
+        } else {
+            val t = ldx * (optX - lpx) + ldy * (optY - lpy)
+            when {
+                t < tLeft -> tLeft
+                t > tRight -> tRight
+                else -> t
+            }
+        }
+        outXY[0] = lpx + ldx * tChosen
+        outXY[1] = lpy + ldy * tChosen
+        return true
+    }
+
+    private fun linearProgram2Prim(
+        px: DoubleArray, py: DoubleArray, nx: DoubleArray, ny: DoubleArray, dx: DoubleArray, dy: DoubleArray,
+        count: Int, radius: Double,
+        optX: Double, optY: Double, directionOpt: Boolean,
+        tieX: Double, tieY: Double, outXY: DoubleArray,
+    ): Int {
+        if (directionOpt) {
+            outXY[0] = optX * radius
+            outXY[1] = optY * radius
+        } else {
+            val optSq = optX * optX + optY * optY
+            if (optSq > radius * radius) {
+                val len = sqrt(optSq)
+                val s = if (len > EPS) radius / len else 0.0
+                outXY[0] = optX * s
+                outXY[1] = optY * s
+            } else {
+                outXY[0] = optX
+                outXY[1] = optY
+            }
+        }
+        for (i in 0 until count) {
+            val margin = (outXY[0] - px[i]) * nx[i] + (outXY[1] - py[i]) * ny[i]
+            if (margin < -EPS) {
+                val saveX = outXY[0]
+                val saveY = outXY[1]
+                if (!linearProgram1Prim(px, py, dx, dy, i, radius, optX, optY, directionOpt, tieX, tieY, outXY)) {
+                    outXY[0] = saveX
+                    outXY[1] = saveY
+                    return i
+                }
+            }
+        }
+        return count
+    }
+
+    private fun linearProgram3Prim(
+        px: DoubleArray, py: DoubleArray, nx: DoubleArray, ny: DoubleArray, dx: DoubleArray, dy: DoubleArray,
+        count: Int, numFixed: Int, beginLine: Int, radius: Double,
+        prefX: Double, prefY: Double,
+        projPx: DoubleArray, projPy: DoubleArray, projNx: DoubleArray, projNy: DoubleArray, projDx: DoubleArray, projDy: DoubleArray,
+        outXY: DoubleArray,
+    ) {
+        var distance = 0.0
+        val start = max(numFixed, beginLine)
+        for (i in start until count) {
+            val marginI = (outXY[0] - px[i]) * nx[i] + (outXY[1] - py[i]) * ny[i]
+            if (marginI < -distance) {
+                var pCount = 0
+                for (k in 0 until numFixed) {
+                    projPx[pCount] = px[k]; projPy[pCount] = py[k]
+                    projNx[pCount] = nx[k]; projNy[pCount] = ny[k]
+                    projDx[pCount] = dx[k]; projDy[pCount] = dy[k]
+                    pCount++
+                }
+                val idxI = dx[i]; val idyI = dy[i]
+                val ipxI = px[i]; val ipyI = py[i]
+                for (j in numFixed until i) {
+                    val jdx = dx[j]; val jdy = dy[j]
+                    val determinant = idxI * jdy - idyI * jdx
+                    val ptX: Double
+                    val ptY: Double
+                    if (abs(determinant) <= EPS) {
+                        if (idxI * jdx + idyI * jdy > 0.0) {
+                            continue
+                        } else {
+                            ptX = (ipxI + px[j]) * 0.5
+                            ptY = (ipyI + py[j]) * 0.5
+                        }
+                    } else {
+                        val factor = (jdx * (ipyI - py[j]) - jdy * (ipxI - px[j])) / determinant
+                        ptX = ipxI + idxI * factor
+                        ptY = ipyI + idyI * factor
+                    }
+                    val rx = jdx - idxI
+                    val ry = jdy - idyI
+                    val rLen = sqrt(rx * rx + ry * ry)
+                    if (rLen > EPS && pCount < projPx.size) {
+                        val ndx = rx / rLen
+                        val ndy = ry / rLen
+                        projPx[pCount] = ptX; projPy[pCount] = ptY
+                        projDx[pCount] = ndx; projDy[pCount] = ndy
+                        projNx[pCount] = -ndy; projNy[pCount] = ndx
+                        pCount++
+                    }
+                }
+                val saveX = outXY[0]
+                val saveY = outXY[1]
+                if (linearProgram2Prim(
+                        projPx, projPy, projNx, projNy, projDx, projDy, pCount, radius,
+                        nx[i], ny[i], directionOpt = true, tieX = prefX, tieY = prefY, outXY = outXY,
+                    ) < pCount
+                ) {
+                    outXY[0] = saveX
+                    outXY[1] = saveY
+                }
+                distance = -((outXY[0] - ipxI) * nx[i] + (outXY[1] - ipyI) * ny[i])
+            }
+        }
     }
 
     private fun linearProgram1(

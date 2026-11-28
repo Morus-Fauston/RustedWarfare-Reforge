@@ -34,6 +34,7 @@ internal object BuildingOverlapEscape {
         val col = MapBounds.cell(unit.position.x, baseMap.tileWidth, baseMap.widthTiles)
         val row = MapBounds.cell(unit.position.y, baseMap.tileHeight, baseMap.heightTiles)
         if (col !in 0 until baseMap.widthTiles || row !in 0 until baseMap.heightTiles) return false
+        if (!buildingTerrain.isBuildingCell(col, row)) return false
         return buildingTerrain.collisionMap.blockingFor(movementType).isBlocked(col, row) &&
             !baseMap.blockingFor(movementType).isBlocked(col, row)
     }

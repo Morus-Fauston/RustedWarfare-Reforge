@@ -24,16 +24,31 @@ internal class MissileTargetIndex private constructor(private val inverseX: Floa
     }
 
     fun refresh(units: Collection<MutableUnit>): MissileTargetIndex {
-        var next = this
+        var nextCells: MutableMap<Int, List<String>>? = null
+        var nextMembership: MutableMap<String, Int>? = null
         for (unit in units) {
-            if (!unit.alive) { next = next.remove(unit.unitId); continue }
+            val uid = unit.unitId
+            val oldCell = (nextMembership ?: membership)[uid]
+            if (!unit.alive) {
+                if (oldCell != null) {
+                    val mCells = nextCells ?: HashMap(cells).also { nextCells = it }
+                    val mMem = nextMembership ?: HashMap(membership).also { nextMembership = it }
+                    mCells[oldCell] = mCells.getValue(oldCell).filter { it != uid }
+                    mMem.remove(uid)
+                }
+                continue
+            }
             val target = cell(unit)
-            if (next.membership[unit.unitId] == target) continue
-            next = next.remove(unit.unitId)
-            next = MissileTargetIndex(inverseX, inverseY,
-                next.cells + (target to (next.cells[target].orEmpty() + unit.unitId)), next.membership + (unit.unitId to target))
+            if (oldCell == target) continue
+            val mCells = nextCells ?: HashMap(cells).also { nextCells = it }
+            val mMem = nextMembership ?: HashMap(membership).also { nextMembership = it }
+            if (oldCell != null) {
+                mCells[oldCell] = mCells.getValue(oldCell).filter { it != uid }
+            }
+            mCells[target] = mCells[target].orEmpty() + uid
+            mMem[uid] = target
         }
-        return next
+        return if (nextCells == null) this else MissileTargetIndex(inverseX, inverseY, nextCells, checkNotNull(nextMembership))
     }
 
     fun candidates(x: Float, y: Float, radius: Float, units: Map<String, MutableUnit>): List<MutableUnit> {
@@ -66,9 +81,22 @@ internal class MissileTargetIndex private constructor(private val inverseX: Floa
     }
 
     fun validate(units: Map<String, MutableUnit>) {
-        val all = cells.values.flatten()
-        require(all.size == all.toSet().size && all.toSet() == membership.keys)
-        for ((id, index) in membership) require(units.getValue(id).alive && cell(units.getValue(id)) == index && id in cells.getValue(index))
-        require(units.values.filter { it.alive }.map { it.unitId }.toSet() == membership.keys)
+        var totalInCells = 0
+        for ((cellIdx, ids) in cells) {
+            for (i in 0 until ids.size) {
+                val id = ids[i]
+                require(membership[id] == cellIdx)
+                totalInCells++
+            }
+        }
+        require(totalInCells == membership.size)
+        var aliveCount = 0
+        for (u in units.values) {
+            if (!u.alive) continue
+            aliveCount++
+            val idx = membership[u.unitId]
+            require(idx != null && cell(u) == idx)
+        }
+        require(aliveCount == membership.size)
     }
 }

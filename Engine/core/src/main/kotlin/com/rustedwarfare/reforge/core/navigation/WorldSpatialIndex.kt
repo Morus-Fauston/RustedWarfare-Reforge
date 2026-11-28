@@ -57,6 +57,9 @@ internal class FrozenSpatialUnit(
     var height: Double = 0.0,
     var flightTargetHeight: Double = 0.0,
     var parkedClusterKey: Any? = null,
+    var velX: Double = 0.0,
+    var velY: Double = 0.0,
+    var velSpeed: Double = 0.0,
 ) {
     /** Compares core pose and kinematic snapshot fields (aux traits like [collisionShape], [mass], [parkedClusterKey] are refreshed in [WorldSpatialIndex.beginStep]). */
     override fun equals(other: Any?): Boolean {
@@ -403,6 +406,7 @@ internal class WorldSpatialIndex private constructor(
         var frozenEpoch: Int = 0,
         var frozenIndex: Int = -1,
         var cachedFrozen: FrozenSpatialUnit? = null,
+        var altCachedFrozen: FrozenSpatialUnit? = null,
     )
 
     private val bucketListPool: ArrayDeque<ArrayList<MutableUnit>> = ArrayDeque(64)
@@ -413,9 +417,17 @@ internal class WorldSpatialIndex private constructor(
     private var frozenCount: Int = 0
     private var frozenUnits: Array<FrozenSpatialUnit?> = arrayOfNulls(64)
     private var frozenNextInCell: IntArray = IntArray(64) { -1 }
-    private val frozenTables: Array<FrozenCellTable> = Array(LAYER_COUNT) { FrozenCellTable(128) }
+    private val frozenTables: Array<FrozenCellTable> = Array(LAYER_COUNT) { FrozenCellTable(32) }
     private val frozenMaxHardRadius: DoubleArray = DoubleArray(LAYER_COUNT)
     private val frozenMaxBufferRadius: DoubleArray = DoubleArray(LAYER_COUNT)
+    private val frozenMovingCount: IntArray = IntArray(LAYER_COUNT)
+    private val frozenConeRefX: DoubleArray = DoubleArray(LAYER_COUNT)
+    private val frozenConeRefY: DoubleArray = DoubleArray(LAYER_COUNT)
+    private val frozenConeMinDot: DoubleArray = DoubleArray(LAYER_COUNT)
+    private val frozenConeSinMax: DoubleArray = DoubleArray(LAYER_COUNT)
+    private val extraBufferCount: IntArray = IntArray(LAYER_COUNT)
+    private var parkedGroupKeys: Array<Any?> = arrayOfNulls(16)
+    private var parkedGroupCount: Int = 0
 
     // Scratch buffers for allocation-free Top-K queries when callers use queryFrozenTopK
     private var scratchTopUnits: Array<FrozenSpatialUnit?> = arrayOfNulls(32)
@@ -430,6 +442,8 @@ internal class WorldSpatialIndex private constructor(
     )
 
     fun isEmpty(): Boolean = entries.isEmpty()
+
+    fun hasExtraBuffer(layer: SpatialLayer): Boolean = extraBufferCount[layer.ordinal] > 0
 
     fun fork(forkedUnits: Map<String, MutableUnit>): WorldSpatialIndex {
         val nextBuckets = Array(LAYER_COUNT) { layerIdx ->
@@ -456,7 +470,10 @@ internal class WorldSpatialIndex private constructor(
                 bufferRadius = entry.bufferRadius,
                 frozenEpoch = 0,
                 frozenIndex = -1,
-                cachedFrozen = null,
+                // Ping-pong double-buffer: child writes to altCachedFrozen while parent's frozenUnits
+                // retains immutable cachedFrozen, ensuring strict fork isolation with steady-state zero alloc.
+                cachedFrozen = entry.altCachedFrozen,
+                altCachedFrozen = entry.cachedFrozen,
             )
         }
         return WorldSpatialIndex(
@@ -465,7 +482,7 @@ internal class WorldSpatialIndex private constructor(
             entries = nextEntries,
             maxHardRadius = maxHardRadius.copyOf(),
             maxBufferRadius = maxBufferRadius.copyOf(),
-        )
+        ).also { System.arraycopy(extraBufferCount, 0, it.extraBufferCount, 0, LAYER_COUNT) }
     }
 
     /** Rebuilds the live buckets from an authoritative unit collection. */
@@ -478,6 +495,7 @@ internal class WorldSpatialIndex private constructor(
             buckets[layerIdx].clear()
             maxHardRadius[layerIdx] = 0.0
             maxBufferRadius[layerIdx] = 0.0
+            extraBufferCount[layerIdx] = 0
         }
         entries.clear()
         invalidateFrozen()
@@ -503,6 +521,7 @@ internal class WorldSpatialIndex private constructor(
             ) {
                 return
             }
+            if (existing.bufferRadius > existing.hardRadius + 1e-9) extraBufferCount[existing.layer.ordinal]--
             removeFromBucket(existing.layer.ordinal, existing.cellKey, existing.unit)
             existing.unit = unit
             existing.layer = layer
@@ -510,9 +529,11 @@ internal class WorldSpatialIndex private constructor(
             existing.hardRadius = hard
             existing.bufferRadius = buf
             addToBucket(layer.ordinal, key, unit)
+            if (buf > hard + 1e-9) extraBufferCount[layer.ordinal]++
         } else {
             entries[unit.unitId] = Entry(unit, layer, key, hard, buf)
             addToBucket(layer.ordinal, key, unit)
+            if (buf > hard + 1e-9) extraBufferCount[layer.ordinal]++
         }
         val li = layer.ordinal
         if (hard > maxHardRadius[li]) maxHardRadius[li] = hard
@@ -526,6 +547,7 @@ internal class WorldSpatialIndex private constructor(
     fun remove(unitId: String) {
         val existing = entries.remove(unitId) ?: return
         val li = existing.layer.ordinal
+        if (existing.bufferRadius > existing.hardRadius + 1e-9) extraBufferCount[li]--
         removeFromBucket(li, existing.cellKey, existing.unit)
         if (existing.hardRadius >= maxHardRadius[li] || existing.bufferRadius >= maxBufferRadius[li]) {
             recomputeMaxRadii(li)
@@ -581,7 +603,14 @@ internal class WorldSpatialIndex private constructor(
             maxBufferRadius[li] = 0.0
             frozenMaxHardRadius[li] = 0.0
             frozenMaxBufferRadius[li] = 0.0
+            frozenMovingCount[li] = 0
+            frozenConeRefX[li] = 0.0
+            frozenConeRefY[li] = 0.0
+            frozenConeMinDot[li] = 1.0
+            frozenConeSinMax[li] = 0.0
         }
+        for (p in 0 until parkedGroupCount) parkedGroupKeys[p] = null
+        parkedGroupCount = 0
         val prevCount = frozenCount
         ensureFrozenCapacity(max(16, entries.size))
         val epoch = if (frozenEpoch == Int.MAX_VALUE) {
@@ -611,6 +640,24 @@ internal class WorldSpatialIndex private constructor(
                     val flightTargetH = u.definition.movement.flight?.targetHeight ?: 0.0
                     val hasAtt = u.attachmentOffsets.isNotEmpty()
                     val parkedGroup = if (u.landingMember?.parked == true) u.landingMember?.group else null
+                    if (parkedGroup != null) markGroupHasParked(parkedGroup)
+                    val preVelX: Double
+                    val preVelY: Double
+                    val preVelSpeed: Double
+                    if (mv.slidingMode || u.flightVelocity.x != 0.0 || u.flightVelocity.y != 0.0) {
+                        preVelX = u.flightVelocity.x
+                        preVelY = u.flightVelocity.y
+                        preVelSpeed = kotlin.math.sqrt(preVelX * preVelX + preVelY * preVelY)
+                    } else if (u.speed != 0.0) {
+                        val vRad = Math.toRadians(u.heading)
+                        preVelX = kotlin.math.sin(vRad) * u.speed
+                        preVelY = -kotlin.math.cos(vRad) * u.speed
+                        preVelSpeed = abs(u.speed)
+                    } else {
+                        preVelX = 0.0
+                        preVelY = 0.0
+                        preVelSpeed = 0.0
+                    }
                     val entry = entries[u.unitId]
                     val prior = entry?.cachedFrozen
                     val snap = if (prior != null) {
@@ -639,6 +686,9 @@ internal class WorldSpatialIndex private constructor(
                         prior.height = u.height
                         prior.flightTargetHeight = flightTargetH
                         prior.parkedClusterKey = parkedGroup
+                        prior.velX = preVelX
+                        prior.velY = preVelY
+                        prior.velSpeed = preVelSpeed
                         prior
                     } else {
                         FrozenSpatialUnit(
@@ -667,6 +717,9 @@ internal class WorldSpatialIndex private constructor(
                             height = u.height,
                             flightTargetHeight = flightTargetH,
                             parkedClusterKey = parkedGroup,
+                            velX = preVelX,
+                            velY = preVelY,
+                            velSpeed = preVelSpeed,
                         ).also { if (entry != null) entry.cachedFrozen = it }
                     }
                     if (idx >= frozenUnits.size) ensureFrozenCapacity(idx + 1)
@@ -678,6 +731,20 @@ internal class WorldSpatialIndex private constructor(
                     }
                     if (hard > frozenMaxHardRadius[li]) frozenMaxHardRadius[li] = hard
                     if (buf > frozenMaxBufferRadius[li]) frozenMaxBufferRadius[li] = buf
+                    if (movingNow && preVelSpeed > 1e-6) {
+                        val hx = preVelX / preVelSpeed
+                        val hy = preVelY / preVelSpeed
+                        val mc = frozenMovingCount[li]
+                        if (mc == 0) {
+                            frozenConeRefX[li] = hx
+                            frozenConeRefY[li] = hy
+                            frozenConeMinDot[li] = 1.0
+                        } else {
+                            val d = hx * frozenConeRefX[li] + hy * frozenConeRefY[li]
+                            if (d < frozenConeMinDot[li]) frozenConeMinDot[li] = d
+                        }
+                        frozenMovingCount[li] = mc + 1
+                    }
                     idx++
                 }
             }
@@ -685,8 +752,36 @@ internal class WorldSpatialIndex private constructor(
         for (stale in idx until prevCount) {
             frozenUnits[stale] = null
         }
+        for (li in 0 until LAYER_COUNT) {
+            val md = frozenConeMinDot[li].coerceIn(-1.0, 1.0)
+            frozenConeMinDot[li] = md
+            frozenConeSinMax[li] = kotlin.math.sqrt(max(0.0, 1.0 - md * md))
+        }
         frozenCount = idx
         frozenValid = true
+    }
+
+    /**
+     * Exact O(1) S^1 triangle-inequality proof: returns false when NO moving unit on [layer] can
+     * possibly have heading cosine `< cosThreshold` against `(desDirX, desDirY)`.
+     */
+    fun mightHaveOpposingMover(
+        layer: SpatialLayer,
+        desDirX: Double,
+        desDirY: Double,
+        cosThreshold: Double,
+    ): Boolean {
+        if (!frozenValid) return true
+        val li = layer.ordinal
+        if (frozenMovingCount[li] == 0) return false
+        val minDot = frozenConeMinDot[li]
+        val c = (desDirX * frozenConeRefX[li] + desDirY * frozenConeRefY[li]).coerceIn(-1.0, 1.0)
+        // For angles A = arccos(c), B = arccos(minDot) in [0, pi]: A + B >= pi iff c + minDot <= 0,
+        // in which case angle pi (cos = -1.0) is reachable inside the cone and cos(A + B) wraps upward!
+        if (c + minDot <= 0.0) return true
+        val s = kotlin.math.sqrt(max(0.0, 1.0 - c * c))
+        val lowerBound = c * minDot - s * frozenConeSinMax[li]
+        return lowerBound < cosThreshold + 1e-9
     }
 
     private fun computeStepStartAnchored(u: MutableUnit, movingNow: Boolean, hardRadius: Double): Boolean {
@@ -702,6 +797,24 @@ internal class WorldSpatialIndex private constructor(
             if (across < mouth.low - clearBand || across > mouth.high + clearBand) return true
         }
         return false
+    }
+
+    fun hasAnyParkedInGroup(group: Any): Boolean {
+        if (!frozenValid) return true
+        for (i in 0 until parkedGroupCount) {
+            if (parkedGroupKeys[i] === group) return true
+        }
+        return false
+    }
+
+    fun markGroupHasParked(group: Any) {
+        for (i in 0 until parkedGroupCount) {
+            if (parkedGroupKeys[i] === group) return
+        }
+        if (parkedGroupCount == parkedGroupKeys.size) {
+            parkedGroupKeys = parkedGroupKeys.copyOf(parkedGroupKeys.size shl 1)
+        }
+        parkedGroupKeys[parkedGroupCount++] = group
     }
 
     fun frozenUnit(unitId: String): FrozenSpatialUnit? {
@@ -764,7 +877,148 @@ internal class WorldSpatialIndex private constructor(
         val spanX = x1.toLong() - x0.toLong() + 1L
         val spanY = y1.toLong() - y0.toLong() + 1L
         val touchedBuckets = frozenBucketCount(li)
-        if (spanX > 256L || spanY > 256L || spanX * spanY > touchedBuckets.toLong() * 4L + 16L) {
+        if (spanX <= 16L && spanY <= 16L) {
+            // Exact center-out Chebyshev ring expansion with mathematically sound distance pruning:
+            // once `count == limit`, any outer ring whose minimum Euclidean cell-border gap exceeds
+            // `sqrt(outDistSq[limit - 1])` cannot contain a nearer center and stops immediately.
+            val ccx = cellCoordOf(ox)
+            val ccy = cellCoordOf(oy)
+            val cs = bucketCellSize()
+            val maxR = max(max(ccx - x0, x1 - ccx), max(ccy - y0, y1 - ccy))
+            var r = 0
+            while (r <= maxR) {
+                if (r > 0 && count == limit) {
+                    val gRight = (ccx + r) * cs - ox
+                    val gLeft = ox - (ccx - r + 1) * cs
+                    val gDown = (ccy + r) * cs - oy
+                    val gUp = oy - (ccy - r + 1) * cs
+                    val minGap = min(min(gRight, gLeft), min(gDown, gUp))
+                    if (minGap > 0.0 && minGap * minGap > outDistSq[limit - 1]) break
+                }
+                if (r == 0) {
+                    if (ccx in x0..x1 && ccy in y0..y1) {
+                        var cur = frozenHeadAt(li, packKeyOf(ccx, ccy))
+                        while (cur >= 0) {
+                            val candidate = frozenUnitAt(cur)
+                            cur = frozenNextAt(cur)
+                            if (candidate.unitId == obsId) continue
+                            val dx = candidate.position.x - ox
+                            val dy = candidate.position.y - oy
+                            val maxDist = if (includeBufferPadding) radius + obsBuf + candidate.bufferRadius else radius
+                            val distSq = dx * dx + dy * dy
+                            if (distSq > maxDist * maxDist) continue
+                            if (count == limit) {
+                                val worstDist = outDistSq[count - 1]
+                                if (distSq > worstDist) continue
+                                if (distSq == worstDist && candidate.updateKey >= checkNotNull(outUnits[count - 1]).updateKey) continue
+                            }
+                            if (!visible(candidate)) continue
+                            count = insertTopK(candidate, distSq, count, limit, outUnits, outDistSq)
+                        }
+                    }
+                } else {
+                    val rMinX = max(x0, ccx - r)
+                    val rMaxX = min(x1, ccx + r)
+                    val rMinY = max(y0, ccy - r)
+                    val rMaxY = min(y1, ccy + r)
+                    val topY = ccy - r
+                    if (topY in y0..y1) {
+                        for (cx in rMinX..rMaxX) {
+                            var cur = frozenHeadAt(li, packKeyOf(cx, topY))
+                            while (cur >= 0) {
+                                val candidate = frozenUnitAt(cur)
+                                cur = frozenNextAt(cur)
+                                if (candidate.unitId == obsId) continue
+                                val dx = candidate.position.x - ox
+                                val dy = candidate.position.y - oy
+                                val maxDist = if (includeBufferPadding) radius + obsBuf + candidate.bufferRadius else radius
+                                val distSq = dx * dx + dy * dy
+                                if (distSq > maxDist * maxDist) continue
+                                if (count == limit) {
+                                    val worstDist = outDistSq[count - 1]
+                                    if (distSq > worstDist) continue
+                                    if (distSq == worstDist && candidate.updateKey >= checkNotNull(outUnits[count - 1]).updateKey) continue
+                                }
+                                if (!visible(candidate)) continue
+                                count = insertTopK(candidate, distSq, count, limit, outUnits, outDistSq)
+                            }
+                        }
+                    }
+                    val botY = ccy + r
+                    if (botY in y0..y1) {
+                        for (cx in rMinX..rMaxX) {
+                            var cur = frozenHeadAt(li, packKeyOf(cx, botY))
+                            while (cur >= 0) {
+                                val candidate = frozenUnitAt(cur)
+                                cur = frozenNextAt(cur)
+                                if (candidate.unitId == obsId) continue
+                                val dx = candidate.position.x - ox
+                                val dy = candidate.position.y - oy
+                                val maxDist = if (includeBufferPadding) radius + obsBuf + candidate.bufferRadius else radius
+                                val distSq = dx * dx + dy * dy
+                                if (distSq > maxDist * maxDist) continue
+                                if (count == limit) {
+                                    val worstDist = outDistSq[count - 1]
+                                    if (distSq > worstDist) continue
+                                    if (distSq == worstDist && candidate.updateKey >= checkNotNull(outUnits[count - 1]).updateKey) continue
+                                }
+                                if (!visible(candidate)) continue
+                                count = insertTopK(candidate, distSq, count, limit, outUnits, outDistSq)
+                            }
+                        }
+                    }
+                    val innerMinY = max(rMinY, topY + 1)
+                    val innerMaxY = min(rMaxY, botY - 1)
+                    val leftX = ccx - r
+                    if (leftX in x0..x1 && innerMinY <= innerMaxY) {
+                        for (cy in innerMinY..innerMaxY) {
+                            var cur = frozenHeadAt(li, packKeyOf(leftX, cy))
+                            while (cur >= 0) {
+                                val candidate = frozenUnitAt(cur)
+                                cur = frozenNextAt(cur)
+                                if (candidate.unitId == obsId) continue
+                                val dx = candidate.position.x - ox
+                                val dy = candidate.position.y - oy
+                                val maxDist = if (includeBufferPadding) radius + obsBuf + candidate.bufferRadius else radius
+                                val distSq = dx * dx + dy * dy
+                                if (distSq > maxDist * maxDist) continue
+                                if (count == limit) {
+                                    val worstDist = outDistSq[count - 1]
+                                    if (distSq > worstDist) continue
+                                    if (distSq == worstDist && candidate.updateKey >= checkNotNull(outUnits[count - 1]).updateKey) continue
+                                }
+                                if (!visible(candidate)) continue
+                                count = insertTopK(candidate, distSq, count, limit, outUnits, outDistSq)
+                            }
+                        }
+                    }
+                    val rightX = ccx + r
+                    if (rightX in x0..x1 && innerMinY <= innerMaxY) {
+                        for (cy in innerMinY..innerMaxY) {
+                            var cur = frozenHeadAt(li, packKeyOf(rightX, cy))
+                            while (cur >= 0) {
+                                val candidate = frozenUnitAt(cur)
+                                cur = frozenNextAt(cur)
+                                if (candidate.unitId == obsId) continue
+                                val dx = candidate.position.x - ox
+                                val dy = candidate.position.y - oy
+                                val maxDist = if (includeBufferPadding) radius + obsBuf + candidate.bufferRadius else radius
+                                val distSq = dx * dx + dy * dy
+                                if (distSq > maxDist * maxDist) continue
+                                if (count == limit) {
+                                    val worstDist = outDistSq[count - 1]
+                                    if (distSq > worstDist) continue
+                                    if (distSq == worstDist && candidate.updateKey >= checkNotNull(outUnits[count - 1]).updateKey) continue
+                                }
+                                if (!visible(candidate)) continue
+                                count = insertTopK(candidate, distSq, count, limit, outUnits, outDistSq)
+                            }
+                        }
+                    }
+                }
+                r++
+            }
+        } else if (spanX > 256L || spanY > 256L || spanX * spanY > touchedBuckets.toLong()) {
             for (bi in 0 until touchedBuckets) {
                 var cur = frozenTouchedHeadAt(li, bi)
                 while (cur >= 0) {
@@ -830,8 +1084,7 @@ internal class WorldSpatialIndex private constructor(
         while (ins > 0) {
             val prevDist = outDistSq[ins - 1]
             val prevUnit = checkNotNull(outUnits[ins - 1])
-            val c = distSq.compareTo(prevDist)
-            if (c > 0 || (c == 0 && candidate.updateKey >= prevUnit.updateKey)) break
+            if (distSq > prevDist || (distSq == prevDist && candidate.updateKey >= prevUnit.updateKey)) break
             outDistSq[ins] = prevDist
             outUnits[ins] = prevUnit
             ins--
@@ -846,6 +1099,7 @@ internal class WorldSpatialIndex private constructor(
     }
 
     @PublishedApi internal fun isFrozenLayerEmpty(li: Int): Boolean = frozenTables[li].isEmpty()
+    @PublishedApi internal fun bucketCellSize(): Double = cellSize
     @PublishedApi internal fun frozenBucketCount(li: Int): Int = frozenTables[li].touchedCount
     @PublishedApi internal fun frozenTouchedHeadAt(li: Int, index: Int): Int = frozenTables[li].headAtTouched(index)
     @PublishedApi internal fun frozenMaxBufferFor(li: Int): Double = frozenMaxBufferRadius[li]
@@ -1116,6 +1370,55 @@ internal class WorldSpatialIndex private constructor(
         return out
     }
 
+    /** Zero-allocation center-box visitor across all spatial layers (caller handles deterministic tie-breaking). */
+    inline fun forEachInAllLayersCenterBoxUnordered(
+        center: Position,
+        radius: Double,
+        visitor: (MutableUnit) -> Unit,
+    ) {
+        if (!radius.isFinite() || radius < 0.0) return
+        val minX = center.x - radius
+        val maxX = center.x + radius
+        val minY = center.y - radius
+        val maxY = center.y + radius
+        val x0 = cellCoordOf(minX)
+        val x1 = cellCoordOf(maxX)
+        val y0 = cellCoordOf(minY)
+        val y1 = cellCoordOf(maxY)
+        val spanX = x1.toLong() - x0.toLong() + 1L
+        val spanY = y1.toLong() - y0.toLong() + 1L
+        for (li in 0 until 3) {
+            val layerMap = bucketsFor(li)
+            if (layerMap.isEmpty()) continue
+            if (spanX > 256L || spanY > 256L || spanX * spanY > layerMap.size.toLong()) {
+                layerMap.forEachValue { list ->
+                    for (i in 0 until list.size) {
+                        val u = list[i]
+                        if (u.position.x >= minX && u.position.x <= maxX &&
+                            u.position.y >= minY && u.position.y <= maxY
+                        ) {
+                            visitor(u)
+                        }
+                    }
+                }
+            } else {
+                for (cx in x0..x1) {
+                    for (cy in y0..y1) {
+                        val list = layerMap[packKeyOf(cx, cy)] ?: continue
+                        for (i in 0 until list.size) {
+                            val u = list[i]
+                            if (u.position.x >= minX && u.position.x <= maxX &&
+                                u.position.y >= minY && u.position.y <= maxY
+                            ) {
+                                visitor(u)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fun queryAllLayersBounds(minX: Double, maxX: Double, minY: Double, maxY: Double, extraMargin: Double = 0.0): List<MutableUnit> {
         val out = ArrayList<MutableUnit>()
         for (li in 0 until LAYER_COUNT) {
@@ -1152,6 +1455,17 @@ internal class WorldSpatialIndex private constructor(
         layerMap.forEachValue { list -> out.addAll(list) }
         if (out.size > 1) out.sortWith(UNIT_KEY_COMPARATOR)
         return out
+    }
+
+    /** Zero-allocation unordered visitor across all units in [layer] (for order-independent set/map aggregation). */
+    inline fun forEachInLayerUnordered(layer: SpatialLayer, visitor: (MutableUnit) -> Unit) {
+        val layerMap = bucketsFor(layer.ordinal)
+        if (layerMap.isEmpty()) return
+        layerMap.forEachValue { list ->
+            for (i in 0 until list.size) {
+                visitor(list[i])
+            }
+        }
     }
 
     fun validate(units: Map<String, MutableUnit>) {
@@ -1222,7 +1536,7 @@ internal class WorldSpatialIndex private constructor(
     private fun cellKey(x: Double, y: Double): Long = packKey(cellCoord(x), cellCoord(y))
 
     companion object {
-        const val DEFAULT_CELL_SIZE = 48.0
+        const val DEFAULT_CELL_SIZE = 96.0
         private val LAYER_COUNT = SpatialLayer.entries.size
 
         private val UNIT_KEY_COMPARATOR = Comparator<MutableUnit> { a, b -> a.updateKey.compareTo(b.updateKey) }

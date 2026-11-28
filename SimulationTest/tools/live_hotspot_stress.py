@@ -317,6 +317,7 @@ def run_stress(args: argparse.Namespace) -> int:
                 # 4. Fund p1 & spawn multi-factory base + initial mobile wave on verified passable pads via `/` console
                 anchors = match_status.get("passableLandAnchors") or []
                 near_pads = anchors[:4]
+                spawn_pads = anchors[:8] if len(anchors) >= 6 else near_pads
                 far_targets = anchors[4:] if len(anchors) > 4 else anchors
 
                 def send_console_cmd(cmd_text: str) -> None:
@@ -328,24 +329,26 @@ def run_stress(args: argparse.Namespace) -> int:
                     client.send({"action": "key", "generation": gen, "keycode": KEY_ESCAPE})
 
                 send_console_cmd("/credits p1 +500000")
-                for pad in near_pads[:3]:
+                factory_types = ("landFactory", "mechFactory", "airFactory")
+                for idx_pad, pad in enumerate(near_pads[:3]):
                     px, py = round(float(pad["x"])), round(float(pad["y"]))
-                    send_console_cmd(f"/spawn landFactory {px} {py} p1")
+                    send_console_cmd(f"/spawn {factory_types[idx_pad % len(factory_types)]} {px} {py} p1")
 
-                # Spawn initial mobile tank & hovercraft/mech squads via /spawn-batch (<= 512 chars per batch)
-                target_initial_spawn = max(24, min(160, int(args.initial_spawn_units)))
-                if anchors:
-                    per_pad = max(1, (target_initial_spawn + len(near_pads) - 1) // max(1, len(near_pads)))
+                # Spawn initial mobile mixed squads (land + hover + air) across verified passable pads via /spawn-batch
+                target_initial_spawn = max(24, min(240, int(args.initial_spawn_units)))
+                if spawn_pads:
+                    per_pad = max(1, (target_initial_spawn + len(spawn_pads) - 1) // max(1, len(spawn_pads)))
                     spawn_entries: list[str] = []
                     spawned = 0
-                    for pad in near_pads:
+                    for pad in spawn_pads:
                         bx, by = float(pad["x"]), float(pad["y"])
                         for k in range(per_pad):
                             if spawned >= target_initial_spawn:
                                 break
-                            ox = ((k % 6) - 2.5) * 24.0
-                            oy = ((k // 6) + 1.8) * 24.0
-                            utype = "c_tank" if (spawned % 4 != 3) else "hoverTank"
+                            ox = ((k % 6) - 2.5) * 28.0
+                            oy = ((k // 6) + 1.5) * 28.0
+                            mod = spawned % 6
+                            utype = "c_tank" if mod in (0, 1, 2) else ("hoverTank" if mod in (3, 4) else "helicopter")
                             spawn_entries.append(f"u{spawned} {utype} {round(bx + ox)} {round(by + oy)} p1")
                             spawned += 1
                     chunk: list[str] = []
@@ -368,8 +371,8 @@ def run_stress(args: argparse.Namespace) -> int:
                         f"got {alive_after_spawn} (status={st})"
                     )
 
-                # 5. Click each spawned landFactory and queue continuous c_tank / builder production via HUD
-                factories = [u for u in (st.get("p1Entities") or []) if u.get("typeId") == "landFactory"]
+                # 5. Click each spawned factory (land/mech/air) and queue continuous production via HUD
+                factories = [u for u in (st.get("p1Entities") or []) if u.get("typeId") in factory_types]
                 for fac in factories[:3]:
                     client.send({"action": "camera", "generation": gen, "centerX": fac["worldX"], "centerY": fac["worldY"], "zoom": 3.6})
                     st_fac = client.send({"action": "status"})
@@ -377,15 +380,19 @@ def run_stress(args: argparse.Namespace) -> int:
                     client.send({"action": "click", "generation": gen, "button": "left", "x": sx, "y": sy})
                     st_sel = client.send({"action": "status"})
                     prod_btns = st_sel.get("uiButtons") or {}
-                    prod_key = "produce:c_tank" if "produce:c_tank" in prod_btns else next(
-                        (k for k in prod_btns if k.startswith("produce:")), None
+                    prod_key = next(
+                        (k for k in ("produce:c_tank", "produce:mechGun", "produce:helicopter") if k in prod_btns),
+                        next((k for k in prod_btns if k.startswith("produce:")), None),
                     )
                     if prod_key:
                         pb = prod_btns[prod_key]
                         for _ in range(int(args.queue_per_factory)):
                             client.send({"action": "click", "generation": gen, "button": "left", "x": int(pb["x"]), "y": int(pb["y"])})
 
-                # 6. Execute repeated box-select group moves (normal & Alt), camera pans & scroll zooms while advancing >= min_steps
+                # 6. Execute evenly spaced box-select group moves (normal & Alt), camera pans & scroll zooms across >= min_steps active steps
+                st_loop_start = client.send({"action": "status"})
+                base_step = int(st_loop_start.get("stepIndex") or 0)
+                move_interval = max(40, int(args.min_steps) // max(2, int(args.group_moves) + 1))
                 move_orders_issued = 0
                 alt_orders_issued = 0
                 max_selected_count = 0
@@ -399,6 +406,7 @@ def run_stress(args: argparse.Namespace) -> int:
                 while time.monotonic() < loop_deadline:
                     st = client.send({"action": "status"})
                     step_idx = int(st.get("stepIndex") or 0)
+                    active_steps = step_idx - base_step
                     max_selected_count = max(max_selected_count, int(st.get("selectedCount") or 0))
                     p1_mobile = [
                         u for u in (st.get("p1Entities") or [])
@@ -407,7 +415,7 @@ def run_stress(args: argparse.Namespace) -> int:
 
                     if p1_mobile and far_targets and (
                         move_orders_issued < int(args.group_moves)
-                        and step_idx >= move_orders_issued * max(40, int(args.min_steps) // max(2, int(args.group_moves) + 1))
+                        and active_steps >= move_orders_issued * move_interval
                     ):
                         # Center at gameplay zoom (3.6 on 350x350 ~ 1:1 sprite scale) and drag world-projected box over squad
                         if move_orders_issued < len(near_pads):
@@ -464,7 +472,7 @@ def run_stress(args: argparse.Namespace) -> int:
                         client.send({"action": "scroll", "generation": gen, "x": mid_x, "y": mid_y, "amount": scroll_amt})
                         zoom_ops += 1
 
-                    if not captured_battlefield and step_idx >= max(180, int(args.min_steps) // 2) and p1_mobile:
+                    if not captured_battlefield and active_steps >= max(180, int(args.min_steps) // 2) and p1_mobile:
                         focus_u = p1_mobile[0]
                         client.send({"action": "camera", "generation": gen, "centerX": focus_u["worldX"], "centerY": focus_u["worldY"], "zoom": 3.6})
                         time.sleep(0.08)
@@ -472,7 +480,7 @@ def run_stress(args: argparse.Namespace) -> int:
                         shutil.copy2(bridge_dir / shot["image"], battlefield_png)
                         captured_battlefield = True
 
-                    if step_idx >= int(args.min_steps) and move_orders_issued >= int(args.group_moves):
+                    if active_steps >= int(args.min_steps) and move_orders_issued >= int(args.group_moves):
                         break
                     time.sleep(0.12)
                 else:

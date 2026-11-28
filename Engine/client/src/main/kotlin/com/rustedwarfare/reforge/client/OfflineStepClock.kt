@@ -47,18 +47,25 @@ class OfflineStepClock {
     fun advance(realSeconds: Double, tick: () -> Unit): OfflinePacingFrame =
         advanceWithLastFlag(realSeconds) { tick() }
 
-    fun advanceWithLastFlag(realSeconds: Double, tick: (isLastSubstep: Boolean) -> Unit): OfflinePacingFrame {
+    fun advanceWithLastFlag(
+        realSeconds: Double,
+        canRunExtraCatchup: () -> Boolean = { true },
+        canContinueFrame: (completedSteps: Int) -> Boolean = { true },
+        tick: (isLastSubstep: Boolean) -> Unit,
+    ): OfflinePacingFrame {
         require(realSeconds.isFinite() && realSeconds >= 0.0) { "Finite nonnegative host frame time required" }
         if (isPaused) return OfflinePacingFrame(0, pending)
         val scheduled = pending + realSeconds * 60.0 * rate.multiplier
         require(scheduled.isFinite()) { "Host step backlog overflow" }
         pending = scheduled
         var completed = 0
+        val baseSteps = rate.multiplier
         while (pending >= 1.0 && completed < 8) {
-            val isLastSubstep = pending < 2.0 || completed >= 7
+            val isLastSubstep = pending < 2.0 || completed >= 7 || (completed + 1 >= baseSteps && !canRunExtraCatchup())
             tick(isLastSubstep)
             pending -= 1.0
             completed++
+            if (isLastSubstep || !canContinueFrame(completed)) break
         }
         measuredWall += realSeconds
         measuredSteps += completed

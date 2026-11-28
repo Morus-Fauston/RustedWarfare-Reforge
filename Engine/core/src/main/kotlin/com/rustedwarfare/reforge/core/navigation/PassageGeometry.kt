@@ -88,23 +88,34 @@ internal class KnownPassages(private val twoHullWidth: Double) {
     private data class Face(val horizontal: Boolean, val outward: Int, val plane: Int)
     private val bay = HashMap<PassageCell, Boolean>()
     class Tile(val passage: NarrowPassage? = null, val wideBay: Boolean = false)
-    private val wide = Tile(wideBay = true)
+    private val wide = WIDE_TILE
     private val noGate = Tile()
-    private val passages = HashMap<PassageCell, Tile>()
+    private val passages = LongObjectTable<Tile>(64)
 
     fun at(terrain: PlanningTerrain, point: Position): NarrowPassage? = tileAt(terrain,
         kotlin.math.floor(point.x / terrain.tileWidth).toInt(), kotlin.math.floor(point.y / terrain.tileHeight).toInt()).passage
 
     fun tileAt(terrain: PlanningTerrain, column: Int, row: Int): Tile {
         if (column !in 0 until terrain.widthTiles || row !in 0 until terrain.heightTiles) return noGate
+        val cellKey = packPassageCell(column, row)
+        passages[cellKey]?.let { return it }
+        if (terrain.isBlocked(column, row)) {
+            passages[cellKey] = noGate
+            return noGate
+        }
+        val minTile = minOf(terrain.tileWidth, terrain.tileHeight).toDouble()
+        val wideRings = ceil(twoHullWidth / minTile).toInt()
+        if (terrain.clearanceRings(column, row) >= wideRings) {
+            passages[cellKey] = wide
+            return wide
+        }
         val cell = PassageCell(column, row)
-        passages[cell]?.let { return it }
-        if (!open(terrain, cell)) return noGate.also { passages[cell] = it }
-        if (isBay(terrain, cell)) return wide.also { passages[cell] = it }
+        if (isBay(terrain, cell)) return wide.also { passages[cellKey] = it }
         val visited = linkedSetOf(cell)
         val pending = ArrayDeque<PassageCell>()
         val boundary = linkedMapOf<Face, MutableList<Int>>()
         pending.addLast(cell)
+        var exceededTwoFaces = false
         while (pending.isNotEmpty()) {
             val next = pending.removeFirst()
             for ((dc, dr) in OFFSETS) {
@@ -113,17 +124,35 @@ internal class KnownPassages(private val twoHullWidth: Double) {
                 if (isBay(terrain, neighbor)) {
                     val (face, offset) = if (dc != 0) Face(true, dc, next.column + maxOf(0, dc)) to next.row
                         else Face(false, dr, next.row + maxOf(0, dr)) to next.column
-                    boundary.getOrPut(face) { mutableListOf() }.add(offset)
+                    val list = boundary[face]
+                    if (list != null) {
+                        list.add(offset)
+                    } else {
+                        if (boundary.size >= 2) {
+                            // Every distinct Face emits >= 1 PassageOpening, so >= 3 faces guarantees mouths.size >= 3 != 2.
+                            exceededTwoFaces = true
+                            break
+                        }
+                        boundary[face] = mutableListOf(offset)
+                    }
                 } else if (visited.add(neighbor)) pending.addLast(neighbor)
             }
+            if (exceededTwoFaces) break
         }
-        val mouths = openings(terrain, boundary)
-        val passage = if (mouths.size == 2) NarrowPassage(visited, mouths,
-            visited.minOf { maximumSquare(terrain, it) }, terrain.tileWidth, terrain.tileHeight) else null
-        val result = passage?.let { Tile(it) } ?: noGate
-        for (known in visited) passages[known] = result
+        val result = if (exceededTwoFaces) {
+            noGate
+        } else {
+            val mouths = openings(terrain, boundary)
+            val passage = if (mouths.size == 2) NarrowPassage(visited, mouths,
+                visited.minOf { maximumSquare(terrain, it) }, terrain.tileWidth, terrain.tileHeight) else null
+            passage?.let { Tile(it) } ?: noGate
+        }
+        for (known in visited) passages[packPassageCell(known.column, known.row)] = result
         return result
     }
+
+    private fun packPassageCell(column: Int, row: Int): Long =
+        (row.toLong() shl 32) or (column.toLong() and 0xFFFFFFFFL)
 
     private fun isBay(terrain: PlanningTerrain, cell: PassageCell): Boolean =
         bay.getOrPut(cell) { fitsSquare(terrain, cell, twoHullWidth) }
@@ -173,13 +202,15 @@ internal class KnownPassages(private val twoHullWidth: Double) {
         val firstRow = maxOf(0, cell.row - rows + 1)
         for (row in firstRow..minOf(cell.row, terrain.heightTiles - rows)) {
             for (column in firstColumn..minOf(cell.column, terrain.widthTiles - columns)) {
-                if (!terrain.anyBlocked(column, column + columns - 1, row, row + rows - 1) { _, _ -> true }) return true
+                if (!terrain.anyBlockedPrim(column, column + columns - 1, row, row + rows - 1, ALWAYS_TRUE_CELL)) return true
             }
         }
         return false
     }
 
     companion object {
+        val WIDE_TILE = Tile(wideBay = true)
+        private val ALWAYS_TRUE_CELL = IntCellPredicate { _, _ -> true }
         private val OFFSETS = listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1)
     }
 }

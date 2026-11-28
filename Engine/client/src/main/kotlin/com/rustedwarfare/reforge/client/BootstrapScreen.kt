@@ -272,7 +272,7 @@ class BootstrapScreen(
         viewport.unitsPerPixel = 1f / uiMetrics.scale
         viewport.update(initW, initH, true)
         battlefieldCamera.setToOrtho(false, viewport.worldWidth, viewport.worldHeight)
-        batch = SpriteBatch().also { created += { it.dispose() } }
+        batch = SpriteBatch(8191).also { created += { it.dispose() } }
         shapes = ShapeRenderer().also { created += { it.dispose() } }
         val createdFonts = createSafeFontSet(uiMetrics.scale, collectFontPreloadStrings())
         fontSet = createdFonts
@@ -1631,9 +1631,11 @@ class BootstrapScreen(
                 val runGeneration = generation
                 val generationEvidence = evidence.withGeneration(runGeneration)
                 val cameraCues = request.configuration.testScenario?.cameraCues.orEmpty()
+                com.rustedwarfare.reforge.core.sim.SimulationKernelWarmup.warmUpOnce(scenario)
                 pendingSession = SandboxSession(scenario, generationEvidence, request.configuration.options,
                     generation = runGeneration, cameraCues = cameraCues,
                     singleSelectionButtons = loaded.contentPack?.singleSelectionButtons.orEmpty())
+                pendingSession.prewarmNavigationTerrains()
                 if (touchControls && pendingSession.options.cameraJoystickEnabled) {
                     val map = pendingGraphics.projection
                     map.restoreCamera(map.camera.copy(zoom = FixedCameraJoystick.startingZoom))
@@ -1753,10 +1755,21 @@ class BootstrapScreen(
             ignoreNextHostFrame = false
             sounds?.beginFrame()
             try {
-                lastPacingFrame = stepClock.advanceWithLastFlag(elapsed) { isLastSubstep ->
+                val simFrameStartNanos = System.nanoTime()
+                var publishedInLoop = false
+                lastPacingFrame = stepClock.advanceWithLastFlag(
+                    realSeconds = elapsed,
+                    canRunExtraCatchup = { (System.nanoTime() - simFrameStartNanos) < 6_500_000L },
+                    canContinueFrame = { completed ->
+                        val simElapsed = System.nanoTime() - simFrameStartNanos
+                        val avgStepNs = simElapsed / completed
+                        (simElapsed + avgStepNs) < 9_500_000L
+                    },
+                ) { isLastSubstep ->
                     val publishRender = isLastSubstep || current.requiresPerStepObservation(scriptedCamera != null)
                     current.tick(publishRenderFrame = publishRender)
                     if (publishRender) {
+                        publishedInLoop = true
                         scriptedCamera?.let(current::updateCamera)
                     }
                     sounds?.let { player ->
@@ -1764,6 +1777,10 @@ class BootstrapScreen(
                         player.consume(current.consumeSounds(checkNotNull(graphics).projection.soundListener()))
                         if (profilingMatchFrame) hotspotProfiler.addClientStageNanos(HotspotStage.CLIENT_OBSERVE, System.nanoTime() - sndStart)
                     }
+                }
+                if (lastPacingFrame.executedSteps > 0 && !publishedInLoop) {
+                    current.flushPendingRenderFrame()
+                    scriptedCamera?.let(current::updateCamera)
                 }
                 if (profilingMatchFrame) {
                     hotspotProfiler.absorbSimCollector(current.simHotspotCollector)
@@ -2422,6 +2439,20 @@ class BootstrapScreen(
                 "scope" to if (loading) "match-load" else "menu-preparation"))
         }
         lastHudState = state
+        if (current == null || !::hudOverlay.isInitialized) {
+            updateLegacyMatchHud(current, menu, selected, naval, state)
+        }
+        updateStartupMenuHud(current, menu, state)
+        updateModernMatchHud(current, showConsole)
+    }
+
+    private fun updateLegacyMatchHud(
+        current: SandboxSession?,
+        menu: ActionMenuView?,
+        selected: com.rustedwarfare.reforge.core.sim.UnitObservation?,
+        naval: Boolean,
+        state: HudState,
+    ) {
         selectedLabel.setText(if (selected == null) "None" else if (state.selectedIds.size > 1)
             "${state.selectedIds.size} selected\n${current?.observation?.units?.count { it.unitId in state.selectedIds && it.alive && it.ownerPlayerId == "p1" }} controllable\nRight click: Move / Attack\nS: Stop" else String.format(Locale.ROOT,
             "%s / %s\n%s / %s\nx %.1f   y %.1f\nheading %.1f  speed %.2f",
@@ -2579,30 +2610,35 @@ class BootstrapScreen(
             setUnitIcon(nativeTooltipIcon, selected?.typeId)
             nativeTooltipText.setText(action.tooltip)
         }
-        // Legacy bottom stop/reopen/exit bounds replaced by InGameHudOverlay & HudActionPanel
         stopButton.isVisible = current != null
         patrolButton.isVisible = current != null && !touchControls
         patrolButton.isDisabled = current?.canPatrol != true
         patrolLabel.isVisible = current != null && !touchControls
-        val taskText = selected?.tasks?.firstOrNull()?.let { head ->
-                "Tasks ${selected.tasks.size}: ${taskLabel(head, current.observation).lowercase()}" +
-                    (head.target?.let { String.format(Locale.ROOT, "\nPoint %.0f, %.0f", it.x, it.y) } ?: "")
-            } ?: "Tasks 0"
+        val taskText = if (current != null) selected?.tasks?.firstOrNull()?.let { head ->
+            "Tasks ${selected.tasks.size}: ${taskLabel(head, current.observation).lowercase()}" +
+                (head.target?.let { String.format(Locale.ROOT, "\nPoint %.0f, %.0f", it.x, it.y) } ?: "")
+        } ?: "Tasks 0" else "Tasks 0"
         patrolLabel.setText(if (state.patrolMode) "Sent points ${state.patrolPoints}\n$taskText\nLeft: point / Esc: finish"
             else if (selected?.tasks?.isNotEmpty() == true) taskText else "P: set patrol points")
-        // Dense action panels already explain their controls and use the patrol hint area.
         if (queue != null || upgrades.isNotEmpty() || menu?.construction?.isNotEmpty() == true || menu?.canMaintain == true ||
             selected?.unitActions?.stockpile != null || selected?.attachmentOverview != null)
             patrolLabel.isVisible = false
         selectedLabel.isVisible = current != null
-        val setup = current == null && !loading && startupPage == StartupPage.SETUP
-        val home = current == null && !loading && startupPage == StartupPage.HOME
-        val managing = current == null && !loading && !setup && !home
         titleLabel.isVisible = current != null
         statusLabel.isVisible = current != null
         groupButtons.forEachIndexed { index, actor ->
             actor.setText("${index + 1} (${state.groups[index]})"); actor.isVisible = current != null
         }
+    }
+
+    private fun updateStartupMenuHud(
+        current: SandboxSession?,
+        menu: ActionMenuView?,
+        state: HudState,
+    ) {
+        val setup = current == null && !loading && startupPage == StartupPage.SETUP
+        val home = current == null && !loading && startupPage == StartupPage.HOME
+        val managing = current == null && !loading && !setup && !home
         val editable = launch.canEdit && !loading
         val sxOff = ((viewport.worldWidth - 960f) * 0.5f).coerceAtLeast(0f)
         val syOff = ((viewport.worldHeight - 640f) * 0.5f).coerceAtLeast(0f)
@@ -2731,6 +2767,9 @@ class BootstrapScreen(
             nativePanel -> if (matchStartupNotices.isNotEmpty() && (current.playerFeedback.isBlank() || current.playerFeedback == "Ready")) "! " + matchStartupNotices.joinToString(" | ") else current.playerFeedback
             else -> "${current.feedback}\nStep ${current.observation.stepIndex}"
         })
+    }
+
+    private fun updateModernMatchHud(current: SandboxSession?, showConsole: Boolean) {
         minimapActor.isVisible = current != null
         val hudSnap = current?.let {
             HudSidebarProjection.project(
@@ -2744,7 +2783,6 @@ class BootstrapScreen(
         val worldW = graphics?.projection?.worldWidth ?: 1000.0
         val worldH = graphics?.projection?.worldHeight ?: 1000.0
 
-        // First compute pre-actions layout so BattleActionList anchors flush beneath queue/card inside 232px rail
         hudEvents.setCameraFollowing(scriptedCamera?.followsUnit == true)
         hudOverlay.update(
             stageWidth = viewport.worldWidth,
@@ -2756,7 +2794,6 @@ class BootstrapScreen(
             externalActionsHeight = 0f,
         )
         val railLayout = hudOverlay.layout
-        // Keep legacy BattleActionList empty/hidden now that HudActionPanel owns the action list
         battleActions.update(null, null, emptyList())
         val actionListSnap = if (current != null && !paused) {
             HudActionProjection.projectActionList(
@@ -2805,10 +2842,8 @@ class BootstrapScreen(
         )
         val showTouchDebugBtn = development && touchControls && current != null
         val debugOpen = development && debugLayerState.enabled && current != null
-        // Update debug overlay first so we know its leftColumnBottomY for notice shift
         refreshDebugOverlay(current)
         val noticesBelowY = if (debugOpen && ::hudDebugOverlay.isInitialized) hudDebugOverlay.leftColumnBottomY else null
-        // Re-sync hudOverlay with actual HudActionPanel occupied height so sidebarBottom shrink-wraps accurately
         hudOverlay.update(
             stageWidth = viewport.worldWidth,
             stageHeight = viewport.worldHeight,
@@ -2836,7 +2871,6 @@ class BootstrapScreen(
         }
 
         if (current != null) {
-            // Hide legacy match chrome replaced by InGameHudOverlay on both desktop and touch (HUD Spec §4, §5, §12.1)
             titleLabel.isVisible = false
             productionLabel.isVisible = false
             productionNoticeLabel.isVisible = false

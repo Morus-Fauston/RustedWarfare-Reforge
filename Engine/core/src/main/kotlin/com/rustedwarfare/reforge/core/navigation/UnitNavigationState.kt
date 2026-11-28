@@ -15,7 +15,6 @@ import java.util.Collections
  * [StepState.fork] shares them in O(1) without mutable per-unit fields on [MutableUnit].
  */
 internal data class NavigationRequestAudit(
-    val movementRequested: Boolean = false,
     val singleNodePathCount: Byte = 0,
     val logicalRequestX: Float? = null,
     val logicalRequestY: Float? = null,
@@ -36,14 +35,11 @@ internal data class NavigationRequestAudit(
         }
     }
 
-    fun beginMovementStep(): NavigationRequestAudit =
-        if (!movementRequested) this else copy(movementRequested = false)
-
     fun snapshotDispatchWindow(): NavigationRequestAudit =
         if (qBeforeDispatch == singleNodePathCount && consumedPathNodeCounts.isEmpty()) this
         else copy(qBeforeDispatch = singleNodePathCount, consumedPathNodeCounts = emptyList())
 
-    fun recordLogicalTarget(target: Position, markRequested: Boolean): NavigationRequestAudit {
+    fun recordLogicalTarget(target: Position): NavigationRequestAudit {
         val x = target.x.toFloat()
         val y = target.y.toFloat()
         require(x.isFinite() && y.isFinite()) { "Logical movement target must remain finite" }
@@ -51,9 +47,7 @@ internal data class NavigationRequestAudit(
             logicalRequestX == x && logicalRequestY == y
         val nextSingle = if (sameTarget) singleNodePathCount else 0
         val nextPending = if (sameTarget) pendingPathNodeCounts else emptyList()
-        val nextRequested = if (markRequested) true else movementRequested
-        if (nextRequested == movementRequested &&
-            nextSingle == singleNodePathCount &&
+        if (nextSingle == singleNodePathCount &&
             logicalRequestX == x &&
             logicalRequestY == y &&
             nextPending === pendingPathNodeCounts
@@ -61,7 +55,6 @@ internal data class NavigationRequestAudit(
             return this
         }
         return copy(
-            movementRequested = nextRequested,
             singleNodePathCount = nextSingle,
             logicalRequestX = x,
             logicalRequestY = y,
@@ -70,17 +63,15 @@ internal data class NavigationRequestAudit(
     }
 
     fun recordAdoptedPath(logicalTarget: Position, nodeCount: Int): NavigationRequestAudit {
-        val base = recordLogicalTarget(logicalTarget, markRequested = false)
+        val base = recordLogicalTarget(logicalTarget)
         val combined = ArrayList<Int>(base.pendingPathNodeCounts.size + 1)
         combined.addAll(base.pendingPathNodeCounts)
         combined.add(nodeCount)
         return base.copy(pendingPathNodeCounts = Collections.unmodifiableList(combined))
     }
 
-    fun resetAccepted(clearRequested: Boolean = false): NavigationRequestAudit {
-        val nextReq = if (clearRequested) false else movementRequested
-        if (nextReq == movementRequested &&
-            singleNodePathCount == 0.toByte() &&
+    fun resetAccepted(): NavigationRequestAudit {
+        if (singleNodePathCount == 0.toByte() &&
             logicalRequestX == null &&
             logicalRequestY == null &&
             pendingPathNodeCounts.isEmpty() &&
@@ -89,7 +80,6 @@ internal data class NavigationRequestAudit(
             return this
         }
         return copy(
-            movementRequested = nextReq,
             singleNodePathCount = 0,
             logicalRequestX = null,
             logicalRequestY = null,
@@ -98,11 +88,12 @@ internal data class NavigationRequestAudit(
         )
     }
 
-    fun finishMovementStep(): NavigationRequestAudit {
+    fun finishMovementStep(movementRequested: Boolean): NavigationRequestAudit {
         if (!movementRequested) {
-            return resetAccepted(clearRequested = false)
+            return resetAccepted()
         }
         val consumed = pendingPathNodeCounts
+        if (consumed.isEmpty() && consumedPathNodeCounts.isEmpty()) return this
         var nextSingle = singleNodePathCount
         for (count in consumed) {
             if (count == 1) nextSingle = (nextSingle + 1).toByte()
@@ -151,7 +142,6 @@ internal data class UnitNavigationState(
     val landingMember: LandingMember? = null,
     val indexedLandingBody: LandingOccupancy.IndexedBody? = null,
     val adoptedRouteRevision: Long = 0L,
-    val localProgressTime: Double = 0.0,
     val terrainCorrectionTime: Double = 0.0,
     val terrainClearSteps: Int = 0,
     val terrainOnlyStall: Boolean = false,
@@ -159,7 +149,6 @@ internal data class UnitNavigationState(
     val cohortEscortYielding: Boolean = false,
     val repairBackoffStep: Long = 0L,
     val repairConsecutiveFailures: Int = 0,
-    val lastAvoidHeadingDeg: Double? = null,
     val progressAnchorPos: Position? = null,
     val progressAnchorStep: Long = -1L,
     val requestAudit: NavigationRequestAudit = NavigationRequestAudit.EMPTY,
@@ -261,13 +250,11 @@ internal data class UnitNavigationState(
         maneuverTurnWaypoint = null,
         lastManeuverContactRepair = null,
         routeOccupantIds = emptyList(),
-        localProgressTime = 0.0,
         terrainOnlyStall = false,
         optimisticSteerTarget = null,
         cohortEscortYielding = false,
         repairBackoffStep = 0L,
         repairConsecutiveFailures = 0,
-        lastAvoidHeadingDeg = null,
         progressAnchorPos = null,
         progressAnchorStep = -1L,
     )
@@ -280,8 +267,8 @@ internal data class UnitNavigationState(
     )
 
     /** Ends the active command route and resets accepted path-node audit counters atomically. */
-    fun cancelRoute(clearRequested: Boolean = false): UnitNavigationState =
-        pauseRoute().copy(requestAudit = requestAudit.resetAccepted(clearRequested = clearRequested))
+    fun cancelRoute(): UnitNavigationState =
+        pauseRoute().copy(requestAudit = requestAudit.resetAccepted())
 
     /** Adopts a freshly planned or repaired immutable waypoint list atomically (without touching requestAudit). */
     fun adoptRoute(
@@ -299,13 +286,11 @@ internal data class UnitNavigationState(
         routeTranslationClipped = false,
         maneuverTurnWaypoint = null,
         routeOccupantIds = immutableList(occupantIds),
-        localProgressTime = 0.0,
         lastPlannedKnowledgeRevision = knowledgeRevision,
         lastPlannedBuildingRevision = buildingRevision,
         optimisticSteerTarget = null,
         repairBackoffStep = if (repairReset) 0L else repairBackoffStep,
         repairConsecutiveFailures = if (repairReset) 0 else repairConsecutiveFailures,
-        lastAvoidHeadingDeg = null,
         progressAnchorPos = null,
         progressAnchorStep = -1L,
     )
@@ -361,7 +346,6 @@ internal data class UnitNavigationState(
             copy(
                 pathPoints = remaining,
                 routeContinuation = null,
-                localProgressTime = 0.0,
                 maneuverTurnWaypoint = maneuverTurnWaypoint,
             )
         } else {
@@ -382,9 +366,7 @@ internal data class UnitNavigationState(
         return if (resetLocalSegment) {
             copy(
                 pathPoints = frozen,
-                localProgressTime = 0.0,
                 routeContinuation = null,
-                lastAvoidHeadingDeg = null,
             )
         } else {
             copy(pathPoints = frozen)
@@ -402,8 +384,6 @@ internal data class UnitNavigationState(
             copy(
                 pathPoints = frozen,
                 routeContinuation = null,
-                localProgressTime = 0.0,
-                lastAvoidHeadingDeg = null,
             )
         } else {
             copy(pathPoints = frozen)

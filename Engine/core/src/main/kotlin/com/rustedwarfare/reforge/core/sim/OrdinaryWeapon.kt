@@ -73,20 +73,56 @@ internal object OrdinaryWeapon {
     }
 
     fun hasFiniteGeometry(unit: MutableUnit): Boolean {
-        unit.definition.combat?.takeIf { NamedWeaponRuntime.usesNamedState(it) }?.namedWeapons?.let { catalog ->
+        val px = unit.position.x
+        val py = unit.position.y
+        val heading = unit.heading
+        val safeBase = px.isFinite() && py.isFinite() && heading.isFinite() &&
+            kotlin.math.abs(px) < 1e150 && kotlin.math.abs(py) < 1e150
+        unit.definition.combat?.takeIf { NamedWeaponRuntime.usesNamedState(it) }?.let { combat ->
+            val catalog = combat.namedWeapons ?: return false
             val states = unit.namedWeapons ?: return false
-            if (states.keys.toList() != catalog.ordered.map { it.name }) return false
-            return catalog.ordered.all { definition ->
-                val state = states.getValue(definition.name)
+            val slots = combat.weaponAssembly.slots
+            if (states.size != slots.size) return false
+            var idx = 0
+            for ((k, state) in states) {
+                val slot = slots[idx++]
+                val definition = slot.definition
+                if (k != definition.name) return false
+                val wp = slot.profile
+                if (safeBase && definition.attachedTo == null && unit.amphibiousState == null &&
+                    state.turretHeading.isFinite() && state.offset.x.isFinite() && state.offset.y.isFinite() &&
+                    kotlin.math.abs(state.offset.x) < 1e150 && kotlin.math.abs(state.offset.y) < 1e150 &&
+                    hasSafeWeaponOffsets(wp)
+                ) {
+                    continue
+                }
                 val pivot = NamedWeaponRuntime.pivot(unit, definition, state)
                 val muzzle = NamedWeaponRuntime.muzzle(unit, definition, state)
-                pivot.x.isFinite() && pivot.y.isFinite() && muzzle.x.isFinite() && muzzle.y.isFinite()
+                if (!pivot.x.isFinite() || !pivot.y.isFinite() || !muzzle.x.isFinite() || !muzzle.y.isFinite()) return false
             }
+            return true
+        }
+        val state = unit.combat
+        val weapon = unit.definition.combat
+        if (safeBase && state != null && weapon != null && state.turretHeading.isFinite() &&
+            state.offset.x.isFinite() && state.offset.y.isFinite() &&
+            kotlin.math.abs(state.offset.x) < 1e150 && kotlin.math.abs(state.offset.y) < 1e150 &&
+            hasSafeWeaponOffsets(weapon)
+        ) {
+            return true
         }
         val pivot = pivot(unit)
         val muzzle = muzzle(unit)
         return pivot.x.isFinite() && pivot.y.isFinite() && muzzle.x.isFinite() && muzzle.y.isFinite()
     }
+
+    private fun hasSafeWeaponOffsets(weapon: CombatProfile): Boolean =
+        weapon.mount.localX.isFinite() && weapon.mount.localY.isFinite() &&
+            weapon.turretSize.isFinite() && weapon.barrelX.isFinite() &&
+            weapon.oddShotOffset.isFinite() && weapon.recoil.offset.isFinite() &&
+            kotlin.math.abs(weapon.mount.localX) < 1e150 && kotlin.math.abs(weapon.mount.localY) < 1e150 &&
+            kotlin.math.abs(weapon.turretSize) < 1e150 && kotlin.math.abs(weapon.barrelX) < 1e150 &&
+            kotlin.math.abs(weapon.oddShotOffset) < 1e150 && kotlin.math.abs(weapon.recoil.offset) < 1e150
 
     fun aim(unit: MutableUnit, target: MutableUnit, delta: Double, state: MutableCombat = checkNotNull(unit.combat),
             weapon: CombatProfile = checkNotNull(unit.definition.combat),

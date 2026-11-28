@@ -515,6 +515,12 @@ internal data class MutableUnit(
     var blinkUnlocked: Boolean = false,
     var spiderBlink: SpiderBlink? = null,
     var destroyedWithoutHealth: Boolean = false,
+    // Hot per-step navigation scalars stored as sealed private primitives on MutableUnit (copied once per step
+    // in StepState.fork) so 60Hz steering avoids 3x per-unit per-substep UnitNavigationState copies while keeping
+    // zero public navigation setters on MutableUnit (ENG-P017-005).
+    private var _localProgressTime: Double = 0.0,
+    private var _lastAvoidHeadingDeg: Double? = null,
+    private var _movementRequested: Boolean = false,
 ) {
     val moveTarget: Position? get() = nav.moveTarget
     val motionContract: MotionContract? get() = nav.motionContract
@@ -539,7 +545,9 @@ internal data class MutableUnit(
     val indexedLandingBody: LandingOccupancy.IndexedBody? get() = nav.indexedLandingBody
     val landingMember: LandingMember? get() = nav.landingMember
     val adoptedRouteRevision: Long get() = nav.adoptedRouteRevision
-    val localProgressTime: Double get() = nav.localProgressTime
+    val localProgressTime: Double get() = _localProgressTime
+    val lastAvoidHeadingDeg: Double? get() = _lastAvoidHeadingDeg
+    val movementRequested: Boolean get() = _movementRequested
     val terrainCorrectionTime: Double get() = nav.terrainCorrectionTime
     val terrainClearSteps: Int get() = nav.terrainClearSteps
     val terrainOnlyStall: Boolean get() = nav.terrainOnlyStall
@@ -547,7 +555,6 @@ internal data class MutableUnit(
     val cohortEscortYielding: Boolean get() = nav.cohortEscortYielding
     val repairBackoffStep: Long get() = nav.repairBackoffStep
     val repairConsecutiveFailures: Int get() = nav.repairConsecutiveFailures
-    val movementRequested: Boolean get() = nav.requestAudit.movementRequested
     val singleNodePathCount: Byte get() = nav.requestAudit.singleNodePathCount
     val logicalRequestX: Float? get() = nav.requestAudit.logicalRequestX
     val logicalRequestY: Float? get() = nav.requestAudit.logicalRequestY
@@ -558,6 +565,8 @@ internal data class MutableUnit(
     val reversing: Boolean get() = mechState?.reversing ?: bodyReversing
     val alive: Boolean get() = !destroyedWithoutHealth && (deathPending || health == null || checkNotNull(health) > 0.0)
     val tasks: List<UnitTask> get() = taskQueue.tasks
+    val headTask: UnitTask? get() = taskQueue.head
+    val secondTask: UnitTask? get() = taskQueue.second
     var primaryCombatTargetId: String?
         get() = if (namedWeapons != null) sharedWeaponTargetId else combat?.targetId
         set(value) {
@@ -578,13 +587,18 @@ internal data class MutableUnit(
 
     /** End the command while preserving linear/angular speed for the existing coasting rule. */
     fun cancelRoute(clearRequested: Boolean = false) {
-        nav = nav.cancelRoute(clearRequested = clearRequested)
+        nav = nav.cancelRoute()
+        _localProgressTime = 0.0
+        _lastAvoidHeadingDeg = null
+        if (clearRequested) _movementRequested = false
         movementState = if (speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
     }
 
     /** No usable physical route; a still-active logical approach may remain. */
     fun pauseRoute() {
         nav = nav.pauseRoute()
+        _localProgressTime = 0.0
+        _lastAvoidHeadingDeg = null
         movementState = if (speed != 0.0) MovementState.DECELERATING else MovementState.IDLE
     }
 
@@ -605,23 +619,38 @@ internal data class MutableUnit(
             occupantIds = occupantIds,
             repairReset = repairReset,
         )
+        _localProgressTime = 0.0
+        _lastAvoidHeadingDeg = null
         movementState = MovementState.MOVING
     }
 
+    fun advanceLocalProgress(delta: Double) {
+        _localProgressTime += delta
+    }
+
+    fun resetLocalProgress(clearAvoidHeading: Boolean = false) {
+        _localProgressTime = 0.0
+        if (clearAvoidHeading) _lastAvoidHeadingDeg = null
+    }
+
+    fun recordAvoidHeading(headingDeg: Double?) {
+        _lastAvoidHeadingDeg = headingDeg
+    }
+
     fun requestMovement(target: Position) {
-        nav = nav.copy(requestAudit = nav.requestAudit.recordLogicalTarget(target, markRequested = true))
+        _movementRequested = true
+        val updated = nav.requestAudit.recordLogicalTarget(target)
+        if (updated !== nav.requestAudit) nav = nav.copy(requestAudit = updated)
     }
 
     fun beginMovementStep(): Boolean {
-        val previous = nav.requestAudit.movementRequested
-        if (previous) nav = nav.copy(requestAudit = nav.requestAudit.beginMovementStep())
+        val previous = _movementRequested
+        _movementRequested = false
         return previous
     }
 
     fun clearMovementRequested() {
-        if (nav.requestAudit.movementRequested) {
-            nav = nav.copy(requestAudit = nav.requestAudit.beginMovementStep())
-        }
+        _movementRequested = false
     }
 
     fun snapshotDispatchWindow() {
@@ -631,12 +660,14 @@ internal data class MutableUnit(
 
     /** Count each real acceptance only after this worker's activity dispatch. */
     fun finishMovementRequest() {
-        val updated = nav.requestAudit.finishMovementStep()
+        val updated = nav.requestAudit.finishMovementStep(_movementRequested)
         if (updated !== nav.requestAudit) nav = nav.copy(requestAudit = updated)
     }
 
     fun clearMoveOrigin() {
         nav = nav.clearMoveOrigin()
+        _localProgressTime = 0.0
+        _lastAvoidHeadingDeg = null
     }
 }
 

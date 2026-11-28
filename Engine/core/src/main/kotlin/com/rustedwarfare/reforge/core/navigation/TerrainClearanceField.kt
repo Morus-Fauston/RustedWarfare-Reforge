@@ -134,6 +134,38 @@ internal class TerrainClearanceField private constructor(
     companion object {
         const val MAX_CLEARANCE: Int = 32_767
 
+        private class BrushfireScratch {
+            var queue: IntArray = IntArray(256)
+            var invalidated: BooleanArray = BooleanArray(0)
+            var oldVal: ShortArray = ShortArray(0)
+            var hCells: IntArray = IntArray(256)
+            var hVals: IntArray = IntArray(256)
+
+            fun ensureQueueCapacity(required: Int) {
+                if (required <= queue.size) return
+                var cap = queue.size.coerceAtLeast(256)
+                while (cap < required) cap = cap shl 1
+                queue = queue.copyOf(cap)
+            }
+
+            fun ensureRaiseMasks(n: Int) {
+                if (invalidated.size < n) {
+                    invalidated = BooleanArray(n)
+                    oldVal = ShortArray(n)
+                }
+            }
+
+            fun ensureHeapCapacity(required: Int) {
+                if (required <= hCells.size) return
+                var cap = hCells.size.coerceAtLeast(256)
+                while (cap < required) cap = cap shl 1
+                hCells = hCells.copyOf(cap)
+                hVals = hVals.copyOf(cap)
+            }
+        }
+
+        private val scratchPool: ThreadLocal<BrushfireScratch> = ThreadLocal.withInitial { BrushfireScratch() }
+
         fun build(width: Int, height: Int, blocked: BooleanArray): TerrainClearanceField {
             val clearance = computeChebyshevClearance(width, height, blocked)
             return TerrainClearanceField(width, height, clearance, precomputedBaseComponents = null)
@@ -229,25 +261,31 @@ internal class TerrainClearanceField private constructor(
             for (idx in changedIndices) {
                 if (blocked[idx]) hasLower = true else hasRaise = true
             }
+            val scratch = scratchPool.get()
 
             // Phase A: handle newly unblocked cells (raise clearance in affected cone)
             if (hasRaise) {
-                val queue = IntArray(n)
+                scratch.ensureRaiseMasks(n)
+                val invalidated = scratch.invalidated
+                val oldVal = scratch.oldVal
                 var head = 0
                 var tail = 0
-                val invalidated = BooleanArray(n)
-                val oldVal = ShortArray(n)
+
+                fun enqueueRaise(cell: Int) {
+                    if (tail == scratch.queue.size) scratch.ensureQueueCapacity(tail + 1)
+                    scratch.queue[tail++] = cell
+                }
 
                 for (idx in changedIndices) {
                     if (!blocked[idx] && !invalidated[idx] && (dist[idx].toInt() and 0xFFFF) == 0) {
                         oldVal[idx] = 0
                         dist[idx] = inf.toShort()
                         invalidated[idx] = true
-                        queue[tail++] = idx
+                        enqueueRaise(idx)
                     }
                 }
                 while (head < tail) {
-                    val cur = queue[head++]
+                    val cur = scratch.queue[head++]
                     val curOld = oldVal[cur].toInt() and 0xFFFF
                     if (curOld >= inf) continue
                     val nextTarget = curOld + 1
@@ -267,23 +305,21 @@ internal class TerrainClearanceField private constructor(
                                 oldVal[ni] = dist[ni]
                                 dist[ni] = inf.toShort()
                                 invalidated[ni] = true
-                                queue[tail++] = ni
+                                enqueueRaise(ni)
                             }
                         }
                     }
                 }
                 val reseedCount = tail
+                val queue = scratch.queue
                 if (reseedCount > 0) {
-                    var hCap = max(16, reseedCount * 2)
-                    var hCells = IntArray(hCap)
-                    var hVals = IntArray(hCap)
                     var heapSize = 0
                     fun pushGrow(cell: Int, v: Int) {
-                        if (heapSize == hCap) {
-                            hCap = hCap shl 1
-                            hCells = hCells.copyOf(hCap)
-                            hVals = hVals.copyOf(hCap)
+                        if (heapSize == scratch.hCells.size) {
+                            scratch.ensureHeapCapacity(heapSize + 1)
                         }
+                        val hCells = scratch.hCells
+                        val hVals = scratch.hVals
                         var i = heapSize++
                         hCells[i] = cell
                         hVals[i] = v
@@ -296,6 +332,8 @@ internal class TerrainClearanceField private constructor(
                         }
                     }
                     fun popGrow(): Int {
+                        val hCells = scratch.hCells
+                        val hVals = scratch.hVals
                         val top = hCells[0]
                         val last = --heapSize
                         if (last > 0) {
@@ -363,21 +401,27 @@ internal class TerrainClearanceField private constructor(
                         }
                     }
                 }
+                for (k in 0 until reseedCount) {
+                    invalidated[queue[k]] = false
+                }
             }
 
             // Phase B: handle newly blocked cells (lower clearance via deduplicated monotone BFS wave)
             if (hasLower) {
-                val queue = IntArray(n)
                 var head = 0
                 var tail = 0
+                fun enqueueLower(cell: Int) {
+                    if (tail == scratch.queue.size) scratch.ensureQueueCapacity(tail + 1)
+                    scratch.queue[tail++] = cell
+                }
                 for (idx in changedIndices) {
                     if (blocked[idx] && (dist[idx].toInt() and 0xFFFF) != 0) {
                         dist[idx] = 0
-                        queue[tail++] = idx
+                        enqueueLower(idx)
                     }
                 }
                 while (head < tail) {
-                    val cur = queue[head++]
+                    val cur = scratch.queue[head++]
                     val nd = (dist[cur].toInt() and 0xFFFF) + 1
                     val cx = cur % width
                     val cy = cur / width
@@ -392,7 +436,7 @@ internal class TerrainClearanceField private constructor(
                             if (ni == cur) continue
                             if (nd < (dist[ni].toInt() and 0xFFFF)) {
                                 dist[ni] = nd.toShort()
-                                queue[tail++] = ni
+                                enqueueLower(ni)
                             }
                         }
                     }

@@ -143,6 +143,50 @@ internal object NavigationTopologyMasks {
         return mask
     }
 
+    /**
+     * Exact local incremental update of [priorMask] after [changedIndices] flip blocked state in
+     * [terrain]. A cell `(c, r)`'s gate-throat predicate inspects at most `MAX_GATE_SPAN_TILES`
+     * orthogonally in the 4 cardinal directions, so only cells on the same row or column within
+     * `MAX_GATE_SPAN_TILES` of any changed cell can change value.
+     */
+    fun updateGateThroatMaskIncremental(
+        terrain: PlanningTerrain,
+        priorMask: BooleanArray,
+        changedIndices: IntArray,
+    ): BooleanArray {
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
+        val total = w * h
+        if (priorMask.size != total || changedIndices.isEmpty()) return priorMask
+        if (changedIndices.size * 32 >= total) return computeGateThroatMask(terrain)
+        val next = priorMask.copyOf()
+        val span = MAX_GATE_SPAN_TILES
+        for (idx in changedIndices) {
+            val cc = idx % w
+            val cr = idx / w
+            // Update the changed cell itself and horizontal neighbors in [cc - span, cc + span]
+            if (cr in 1 until h - 1) {
+                val cLo = maxOf(1, cc - span)
+                val cHi = minOf(w - 2, cc + span)
+                val base = cr * w
+                for (c in cLo..cHi) {
+                    next[base + c] = !terrain.isBlocked(c, cr) &&
+                        (isVerticallyBoundedThroat(terrain, c, cr) || isHorizontallyBoundedThroat(terrain, c, cr))
+                }
+            }
+            // Update vertical neighbors in [cr - span, cr + span]
+            if (cc in 1 until w - 1) {
+                val rLo = maxOf(1, cr - span)
+                val rHi = minOf(h - 2, cr + span)
+                for (r in rLo..rHi) {
+                    next[r * w + cc] = !terrain.isBlocked(cc, r) &&
+                        (isVerticallyBoundedThroat(terrain, cc, r) || isHorizontallyBoundedThroat(terrain, cc, r))
+                }
+            }
+        }
+        return next
+    }
+
     fun computeWideYieldMask(
         terrain: PlanningTerrain,
         wideRings: Int,
@@ -171,5 +215,56 @@ internal object NavigationTopologyMasks {
             }
         }
         return mask
+    }
+
+    /**
+     * Exact local incremental update of [priorMask] after [changedIndices] flip blocked state in
+     * [terrain]. A cell's wide-yield status depends only on `clearanceRings <= wideRings + 2`
+     * (and adjacent `clearanceRings >= wideRings` plus `throat`), so only cells within
+     * `halo = max(wideRings + 3, MAX_GATE_SPAN_TILES + 1)` of any changed cell can change.
+     */
+    fun updateWideYieldMaskIncremental(
+        terrain: PlanningTerrain,
+        priorMask: BooleanArray,
+        wideRings: Int,
+        throat: BooleanArray,
+        changedIndices: IntArray,
+    ): BooleanArray {
+        val w = terrain.widthTiles
+        val h = terrain.heightTiles
+        val total = w * h
+        if (priorMask.size != total || changedIndices.isEmpty()) return priorMask
+        val halo = maxOf(wideRings + 3, MAX_GATE_SPAN_TILES + 1)
+        if (changedIndices.size.toLong() * (2L * halo + 1L) * (2L * halo + 1L) >= total.toLong()) {
+            return computeWideYieldMask(terrain, wideRings, throat)
+        }
+        val next = priorMask.copyOf()
+        val cf = terrain.clearanceField()
+        for (changedIdx in changedIndices) {
+            val cc = changedIdx % w
+            val cr = changedIdx / w
+            val rLo = maxOf(1, cr - halo)
+            val rHi = minOf(h - 2, cr + halo)
+            val cLo = maxOf(1, cc - halo)
+            val cHi = minOf(w - 2, cc + halo)
+            for (r in rLo..rHi) {
+                val base = r * w
+                for (c in cLo..cHi) {
+                    val idx = base + c
+                    val rings = cf.clearanceRingsAt(idx)
+                    var v = false
+                    if (rings in wideRings..(wideRings + 2)) {
+                        v = true
+                    } else if (rings == 1 && throat[idx] && singleTilePinholeAxis(terrain, c, r) == 0) {
+                        v = (c > 0 && cf.clearanceRingsAt(idx - 1) >= wideRings) ||
+                            (c + 1 < w && cf.clearanceRingsAt(idx + 1) >= wideRings) ||
+                            (r > 0 && cf.clearanceRingsAt(idx - w) >= wideRings) ||
+                            (r + 1 < h && cf.clearanceRingsAt(idx + w) >= wideRings)
+                    }
+                    next[idx] = v
+                }
+            }
+        }
+        return next
     }
 }

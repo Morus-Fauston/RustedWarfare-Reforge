@@ -1,3 +1,10 @@
+v0.5.91 (2026-11-28 16:15)
+  性能优化: 针对 350x350 大地图 4x 压测热点完成模拟与渲染全链路提速，包括 WorldSpatialIndex 原语链表与双槽 ping-pong 冻结快照复用及 Chebyshev 环剪枝 Top-K、LocomotionModule 拆分 7 项中粒度子方法与原始数组 ORCA 求解、NavigationGuidance/PlanningTerrain 增量地形掩码与大地图影子重建配额及轻量回滚、CircularTerrain/UnitContact 长线段走廊早停与零分配圆形扫掠、SimulationContext 阵营包围盒索敌剪枝/活体建筑快径/SimulationKernelWarmup JIT 预热，以及 SandboxGraphics 静态地形 SpriteCache 与 OfflineStepClock 帧预算守卫
+  修复: 修复 WorldSpatialIndex 对向车流圆锥补角余弦回绕、NavigationGuidance 小地图影子限流与门洞梯度余量及自格通行费扣减、UnitContact 纯在途独立车流与 41px 近目标轴向对接及静止群死锁回退、contactLayerAt 水下闭区间边界、SHORE_REJOIN 弹栈进度清零与 BuildingTerrain 慢路径条目同步
+  技术: 新增 SimulationKernelWarmupTest 与 OfflineStepClock 帧预算单测；原版素材 350x350 后台真 GL 4x 综合压测 4704 步实测 P95=13.24ms / P99=20.60ms / 有效倍速 3.9987x（170 峰值在场单位，零焦点抢占）；public_batch --kind pr（7 套机制与短测）、--kind long（33 条长测）、dev-ab 12/12、Holdout v3 12/12、Android 构建与双根布局全绿，经独立视觉与非作者代码 R2 双审 APPROVE（0 必修）
+
+====
+
 v0.5.90 (2026-11-28 07:48)
   新增: 为 MoveAction、GroupMoveRequest、MotionContract 与 Windows 客户端 SandboxInput/SandboxSession 接通左右 Alt 单次显式编队行进（保持敌军攻击及友方装载/维修/续建原语义不变） / 在 CohortCoordinator 与 ChunkedFlowFieldAdapter 落地共同最严净空走廊绑定与无共同连通域自动分流脱钩、零单位 ID 硬编码的通用耐久与射程一维波前前后护航配速（同质编队零偏置、无武器高血量辅助保底后随武装前锋、统一流场测地距离基准与 C0 连续限速）、双侧夹缝/瓶颈门洞鱼贯过门与出口重聚、空地跨层同步配速及阵亡/改令/抵岸/真卡死>=90步即时动态脱钩 / 主动陪行态 cohortEscortYielding 经 PlayerObservationProjector 对敌方剥离，并豁免停滞重寻路与 DiagnosticSceneProjector 2 秒标红（真实堵死仍正常标红），同时严守 LocomotionModule 零改动红线
   技术: 在 ScenarioCatalog 注册海岛绕岛与逆序重甲护航两项标准编队基准场景；新增 CohortEscortAndAltMoveTest（7 项核心契约）与 CohortAltInputTest 并入公开套件，新增 CohortEscortVisualEvidenceTest（4 组 2 秒标红对照拼图）及 BackgroundClientInput 无人值守后台真 GL 实窗 Alt+右键 回执与 F3+H 截图；dev-ab 全 12 场景、public_batch --kind pr 全 7 套机制与短测、Android 编译与双根布局检查全绿，经独立视觉与非作者代码 R2 双审 APPROVE（0 必修）

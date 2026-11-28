@@ -1,5 +1,10 @@
 package com.rustedwarfare.reforge.core.navigation
 
+/** Primitive zero-boxing cell predicate for hot terrain broad-phase scans. */
+internal fun interface IntCellPredicate {
+    fun test(col: Int, row: Int): Boolean
+}
+
 /** Primitive broad phase built from an owner's immutable defensive copy. No geometry decisions. */
 internal class BlockedCellIndex(private val width: Int, private val cells: BooleanArray) {
     val count: Int by lazy { cells.count { it } }
@@ -15,12 +20,16 @@ internal class BlockedCellIndex(private val width: Int, private val cells: Boole
     }
 
     fun any(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
-            predicate: (Int, Int) -> Boolean): Boolean {
+            predicate: (Int, Int) -> Boolean): Boolean =
+        anyPrim(firstColumn, lastColumn, firstRow, lastRow) { col, row -> predicate(col, row) }
+
+    fun anyPrim(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
+                predicate: IntCellPredicate): Boolean {
         if (firstColumn > lastColumn || firstRow > lastRow) return false
         val area = (lastColumn.toLong() - firstColumn + 1) * (lastRow.toLong() - firstRow + 1)
         if (area <= 16) {
             for (row in firstRow..lastRow) for (column in firstColumn..lastColumn) {
-                if (cells[row * width + column] && predicate(column, row)) return true
+                if (cells[row * width + column] && predicate.test(column, row)) return true
             }
             return false
         }
@@ -38,7 +47,7 @@ internal class BlockedCellIndex(private val width: Int, private val cells: Boole
                 if (word == lastWord) bits = bits and (-1L ushr (63 - (last and 63)))
                 while (bits != 0L) {
                     val column = (word shl 6) + java.lang.Long.numberOfTrailingZeros(bits) - origin
-                    if (predicate(column, row)) return true
+                    if (predicate.test(column, row)) return true
                     bits = bits and (bits - 1)
                 }
             }

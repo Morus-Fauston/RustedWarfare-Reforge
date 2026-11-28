@@ -171,35 +171,118 @@ class SimulationContext internal constructor(
     // Public observation sorting is separate from deterministic gameplay traversal.
     private fun orderedUnits(): Collection<MutableUnit> = units.values
 
+    /**
+     * Pre-computes immutable Chebyshev clearance & gate-throat topology masks for the active map's
+     * ground/hover navigation terrains during match loading so the player's first group move does
+     * not incur a one-time lazy build stall on large maps (ENG-P017-011).
+     */
+    fun prewarmNavigationTerrains() {
+        val input = scenario ?: return
+        val localPlayerId = input.players.firstOrNull { it.control == PlayerControl.LOCAL }?.playerId
+            ?: input.players.firstOrNull()?.playerId
+            ?: return
+        for (mt in arrayOf(MovementType.LAND, MovementType.HOVER)) {
+            val terrain = sharedFlowTerrainFor(localPlayerId, input.map, mt)
+            terrain.clearanceField()
+            terrain.gateThroatMask()
+            terrain.isConnected(0, 0, 0, 0, 1)
+        }
+    }
+
+    private var cachedBuildingTruthForMasks: BuildingTerrain? = null
+    private var cachedBuildingKnowledgeMap: Map<String, BuildingKnowledge>? = null
+    private var cachedBuildingVisibilityMasks: LongArray? = null
+
     private fun prepareBuildings(views: Map<String, VisionSnapshot>?): BuildingCommit? {
         val old = buildingTerrain ?: return null
         val input = checkNotNull(scenario)
         val truth = BuildingTerrain.fromLive(input.map, units.values, old)
+        val liveEntries = truth.liveEntries
+        if (truth === old && liveEntries.isEmpty() && buildingKnowledge.size == input.players.size) {
+            var allEmpty = true
+            for (player in input.players) {
+                val prev = buildingKnowledge[player.playerId]
+                if (prev == null || prev.cells.isNotEmpty()) {
+                    allEmpty = false
+                    break
+                }
+            }
+            if (allEmpty) {
+                return BuildingCommit(truth, buildingKnowledge, emptyMap())
+            }
+        }
+        val playerCount = input.players.size
+        if (truth === old && buildingKnowledge.size == playerCount) {
+            if (views == null && cachedBuildingTruthForMasks === truth && cachedBuildingKnowledgeMap === buildingKnowledge) {
+                return BuildingCommit(truth, buildingKnowledge, emptyMap())
+            }
+            if (liveEntries.size <= 64 && cachedBuildingTruthForMasks === truth &&
+                cachedBuildingKnowledgeMap === buildingKnowledge &&
+                cachedBuildingVisibilityMasks?.size == playerCount
+            ) {
+                val prevMasks = checkNotNull(cachedBuildingVisibilityMasks)
+                var allMatched = true
+                for (pi in 0 until playerCount) {
+                    val view = views?.getValue(input.players[pi].playerId)
+                    var curMask = 0L
+                    for (i in liveEntries.indices) {
+                        val entry = liveEntries[i]
+                        if (view == null || view.contains(entry.anchorCol, entry.anchorRow)) {
+                            curMask = curMask or (1L shl i)
+                        }
+                    }
+                    if (curMask != prevMasks[pi]) {
+                        allMatched = false
+                        break
+                    }
+                }
+                if (allMatched) {
+                    return BuildingCommit(truth, buildingKnowledge, emptyMap())
+                }
+            }
+        }
         val owners = linkedMapOf<String, BuildingKnowledge>()
         val discoveries = linkedMapOf<String, Map<Pair<Int, Int>, Long>>()
-        val live = units.values.filter { it.alive && it.definition.building != null }
-        for (player in input.players) {
+        val nextMasks = if (liveEntries.size <= 64) LongArray(playerCount) else null
+        for (pi in 0 until playerCount) {
+            val player = input.players[pi]
             val view = views?.getValue(player.playerId)
-            val authorized = live.filter { unit ->
-                view == null || view.contains(MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles),
-                    MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles))
-            }.flatMapTo(linkedSetOf()) { unit ->
-                val building = checkNotNull(unit.definition.building)
-                BuildingTerrain.footprint(input.map, unit.position, building.footprint, building.anchor)
+            val authorized = LinkedHashSet<Pair<Int, Int>>(liveEntries.size * 9 + 4)
+            var mask = 0L
+            for (i in liveEntries.indices) {
+                val entry = liveEntries[i]
+                if (view == null || view.contains(entry.anchorCol, entry.anchorRow)) {
+                    authorized.addAll(entry.footprint)
+                    if (nextMasks != null) mask = mask or (1L shl i)
+                }
             }
+            if (nextMasks != null) nextMasks[pi] = mask
             val previous = buildingKnowledge[player.playerId]
             val next = BuildingKnowledge.projected(previous, authorized)
             owners[player.playerId] = next
-            val added = next.cells - (previous?.cells ?: emptySet())
-            if (added.isNotEmpty()) discoveries[player.playerId] = Collections.unmodifiableMap(added.associateWith { next.revision })
+            if (next !== previous) {
+                val prevCells = previous?.cells ?: emptySet()
+                val added = next.cells - prevCells
+                if (added.isNotEmpty()) discoveries[player.playerId] = Collections.unmodifiableMap(added.associateWith { next.revision })
+            }
         }
-        return BuildingCommit(truth, Collections.unmodifiableMap(owners), Collections.unmodifiableMap(discoveries))
+        val frozenOwners = Collections.unmodifiableMap(owners)
+        return BuildingCommit(truth, frozenOwners, Collections.unmodifiableMap(discoveries), nextMasks)
     }
 
     private fun commitBuildings(next: BuildingCommit) {
         buildingTerrain = next.truth
         buildingKnowledge = next.owners
         pendingBuildingDiscoveries = next.discoveries
+        if (next.visibilityMasks != null) {
+            cachedBuildingTruthForMasks = next.truth
+            cachedBuildingKnowledgeMap = next.owners
+            cachedBuildingVisibilityMasks = next.visibilityMasks
+        } else if (next.truth !== cachedBuildingTruthForMasks || next.owners !== cachedBuildingKnowledgeMap) {
+            cachedBuildingTruthForMasks = null
+            cachedBuildingKnowledgeMap = null
+            cachedBuildingVisibilityMasks = null
+        }
     }
 
     private fun prepareAutomaticKnowledge(): AutomaticKnowledgeCommit? {
@@ -326,6 +409,16 @@ class SimulationContext internal constructor(
         private const val FAST_STALL_TICKS = 12L
         private const val PRODUCED_UNIT_PREFIX = "produced:"
         private const val CONSTRUCTED_UNIT_PREFIX = "constructed:"
+        private fun isValidActionId(value: String): Boolean {
+            if (value.isEmpty()) return false
+            for (i in 0 until value.length) {
+                val c = value[i]
+                val ok = (c in 'A'..'Z') || (c in 'a'..'z') || (c in '0'..'9') ||
+                    c == '.' || c == '_' || c == ':' || c == '-'
+                if (!ok) return false
+            }
+            return true
+        }
         private const val ROUTE_FAILURE_TICKS = 420L
         fun initialize(scenario: Scenario): InitResult = SimulationContext().initializeInternal(scenario)
     }
@@ -481,7 +574,7 @@ class SimulationContext internal constructor(
             for ((mt, layerMembers) in membersByMovement) {
                 if (mt == MovementType.AIR || mt == MovementType.NONE || layerMembers.size < 2) continue
                 val strictestR = maxRadiusByMovement[mt] ?: continue
-                val terrain = planningTerrainFor(layerMembers.first(), mapForGroup, mt)
+                val terrain = sharedFlowTerrainFor(actor, mapForGroup, mt)
                 val connected = steps.current.flowFields.hasSharedCorridorConnection(
                     terrain = terrain,
                     strictestRadius = strictestR,
@@ -655,6 +748,7 @@ class SimulationContext internal constructor(
             if (route != null && unit.pathPoints.size > 1 && unit.pathPoints[1] == route.position &&
                 unit.pathPoints.first() == member.body?.pathPoints?.firstOrNull()) {
                 unit.nav = unit.nav.popFrontWaypoint(maneuverTurnWaypoint = unit.position)
+                unit.resetLocalProgress()
             }
             return
         }
@@ -889,7 +983,7 @@ class SimulationContext internal constructor(
     private fun submit(action: Action, group: GroupMoveRequest?): ActionResult {
         if (closed) return ActionResult.Rejected(action.actionId, SimulationError("closed", "Simulation is closed"))
         if (action.world !== activeWorld) return reject(action, "stale-world", "Action belongs to a different world")
-        if (!Regex("[A-Za-z0-9._:-]+").matches(action.actionId)) return reject(action, "invalid-id", "Invalid action ID")
+        if (!isValidActionId(action.actionId)) return reject(action, "invalid-id", "Invalid action ID")
         if (!actionIds.add(action.actionId)) return reject(action, "duplicate-action", "Action ID has already been submitted")
         val currentScenario = checkNotNull(scenario)
         val actor = currentScenario.players.firstOrNull { it.playerId == action.actorPlayerId }
@@ -1017,17 +1111,30 @@ class SimulationContext internal constructor(
         )
     }
 
+    private fun sharedFlowTerrainFor(
+        ownerPlayerId: String,
+        map: MapDefinition,
+        movementType: MovementType,
+    ): PlanningTerrain = resolveAuthorizedTerrain(
+        ownerPlayerId = ownerPlayerId,
+        map = map,
+        movementType = movementType,
+        escaping = false,
+        overlappedBuildingCells = emptySet(),
+    )
+
     private fun planningTerrainFor(
         unit: MutableUnit,
         map: MapDefinition,
         movementType: MovementType = UnitLocomotion.movement(unit).type,
     ): PlanningTerrain {
-        val ownerBuildings = buildingKnowledge[unit.ownerPlayerId]?.cells
-        val escaping = unit.birthRemaining == 0f && ownerBuildings?.contains(
-            MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles) to
-                MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles),
-        ) == true
-        val overlappedBuildingCells = if (unit.birthRemaining == 0f && !escaping && ownerBuildings != null) {
+        val ownerKnowledge = buildingKnowledge[unit.ownerPlayerId]
+        val ownerBuildings = ownerKnowledge?.cells
+        val escaping = unit.birthRemaining == 0f && ownerKnowledge != null && ownerKnowledge.containsCell(
+            MapBounds.cell(unit.position.x, map.tileWidth, map.widthTiles),
+            MapBounds.cell(unit.position.y, map.tileHeight, map.heightTiles),
+        )
+        val overlappedBuildingCells = if (unit.birthRemaining == 0f && !escaping && ownerBuildings != null && ownerBuildings.isNotEmpty()) {
             BuildingOverlapEscape.overlappedAuthorizedBuildingCells(
                 unit, map, buildingTerrain, spatialIndex, units, ownerBuildings,
             )
@@ -1072,7 +1179,7 @@ class SimulationContext internal constructor(
                 noFogPlanning[movementType] = CachedPlanningTerrain(world, map, null, it, movementType = movementType)
             }
         }
-        val snapshot = if (usesKnowledge) checkNotNull(stores?.get(ownerPlayerId)).snapshot(world) else null
+        val snapshot = if (usesKnowledge) checkNotNull(stores[ownerPlayerId]).snapshot(world) else null
         val cacheKey = PlayerPlanningKey(ownerPlayerId, movementType, escaping)
         val cached = playerPlanning[cacheKey]?.takeIf { it.world === activeWorld && it.map === map }
         val sameTerrainKnowledge = if (snapshot == null && cached?.knowledge == null) {
@@ -1105,6 +1212,14 @@ class SimulationContext internal constructor(
         val terrain = when {
             escaping -> ground
             cached != null && ground === cached.ground && sameBuildings -> cached.terrain
+            // Fast single-step incremental building update directly on `cached.terrain` when ground
+            // did not change: preserves unbroken `lastDeltaFromId` chain for O(changed) flow-field updates!
+            cached != null && ground === cached.ground && !cached.escapingBuildings && !sameBuildings ->
+                cached.terrain.withUpdatedBuildings(ground, cached.buildings ?: emptySet(), ownerBuildings ?: emptySet())
+            // Fast single-step incremental knowledge update directly on `cached.terrain` when buildings
+            // did not change: preserves `lazyGateThroatMask` and unbroken `lastDeltaFromId` chain!
+            cached != null && sameBuildings && snapshot != null && previous != null && !cached.escapingBuildings ->
+                cached.terrain.withUpdatedKnowledge(previous, snapshot, movementType, map.tileSets, ownerBuildings)
             else -> ground.withBuildings(ownerBuildings ?: emptySet())
         }
         playerPlanning[cacheKey] = CachedPlanningTerrain(world, map, snapshot, terrain, ownerBuildings, escaping, movementType, ground)
@@ -1359,6 +1474,7 @@ class SimulationContext internal constructor(
                 prefix += point
                 from = point
             }
+            val smallMapSync = map.widthTiles * map.heightTiles <= 16_384
             val rangeForSearch = (unit.motionContract?.goal as? MotionGoalGeometry.RangeBand)?.range ?: 0.0
             val primaryRes = if (prefix.isNotEmpty() && prefix.size < oldPath.size) {
                 resolveBudgetedTacticalRoute(
@@ -1373,7 +1489,7 @@ class SimulationContext internal constructor(
                     targetRange = rangeForSearch,
                     isRepair = true,
                     preservedPrefix = prefix,
-                    mustCompleteInStep = true,
+                    mustCompleteInStep = smallMapSync,
                 )
             } else null
             val finalRes = when (primaryRes) {
@@ -1389,7 +1505,7 @@ class SimulationContext internal constructor(
                     start = unit.position,
                     targetRange = rangeForSearch,
                     isRepair = true,
-                    mustCompleteInStep = true,
+                    mustCompleteInStep = smallMapSync,
                 )
             }
             when (finalRes) {
@@ -1472,6 +1588,7 @@ class SimulationContext internal constructor(
                 PlanningSegmentClearance.allows(terrain, a, b, radius)
             }
             val repairActionId = if (pathDiagnostics != null) checkNotNull(unit.originMoveId) else (unit.originMoveId ?: "repair:${unit.unitId}")
+            val smallMapSync = map.widthTiles * map.heightTiles <= 16_384
             val connectorRes = if (tailIsClear) {
                 resolveBudgetedTacticalRoute(
                     unit = unit,
@@ -1484,7 +1601,7 @@ class SimulationContext internal constructor(
                     isRepair = true,
                     preservedSuffix = oldPath.drop(1),
                     fallbackFullTarget = target,
-                    mustCompleteInStep = true,
+                    mustCompleteInStep = smallMapSync,
                 )
             } else null
             val finalRes = when (connectorRes) {
@@ -1500,7 +1617,7 @@ class SimulationContext internal constructor(
                     executionStep = executionStep,
                     targetRange = rangeForSearch,
                     isRepair = true,
-                    mustCompleteInStep = true,
+                    mustCompleteInStep = smallMapSync,
                 )
             }
             when (finalRes) {
@@ -1766,23 +1883,30 @@ class SimulationContext internal constructor(
                 val optShape = unit.definition.movementCollision
                 if (optMovement.type != MovementType.NONE && unit.birthRemaining <= 0f &&
                     optShape is MovementCollisionShape.Circle) {
-                    val optTerrain = planningTerrainFor(unit, currentScenario.map)
                     val dx = action.target.x - unit.position.x
                     val dy = action.target.y - unit.position.y
                     val dist = kotlin.math.hypot(dx, dy)
-                    val optMap = currentScenario.map
-                    val startCol = MapBounds.cell(unit.position.x, optMap.tileWidth, optMap.widthTiles)
-                    val startRow = MapBounds.cell(unit.position.y, optMap.tileHeight, optMap.heightTiles)
-                    val goalCol = MapBounds.cell(action.target.x, optMap.tileWidth, optMap.widthTiles)
-                    val goalRow = MapBounds.cell(action.target.y, optMap.tileHeight, optMap.heightTiles)
-                    val targetReachable = optMovement.type == MovementType.AIR ||
-                        optTerrain.isCellConnected(startCol, startRow, goalCol, goalRow)
-                    if (dist > 1e-4 && targetReachable) {
-                        val probeDist = minOf(dist, minOf(currentScenario.map.tileWidth, currentScenario.map.tileHeight).toDouble())
-                        val probe = Position(unit.position.x + dx / dist * probeDist, unit.position.y + dy / dist * probeDist)
-                        if (optMovement.type == MovementType.AIR ||
-                            PlanningSegmentClearance.allows(optTerrain, unit.position, probe, routeRadius(unit))) {
-                            unit.updateNavigation { it.withOptimisticSteerTarget(action.target) }
+                    if (dist > 1e-4) {
+                        val optMap = currentScenario.map
+                        val startCol = MapBounds.cell(unit.position.x, optMap.tileWidth, optMap.widthTiles)
+                        val startRow = MapBounds.cell(unit.position.y, optMap.tileHeight, optMap.heightTiles)
+                        val goalCol = MapBounds.cell(action.target.x, optMap.tileWidth, optMap.widthTiles)
+                        val goalRow = MapBounds.cell(action.target.y, optMap.tileHeight, optMap.heightTiles)
+                        val sharedOptTerrain = if (optMovement.type == MovementType.AIR) null
+                            else sharedFlowTerrainFor(unit.ownerPlayerId, optMap, optMovement.type)
+                        val targetReachable = if (sharedOptTerrain == null) true
+                            else if (sharedOptTerrain.isCellConnected(startCol, startRow, goalCol, goalRow)) true
+                            else if (buildingKnowledge[unit.ownerPlayerId]?.cells?.isNotEmpty() == true) {
+                                val unitOptTerrain = planningTerrainFor(unit, optMap)
+                                unitOptTerrain !== sharedOptTerrain && unitOptTerrain.isCellConnected(startCol, startRow, goalCol, goalRow)
+                            } else false
+                        if (targetReachable) {
+                            val probeDist = minOf(dist, minOf(optMap.tileWidth, optMap.tileHeight).toDouble())
+                            val probe = Position(unit.position.x + dx / dist * probeDist, unit.position.y + dy / dist * probeDist)
+                            if (sharedOptTerrain == null ||
+                                PlanningSegmentClearance.allows(planningTerrainFor(unit, optMap), unit.position, probe, routeRadius(unit))) {
+                                unit.updateNavigation { it.withOptimisticSteerTarget(action.target) }
+                            }
                         }
                     }
                 }
@@ -1809,7 +1933,7 @@ class SimulationContext internal constructor(
                         terrainR,
                         group.maxRadiusByMovement[mType] ?: terrainR,
                     )
-                    val terrain = planningTerrainFor(unit, currentScenario.map, mType)
+                    val terrain = sharedFlowTerrainFor(unit.ownerPlayerId, currentScenario.map, mType)
                     val uCol = MapBounds.cell(unit.position.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles)
                     val uRow = MapBounds.cell(unit.position.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles)
                     val gCol = MapBounds.cell(group.click.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles)
@@ -2047,10 +2171,16 @@ class SimulationContext internal constructor(
     private inline fun <T> withUnitActionQueue(unit: MutableUnit, operation: () -> T): T {
         if (unit.definition.production == null) return operation()
         check(unit.customActionState.queue.isEmpty())
-        unit.customActionState = unit.customActionState.copy(queue = unitActionQueue(unit))
+        val initialQueue = unitActionQueue(unit)
+        if (initialQueue.isNotEmpty()) {
+            unit.customActionState = unit.customActionState.copy(queue = initialQueue)
+        }
         val result = operation()
-        productionLedger = checkNotNull(productionLedger).replaceActions(unit.unitId, unit.customActionState.queue)
-        unit.customActionState = unit.customActionState.copy(queue = emptyList())
+        val afterQueue = unit.customActionState.queue
+        if (initialQueue.isNotEmpty() || afterQueue.isNotEmpty()) {
+            productionLedger = checkNotNull(productionLedger).replaceActions(unit.unitId, afterQueue)
+            unit.customActionState = unit.customActionState.copy(queue = emptyList())
+        }
         return result
     }
 
@@ -2320,7 +2450,8 @@ class SimulationContext internal constructor(
         }
         val actions = scheduledActions.filter { it.atStep == step.stepIndex }
         val prof = hotspotCollector
-        return steps.advance(currentScenario, step, actions,
+        var stagedBuildingsForCache: BuildingCommit? = null
+        val obs = steps.advance(currentScenario, step, actions,
             { index, time, nextRevision -> makeObservation(index, time, true, nextRevision) },
             materializeObservation = materializeObservation,
             worldId = "${currentScenario.scenarioId}:$worldGeneration",
@@ -2437,6 +2568,31 @@ class SimulationContext internal constructor(
                 prof.addNanos(SimHotspotStage.NAV_PLAN, now - phaseMark)
                 phaseMark = now
             }
+            // Precompute O(N) step-wide boarding & per-owner hostile AABB metadata so `canDisplaceInContact`
+            // skips O(N) `Transport.isBoarding` scans and `updateWeapon` skips spatial target scans when no
+            // hostile unit lies within weapon range.
+            var anyBoarding = false
+            val ownerBounds = HashMap<String, DoubleArray>(4)
+            for (u in units.values) {
+                val headK = u.headTask?.kind
+                if (headK == UnitTaskKind.LOAD_INTO || headK == UnitTaskKind.LOAD_UP) {
+                    anyBoarding = true
+                }
+                if (!u.alive || u.carriedBy != null || u.health == null) continue
+                val own = u.ownerPlayerId
+                val box = ownerBounds.getOrPut(own) {
+                    doubleArrayOf(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)
+                }
+                val ux = u.position.x
+                val uy = u.position.y
+                if (ux < box[0]) box[0] = ux
+                if (ux > box[1]) box[1] = ux
+                if (uy < box[2]) box[2] = uy
+                if (uy > box[3]) box[3] = uy
+            }
+            stepHasActiveBoarding = anyBoarding
+            stepOwnerBounds = ownerBounds
+            stepInitialUnitCount = units.size
             spatialIndex.beginStep(canDisplace = ::canDisplaceInContact)
             if (prof != null) {
                 val now = System.nanoTime()
@@ -2444,13 +2600,16 @@ class SimulationContext internal constructor(
                 phaseMark = now
             }
             if (trafficSeparationEnabled && candidate.state.flowFields.activeFieldCount() > 0) {
-                val p1Budget = maxOf(2048, stepBudgetLimit)
+                val mapCells = currentScenario.map.widthTiles.toLong() * currentScenario.map.heightTiles.toLong()
+                val p1Budget = maxOf(if (mapCells > 16_384L) 1024 else 2048, stepBudgetLimit)
+                val shadowBudget = if (mapCells > 16_384L) 256 else p1Budget
                 candidate.state.flowFields.advanceP1Budget(
                     units = orderedUnits(),
                     spatialIndex = spatialIndex,
-                    terrainLookup = { u, mt -> planningTerrainFor(u, currentScenario.map, mt) },
+                    terrainLookup = { u, mt -> sharedFlowTerrainFor(u.ownerPlayerId, currentScenario.map, mt) },
                     stepIndex = step.stepIndex,
                     maxExpansions = p1Budget,
+                    shadowMaxExpansions = shadowBudget,
                 )
                 val diagList = candidate.state.pathDiagnostics
                 if (diagList != null) {
@@ -2556,316 +2715,22 @@ class SimulationContext internal constructor(
                 prof.addNanos(SimHotspotStage.NAV_FLOW, now - phaseMark)
                 phaseMark = now
             }
-            var unitPlanNanos = 0L
-            var unitAvoidNanos = 0L
+            val loopTimers = if (prof != null) LongArray(2) else null
+            val hasMultipleAliveOwners = ownerBounds.size > 1
             for (unit in orderedUnits().toList()) {
-                val attachment = unit.attachment
-                if (attachment != null) {
-                    if (!unit.alive) continue
-                    val parent = units[attachment.parentId]?.takeIf { it.alive && it.carriedBy == null && !it.reclaimed } ?: continue
-                    if (parent.deathPending && attachment.slot.number in parent.attachmentOffsets) continue
-                    UnitAttachments.synchronize(parent, unit, attachment.slot)
-                    spatialIndex.relocate(unit)
-                    if (BuildingWork.isReady(unit)) {
-                        updatePointDefense(unit, step.delta)
-                        updateProjectileInterception(unit, currentScenario)
-                    }
-                    UnitAttachments.advance(steps.current, currentScenario, parent, unit, step.delta.toFloat())
-                    if (BuildingWork.isReady(unit)) {
-                        AttachmentBlink.finishSlot(steps.current, step, parent, unit)
-                        if (unit.definition.attachmentModule?.interception != null)
-                            AttachmentInterceptor.advance(steps.current, unit, step.delta.toFloat())
-                        advanceIncome(unit, step.delta.toFloat())
-                        UnitAttachments.advanceAutomatic(steps.current, currentScenario, parent, unit, step.delta.toFloat())
-                        val preferredTarget = units[parent.attackCommand?.targetUnitId ?: parent.primaryCombatTargetId]
-                        updateWeapon(unit, step.delta, preferredTarget)
-                        advanceWeaponCooldown(unit, step.delta)
-                        regenerateHealth(unit, step.delta.toFloat())
-                    }
-                    continue
-                }
-                if (unit.deathPending) {
-                    unit.deathPending = false
-                    processDeath(unit)
-                }
-                if (!unit.alive) {
-                    AmphibiousJetMotion.advanceCorpse(unit, currentScenario.map, step.delta)
-                    WaterBody.advanceCorpse(unit, currentScenario.map, step.delta)
-                    HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
-                    Transport.advanceCorpse(unit, currentScenario.map, step.delta)
-                    val corpseCargo = unit.transportState?.passengerIds
-                    NautilusMotion.advanceCorpse(unit, units, currentScenario.map, step.delta)
-                    if (corpseCargo != null && unit.transportState?.passengerIds.isNullOrEmpty()) {
-                        for (cid in corpseCargo) units[cid]?.let(spatialIndex::relocate)
-                    }
-                    AaBeamGunship.advanceCorpse(unit, currentScenario.map, step.delta)
-                    continue
-                }
-                if (unit.carriedBy != null) continue
-                UnitAttachments.advanceOpeningFall(unit, step.delta.toFloat())
-                spatialIndex.relocate(unit)
-                if (unit.definition.energy?.dieOnZero == true && BuildingWork.isReady(unit)) {
-                    WeaponEnergy.advance(unit, step.delta)
-                    if (unit.energy <= 0f) {
-                        unit.health = 0.0
-                        processDeath(unit)
-                        continue
-                    }
-                }
-                UnitShield.advance(unit, step.delta.toFloat())
-                Bunker.advanceHeight(unit, step.delta)
-                spatialIndex.relocate(unit)
-                if (unit.combat == null) MechBody.advance(unit, step.delta)
-                val previousRequest = unit.beginMovementStep()
-                val constructionActivity = (unit.definition.builder != null || unit.definition.maintenance != null) &&
-                    unit.tasks.firstOrNull()?.kind in setOf(UnitTaskKind.BUILD, UnitTaskKind.CONSTRUCT, UnitTaskKind.RECLAIM)
-                if (unit.birthRemaining > 0f) {
-                    unit.birthRemaining = maxOf(0f, unit.birthRemaining - 1f)
-                    if (unit.birthRemaining == 0f) {
-                        if (unit.tasks.firstOrNull()?.kind in setOf(UnitTaskKind.PATROL, UnitTaskKind.BUILD, UnitTaskKind.CONSTRUCT, UnitTaskKind.RECLAIM)) unit.cancelRoute()
-                        else resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
-                    }
-                }
-                val loading = Transport.advanceLoading(unit, units)
-                loading?.event?.let { pendingEvents += it }
-                loading?.boardedUnitId?.let { id ->
-                    cancelBoardedMove(id)
-                    units[id]?.let(spatialIndex::relocate)
-                }
-                loading?.approach?.let { target ->
-                    unit.requestMovement(target)
-                    val endpoint = unit.moveTarget
-                    if (endpoint == null || ScreenPlane.distanceSquared(endpoint, target) >= 441.0 || unit.pathPoints.isEmpty()) {
-                        val planT0 = if (prof != null) System.nanoTime() else 0L
-                        val loadTask = unit.tasks.first()
-                        val res = resolveBudgetedTacticalRoute(
-                            unit = unit,
-                            map = currentScenario.map,
-                            actionId = loadTask.actionId,
-                            atStep = loadTask.atStep,
-                            target = target,
-                            reason = PathSearchReason.USER_MOVE,
-                            executionStep = step.stepIndex,
-                            targetRange = 21.0,
-                            isRepair = false,
-                        )
-                        if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
-                        when (res) {
-                            TacticalRouteResolution.Pending -> Unit
-                            is TacticalRouteResolution.Unreachable -> unit.cancelRoute()
-                            is TacticalRouteResolution.Ready -> {
-                                val loadEnd = res.points.last()
-                                val loadContract = loadTask.motionContract ?: MotionContract.rangeApproach(
-                                    center = target,
-                                    range = 21.0,
-                                    tracksRouteStall = false,
-                                    enableLocalAvoidance = false,
-                                    isBoardingApproach = true,
-                                )
-                                unit.updateNavigation {
-                                    it.bindCommandTarget(
-                                        target = loadEnd,
-                                        originMoveId = loadTask.actionId,
-                                        originAtStep = loadTask.atStep,
-                                        contract = loadContract,
-                                    )
-                                }
-                                unit.adoptRoute(res.points, loadEnd, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
-                            }
-                        }
-                    }
-                }
-                if (unit.carriedBy != null) continue
-                unit.snapshotDispatchWindow()
-                if ((unit.definition.builder != null || unit.definition.maintenance != null) && BuildingWork.isReady(unit)) {
-                    val planT0 = if (prof != null && constructionActivity) System.nanoTime() else 0L
-                    updateConstruction(unit, currentScenario, step)
-                    if (planT0 != 0L) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
-                }
-                buildingWork.advanceAutomatic(unit, currentScenario, step.delta) {
-                    checkNotNull(missileTargets).repairCandidates(unit.position.x.toFloat(), unit.position.y.toFloat(),
-                        BuildingWork.automaticRange(unit), units)
-                }
-                val factoryWork = unit.definition.production != null
-                val factoryActionAtHead = factoryWork && unitActionHead(unit) != null
-                if (factoryWork && !factoryActionAtHead && BuildingWork.isReady(unit)) {
-                    if (checkNotNull(productionLedger).upgradeAtHead(unit.unitId)) advanceUpgrade(unit)
-                    else advanceProduction(unit, currentScenario)
-                }
-                val economicBuilding = unit.definition.income != null && unit.definition.construction != null
-                if (economicBuilding && BuildingWork.isReady(unit)) advanceUpgrade(unit)
-                if (BuildingWork.isReady(unit)) advanceIncome(unit, step.delta.toFloat())
-                // A construction pop releases the next activity for the next update only.
-                if (!constructionActivity) {
-                    val isPatrol = unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL
-                    val measureRoute = prof != null && (isPatrol || unit.attackCommand != null)
-                    val planT0 = if (measureRoute) System.nanoTime() else 0L
-                    if (isPatrol)
-                        updatePatrolRoute(unit, currentScenario.map, step.stepIndex, previousRequest)
-                    else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
-                    if (planT0 != 0L) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
-                }
-                val fourLegged = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
-                val head = unit.tasks.firstOrNull()
-                val nextTask = unit.tasks.getOrNull(1)
-                if (head?.factoryExit == true &&
-                    nextTask != null && nextTask.kind == UnitTaskKind.MOVE && nextTask.startsAfterFactoryExit &&
-                    unit.definition.movement.type != MovementType.NONE &&
-                    unit.birthRemaining == 0f &&
-                    hasClearedProducerFootprint(unit, currentScenario.map)
-                ) {
-                    unit.taskQueue = unit.taskQueue.pop()
-                    val planT0 = if (prof != null) System.nanoTime() else 0L
-                    startFactoryRallyHandoff(unit, nextTask, currentScenario.map, step.stepIndex, candidate)
-                    if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
-                    if (unit.moveTarget == null && !candidate.state.movePlanning.hasPendingTactical(unit.unitId)) {
-                        unit.taskQueue = unit.taskQueue.pop()
-                    }
-                } else {
-                    if (unit.moveTarget == null && head?.factoryExit == true && unit.birthRemaining == 0f)
-                        unit.taskQueue = unit.taskQueue.pop()
-                    val queuedMove = unit.tasks.firstOrNull()?.takeIf { it.kind == UnitTaskKind.MOVE }
-                    if (queuedMove != null && (queuedMove.startsAfterFactoryExit && unit.birthRemaining == 0f ||
-                            unit.definition.groundHeight != null || com.rustedwarfare.reforge.core.content.NautilusRules.supports(unit.definition)) &&
-                        unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null &&
-                        !candidate.state.movePlanning.pending(unit.unitId) &&
-                        unit.unitId !in candidate.state.pendingFlowStart) {
-                        val planT0 = if (prof != null) System.nanoTime() else 0L
-                        if (queuedMove.startsAfterFactoryExit) {
-                            startFactoryRallyHandoff(unit, queuedMove, currentScenario.map, step.stepIndex, candidate)
-                        } else {
-                            val qTarget = checkNotNull(queuedMove.target)
-                            val qContract = queuedMove.motionContract ?: MotionContract.pointMove(
-                                target = qTarget,
-                                allowShortReverse = !queuedMove.factoryExit,
-                                gatheringTarget = if (queuedMove.factoryExit) null else qTarget,
-                            )
-                            unit.updateNavigation {
-                                it.bindCommandTarget(
-                                    target = qTarget,
-                                    originMoveId = queuedMove.actionId,
-                                    originAtStep = queuedMove.atStep,
-                                    contract = qContract,
-                                )
-                            }
-                            resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
-                        }
-                        if (prof != null) unitPlanNanos += (System.nanoTime() - planT0).coerceAtLeast(0L)
-                        if (unit.moveTarget == null && !candidate.state.movePlanning.hasPendingTactical(unit.unitId) && queuedMove.startsAfterFactoryExit) {
-                            unit.taskQueue = unit.taskQueue.pop()
-                        }
-                    }
-                }
-                val trackAvoid = prof != null && unit.definition.movement.type != MovementType.NONE &&
-                    (unit.moveTarget != null || unit.speed != 0.0 || unit.angularVelocity != 0.0 ||
-                        unit.definition.movement.type == MovementType.AIR || unit.definition.movement.hover != null ||
-                        unit.definition.groundHeight != null || unit.definition.amphibiousJet != null ||
-                        unit.transportState != null)
-                if (fourLegged) {
-                    val avoidT0 = if (trackAvoid) System.nanoTime() else 0L
-                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate,
-                        passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
-                    if (avoidT0 != 0L) unitAvoidNanos += (System.nanoTime() - avoidT0).coerceAtLeast(0L)
-                }
-                val blinkCooldown = unit.blinkCooldownUntil
-                val actionForm = unit.definition
-                if (BuildingWork.isReady(unit)) {
-                    updateWeapon(unit, step.delta)
-                    if (unit.definition.nuclearSilo != null) NuclearOrdnance.advance(unit, step.delta)?.let { work ->
-                        pendingEvents += Event("unit-action-completed", unit.unitId)
-                        if (work.action == OrdnanceAction.LAUNCH) {
-                            val id = nextObjectId
-                            nextObjectId = Math.addExact(id, 1L)
-                            val shot = NuclearOrdnance.projectile(unit, work, id)
-                            projectiles += shot
-                            pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(shot))
-                            pendingEvents += Event("projectile-fired", unit.unitId)
-                            steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-launch", shot.position, .27f)
-                        }
-                    }
-                    updatePointDefense(unit, step.delta)
-                    updateProjectileInterception(unit, currentScenario)
-                    if (unit.definition.energy?.dieOnZero != true) WeaponEnergy.advance(unit, step.delta)
-                    if ((!factoryWork || factoryActionAtHead) && withUnitActionQueue(unit) {
-                            CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock,
-                                steps.current) { launch, target ->
-                                launchScoutPayload(unit, launch.turretName, target)
-                            }
-                        })
-                        pendingEvents += Event("unit-action-completed", unit.unitId)
-                    if (actionForm !== unit.definition) spatialIndex.relocate(unit)
-                    if (actionForm !== unit.definition && (actionForm.blink != null || unit.definition.blink != null))
-                        productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
-                    CustomUnitActions.constrain(unit, step.delta, unitActionHead(unit))
-                }
-                val avoidPoseT0 = if (trackAvoid) System.nanoTime() else 0L
-                if (unit.definition.blink != null && unit.blinkCooldownUntil > blinkCooldown) {
-                    // The destination write preserves the logical order. Rebase the physical route at the new position.
-                    resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
-                } else if (!fourLegged) {
-                    updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate,
-                        passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
-                }
-                val acceptsHeight = { height: Double ->
-                    val allowed = UnitContact.canChangeHeight(unit, height, spatialIndex,
-                        currentScenario.map, buildingTerrain)
-                    if (!allowed) {
-                        val blocked = Event("movement-blocked", unit.unitId)
-                        if (blocked !in pendingEvents) pendingEvents += blocked
-                    }
-                    allowed
-                }
-                val passengersBeforeUnload = unit.transportState?.passengerIds
-                FlightMotion.advancePose(unit, currentScenario.map, step.delta, acceptsHeight)
-                NautilusMotion.advance(unit, step.delta, acceptsHeight)
-                Transport.refreshTerrain(unit, currentScenario.map)
-                if (unit.definition.effectiveWaterLandSpeed != null || unit.transportState != null) {
-                    unit.overLiquid = currentScenario.map.isLiquid(
-                        MapBounds.cell(unit.position.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles),
-                        MapBounds.cell(unit.position.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles),
-                    )
-                }
-                pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta, acceptsHeight)
-                if (passengersBeforeUnload != null) {
-                    val remaining = unit.transportState?.passengerIds.orEmpty()
-                    if (remaining.size < passengersBeforeUnload.size) {
-                        for (pid in passengersBeforeUnload) {
-                            if (pid !in remaining) {
-                                val unloaded = units[pid]
-                                if (unloaded != null) {
-                                    spatialIndex.relocate(unloaded)
-                                    for (cid in unloaded.attachmentIds.values) units[cid]?.let(spatialIndex::relocate)
-                                }
-                            }
-                        }
-                    }
-                }
-                if (unit.transportState == null || unit.definition.transport == TransportProfile.AUTHORED)
-                    HoverMotion.advancePose(unit, step.delta)
-                if (SubmarineMotion.advance(unit, step.delta, acceptsHeight, currentScenario.map))
-                    pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
-                if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta, acceptsHeight))
-                    pendingEvents += Event("amphibious-threshold-crossed", unit.unitId)
-                spatialIndex.relocate(unit)
-                MechGait.advance(unit, step.delta)
-                MechMotion.requireFinitePose(unit)
-                unit.finishMovementRequest()
-                if (avoidPoseT0 != 0L) unitAvoidNanos += (System.nanoTime() - avoidPoseT0).coerceAtLeast(0L)
-                if (BuildingWork.isReady(unit)) {
-                    advanceWeaponCooldown(unit, step.delta)
-                    if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
-                    val beforeAutomatic = unit.definition
-                    if (withUnitActionQueue(unit) {
-                            CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, currentScenario.map, step.delta)
-                        }) {
-                        if (beforeAutomatic !== unit.definition) spatialIndex.relocate(unit)
-                        if (beforeAutomatic.blink != null || unit.definition.blink != null)
-                            productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
-                        pendingEvents += Event("unit-action-automatic", unit.unitId)
-                    }
-                    regenerateHealth(unit, step.delta.toFloat())
-                }
+                advanceSingleUnitInStep(
+                    unit = unit,
+                    currentScenario = currentScenario,
+                    step = step,
+                    candidate = candidate,
+                    passageWaiting = passageWaiting,
+                    seaDepartureWaiting = seaDepartureWaiting,
+                    hasMultipleAliveOwners = hasMultipleAliveOwners,
+                    loopTimers = loopTimers,
+                )
             }
+            val unitPlanNanos = loopTimers?.get(0) ?: 0L
+            val unitAvoidNanos = loopTimers?.get(1) ?: 0L
             updateProjectiles(step.delta, candidate.existingProjectileIds)
             for (parent in orderedUnits()) {
                 val pending = parent.spiderBlink ?: continue
@@ -2891,15 +2756,381 @@ class SimulationContext internal constructor(
                 phaseMark = now
             }
             candidate.stageKnowledge(prepareAutomaticKnowledge())
-            candidate.stageBuildings(prepareBuildings(candidate.vision))
+            val stagedBld = prepareBuildings(candidate.vision)
+            stagedBuildingsForCache = stagedBld
+            candidate.stageBuildings(stagedBld)
             if (prof != null) {
                 prof.addNanos(SimHotspotStage.SIM_VISION, System.nanoTime() - phaseMark)
             }
             if (injectFailureAfterUpdate) throw IllegalStateException("Injected candidate step failure")
             } finally {
+                stepHasActiveBoarding = true
+                stepOwnerBounds = null
                 activeStepPlanningBudget = null
                 activeStepPlanningSlices = null
             }
+        }
+        stagedBuildingsForCache?.let { committed ->
+            if (committed.visibilityMasks != null) {
+                cachedBuildingTruthForMasks = committed.truth
+                cachedBuildingKnowledgeMap = committed.owners
+                cachedBuildingVisibilityMasks = committed.visibilityMasks
+            } else if (committed.truth !== cachedBuildingTruthForMasks || committed.owners !== cachedBuildingKnowledgeMap) {
+                cachedBuildingTruthForMasks = null
+                cachedBuildingKnowledgeMap = null
+                cachedBuildingVisibilityMasks = null
+            }
+        }
+        return obs
+    }
+
+    private fun advanceSingleUnitInStep(
+        unit: MutableUnit,
+        currentScenario: Scenario,
+        step: Step,
+        candidate: CandidateStep,
+        passageWaiting: Set<String>,
+        seaDepartureWaiting: Set<String>,
+        hasMultipleAliveOwners: Boolean,
+        loopTimers: LongArray?,
+    ) {
+        val attachment = unit.attachment
+        if (attachment != null) {
+            if (!unit.alive) return
+            val parent = units[attachment.parentId]?.takeIf { it.alive && it.carriedBy == null && !it.reclaimed } ?: return
+            if (parent.deathPending && attachment.slot.number in parent.attachmentOffsets) return
+            UnitAttachments.synchronize(parent, unit, attachment.slot)
+            spatialIndex.relocate(unit)
+            if (BuildingWork.isReady(unit)) {
+                updatePointDefense(unit, step.delta)
+                updateProjectileInterception(unit, currentScenario)
+            }
+            UnitAttachments.advance(steps.current, currentScenario, parent, unit, step.delta.toFloat())
+            if (BuildingWork.isReady(unit)) {
+                AttachmentBlink.finishSlot(steps.current, step, parent, unit)
+                if (unit.definition.attachmentModule?.interception != null)
+                    AttachmentInterceptor.advance(steps.current, unit, step.delta.toFloat())
+                advanceIncome(unit, step.delta.toFloat())
+                UnitAttachments.advanceAutomatic(steps.current, currentScenario, parent, unit, step.delta.toFloat())
+                val preferredTarget = units[parent.attackCommand?.targetUnitId ?: parent.primaryCombatTargetId]
+                updateWeapon(unit, step.delta, preferredTarget, hasAnyHostileOnMap = hasMultipleAliveOwners)
+                advanceWeaponCooldown(unit, step.delta)
+                regenerateHealth(unit, step.delta.toFloat())
+            }
+            return
+        }
+        if (unit.deathPending) {
+            unit.deathPending = false
+            processDeath(unit)
+        }
+        if (!unit.alive) {
+            AmphibiousJetMotion.advanceCorpse(unit, currentScenario.map, step.delta)
+            WaterBody.advanceCorpse(unit, currentScenario.map, step.delta)
+            HoverMotion.advanceCorpse(unit, currentScenario.map, step.delta)
+            Transport.advanceCorpse(unit, currentScenario.map, step.delta)
+            val corpseCargo = unit.transportState?.passengerIds
+            NautilusMotion.advanceCorpse(unit, units, currentScenario.map, step.delta)
+            if (corpseCargo != null && unit.transportState?.passengerIds.isNullOrEmpty()) {
+                stepOwnerBounds = null
+                for (cid in corpseCargo) units[cid]?.let(spatialIndex::relocate)
+            }
+            AaBeamGunship.advanceCorpse(unit, currentScenario.map, step.delta)
+            return
+        }
+        if (unit.carriedBy != null) return
+        val hBeforeFall = unit.height
+        UnitAttachments.advanceOpeningFall(unit, step.delta.toFloat())
+        if (unit.height != hBeforeFall) spatialIndex.relocate(unit)
+        if (unit.definition.energy?.dieOnZero == true && BuildingWork.isReady(unit)) {
+            WeaponEnergy.advance(unit, step.delta)
+            if (unit.energy <= 0f) {
+                unit.health = 0.0
+                processDeath(unit)
+                return
+            }
+        }
+        UnitShield.advance(unit, step.delta.toFloat())
+        val hBeforeBunker = unit.height
+        Bunker.advanceHeight(unit, step.delta)
+        if (unit.height != hBeforeBunker) spatialIndex.relocate(unit)
+        if (unit.combat == null) MechBody.advance(unit, step.delta)
+        val previousRequest = unit.beginMovementStep()
+        val headKind = unit.headTask?.kind
+        val constructionActivity = (unit.definition.builder != null || unit.definition.maintenance != null) &&
+            (headKind == UnitTaskKind.BUILD || headKind == UnitTaskKind.CONSTRUCT || headKind == UnitTaskKind.RECLAIM)
+        if (unit.birthRemaining > 0f) {
+            unit.birthRemaining = maxOf(0f, unit.birthRemaining - 1f)
+            if (unit.birthRemaining == 0f) {
+                if (headKind == UnitTaskKind.PATROL || headKind == UnitTaskKind.BUILD ||
+                    headKind == UnitTaskKind.CONSTRUCT || headKind == UnitTaskKind.RECLAIM
+                ) unit.cancelRoute()
+                else resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+            }
+        }
+        if (unit.headTask?.kind == UnitTaskKind.LOAD_INTO || unit.headTask?.kind == UnitTaskKind.LOAD_UP) {
+            stepHasActiveBoarding = true
+        }
+        val loading = Transport.advanceLoading(unit, units)
+        loading?.event?.let { pendingEvents += it }
+        loading?.boardedUnitId?.let { id ->
+            cancelBoardedMove(id)
+            units[id]?.let(spatialIndex::relocate)
+        }
+        loading?.approach?.let { target ->
+            unit.requestMovement(target)
+            val endpoint = unit.moveTarget
+            if (endpoint == null || ScreenPlane.distanceSquared(endpoint, target) >= 441.0 || unit.pathPoints.isEmpty()) {
+                val planT0 = if (loopTimers != null) System.nanoTime() else 0L
+                val loadTask = unit.tasks.first()
+                val res = resolveBudgetedTacticalRoute(
+                    unit = unit,
+                    map = currentScenario.map,
+                    actionId = loadTask.actionId,
+                    atStep = loadTask.atStep,
+                    target = target,
+                    reason = PathSearchReason.USER_MOVE,
+                    executionStep = step.stepIndex,
+                    targetRange = 21.0,
+                    isRepair = false,
+                )
+                if (loopTimers != null) loopTimers[0] += (System.nanoTime() - planT0).coerceAtLeast(0L)
+                when (res) {
+                    TacticalRouteResolution.Pending -> Unit
+                    is TacticalRouteResolution.Unreachable -> unit.cancelRoute()
+                    is TacticalRouteResolution.Ready -> {
+                        val loadEnd = res.points.last()
+                        val loadContract = loadTask.motionContract ?: MotionContract.rangeApproach(
+                            center = target,
+                            range = 21.0,
+                            tracksRouteStall = false,
+                            enableLocalAvoidance = false,
+                            isBoardingApproach = true,
+                        )
+                        unit.updateNavigation {
+                            it.bindCommandTarget(
+                                target = loadEnd,
+                                originMoveId = loadTask.actionId,
+                                originAtStep = loadTask.atStep,
+                                contract = loadContract,
+                            )
+                        }
+                        unit.adoptRoute(res.points, loadEnd, plannedKnowledgeRevision(unit), plannedBuildingRevision(unit))
+                    }
+                }
+            }
+        }
+        if (unit.carriedBy != null) return
+        unit.snapshotDispatchWindow()
+        if ((unit.definition.builder != null || unit.definition.maintenance != null) && BuildingWork.isReady(unit)) {
+            val planT0 = if (loopTimers != null && constructionActivity) System.nanoTime() else 0L
+            updateConstruction(unit, currentScenario, step)
+            if (planT0 != 0L && loopTimers != null) loopTimers[0] += (System.nanoTime() - planT0).coerceAtLeast(0L)
+        }
+        buildingWork.advanceAutomatic(unit, currentScenario, step.delta) {
+            checkNotNull(missileTargets).repairCandidates(unit.position.x.toFloat(), unit.position.y.toFloat(),
+                BuildingWork.automaticRange(unit), units)
+        }
+        val factoryWork = unit.definition.production != null
+        val factoryActionAtHead = factoryWork && unitActionHead(unit) != null
+        if (factoryWork && !factoryActionAtHead && BuildingWork.isReady(unit)) {
+            if (checkNotNull(productionLedger).upgradeAtHead(unit.unitId)) advanceUpgrade(unit)
+            else advanceProduction(unit, currentScenario)
+        }
+        val economicBuilding = unit.definition.income != null && unit.definition.construction != null
+        if (economicBuilding && BuildingWork.isReady(unit)) advanceUpgrade(unit)
+        if (BuildingWork.isReady(unit)) advanceIncome(unit, step.delta.toFloat())
+        if (!constructionActivity) {
+            val isPatrol = unit.headTask?.kind == UnitTaskKind.PATROL
+            val measureRoute = loopTimers != null && (isPatrol || unit.attackCommand != null)
+            val planT0 = if (measureRoute) System.nanoTime() else 0L
+            if (isPatrol)
+                updatePatrolRoute(unit, currentScenario.map, step.stepIndex, previousRequest)
+            else updateAttackRoute(unit, currentScenario.map, step.stepIndex)
+            if (planT0 != 0L && loopTimers != null) loopTimers[0] += (System.nanoTime() - planT0).coerceAtLeast(0L)
+        }
+        val fourLegged = unit.definition.mech?.kind == com.rustedwarfare.reforge.core.content.MechKind.FOUR_LEGGED
+        advanceUnitQueuedMoveHandoff(unit, currentScenario, step, candidate, loopTimers)
+        val trackAvoid = loopTimers != null && unit.definition.movement.type != MovementType.NONE &&
+            (unit.moveTarget != null || unit.speed != 0.0 || unit.angularVelocity != 0.0 ||
+                unit.definition.movement.type == MovementType.AIR || unit.definition.movement.hover != null ||
+                unit.definition.groundHeight != null || unit.definition.amphibiousJet != null ||
+                unit.transportState != null)
+        if (fourLegged) {
+            val avoidT0 = if (trackAvoid) System.nanoTime() else 0L
+            updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate,
+                passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
+            if (avoidT0 != 0L && loopTimers != null) loopTimers[1] += (System.nanoTime() - avoidT0).coerceAtLeast(0L)
+        }
+        val blinkCooldown = unit.blinkCooldownUntil
+        val actionForm = unit.definition
+        if (BuildingWork.isReady(unit)) {
+            updateWeapon(unit, step.delta, hasAnyHostileOnMap = hasMultipleAliveOwners)
+            if (unit.definition.nuclearSilo != null) NuclearOrdnance.advance(unit, step.delta)?.let { work ->
+                pendingEvents += Event("unit-action-completed", unit.unitId)
+                if (work.action == OrdnanceAction.LAUNCH) {
+                    val id = nextObjectId
+                    nextObjectId = Math.addExact(id, 1L)
+                    val shot = NuclearOrdnance.projectile(unit, work, id)
+                    projectiles += shot
+                    pendingProjectileEvents += ProjectileEventObservation("born", projectileObservation(shot))
+                    pendingEvents += Event("projectile-fired", unit.unitId)
+                    steps.current.pendingSoundTriggers += SoundTriggerObservation("reforge:events/nuke-launch", shot.position, .27f)
+                }
+            }
+            updatePointDefense(unit, step.delta)
+            updateProjectileInterception(unit, currentScenario)
+            if (unit.definition.energy?.dieOnZero != true) WeaponEnergy.advance(unit, step.delta)
+            if ((!factoryWork || factoryActionAtHead) && withUnitActionQueue(unit) {
+                    CustomUnitActions.advanceQueue(unit, currentScenario.unitDefinitions, step.delta, steps.current.actionClock,
+                        steps.current) { launch, target ->
+                        launchScoutPayload(unit, launch.turretName, target)
+                    }
+                })
+                pendingEvents += Event("unit-action-completed", unit.unitId)
+            if (actionForm !== unit.definition) spatialIndex.relocate(unit)
+            if (actionForm !== unit.definition && (actionForm.blink != null || unit.definition.blink != null))
+                productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
+            CustomUnitActions.constrain(unit, step.delta, unitActionHead(unit))
+        }
+        val avoidPoseT0 = if (trackAvoid) System.nanoTime() else 0L
+        if (unit.definition.blink != null && unit.blinkCooldownUntil > blinkCooldown) {
+            stepOwnerBounds = null
+            resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+        } else if (!fourLegged) {
+            updateUnit(unit, currentScenario.map, step.delta, step.stepIndex, candidate,
+                passageWaiting = unit.unitId in passageWaiting, departureWaiting = unit.unitId in seaDepartureWaiting)
+        }
+        advanceUnitPosesAndPostWork(unit, currentScenario, step, economicBuilding, factoryWork, avoidPoseT0, loopTimers)
+    }
+
+    private fun advanceUnitQueuedMoveHandoff(
+        unit: MutableUnit,
+        currentScenario: Scenario,
+        step: Step,
+        candidate: CandidateStep,
+        loopTimers: LongArray?,
+    ) {
+        val head = unit.headTask
+        val nextTask = unit.secondTask
+        if (head?.factoryExit == true &&
+            nextTask != null && nextTask.kind == UnitTaskKind.MOVE && nextTask.startsAfterFactoryExit &&
+            unit.definition.movement.type != MovementType.NONE &&
+            unit.birthRemaining == 0f &&
+            hasClearedProducerFootprint(unit, currentScenario.map)
+        ) {
+            unit.taskQueue = unit.taskQueue.pop()
+            val planT0 = if (loopTimers != null) System.nanoTime() else 0L
+            startFactoryRallyHandoff(unit, nextTask, currentScenario.map, step.stepIndex, candidate)
+            if (loopTimers != null) loopTimers[0] += (System.nanoTime() - planT0).coerceAtLeast(0L)
+            if (unit.moveTarget == null && !candidate.state.movePlanning.hasPendingTactical(unit.unitId)) {
+                unit.taskQueue = unit.taskQueue.pop()
+            }
+        } else {
+            if (unit.moveTarget == null && head?.factoryExit == true && unit.birthRemaining == 0f)
+                unit.taskQueue = unit.taskQueue.pop()
+            val queuedMove = unit.headTask?.takeIf { it.kind == UnitTaskKind.MOVE }
+            if (queuedMove != null && (queuedMove.startsAfterFactoryExit && unit.birthRemaining == 0f ||
+                    unit.definition.groundHeight != null || com.rustedwarfare.reforge.core.content.NautilusRules.supports(unit.definition)) &&
+                unit.definition.movement.type != MovementType.NONE && unit.moveTarget == null &&
+                !candidate.state.movePlanning.pending(unit.unitId) &&
+                unit.unitId !in candidate.state.pendingFlowStart
+            ) {
+                val planT0 = if (loopTimers != null) System.nanoTime() else 0L
+                if (queuedMove.startsAfterFactoryExit) {
+                    startFactoryRallyHandoff(unit, queuedMove, currentScenario.map, step.stepIndex, candidate)
+                } else {
+                    val qTarget = checkNotNull(queuedMove.target)
+                    val qContract = queuedMove.motionContract ?: MotionContract.pointMove(
+                        target = qTarget,
+                        allowShortReverse = !queuedMove.factoryExit,
+                        gatheringTarget = if (queuedMove.factoryExit) null else qTarget,
+                    )
+                    unit.updateNavigation {
+                        it.bindCommandTarget(
+                            target = qTarget,
+                            originMoveId = queuedMove.actionId,
+                            originAtStep = queuedMove.atStep,
+                            contract = qContract,
+                        )
+                    }
+                    resumeProductionRoute(unit, currentScenario.map, step.stepIndex)
+                }
+                if (loopTimers != null) loopTimers[0] += (System.nanoTime() - planT0).coerceAtLeast(0L)
+                if (unit.moveTarget == null && !candidate.state.movePlanning.hasPendingTactical(unit.unitId) && queuedMove.startsAfterFactoryExit) {
+                    unit.taskQueue = unit.taskQueue.pop()
+                }
+            }
+        }
+    }
+
+    private fun advanceUnitPosesAndPostWork(
+        unit: MutableUnit,
+        currentScenario: Scenario,
+        step: Step,
+        economicBuilding: Boolean,
+        factoryWork: Boolean,
+        avoidPoseT0: Long,
+        loopTimers: LongArray?,
+    ) {
+        val acceptsHeight = { height: Double ->
+            val allowed = UnitContact.canChangeHeight(unit, height, spatialIndex,
+                currentScenario.map, buildingTerrain)
+            if (!allowed) {
+                val blocked = Event("movement-blocked", unit.unitId)
+                if (blocked !in pendingEvents) pendingEvents += blocked
+            }
+            allowed
+        }
+        val passengersBeforeUnload = unit.transportState?.passengerIds
+        FlightMotion.advancePose(unit, currentScenario.map, step.delta, acceptsHeight)
+        NautilusMotion.advance(unit, step.delta, acceptsHeight)
+        Transport.refreshTerrain(unit, currentScenario.map)
+        if (unit.definition.effectiveWaterLandSpeed != null || unit.transportState != null) {
+            unit.overLiquid = currentScenario.map.isLiquid(
+                MapBounds.cell(unit.position.x, currentScenario.map.tileWidth, currentScenario.map.widthTiles),
+                MapBounds.cell(unit.position.y, currentScenario.map.tileHeight, currentScenario.map.heightTiles),
+            )
+        }
+        pendingEvents += Transport.advance(unit, units, currentScenario.map, step.delta, acceptsHeight)
+        if (passengersBeforeUnload != null) {
+            val remaining = unit.transportState?.passengerIds.orEmpty()
+            if (remaining.size < passengersBeforeUnload.size) {
+                stepOwnerBounds = null
+                for (pid in passengersBeforeUnload) {
+                    if (pid !in remaining) {
+                        val unloaded = units[pid]
+                        if (unloaded != null) {
+                            spatialIndex.relocate(unloaded)
+                            for (cid in unloaded.attachmentIds.values) units[cid]?.let(spatialIndex::relocate)
+                        }
+                    }
+                }
+            }
+        }
+        if (unit.transportState == null || unit.definition.transport == TransportProfile.AUTHORED)
+            HoverMotion.advancePose(unit, step.delta)
+        if (SubmarineMotion.advance(unit, step.delta, acceptsHeight, currentScenario.map))
+            pendingEvents += Event("submarine-threshold-crossed", unit.unitId)
+        if (AmphibiousJetMotion.advance(unit, currentScenario.map, step.delta, acceptsHeight))
+            pendingEvents += Event("amphibious-threshold-crossed", unit.unitId)
+        spatialIndex.relocate(unit)
+        MechGait.advance(unit, step.delta)
+        MechMotion.requireFinitePose(unit)
+        unit.finishMovementRequest()
+        if (avoidPoseT0 != 0L && loopTimers != null) loopTimers[1] += (System.nanoTime() - avoidPoseT0).coerceAtLeast(0L)
+        if (BuildingWork.isReady(unit)) {
+            advanceWeaponCooldown(unit, step.delta)
+            if (!economicBuilding && !factoryWork) advanceUpgrade(unit)
+            val beforeAutomatic = unit.definition
+            if (withUnitActionQueue(unit) {
+                    CustomUnitActions.advanceAutomatic(unit, currentScenario.unitDefinitions, currentScenario.map, step.delta)
+                }) {
+                if (beforeAutomatic !== unit.definition) spatialIndex.relocate(unit)
+                if (beforeAutomatic.blink != null || unit.definition.blink != null)
+                    productionLedger = CustomUnitActions.reconcileBlinkConversion(unit, productionLedger)
+                pendingEvents += Event("unit-action-automatic", unit.unitId)
+            }
+            regenerateHealth(unit, step.delta.toFloat())
         }
     }
 
@@ -3709,7 +3940,7 @@ class SimulationContext internal constructor(
             reason = PathSearchReason.ROUTE_REPAIR,
             executionStep = executionStep,
             isRepair = true,
-            mustCompleteInStep = true,
+            mustCompleteInStep = map.widthTiles.toLong() * map.heightTiles.toLong() <= 16_384L,
         )
         if (unit.attackCommand != null) unit.lastAttackPathAttemptStep = executionStep
         when (res) {
@@ -4042,7 +4273,12 @@ class SimulationContext internal constructor(
         unit.health = minOf(maximum.toFloat(), restored).toDouble()
     }
 
-    private fun updateWeapon(unit: MutableUnit, delta: Double, preferredTarget: MutableUnit? = null) {
+    private fun updateWeapon(
+        unit: MutableUnit,
+        delta: Double,
+        preferredTarget: MutableUnit? = null,
+        hasAnyHostileOnMap: Boolean = true,
+    ) {
         if (unit.namedWeapons != null) {
             updateNamedWeapons(unit, delta, preferredTarget)
             return
@@ -4053,6 +4289,29 @@ class SimulationContext internal constructor(
         val contract = checkNotNull(input.combatContract)
         val actorId = checkNotNull(unit.objectId)
         OrdinaryWeapon.idle(contract.worldSeed, combatFrame, actorId, unit, delta)
+        if (stepOwnerBounds != null && !hasAnyHostileOnMap && unit.headTask?.kind != UnitTaskKind.PATROL &&
+            unit.attackCommand == null && state.targetId == null
+        ) {
+            return
+        }
+        val ownerBoxes = stepOwnerBounds
+        if (ownerBoxes != null && units.size == stepInitialUnitCount &&
+            unit.headTask?.kind != UnitTaskKind.PATROL && unit.attackCommand == null && state.targetId == null
+        ) {
+            val range = UnitCombat.range(unit) + 64.0
+            val ux = unit.position.x
+            val uy = unit.position.y
+            val ownId = unit.ownerPlayerId
+            var anyHostileBoxInRange = false
+            for ((otherOwner, box) in ownerBoxes) {
+                if (otherOwner == ownId) continue
+                if (ux >= box[0] - range && ux <= box[1] + range && uy >= box[2] - range && uy <= box[3] + range) {
+                    anyHostileBoxInRange = true
+                    break
+                }
+            }
+            if (!anyHostileBoxInRange) return
+        }
         fun eligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
             CombatTargetQuery.canAttackAirCategory(unit, target, input.map)
         fun inRange(target: MutableUnit) = ScreenPlane.distanceSquared(unit.position, target.position) <
@@ -4074,7 +4333,7 @@ class SimulationContext internal constructor(
             }
             if (retained != null && state.patrolDispatchTimer == 0f) state.patrolDispatchTimer = interval
             retained?.takeIf(::inRange)
-        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: CombatTargetQuery.nearestEnemy(unit, spatialIndex.queryAllLayersCenterBox(unit.position, UnitCombat.range(unit) + 1e-6), input.players, input.map)
+        } else manualTarget ?: units[state.targetId]?.takeIf { eligible(it) && inRange(it) } ?: CombatTargetQuery.nearestEnemyInSpatialIndex(unit, spatialIndex, input.players, input.map)
         if (target == null) {
             if (!patrol) state.targetId = null
             return
@@ -4096,13 +4355,30 @@ class SimulationContext internal constructor(
         val input = checkNotNull(scenario)
         val contract = checkNotNull(input.combatContract)
         val globalRange = UnitCombat.range(unit)
-        val candidates = spatialIndex.queryAllLayersCenterBox(unit.position, globalRange + 1e-6)
+        val patrol = unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL
+        val ownerBoxes = stepOwnerBounds
+        val skipSpatialScan = !patrol && preferredTarget == null && unit.attackCommand == null &&
+            ownerBoxes != null && units.size == stepInitialUnitCount && run {
+                val range = globalRange + 64.0
+                val ux = unit.position.x
+                val uy = unit.position.y
+                val ownId = unit.ownerPlayerId
+                var anyHostileBoxInRange = false
+                for ((otherOwner, box) in ownerBoxes) {
+                    if (otherOwner == ownId) continue
+                    if (ux >= box[0] - range && ux <= box[1] + range && uy >= box[2] - range && uy <= box[3] + range) {
+                        anyHostileBoxInRange = true
+                        break
+                    }
+                }
+                !anyHostileBoxInRange
+            }
+        val candidates = if (skipSpatialScan) emptyList() else spatialIndex.queryAllLayersCenterBox(unit.position, globalRange + 1e-6)
         fun globalEligible(target: MutableUnit) = CombatTargetQuery.isEnemy(unit, target, input.players) &&
             CombatTargetQuery.canAttackAirCategory(unit, target, input.map) &&
             ScreenPlane.distanceSquared(unit.position, target.position) < globalRange * globalRange
         val manual = unit.attackCommand?.let { units[it.targetUnitId]?.takeIf(::globalEligible) }
             ?: preferredTarget?.takeIf(::globalEligible)
-        val patrol = unit.tasks.firstOrNull()?.kind == UnitTaskKind.PATROL
         val primary = if (patrol) {
             val clock = checkNotNull(unit.combat)
             clock.patrolSearchTimer = maxOf(0f, clock.patrolSearchTimer - delta.toFloat())
@@ -4792,6 +5068,7 @@ class SimulationContext internal constructor(
                 }
                 if (bend != null) {
                     unit.nav = unit.nav.prependWaypoints(listOf(bend), resetLocalSegment = true)
+                    unit.resetLocalProgress(clearAvoidHeading = true)
                     continue
                 }
             }
@@ -5170,13 +5447,18 @@ class SimulationContext internal constructor(
     private fun isParkedPeer(mover: MutableUnit, other: MutableUnit): Boolean =
         other.landingMember?.let { it.parked && it.group === mover.landingMember?.group } == true
 
+    private var stepHasActiveBoarding: Boolean = true
+    private var stepOwnerBounds: Map<String, DoubleArray>? = null
+    private var stepInitialUnitCount: Int = -1
+
     private fun canDisplaceInContact(unit: MutableUnit): Boolean {
         val movement = UnitLocomotion.movement(unit)
         return unit.birthRemaining == 0f &&
             BuildingWork.isReady(unit) && movement.moveSpeed > 0.0 && movement.type != MovementType.NONE &&
             !unit.constructionWorking && unit.spiderBlink == null &&
             !CustomUnitActions.movementLocked(unit, unitActionHead(unit)) &&
-            unit.transportState?.unloading != true && !Transport.isBoarding(unit, units)
+            unit.transportState?.unloading != true &&
+            (!stepHasActiveBoarding || !Transport.isBoarding(unit, units))
     }
 
     private fun blockAtMapBoundary(unit: MutableUnit) {

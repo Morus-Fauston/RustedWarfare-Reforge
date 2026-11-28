@@ -19,6 +19,8 @@ import kotlin.math.min
 internal object UnitLocomotion {
     const val IMPLICIT_LAND_TERRAIN_TILE_FRACTION = 0.45
     const val SUBMERGED_DEPTH = -1.0
+    private const val STANDARD_LAND_CAP_20_RADIUS = IMPLICIT_LAND_TERRAIN_TILE_FRACTION * 20.0
+    private val STANDARD_LAND_CAP_20 = MovementCollisionShape.Circle(STANDARD_LAND_CAP_20_RADIUS)
 
     fun routeTypes(definition: UnitDefinition): Set<MovementType> {
         val base = definition.movement.type
@@ -103,7 +105,11 @@ internal object UnitLocomotion {
                 else if (definition.explicitMovementCollision || moveType == MovementType.WATER) shape
                 else {
                     val safeCap = IMPLICIT_LAND_TERRAIN_TILE_FRACTION * min(tileWidth, tileHeight).toDouble()
-                    if (shape.radius <= safeCap) shape else MovementCollisionShape.Circle(safeCap)
+                    when {
+                        shape.radius <= safeCap -> shape
+                        safeCap == STANDARD_LAND_CAP_20_RADIUS -> STANDARD_LAND_CAP_20
+                        else -> MovementCollisionShape.Circle(safeCap)
+                    }
                 }
             }
         }

@@ -315,10 +315,20 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val heapSize: Int get() = liveHeap.size
         val shadowHeapSize: Int get() = shadowHeap?.size ?: 0
 
-        // Reusable per-field congestion refresh scratch arrays (zero allocation per 24-tick refresh)
-        var congestionLoadScratch: IntArray = EMPTY_INT_ARRAY
-        var gateSliceLoadScratch: IntArray = EMPTY_INT_ARRAY
-        var gateSliceWidthScratch: IntArray = EMPTY_INT_ARRAY
+        // Reusable per-field sparse congestion refresh buffers (zero 350x350 full-map scans)
+        var activeCongestionCells: IntArray = EMPTY_INT_ARRAY
+        var activeCongestionCount: Int = 0
+
+        fun addActiveCongestionCell(idx: Int) {
+            for (i in 0 until activeCongestionCount) {
+                if (activeCongestionCells[i] == idx) return
+            }
+            if (activeCongestionCount >= activeCongestionCells.size) {
+                val nextCap = max(16, activeCongestionCells.size * 2)
+                activeCongestionCells = activeCongestionCells.copyOf(nextCap)
+            }
+            activeCongestionCells[activeCongestionCount++] = idx
+        }
 
         fun ensureShadowBuffers() {
             if (shadowCost.size != cellCount) {
@@ -328,18 +338,6 @@ internal class ChunkedFlowFieldAdapter private constructor(
             }
             if (shadowHeap == null) {
                 shadowHeap = WavefrontHeap()
-            }
-        }
-
-        fun ensureCongestionScratch() {
-            if (congestionLoadScratch.size != cellCount) {
-                congestionLoadScratch = IntArray(cellCount)
-                gateSliceLoadScratch = IntArray(cellCount)
-                gateSliceWidthScratch = IntArray(cellCount)
-            } else {
-                congestionLoadScratch.fill(0)
-                gateSliceLoadScratch.fill(0)
-                gateSliceWidthScratch.fill(0)
             }
         }
 
@@ -397,7 +395,12 @@ internal class ChunkedFlowFieldAdapter private constructor(
             shadowDirY = if (shadowActive && shadowDirY.isNotEmpty()) shadowDirY.copyOf() else EMPTY_FLOAT_ARRAY,
             shadowHeap = if (shadowActive) shadowHeap?.copy() else null,
             activeSubscribers = activeSubscribers,
-        )
+        ).also { copy ->
+            if (activeCongestionCount > 0) {
+                copy.activeCongestionCells = activeCongestionCells.copyOf(activeCongestionCount)
+                copy.activeCongestionCount = activeCongestionCount
+            }
+        }
 
         companion object {
             fun create(
@@ -777,6 +780,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
         terrainLookup: (MutableUnit, MovementType) -> PlanningTerrain,
         stepIndex: Long,
         maxExpansions: Int,
+        shadowMaxExpansions: Int = maxExpansions,
     ): Int {
         if (fields.isEmpty() || maxExpansions <= 0) return 0
 
@@ -799,6 +803,8 @@ internal class ChunkedFlowFieldAdapter private constructor(
             }
         }
 
+        val maxShadowRebuildsPerStep = if (fields.values.any { it.cellCount > 16_384 }) 1 else Int.MAX_VALUE
+        var shadowRebuildsStarted = 0
         for (field in fields.values) {
             val nextSubs = subscriberCounts[field.key] ?: 0
             if (field.activeSubscribers != nextSubs) {
@@ -810,51 +816,104 @@ internal class ChunkedFlowFieldAdapter private constructor(
             if (nextSubs > 0) {
                 val latestTerrain = latestTerrains[field.key.ownerId to field.key.movementType]
                 if (latestTerrain != null && field.terrain !== latestTerrain) {
-                    markChangedTerrainDirty(field, latestTerrain)
+                    if (shadowRebuildsStarted < maxShadowRebuildsPerStep) {
+                        val wasShadow = field.shadowActive
+                        val hadFastDelta = latestTerrain.lastDeltaFromId == field.terrain.terrainId && latestTerrain.lastDeltaCells != null
+                        markChangedTerrainDirty(field, latestTerrain)
+                        if (!hadFastDelta || (!wasShadow && field.shadowActive)) {
+                            shadowRebuildsStarted++
+                        }
+                    }
                 }
             }
         }
 
         if (stepIndex - lastCongestionStep >= CONGESTION_REFRESH_INTERVAL) {
             recordCongestionStepMutation()
-            lastCongestionStep = stepIndex
-            if (subscriberCounts.isNotEmpty()) {
-                updateObstructedQueueCongestion(spatialIndex)
+            val deferredMore = if (subscriberCounts.isNotEmpty()) {
+                val budget = if (maxShadowRebuildsPerStep == Int.MAX_VALUE) {
+                    Int.MAX_VALUE
+                } else {
+                    (maxShadowRebuildsPerStep - shadowRebuildsStarted).coerceAtLeast(0)
+                }
+                val (started, more) = updateObstructedQueueCongestion(spatialIndex, budget)
+                shadowRebuildsStarted += started
+                more
+            } else false
+            lastCongestionStep = if (deferredMore) {
+                stepIndex - CONGESTION_REFRESH_INTERVAL + 4L
+            } else {
+                stepIndex
             }
         }
 
         var used = 0
         val hasUnitContext = units.isNotEmpty()
-        val activeFields = fields.values.filter {
-            (!hasUnitContext || it.activeSubscribers > 0) &&
-                ((!it.completed && it.heapSize > 0) || (it.shadowActive && it.shadowHeapSize > 0))
+        val liveFields = ArrayList<ChunkedField>(4)
+        val shadowFields = ArrayList<ChunkedField>(4)
+        for (f in fields.values) {
+            if (hasUnitContext && f.activeSubscribers <= 0) continue
+            if (!f.completed && f.heapSize > 0) liveFields.add(f)
+            else if (f.shadowActive && f.shadowHeapSize > 0) shadowFields.add(f)
         }
-        if (activeFields.isEmpty()) return 0
-        val perFieldSlice = max(128, maxExpansions / activeFields.size)
-        for (field in activeFields) {
-            if (used >= maxExpansions) break
-            recordFieldMutation(field.key)
-            val slice = min(perFieldSlice, maxExpansions - used)
-            used += if (field.shadowActive) expandShadowWavefront(field, slice) else expandLiveWavefront(field, slice)
-        }
-        if (used < maxExpansions) {
-            for (field in activeFields) {
+        if (liveFields.isEmpty() && shadowFields.isEmpty()) return 0
+        if (liveFields.isNotEmpty()) {
+            val perLive = max(128, maxExpansions / liveFields.size)
+            for (field in liveFields) {
                 if (used >= maxExpansions) break
-                val hasWork = if (field.shadowActive) field.shadowHeapSize > 0 else field.heapSize > 0
-                if (hasWork) {
-                    recordFieldMutation(field.key)
-                    used += if (field.shadowActive) expandShadowWavefront(field, maxExpansions - used)
-                    else expandLiveWavefront(field, maxExpansions - used)
+                val slice = min(perLive, maxExpansions - used)
+                used += expandFieldWithRollback(field, slice)
+            }
+            if (used < maxExpansions) {
+                for (field in liveFields) {
+                    if (used >= maxExpansions) break
+                    if (field.heapSize > 0) used += expandFieldWithRollback(field, maxExpansions - used)
                 }
             }
+        }
+        if (shadowFields.isNotEmpty() && used < maxExpansions) {
+            val shadowCap = min(shadowMaxExpansions, maxExpansions - used)
+            var shadowUsed = 0
+            val perShadow = max(128, shadowCap / shadowFields.size)
+            for (field in shadowFields) {
+                if (shadowUsed >= shadowCap) break
+                val slice = min(perShadow, shadowCap - shadowUsed)
+                shadowUsed += expandFieldWithRollback(field, slice)
+            }
+            if (shadowUsed < shadowCap) {
+                for (field in shadowFields) {
+                    if (shadowUsed >= shadowCap) break
+                    if (field.shadowHeapSize > 0) shadowUsed += expandFieldWithRollback(field, shadowCap - shadowUsed)
+                }
+            }
+            used += shadowUsed
         }
         return used
     }
 
+    /**
+     * Expands [field] by up to [slice] wavefront cells while preserving exact bit-for-bit step
+     * rollback without cloning multi-megabyte `350x350` field arrays on every substep.
+     *
+     * When a rollback transaction is active and the field has not already been fully snapshotted
+     * in this step, records a compact primitive delta undo entry covering only the `<= slice`
+     * mutated cells and wavefront heap (~16–32 KB instead of ~3.2 MB).
+     */
+    private fun expandFieldWithRollback(field: ChunkedField, slice: Int): Int {
+        val rb = undo
+        val alreadyFullBackedUp = rb == null || backedUpKeys?.contains(field.key) == true
+        if (alreadyFullBackedUp) {
+            return if (field.shadowActive) expandShadowWavefront(field, slice) else expandLiveWavefront(field, slice)
+        }
+        return if (field.shadowActive) {
+            expandShadowWavefrontDeltaUndo(field, slice, rb)
+        } else {
+            expandLiveWavefrontDeltaUndo(field, slice, rb)
+        }
+    }
+
     internal fun markChangedTerrainDirty(field: ChunkedField, newTerrain: PlanningTerrain) {
         val oldTerrain = field.terrain
-        recordFieldMutation(field.key)
-        field.terrain = newTerrain
         val w = field.width
         val h = field.height
         val oldCf = oldTerrain.clearanceField()
@@ -862,71 +921,350 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val oldWideYield = field.wideYieldMask
         val newGateThroat = newTerrain.gateThroatMask()
         val newWideYield = newTerrain.wideYieldMask(field.wideCorridorRings, field.key.smallYieldsWideCorridor)
-        field.gateThroatMask = newGateThroat
-        field.wideYieldMask = newWideYield
-        val dirtyChunks = BooleanArray(field.chunksX * field.chunksY)
-        var anyDirty = false
-        var anyCongActive = false
-        var minAffectedCost = INF_COST_F
+        val deltaCells = if (newTerrain.lastDeltaFromId == oldTerrain.terrainId) newTerrain.lastDeltaCells else null
 
-        for (row in 0 until h) {
-            val base = row * w
-            for (col in 0 until w) {
-                val idx = base + col
-                val oldBlocked = oldTerrain.isBlocked(col, row)
-                val newBlocked = newTerrain.isBlocked(col, row)
-                val oldRings = oldCf.clearanceRingsAt(idx)
-                val newRings = newCf.clearanceRingsAt(idx)
-                val wideChanged = field.key.smallYieldsWideCorridor && oldWideYield[idx] != newWideYield[idx]
-                val penCleared = field.congestionPenalty[idx] > 0 && !newGateThroat[idx]
-                if (penCleared) {
-                    field.congestionPenalty[idx] = 0
-                } else if (field.congestionPenalty[idx] > 0) {
-                    anyCongActive = true
-                }
-                if (oldBlocked != newBlocked ||
-                    (oldRings >= field.requiredRings) != (newRings >= field.requiredRings) ||
-                    wideChanged || penCleared
-                ) {
-                    val ownC = field.cost[idx]
-                    if (ownC < minAffectedCost) minAffectedCost = ownC
-                    for (d in 0 until 4) {
-                        val nc = col + ORTHO_DX[d]
-                        val nr = row + ORTHO_DY[d]
-                        if (nc in 0 until w && nr in 0 until h) {
-                            val nC = field.cost[nr * w + nc]
-                            if (nC < minAffectedCost) minAffectedCost = nC
+        var anyDirty = false
+        var anyCongActive = field.anyCongestionActive
+        var minAffectedCost = INF_COST_F
+        var dirtyChunks: BooleanArray? = null
+
+        val rb = undo
+        val needsFieldUndo = rb != null && backedUpKeys?.contains(field.key) != true
+        val origActiveCongCount = field.activeCongestionCount
+        val origActiveCongCells = if (needsFieldUndo && origActiveCongCount > 0) {
+            field.activeCongestionCells.copyOf(origActiveCongCount)
+        } else null
+
+        var clearedPenIdx: IntArray? = null
+        var clearedPenOld: ShortArray? = null
+        var clearedPenCount = 0
+        fun clearPenaltyCell(idx: Int) {
+            val oldVal = field.congestionPenalty[idx]
+            if (oldVal <= 0) return
+            var pIdx = clearedPenIdx
+            var pOld = clearedPenOld
+            if (pIdx == null || pOld == null) {
+                pIdx = IntArray(8)
+                pOld = ShortArray(8)
+                clearedPenIdx = pIdx
+                clearedPenOld = pOld
+            } else if (clearedPenCount == pIdx.size) {
+                val nc = pIdx.size shl 1
+                pIdx = pIdx.copyOf(nc)
+                pOld = pOld.copyOf(nc)
+                clearedPenIdx = pIdx
+                clearedPenOld = pOld
+            }
+            pIdx[clearedPenCount] = idx
+            pOld[clearedPenCount] = oldVal
+            clearedPenCount++
+            field.congestionPenalty[idx] = 0
+        }
+
+        val isWideYield = field.key.smallYieldsWideCorridor
+        val deltaHalo = if (isWideYield) {
+            max(field.wideCorridorRings + 3, NavigationTopologyMasks.MAX_GATE_SPAN_TILES + 1)
+        } else {
+            max(field.requiredRings + 1, 2)
+        }
+        val haloArea = (2L * deltaHalo + 1L) * (2L * deltaHalo + 1L)
+        if (deltaCells != null && deltaCells.size.toLong() * haloArea < field.cellCount.toLong()) {
+            // Fast O(changedCells * halo) dirty scan: only inspect cells within clearance/wide-yield halo
+            // of the exact flipped cells plus any active congestion cells.
+            for (dIdx in deltaCells) {
+                val dc = dIdx % w
+                val dr = dIdx / w
+                val rLo = max(0, dr - deltaHalo)
+                val rHi = min(h - 1, dr + deltaHalo)
+                val cLo = max(0, dc - deltaHalo)
+                val cHi = min(w - 1, dc + deltaHalo)
+                for (row in rLo..rHi) {
+                    val base = row * w
+                    for (col in cLo..cHi) {
+                        val idx = base + col
+                        val oldBlocked = oldTerrain.isBlocked(col, row)
+                        val newBlocked = newTerrain.isBlocked(col, row)
+                        val oldRings = oldCf.clearanceRingsAt(idx)
+                        val newRings = newCf.clearanceRingsAt(idx)
+                        val wideChanged = isWideYield && oldWideYield[idx] != newWideYield[idx]
+                        val penCleared = field.congestionPenalty[idx] > 0 && !newGateThroat[idx]
+                        if (oldBlocked != newBlocked ||
+                            (oldRings >= field.requiredRings) != (newRings >= field.requiredRings) ||
+                            wideChanged || penCleared
+                        ) {
+                            var touchesBuilt = field.cost[idx] < INF_COST_F ||
+                                (field.shadowActive && field.shadowCost[idx] < INF_COST_F)
+                            val ownC = field.cost[idx]
+                            if (ownC < minAffectedCost) minAffectedCost = ownC
+                            for (d in 0 until 4) {
+                                val nc = col + ORTHO_DX[d]
+                                val nr = row + ORTHO_DY[d]
+                                if (nc in 0 until w && nr in 0 until h) {
+                                    val nIdx = nr * w + nc
+                                    val nC = field.cost[nIdx]
+                                    if (nC < INF_COST_F || (field.shadowActive && field.shadowCost[nIdx] < INF_COST_F)) {
+                                        touchesBuilt = true
+                                    }
+                                    if (nC < minAffectedCost) minAffectedCost = nC
+                                }
+                            }
+                            if (!touchesBuilt && field.liveValid && !penCleared) {
+                                // Flipped cell lies entirely outside both live and shadow cost basins (e.g.
+                                // newly revealed fog on a disconnected island) — zero field invalidation needed!
+                                continue
+                            }
+                            if (penCleared) {
+                                clearPenaltyCell(idx)
+                            }
+                            val dcArr = dirtyChunks ?: BooleanArray(field.chunksX * field.chunksY).also { dirtyChunks = it }
+                            val cx = col / CHUNK_SIZE
+                            val cy = row / CHUNK_SIZE
+                            for (dy in -1..1) {
+                                val ny = cy + dy
+                                if (ny !in 0 until field.chunksY) continue
+                                for (dx in -1..1) {
+                                    val nx = cx + dx
+                                    if (nx !in 0 until field.chunksX) continue
+                                    dcArr[ny * field.chunksX + nx] = true
+                                    anyDirty = true
+                                }
+                            }
                         }
                     }
-                    val cx = col / CHUNK_SIZE
-                    val cy = row / CHUNK_SIZE
-                    for (dy in -1..1) {
-                        val ny = cy + dy
-                        if (ny !in 0 until field.chunksY) continue
-                        for (dx in -1..1) {
-                            val nx = cx + dx
-                            if (nx !in 0 until field.chunksX) continue
-                            dirtyChunks[ny * field.chunksX + nx] = true
-                            anyDirty = true
+                }
+            }
+            if (field.activeCongestionCount > 0) {
+                var kept = 0
+                for (k in 0 until field.activeCongestionCount) {
+                    val idx = field.activeCongestionCells[k]
+                    if (field.congestionPenalty[idx] > 0 && !newGateThroat[idx]) {
+                        clearPenaltyCell(idx)
+                        val col = idx % w
+                        val row = idx / w
+                        val ownC = field.cost[idx]
+                        if (ownC < minAffectedCost) minAffectedCost = ownC
+                        for (d in 0 until 4) {
+                            val nc = col + ORTHO_DX[d]
+                            val nr = row + ORTHO_DY[d]
+                            if (nc in 0 until w && nr in 0 until h) {
+                                val nC = field.cost[nr * w + nc]
+                                if (nC < minAffectedCost) minAffectedCost = nC
+                            }
+                        }
+                        val dcArr = dirtyChunks ?: BooleanArray(field.chunksX * field.chunksY).also { dirtyChunks = it }
+                        val cx = col / CHUNK_SIZE
+                        val cy = row / CHUNK_SIZE
+                        for (dy in -1..1) {
+                            val ny = cy + dy
+                            if (ny !in 0 until field.chunksY) continue
+                            for (dx in -1..1) {
+                                val nx = cx + dx
+                                if (nx !in 0 until field.chunksX) continue
+                                dcArr[ny * field.chunksX + nx] = true
+                                anyDirty = true
+                            }
+                        }
+                    } else if (field.congestionPenalty[idx] > 0) {
+                        field.activeCongestionCells[kept++] = idx
+                    }
+                }
+                field.activeCongestionCount = kept
+                anyCongActive = kept > 0
+            }
+        } else {
+            anyCongActive = false
+            for (row in 0 until h) {
+                val base = row * w
+                for (col in 0 until w) {
+                    val idx = base + col
+                    val oldBlocked = oldTerrain.isBlocked(col, row)
+                    val newBlocked = newTerrain.isBlocked(col, row)
+                    val oldRings = oldCf.clearanceRingsAt(idx)
+                    val newRings = newCf.clearanceRingsAt(idx)
+                    val wideChanged = field.key.smallYieldsWideCorridor && oldWideYield[idx] != newWideYield[idx]
+                    val penCleared = field.congestionPenalty[idx] > 0 && !newGateThroat[idx]
+                    if (penCleared) {
+                        clearPenaltyCell(idx)
+                    } else if (field.congestionPenalty[idx] > 0) {
+                        anyCongActive = true
+                    }
+                    if (oldBlocked != newBlocked ||
+                        (oldRings >= field.requiredRings) != (newRings >= field.requiredRings) ||
+                        wideChanged || penCleared
+                    ) {
+                        var touchesBuilt = field.cost[idx] < INF_COST_F ||
+                            (field.shadowActive && field.shadowCost[idx] < INF_COST_F)
+                        val ownC = field.cost[idx]
+                        if (ownC < minAffectedCost) minAffectedCost = ownC
+                        for (d in 0 until 4) {
+                            val nc = col + ORTHO_DX[d]
+                            val nr = row + ORTHO_DY[d]
+                            if (nc in 0 until w && nr in 0 until h) {
+                                val nIdx = nr * w + nc
+                                val nC = field.cost[nIdx]
+                                if (nC < INF_COST_F || (field.shadowActive && field.shadowCost[nIdx] < INF_COST_F)) {
+                                    touchesBuilt = true
+                                }
+                                if (nC < minAffectedCost) minAffectedCost = nC
+                            }
+                        }
+                        if (!touchesBuilt && field.liveValid && !penCleared) {
+                            continue
+                        }
+                        val dcArr = dirtyChunks ?: BooleanArray(field.chunksX * field.chunksY).also { dirtyChunks = it }
+                        val cx = col / CHUNK_SIZE
+                        val cy = row / CHUNK_SIZE
+                        for (dy in -1..1) {
+                            val ny = cy + dy
+                            if (ny !in 0 until field.chunksY) continue
+                            for (dx in -1..1) {
+                                val nx = cx + dx
+                                if (nx !in 0 until field.chunksX) continue
+                                dcArr[ny * field.chunksX + nx] = true
+                                anyDirty = true
+                            }
                         }
                     }
                 }
             }
         }
+
+        if (!anyDirty) {
+            // Lightweight terrain pointer swap with zero array cloning when no built cell was affected.
+            val fKey = field.key
+            val prevTerrain = field.terrain
+            val prevGate = field.gateThroatMask
+            val prevWide = field.wideYieldMask
+            val prevCong = field.anyCongestionActive
+            undo?.record {
+                fields[fKey]?.let { f ->
+                    f.terrain = prevTerrain
+                    f.gateThroatMask = prevGate
+                    f.wideYieldMask = prevWide
+                    f.anyCongestionActive = prevCong
+                }
+            }
+            field.terrain = newTerrain
+            field.gateThroatMask = newGateThroat
+            field.wideYieldMask = newWideYield
+            field.anyCongestionActive = anyCongActive
+            return
+        }
+
+        // Fast zero-copy rollback path when starting a brand-new shadow rebuild (live arrays stay untouched
+        // unless startShadowMonotonicRebuild completes immediately and swaps live<->shadow refs, which we
+        // guard by capturing prevCostRef/prevDirXRef/prevDirYRef and swapping them back on rollback).
+        val canUseLightweightShadowStartUndo = needsFieldUndo &&
+            field.liveValid && !field.shadowActive
+        if (canUseLightweightShadowStartUndo) {
+            val fKey = field.key
+            val prevTerrain = field.terrain
+            val prevGate = field.gateThroatMask
+            val prevWide = field.wideYieldMask
+            val prevCong = field.anyCongestionActive
+            val prevDirtyCount = field.dirtyRebuildCount
+            val prevTerrainRebuilds = field.terrainRebuildCount
+            val prevCompleted = field.completed
+            val prevLiveValid = field.liveValid
+            val prevShadowMinCut = field.shadowMinCut
+            val prevEffGoal = field.effectiveGoalWorld
+            val prevGoalFallback = field.goalWasNearestFallback
+            val prevCostRef = field.cost
+            val prevDirXRef = field.dirX
+            val prevDirYRef = field.dirY
+            val prevChunkDirty = field.chunkDirty.copyOf()
+            val prevChunkBuilt = field.chunkBuilt.copyOf()
+            val prevPenIdx = clearedPenIdx
+            val prevPenOld = clearedPenOld
+            val prevPenCount = clearedPenCount
+            checkNotNull(rb).record {
+                fields[fKey]?.let { f ->
+                    if (f.cost !== prevCostRef) {
+                        val tmpC = f.cost; f.cost = f.shadowCost; f.shadowCost = tmpC
+                    }
+                    if (f.dirX !== prevDirXRef) {
+                        val tmpX = f.dirX; f.dirX = f.shadowDirX; f.shadowDirX = tmpX
+                    }
+                    if (f.dirY !== prevDirYRef) {
+                        val tmpY = f.dirY; f.dirY = f.shadowDirY; f.shadowDirY = tmpY
+                    }
+                    f.terrain = prevTerrain
+                    f.gateThroatMask = prevGate
+                    f.wideYieldMask = prevWide
+                    f.anyCongestionActive = prevCong
+                    f.dirtyRebuildCount = prevDirtyCount
+                    f.terrainRebuildCount = prevTerrainRebuilds
+                    f.completed = prevCompleted
+                    f.liveValid = prevLiveValid
+                    f.shadowActive = false
+                    f.shadowMinCut = prevShadowMinCut
+                    f.effectiveGoalWorld = prevEffGoal
+                    f.goalWasNearestFallback = prevGoalFallback
+                    System.arraycopy(prevChunkDirty, 0, f.chunkDirty, 0, prevChunkDirty.size)
+                    System.arraycopy(prevChunkBuilt, 0, f.chunkBuilt, 0, prevChunkBuilt.size)
+                    if (prevPenIdx != null && prevPenOld != null) {
+                        for (k in 0 until prevPenCount) {
+                            f.congestionPenalty[prevPenIdx[k]] = prevPenOld[k]
+                        }
+                    }
+                    if (origActiveCongCells != null) {
+                        if (f.activeCongestionCells.size < origActiveCongCount) {
+                            f.activeCongestionCells = origActiveCongCells.copyOf()
+                        } else {
+                            System.arraycopy(origActiveCongCells, 0, f.activeCongestionCells, 0, origActiveCongCount)
+                        }
+                        f.activeCongestionCount = origActiveCongCount
+                    } else if (origActiveCongCount == 0) {
+                        f.activeCongestionCount = 0
+                    }
+                }
+            }
+        } else {
+            // Before mutating live arrays or an in-progress shadow, restore any penalty/activeCongestionCells
+            // changes temporarily so recordFieldMutation captures the exact pre-step state.
+            if ((clearedPenCount > 0 || field.activeCongestionCount != origActiveCongCount) && needsFieldUndo) {
+                val pIdx = clearedPenIdx
+                val pOld = clearedPenOld
+                val compactedCount = field.activeCongestionCount
+                val compactedCells = if (compactedCount > 0) field.activeCongestionCells.copyOf(compactedCount) else null
+                if (pIdx != null && pOld != null) {
+                    for (k in 0 until clearedPenCount) field.congestionPenalty[pIdx[k]] = pOld[k]
+                }
+                if (origActiveCongCells != null) {
+                    if (field.activeCongestionCells.size < origActiveCongCount) {
+                        field.activeCongestionCells = origActiveCongCells.copyOf()
+                    } else {
+                        System.arraycopy(origActiveCongCells, 0, field.activeCongestionCells, 0, origActiveCongCount)
+                    }
+                }
+                field.activeCongestionCount = origActiveCongCount
+                recordFieldMutation(field.key)
+                if (pIdx != null) {
+                    for (k in 0 until clearedPenCount) field.congestionPenalty[pIdx[k]] = 0
+                }
+                if (compactedCells != null) {
+                    System.arraycopy(compactedCells, 0, field.activeCongestionCells, 0, compactedCount)
+                }
+                field.activeCongestionCount = compactedCount
+            } else {
+                recordFieldMutation(field.key)
+            }
+        }
+        field.terrain = newTerrain
         field.gateThroatMask = newGateThroat
         field.wideYieldMask = newWideYield
         field.anyCongestionActive = anyCongActive
-        if (!anyDirty) return
 
         field.dirtyRebuildCount++
         field.terrainRebuildCount++
         field.completed = false
 
+        val dirtyChunksArr = checkNotNull(dirtyChunks)
         // Mark only chunks touched by direct dirty halo as dirty so clean upstream chunks stay built.
         for (cy in 0 until field.chunksY) {
             for (cx in 0 until field.chunksX) {
                 val cIdx = cy * field.chunksX + cx
-                if (dirtyChunks[cIdx]) {
+                if (dirtyChunksArr[cIdx]) {
                     field.chunkDirty[cIdx] = true
                     field.chunkBuilt[cIdx] = false
                 }
@@ -1011,8 +1349,13 @@ internal class ChunkedFlowFieldAdapter private constructor(
             }
         }
 
-        // Step 1: Copy ALL strictly-upstream invariant cells (liveCost < effectiveCut and still passable).
+        // Step 1: Copy ALL strictly-upstream invariant cells (liveCost < effectiveCut and still passable)
+        // while tracking the tight copied bounding box so Step 2 skips uncopied map regions on large maps.
         var copiedAny = false
+        var minR = h
+        var maxR = -1
+        var minC = w
+        var maxC = -1
         for (r in 0 until h) {
             val base = r * w
             for (c in 0 until w) {
@@ -1023,6 +1366,10 @@ internal class ChunkedFlowFieldAdapter private constructor(
                     field.shadowDirX[idx] = field.dirX[idx]
                     field.shadowDirY[idx] = field.dirY[idx]
                     copiedAny = true
+                    if (r < minR) minR = r
+                    if (r > maxR) maxR = r
+                    if (c < minC) minC = c
+                    if (c > maxC) maxC = c
                 }
             }
         }
@@ -1033,9 +1380,9 @@ internal class ChunkedFlowFieldAdapter private constructor(
         }
 
         // Step 2: Seed shadow heap with strictly-upstream cells bordering any uncopied passable cell.
-        for (r in 0 until h) {
+        for (r in minR..maxR) {
             val base = r * w
-            for (c in 0 until w) {
+            for (c in minC..maxC) {
                 val idx = base + c
                 val sc = sCost[idx]
                 if (sc >= INF_COST_F) continue
@@ -1067,15 +1414,32 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val h = field.height
         val cf = field.terrain.clearanceField()
         val req = field.requiredRings
+        val sCost = field.shadowCost
+        val sDirX = field.shadowDirX
+        val sDirY = field.shadowDirY
+        // Cells strictly upstream of `shadowMinCut - (2.5 * BASE_STEP_COST + MAX_CONGESTION_PENALTY + WIDE_CORRIDOR_YIELD_SURCHARGE)`
+        // kept their exact copied `shadowDirX/Y` and cannot be adjacent to any cell whose cost changed during the rebuild.
+        val gradGuardMargin = BASE_STEP_COST * 2.5f + MAX_CONGESTION_PENALTY.toFloat() + WIDE_CORRIDOR_YIELD_SURCHARGE
+        val minDirtyGradCost = if (field.shadowMinCut < INF_COST_F && field.shadowMinCut > gradGuardMargin) {
+            field.shadowMinCut - gradGuardMargin
+        } else {
+            -1f
+        }
         for (r in 0 until h) {
             val base = r * w
             for (c in 0 until w) {
                 val idx = base + c
-                if (field.shadowCost[idx] < INF_COST_F && cf.clearanceRingsAt(idx) >= req) {
-                    recomputeCellGradientOn(field, c, r, field.shadowCost, field.shadowDirX, field.shadowDirY)
+                val sc = sCost[idx]
+                if (sc < INF_COST_F) {
+                    if (sc >= minDirtyGradCost && cf.clearanceRingsAt(idx) >= req) {
+                        recomputeCellGradientOn(field, c, r, sCost, sDirX, sDirY)
+                    } else if (cf.clearanceRingsAt(idx) < req) {
+                        sDirX[idx] = 0f
+                        sDirY[idx] = 0f
+                    }
                 } else {
-                    field.shadowDirX[idx] = 0f
-                    field.shadowDirY[idx] = 0f
+                    if (sDirX[idx] != 0f) sDirX[idx] = 0f
+                    if (sDirY[idx] != 0f) sDirY[idx] = 0f
                 }
             }
         }
@@ -1096,6 +1460,7 @@ internal class ChunkedFlowFieldAdapter private constructor(
      * field instead of falsely matching the main `0`-component field.
      */
     internal fun fieldForUnit(unit: MutableUnit, terrain: PlanningTerrain): ChunkedField? {
+        if (fields.isEmpty()) return null
         val group = unit.landingMember?.group ?: return null
         if (!group.flowFieldEligible) return null
         val movement = UnitLocomotion.movement(unit)
@@ -1112,8 +1477,55 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val wantYieldWide = sharedEscortRadius == null && maxGroupR > effectiveRadius * 1.45 && band == 1
         val uCol = floor(unit.position.x / terrain.tileWidth).toInt().coerceIn(0, terrain.widthTiles - 1)
         val uRow = floor(unit.position.y / terrain.tileHeight).toInt().coerceIn(0, terrain.heightTiles - 1)
+
+        // Zero-allocation O(activeFields <= 12) lookup avoiding both `FieldKey` boxing and full-map
+        // 350x350 component BFS whenever no enclosed-component field exists for this target.
+        var baseField: ChunkedField? = null
+        var hasNonZeroCompForGoal = false
+        val ownerId = unit.ownerPlayerId
+        val mvType = movement.type
+        for (f in fields.values) {
+            val k = f.key
+            if (k.goalCol == goalCol &&
+                k.goalRow == goalRow &&
+                k.clearanceBand == band &&
+                k.movementType == mvType &&
+                k.smallYieldsWideCorridor == wantYieldWide &&
+                k.ownerId == ownerId
+            ) {
+                if (k.sourceComponentId == 0) {
+                    baseField = f
+                } else {
+                    hasNonZeroCompForGoal = true
+                }
+            }
+        }
+        if (!hasNonZeroCompForGoal) {
+            val found = baseField ?: return null
+            val uIdx = uRow * found.width + uCol
+            if (uIdx in 0 until found.cellCount && found.cost[uIdx] < INF_COST_F) {
+                return found
+            }
+            val srcComp = resolveSourceComponent(terrain, effectiveRadius, goalCol, goalRow, uCol, uRow)
+            return if (srcComp == 0) found else null
+        }
+
         val srcComp = resolveSourceComponent(terrain, effectiveRadius, goalCol, goalRow, uCol, uRow)
-        return fields[FieldKey(unit.ownerPlayerId, movement.type, band, goalCol, goalRow, wantYieldWide, srcComp)]
+        if (srcComp == 0) return baseField
+        for (f in fields.values) {
+            val k = f.key
+            if (k.sourceComponentId == srcComp &&
+                k.goalCol == goalCol &&
+                k.goalRow == goalRow &&
+                k.clearanceBand == band &&
+                k.movementType == mvType &&
+                k.smallYieldsWideCorridor == wantYieldWide &&
+                k.ownerId == ownerId
+            ) {
+                return f
+            }
+        }
+        return null
     }
 
     /**
@@ -1248,13 +1660,20 @@ internal class ChunkedFlowFieldAdapter private constructor(
         }
 
         val remainingWorld = (cellCost / BASE_STEP_COST) * minTile
+        val goalDist = hypot(field.effectiveGoalWorld.x - unit.position.x, field.effectiveGoalWorld.y - unit.position.y)
         val terrainHull = UnitLocomotion.terrainHull(unit, terrain)
         val routeR = host.routeRadius(unit)
 
         // Direct-to-goal shortcut: MUST pass BOTH true hull clearance AND zero toll-gate crossing!
-        val directGoalClear = segmentClearAndTollFree(
-            terrain, field, terrainHull, unit.position, field.effectiveGoalWorld, routeR, unitRadius,
-        )
+        // Exact Eikonal geodesic lower-bound short-circuit: subtract own-cell congestion/yield surcharge
+        // (since `segmentClearAndTollFree` allows exiting the unit's own current cell onto a toll-free chord).
+        val ownCellExtraWorld = ((field.congestionPenalty[idx].toDouble() +
+            if (field.key.smallYieldsWideCorridor && field.wideYieldMask[idx]) WIDE_CORRIDOR_YIELD_SURCHARGE.toDouble() else 0.0) /
+            BASE_STEP_COST) * minTile
+        val directGoalClear = (remainingWorld - ownCellExtraWorld) <= goalDist * 1.25 + minTile * 3.0 &&
+            segmentClearAndTollFree(
+                terrain, field, terrainHull, unit.position, field.effectiveGoalWorld, routeR, unitRadius,
+            )
         val safeAim = if (directGoalClear) {
             val gdx = field.effectiveGoalWorld.x - unit.position.x
             val gdy = field.effectiveGoalWorld.y - unit.position.y
@@ -1324,8 +1743,6 @@ internal class ChunkedFlowFieldAdapter private constructor(
 
         val clearRings = cf.clearanceRings(col, row)
         val clearWorld = if (clearRings <= 0) 0.0 else (clearRings * 2.0 - 1.0) * minTile
-
-        val goalDist = hypot(field.effectiveGoalWorld.x - unit.position.x, field.effectiveGoalWorld.y - unit.position.y)
 
         return NavigationGuidance.Sample(
             aimPosition = safeAim,
@@ -1779,8 +2196,11 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val hasReused = field.hasReusedMask
         val reusedMask = field.reusedMask
         var expanded = 0
+        var pops = 0
+        val maxPops = maxExpansions * 4
 
-        while (expanded < maxExpansions && field.heapSize > 0) {
+        while (expanded < maxExpansions && pops < maxPops && field.heapSize > 0) {
+            pops++
             val poppedKey = field.peekHeapKey()
             val cell = field.popHeapCell()
             val curCost = costArr[cell]
@@ -1844,6 +2264,222 @@ internal class ChunkedFlowFieldAdapter private constructor(
         return expanded
     }
 
+    private fun expandLiveWavefrontDeltaUndo(field: ChunkedField, maxExpansions: Int, rb: PathSearchRollback): Int {
+        // Rare completion with reusedMask cleanup falls back to full backup for exactness.
+        if (field.hasReusedMask) {
+            recordFieldMutation(field.key)
+            return expandLiveWavefront(field, maxExpansions)
+        }
+        val w = field.width
+        val h = field.height
+        val cf = field.terrain.clearanceField()
+        val reqRings = field.requiredRings
+        val costArr = field.cost
+        val dirXArr = field.dirX
+        val dirYArr = field.dirY
+        val prevHeap = field.liveHeap.copy()
+        val prevCompleted = field.completed
+        val prevLiveValid = field.liveValid
+        val prevTotalExpansions = field.totalExpansions
+        val prevChunkBuilt = field.chunkBuilt.copyOf()
+        val prevChunkDirty = field.chunkDirty.copyOf()
+
+        var costCap = min(maxExpansions * 2, 1024).coerceAtLeast(64)
+        var costIdxLog = IntArray(costCap)
+        var costOldLog = FloatArray(costCap)
+        var costLogCount = 0
+
+        var gradCap = min(maxExpansions, 512).coerceAtLeast(64)
+        var gradIdxLog = IntArray(gradCap)
+        var gradOldDxLog = FloatArray(gradCap)
+        var gradOldDyLog = FloatArray(gradCap)
+        var gradLogCount = 0
+
+        var expanded = 0
+        var pops = 0
+        val maxPops = maxExpansions * 4
+        while (expanded < maxExpansions && pops < maxPops && field.heapSize > 0) {
+            pops++
+            val poppedKey = field.peekHeapKey()
+            val cell = field.popHeapCell()
+            val curCost = costArr[cell]
+            if (poppedKey > curCost + 1e-4f || curCost >= INF_COST_F) continue
+            val col = cell % w
+            val row = cell / w
+            expanded++
+            field.totalExpansions++
+
+            val chunkIdx = (row / CHUNK_SIZE) * field.chunksX + (col / CHUNK_SIZE)
+            field.chunkBuilt[chunkIdx] = true
+            field.chunkDirty[chunkIdx] = false
+
+            for (d in 0 until 4) {
+                val nc = col + ORTHO_DX[d]
+                val nr = row + ORTHO_DY[d]
+                if (nc !in 0 until w || nr !in 0 until h) continue
+                val nIdx = nr * w + nc
+                if (cf.clearanceRingsAt(nIdx) < reqRings) continue
+                val ux = min(
+                    if (nc > 0 && cf.clearanceRingsAt(nIdx - 1) >= reqRings) costArr[nIdx - 1] else INF_COST_F,
+                    if (nc + 1 < w && cf.clearanceRingsAt(nIdx + 1) >= reqRings) costArr[nIdx + 1] else INF_COST_F,
+                )
+                val uy = min(
+                    if (nr > 0 && cf.clearanceRingsAt(nIdx - w) >= reqRings) costArr[nIdx - w] else INF_COST_F,
+                    if (nr + 1 < h && cf.clearanceRingsAt(nIdx + w) >= reqRings) costArr[nIdx + w] else INF_COST_F,
+                )
+                val nextCost = solveEikonal(ux, uy, cellSlowness(field, nIdx))
+                if (nextCost + 1e-3f < costArr[nIdx]) {
+                    if (costLogCount == costCap) {
+                        costCap = costCap shl 1
+                        costIdxLog = costIdxLog.copyOf(costCap)
+                        costOldLog = costOldLog.copyOf(costCap)
+                    }
+                    costIdxLog[costLogCount] = nIdx
+                    costOldLog[costLogCount] = costArr[nIdx]
+                    costLogCount++
+                    costArr[nIdx] = nextCost
+                    field.pushHeap(nIdx, nextCost)
+                }
+            }
+            if (gradLogCount == gradCap) {
+                gradCap = gradCap shl 1
+                gradIdxLog = gradIdxLog.copyOf(gradCap)
+                gradOldDxLog = gradOldDxLog.copyOf(gradCap)
+                gradOldDyLog = gradOldDyLog.copyOf(gradCap)
+            }
+            gradIdxLog[gradLogCount] = cell
+            gradOldDxLog[gradLogCount] = dirXArr[cell]
+            gradOldDyLog[gradLogCount] = dirYArr[cell]
+            gradLogCount++
+            recomputeCellGradientOn(field, col, row, costArr, dirXArr, dirYArr)
+        }
+        if (field.heapSize == 0) {
+            field.liveValid = true
+            field.completed = true
+        }
+        val fKey = field.key
+        val finalCostCount = costLogCount
+        val finalGradCount = gradLogCount
+        val finalCostIdx = costIdxLog
+        val finalCostOld = costOldLog
+        val finalGradIdx = gradIdxLog
+        val finalGradDx = gradOldDxLog
+        val finalGradDy = gradOldDyLog
+        rb.record {
+            val target = fields[fKey] ?: return@record
+            for (i in finalCostCount - 1 downTo 0) {
+                target.cost[finalCostIdx[i]] = finalCostOld[i]
+            }
+            for (i in finalGradCount - 1 downTo 0) {
+                val c = finalGradIdx[i]
+                target.dirX[c] = finalGradDx[i]
+                target.dirY[c] = finalGradDy[i]
+            }
+            System.arraycopy(prevChunkBuilt, 0, target.chunkBuilt, 0, prevChunkBuilt.size)
+            System.arraycopy(prevChunkDirty, 0, target.chunkDirty, 0, prevChunkDirty.size)
+            target.liveHeap = prevHeap
+            target.completed = prevCompleted
+            target.liveValid = prevLiveValid
+            target.totalExpansions = prevTotalExpansions
+        }
+        return expanded
+    }
+
+    private fun expandShadowWavefrontDeltaUndo(field: ChunkedField, maxExpansions: Int, rb: PathSearchRollback): Int {
+        val w = field.width
+        val h = field.height
+        val cf = field.terrain.clearanceField()
+        val reqRings = field.requiredRings
+        val sCost = field.shadowCost
+        val prevShadowHeap = field.shadowHeap?.copy()
+        val prevTotalExpansions = field.totalExpansions
+
+        var costCap = min(maxExpansions * 2, 1024).coerceAtLeast(64)
+        var costIdxLog = IntArray(costCap)
+        var costOldLog = FloatArray(costCap)
+        var costLogCount = 0
+
+        var expanded = 0
+        var pops = 0
+        val maxPops = maxExpansions * 4
+        while (expanded < maxExpansions && pops < maxPops && field.shadowHeapSize > 0) {
+            pops++
+            val poppedKey = field.peekShadowHeapKey()
+            val cell = field.popShadowHeapCell()
+            val curCost = sCost[cell]
+            if (poppedKey > curCost + 1e-4f || curCost >= INF_COST_F) continue
+            val col = cell % w
+            val row = cell / w
+            expanded++
+            field.totalExpansions++
+
+            for (d in 0 until 4) {
+                val nc = col + ORTHO_DX[d]
+                val nr = row + ORTHO_DY[d]
+                if (nc !in 0 until w || nr !in 0 until h) continue
+                val nIdx = nr * w + nc
+                if (cf.clearanceRingsAt(nIdx) < reqRings) continue
+                val ux = min(
+                    if (nc > 0 && cf.clearanceRingsAt(nIdx - 1) >= reqRings) sCost[nIdx - 1] else INF_COST_F,
+                    if (nc + 1 < w && cf.clearanceRingsAt(nIdx + 1) >= reqRings) sCost[nIdx + 1] else INF_COST_F,
+                )
+                val uy = min(
+                    if (nr > 0 && cf.clearanceRingsAt(nIdx - w) >= reqRings) sCost[nIdx - w] else INF_COST_F,
+                    if (nr + 1 < h && cf.clearanceRingsAt(nIdx + w) >= reqRings) sCost[nIdx + w] else INF_COST_F,
+                )
+                val nextCost = solveEikonal(ux, uy, cellSlowness(field, nIdx))
+                if (nextCost + 1e-3f < sCost[nIdx]) {
+                    if (costLogCount == costCap) {
+                        costCap = costCap shl 1
+                        costIdxLog = costIdxLog.copyOf(costCap)
+                        costOldLog = costOldLog.copyOf(costCap)
+                    }
+                    costIdxLog[costLogCount] = nIdx
+                    costOldLog[costLogCount] = sCost[nIdx]
+                    costLogCount++
+                    sCost[nIdx] = nextCost
+                    field.pushShadowHeap(nIdx, nextCost)
+                }
+            }
+        }
+        val fKey = field.key
+        val finalCostCount = costLogCount
+        val finalCostIdx = costIdxLog
+        val finalCostOld = costOldLog
+        rb.record {
+            val target = fields[fKey] ?: return@record
+            for (i in finalCostCount - 1 downTo 0) {
+                target.shadowCost[finalCostIdx[i]] = finalCostOld[i]
+            }
+            target.shadowHeap = prevShadowHeap
+            target.totalExpansions = prevTotalExpansions
+        }
+        if (field.shadowHeapSize == 0) {
+            // Zero-copy pointer-swap rollback for commitShadowSwap: live buffers move intact into
+            // shadow buffers during swap, so swapping pointers back restores live state bit-for-bit!
+            val prevLiveValid = field.liveValid
+            val prevShadowActive = field.shadowActive
+            val prevShadowMinCut = field.shadowMinCut
+            val prevCompleted = field.completed
+            val prevChunkDirty = field.chunkDirty.copyOf()
+            val prevChunkBuilt = field.chunkBuilt.copyOf()
+            commitShadowSwap(field)
+            rb.record {
+                val target = fields[fKey] ?: return@record
+                val tc = target.cost; target.cost = target.shadowCost; target.shadowCost = tc
+                val tx = target.dirX; target.dirX = target.shadowDirX; target.shadowDirX = tx
+                val ty = target.dirY; target.dirY = target.shadowDirY; target.shadowDirY = ty
+                target.liveValid = prevLiveValid
+                target.shadowActive = prevShadowActive
+                target.shadowMinCut = prevShadowMinCut
+                target.completed = prevCompleted
+                System.arraycopy(prevChunkDirty, 0, target.chunkDirty, 0, prevChunkDirty.size)
+                System.arraycopy(prevChunkBuilt, 0, target.chunkBuilt, 0, prevChunkBuilt.size)
+            }
+        }
+        return expanded
+    }
+
     private fun expandShadowWavefront(field: ChunkedField, maxExpansions: Int): Int {
         val w = field.width
         val h = field.height
@@ -1851,8 +2487,11 @@ internal class ChunkedFlowFieldAdapter private constructor(
         val reqRings = field.requiredRings
         val sCost = field.shadowCost
         var expanded = 0
+        var pops = 0
+        val maxPops = maxExpansions * 4
 
-        while (expanded < maxExpansions && field.shadowHeapSize > 0) {
+        while (expanded < maxExpansions && pops < maxPops && field.shadowHeapSize > 0) {
+            pops++
             val poppedKey = field.peekShadowHeapKey()
             val cell = field.popShadowHeapCell()
             val curCost = sCost[cell]
@@ -1969,17 +2608,24 @@ internal class ChunkedFlowFieldAdapter private constructor(
      * - Triggers a pure monotonic shadow double-buffer rebuild with cut-cost invariance so live
      *   gradients stay tear-free and loop-free.
      */
-    private fun updateObstructedQueueCongestion(spatialIndex: WorldSpatialIndex) {
+    private fun updateObstructedQueueCongestion(
+        spatialIndex: WorldSpatialIndex,
+        maxShadowRebuilds: Int,
+    ): Pair<Int, Boolean> {
+        if (maxShadowRebuilds <= 0) return 0 to true
+        var startedShadowRebuilds = 0
         val frozenUnits = spatialIndex.frozenLayerUnits(SpatialLayer.SURFACE)
         for (field in fields.values) {
             if (field.activeSubscribers <= 0 || !field.liveValid || field.shadowActive) continue
+            if (startedShadowRebuilds >= maxShadowRebuilds) {
+                return startedShadowRebuilds to true
+            }
             val w = field.width
             val h = field.height
             val tw = field.tileWidth.toDouble()
             val th = field.tileHeight.toDouble()
             val throatMask = field.gateThroatMask
-            field.ensureCongestionScratch()
-            val obstructedLoad = field.congestionLoadScratch
+            var obstructedByCell: HashMap<Int, Int>? = null
 
             for (i in 0 until frozenUnits.size) {
                 val u = frozenUnits[i]
@@ -2036,64 +2682,101 @@ internal class ChunkedFlowFieldAdapter private constructor(
                 }
                 if (targetGateIdx >= 0) {
                     val weight = if (u.hardRadius >= 10.0) 2 else 1
-                    obstructedLoad[targetGateIdx] += weight
+                    val map = obstructedByCell ?: LinkedHashMap<Int, Int>(8).also { obstructedByCell = it }
+                    map[targetGateIdx] = (map[targetGateIdx] ?: 0) + weight
                 }
             }
 
-            // Aggregate transversely across contiguous gate-throat cells in the same constriction slice so
-            // a wide gate blocked by slow heavies charges a uniform balanced toll across the whole gate opening
-            // (preventing small cars from cramming along the 1-tile shoulder of a congested wide gate).
-            val gateSliceLoad = field.gateSliceLoadScratch
-            val gateSliceWidth = field.gateSliceWidthScratch
-            for (r in 0 until h) {
-                val base = r * w
-                for (c in 0 until w) {
-                    val idx = base + c
-                    if (!throatMask[idx]) continue
-                    // Determine whether this throat is pinched vertically (walls up/down -> gate opens along Y)
-                    // or horizontally (walls left/right -> gate opens along X).
-                    val vertWall = NavigationTopologyMasks.isVerticallyBoundedThroat(field.terrain, c, r)
-                    var sum = obstructedLoad[idx]
-                    var widthCnt = 1
+            // O(1) zero-allocation early exit when no unit is obstructed in a gate throat and no prior penalty is active.
+            if (obstructedByCell == null && !field.anyCongestionActive) continue
+
+            // Collect candidate throat cells: every contiguous slice containing an obstructed cell plus every currently penalized cell.
+            val candidateCells = LinkedHashSet<Int>(16)
+            for (k in 0 until field.activeCongestionCount) {
+                candidateCells.add(field.activeCongestionCells[k])
+            }
+            val loadMap = obstructedByCell
+            if (loadMap != null) {
+                for (seedIdx in loadMap.keys) {
+                    if (!throatMask[seedIdx]) continue
+                    val sc = seedIdx % w
+                    val sr = seedIdx / w
+                    candidateCells.add(seedIdx)
+                    val vertWall = NavigationTopologyMasks.isVerticallyBoundedThroat(field.terrain, sc, sr)
                     if (vertWall) {
-                        var y = r - 1
-                        while (y >= 0 && throatMask[y * w + c] && widthCnt < 8) {
-                            sum += obstructedLoad[y * w + c]; widthCnt++; y--
+                        var y = sr - 1
+                        var steps = 0
+                        while (y >= 0 && throatMask[y * w + sc] && steps < 8) {
+                            candidateCells.add(y * w + sc); y--; steps++
                         }
-                        y = r + 1
-                        while (y < h && throatMask[y * w + c] && widthCnt < 8) {
-                            sum += obstructedLoad[y * w + c]; widthCnt++; y++
+                        y = sr + 1
+                        steps = 0
+                        while (y < h && throatMask[y * w + sc] && steps < 8) {
+                            candidateCells.add(y * w + sc); y++; steps++
                         }
                     } else {
-                        var x = c - 1
-                        while (x >= 0 && throatMask[base + x] && widthCnt < 8) {
-                            sum += obstructedLoad[base + x]; widthCnt++; x--
+                        var x = sc - 1
+                        var steps = 0
+                        while (x >= 0 && throatMask[sr * w + x] && steps < 8) {
+                            candidateCells.add(sr * w + x); x--; steps++
                         }
-                        x = c + 1
-                        while (x < w && throatMask[base + x] && widthCnt < 8) {
-                            sum += obstructedLoad[base + x]; widthCnt++; x++
+                        x = sc + 1
+                        steps = 0
+                        while (x < w && throatMask[sr * w + x] && steps < 8) {
+                            candidateCells.add(sr * w + x); x++; steps++
                         }
                     }
-                    gateSliceLoad[idx] = sum
-                    gateSliceWidth[idx] = widthCnt
                 }
             }
+
+            val rb = undo
+            val alreadyFullBackedUp = rb == null || backedUpKeys?.contains(field.key) == true
+            var deltaCells: IntArray? = null
+            var deltaOldPen: ShortArray? = null
+            var deltaCount = 0
+            val savedActiveCells = if (!alreadyFullBackedUp) field.activeCongestionCells.copyOf(field.activeCongestionCount) else null
+            val savedActiveCount = field.activeCongestionCount
+            val savedAnyActive = field.anyCongestionActive
 
             var changedAny = false
             var anyActive = false
             var minChangedCost = INF_COST_F
-            for (i in 0 until field.cellCount) {
+            for (i in candidateCells) {
                 val oldPen = field.congestionPenalty[i].toInt()
-                val targetPen = if (!throatMask[i]) {
+                val targetPen = if (!throatMask[i] || loadMap == null) {
                     0
                 } else {
-                    val sliceLoad = gateSliceLoad[i]
-                    val sliceW = max(1, gateSliceWidth[i])
-                    val densityPerLane = sliceLoad.toDouble() / sliceW.toDouble()
-                    val ownLoad = obstructedLoad[i]
+                    val c = i % w
+                    val r = i / w
+                    val base = r * w
+                    val ownLoad = loadMap[i] ?: 0
+                    val vertWall = NavigationTopologyMasks.isVerticallyBoundedThroat(field.terrain, c, r)
+                    var sum = ownLoad
+                    var widthCnt = 1
+                    if (vertWall) {
+                        var y = r - 1
+                        while (y >= 0 && throatMask[y * w + c] && widthCnt < 8) {
+                            sum += loadMap[y * w + c] ?: 0; widthCnt++; y--
+                        }
+                        y = r + 1
+                        while (y < h && throatMask[y * w + c] && widthCnt < 8) {
+                            sum += loadMap[y * w + c] ?: 0; widthCnt++; y++
+                        }
+                    } else {
+                        var x = c - 1
+                        while (x >= 0 && throatMask[base + x] && widthCnt < 8) {
+                            sum += loadMap[base + x] ?: 0; widthCnt++; x--
+                        }
+                        x = c + 1
+                        while (x < w && throatMask[base + x] && widthCnt < 8) {
+                            sum += loadMap[base + x] ?: 0; widthCnt++; x++
+                        }
+                    }
+                    val sliceW = max(1, widthCnt)
+                    val densityPerLane = sum.toDouble() / sliceW.toDouble()
                     when {
                         // Single-tile pinhole: gently penalize only when genuine multi-unit queue forms
-                        sliceW == 1 && sliceLoad >= 3 -> min(MAX_CONGESTION_PENALTY, (sliceLoad - 2) * 14)
+                        sliceW == 1 && sum >= 3 -> min(MAX_CONGESTION_PENALTY, (sum - 2) * 14)
                         // Multi-tile wide gate or 2-tile narrow gate: scale by obstructed density per lane
                         sliceW >= 2 && (densityPerLane >= 0.75 || ownLoad >= 2) ->
                             min(MAX_CONGESTION_PENALTY, ((densityPerLane - 0.5) * 42.0).toInt().coerceAtLeast(if (ownLoad >= 2) (ownLoad - 1) * 12 else 0))
@@ -2109,8 +2792,22 @@ internal class ChunkedFlowFieldAdapter private constructor(
                 }
                 if (nextPen > 0) anyActive = true
                 if (nextPen != oldPen) {
-                    if (!changedAny) recordFieldMutation(field.key)
+                    if (!alreadyFullBackedUp) {
+                        var dc = deltaCells
+                        var dp = deltaOldPen
+                        if (dc == null || dp == null) {
+                            dc = IntArray(8); dp = ShortArray(8)
+                            deltaCells = dc; deltaOldPen = dp
+                        } else if (deltaCount == dc.size) {
+                            dc = dc.copyOf(dc.size shl 1); dp = dp.copyOf(dp.size shl 1)
+                            deltaCells = dc; deltaOldPen = dp
+                        }
+                        dc[deltaCount] = i
+                        dp[deltaCount] = oldPen.toShort()
+                        deltaCount++
+                    }
                     field.congestionPenalty[i] = nextPen.toShort()
+                    if (nextPen > 0) field.addActiveCongestionCell(i)
                     changedAny = true
                     val c = field.cost[i]
                     if (c < minChangedCost) minChangedCost = c
@@ -2126,14 +2823,78 @@ internal class ChunkedFlowFieldAdapter private constructor(
                     }
                 }
             }
-            if (field.anyCongestionActive != anyActive) {
-                if (!changedAny) recordFieldMutation(field.key)
+            // Compact activeCongestionCells so decayed zero-penalty entries are removed cleanly.
+            if (field.activeCongestionCount > 0) {
+                var kept = 0
+                for (k in 0 until field.activeCongestionCount) {
+                    val cellIdx = field.activeCongestionCells[k]
+                    if (field.congestionPenalty[cellIdx] > 0) {
+                        field.activeCongestionCells[kept++] = cellIdx
+                    }
+                }
+                field.activeCongestionCount = kept
+            }
+            val anyActiveChanged = field.anyCongestionActive != anyActive
+            if (anyActiveChanged) {
                 field.anyCongestionActive = anyActive
+            }
+            if ((changedAny || anyActiveChanged) && !alreadyFullBackedUp) {
+                val dcFinal = deltaCells?.copyOf(deltaCount)
+                val dpFinal = deltaOldPen?.copyOf(deltaCount)
+                val savedCells = checkNotNull(savedActiveCells)
+                val prevCostRef = field.cost
+                val prevDirXRef = field.dirX
+                val prevDirYRef = field.dirY
+                val prevLiveValid = field.liveValid
+                val prevShadowActive = field.shadowActive
+                val prevShadowMinCut = field.shadowMinCut
+                val prevCompleted = field.completed
+                val prevEffGoal = field.effectiveGoalWorld
+                val prevGoalFallback = field.goalWasNearestFallback
+                val prevChunkDirty = if (changedAny) field.chunkDirty.copyOf() else null
+                val prevChunkBuilt = if (changedAny) field.chunkBuilt.copyOf() else null
+                checkNotNull(rb).record {
+                    if (changedAny) {
+                        if (field.cost !== prevCostRef) {
+                            val tmpC = field.cost; field.cost = field.shadowCost; field.shadowCost = tmpC
+                        }
+                        if (field.dirX !== prevDirXRef) {
+                            val tmpX = field.dirX; field.dirX = field.shadowDirX; field.shadowDirX = tmpX
+                        }
+                        if (field.dirY !== prevDirYRef) {
+                            val tmpY = field.dirY; field.dirY = field.shadowDirY; field.shadowDirY = tmpY
+                        }
+                        field.liveValid = prevLiveValid
+                        field.shadowActive = prevShadowActive
+                        field.shadowMinCut = prevShadowMinCut
+                        field.completed = prevCompleted
+                        field.effectiveGoalWorld = prevEffGoal
+                        field.goalWasNearestFallback = prevGoalFallback
+                        if (prevChunkDirty != null) {
+                            System.arraycopy(prevChunkDirty, 0, field.chunkDirty, 0, prevChunkDirty.size)
+                        }
+                        if (prevChunkBuilt != null) {
+                            System.arraycopy(prevChunkBuilt, 0, field.chunkBuilt, 0, prevChunkBuilt.size)
+                        }
+                    }
+                    if (dcFinal != null && dpFinal != null) {
+                        for (k in dcFinal.indices) field.congestionPenalty[dcFinal[k]] = dpFinal[k]
+                    }
+                    if (field.activeCongestionCells.size < savedActiveCount) {
+                        field.activeCongestionCells = savedCells.copyOf()
+                    } else {
+                        System.arraycopy(savedCells, 0, field.activeCongestionCells, 0, savedActiveCount)
+                    }
+                    field.activeCongestionCount = savedActiveCount
+                    field.anyCongestionActive = savedAnyActive
+                }
             }
             if (changedAny) {
                 startShadowMonotonicRebuild(field, minChangedCost, terrainChanged = false)
+                startedShadowRebuilds++
             }
         }
+        return startedShadowRebuilds to false
     }
 
     private fun copyChunkFrom(src: ChunkedField, dst: ChunkedField, cx: Int, cy: Int, shiftBias: Float) {

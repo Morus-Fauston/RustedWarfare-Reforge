@@ -20,12 +20,17 @@ class PlanningTerrain private constructor(
     private val blockedIndex: BlockedCellIndex,
     private val subdivision: Int,
     private val prebuiltClearance: TerrainClearanceField? = null,
+    prebuiltGateThroatMask: BooleanArray? = null,
+    internal val lastDeltaFromId: Long = 0L,
+    internal val lastDeltaCells: IntArray? = null,
 ) : AuthorizedNavigationTerrain {
+    internal val terrainId: Long = nextTerrainId.incrementAndGet()
+    internal val isSubdivided: Boolean get() = subdivision > 1
     private val clearanceLock = Any()
     @Volatile
     private var lazyClearance: TerrainClearanceField? = prebuiltClearance
     @Volatile
-    private var lazyGateThroatMask: BooleanArray? = null
+    private var lazyGateThroatMask: BooleanArray? = prebuiltGateThroatMask
     private var lazyWideYieldByRings: HashMap<Int, BooleanArray>? = null
     private var lazyBuildingExclusions: LinkedHashMap<Set<Pair<Int, Int>>, PlanningTerrain>? = null
 
@@ -37,7 +42,13 @@ class PlanningTerrain private constructor(
         cells: BooleanArray,
         validated: Unit,
         prebuiltClearance: TerrainClearanceField? = null,
-    ) : this(width, height, tileWidth, tileHeight, cells, BlockedCellIndex(width, cells), 1, prebuiltClearance)
+        prebuiltGateThroatMask: BooleanArray? = null,
+        lastDeltaFromId: Long = 0L,
+        lastDeltaCells: IntArray? = null,
+    ) : this(
+        width, height, tileWidth, tileHeight, cells, BlockedCellIndex(width, cells), 1,
+        prebuiltClearance, prebuiltGateThroatMask, lastDeltaFromId, lastDeltaCells,
+    )
 
     constructor(widthTiles: Int, heightTiles: Int, tileWidth: Int, tileHeight: Int, blocked: BooleanArray) :
         this(widthTiles, heightTiles, tileWidth, tileHeight, blocked.run {
@@ -180,16 +191,20 @@ class PlanningTerrain private constructor(
     }
 
     internal fun anyBlocked(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
-                            predicate: (Int, Int) -> Boolean): Boolean {
-        if (subdivision == 1) return blockedIndex.any(firstColumn, lastColumn, firstRow, lastRow, predicate)
+                            predicate: (Int, Int) -> Boolean): Boolean =
+        anyBlockedPrim(firstColumn, lastColumn, firstRow, lastRow) { x, y -> predicate(x, y) }
+
+    internal fun anyBlockedPrim(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
+                                predicate: IntCellPredicate): Boolean {
+        if (subdivision == 1) return blockedIndex.anyPrim(firstColumn, lastColumn, firstRow, lastRow, predicate)
         if (firstColumn > lastColumn || firstRow > lastRow) return false
-        return blockedIndex.any(firstColumn / subdivision, lastColumn / subdivision,
+        return blockedIndex.anyPrim(firstColumn / subdivision, lastColumn / subdivision,
             firstRow / subdivision, lastRow / subdivision) { column, row ->
             val left = column * subdivision
             val top = row * subdivision
             for (y in maxOf(firstRow, top)..minOf(lastRow, top + subdivision - 1))
                 for (x in maxOf(firstColumn, left)..minOf(lastColumn, left + subdivision - 1))
-                    if (predicate(x, y)) return@any true
+                    if (predicate.test(x, y)) return@anyPrim true
             false
         }
     }
@@ -201,6 +216,66 @@ class PlanningTerrain private constructor(
 
     private fun cellCopy() = if (subdivision == 1) cells.copyOf() else
         BooleanArray(widthTiles * heightTiles) { isBlocked(it % widthTiles, it / widthTiles) }
+
+    /**
+     * Incremental building-set transition directly from `this` (which represents `ground + oldBuildings`)
+     * to `ground + newBuildings`, preserving `lastDeltaFromId = this.terrainId` so active flow fields
+     * inspect only the few added/removed building cells instead of rescanning the full map.
+     */
+    internal fun withUpdatedBuildings(
+        ground: PlanningTerrain,
+        oldBuildings: Set<Pair<Int, Int>>,
+        newBuildings: Set<Pair<Int, Int>>,
+    ): PlanningTerrain {
+        if (subdivision != 1 || ground.subdivision != 1) return ground.withBuildings(newBuildings)
+        if (oldBuildings == newBuildings) return this
+        var updated: BooleanArray? = null
+        var changed = IntArray(16)
+        var changedCount = 0
+        fun flipCell(idx: Int, nextBlocked: Boolean) {
+            val arr = updated ?: cells.copyOf().also { updated = it }
+            arr[idx] = nextBlocked
+            if (changedCount == changed.size) changed = changed.copyOf(changed.size shl 1)
+            changed[changedCount++] = idx
+        }
+        for (cell in newBuildings) {
+            if (cell in oldBuildings) continue
+            val (c, r) = cell
+            require(c in 0 until widthTiles && r in 0 until heightTiles)
+            val idx = r * widthTiles + c
+            if (!cells[idx]) flipCell(idx, true)
+        }
+        for (cell in oldBuildings) {
+            if (cell in newBuildings) continue
+            val (c, r) = cell
+            if (c !in 0 until widthTiles || r !in 0 until heightTiles) continue
+            val idx = r * widthTiles + c
+            val baseBlocked = ground.isBlocked(c, r)
+            if (cells[idx] != baseBlocked) flipCell(idx, baseBlocked)
+        }
+        val nextCells = updated ?: return this
+        val exactChanged = changed.copyOf(changedCount)
+        val updatedClearance = lazyClearance?.withChangedCells(nextCells, exactChanged)
+        val next = PlanningTerrain(
+            widthTiles, heightTiles, tileWidth, tileHeight, nextCells, Unit,
+            updatedClearance, prebuiltGateThroatMask = null,
+            lastDeltaFromId = terrainId, lastDeltaCells = exactChanged,
+        )
+        val priorGate = lazyGateThroatMask
+        if (priorGate != null) {
+            val nextGate = NavigationTopologyMasks.updateGateThroatMaskIncremental(next, priorGate, exactChanged)
+            next.lazyGateThroatMask = nextGate
+            val priorWide = synchronized(clearanceLock) { lazyWideYieldByRings?.entries?.toList() }
+            if (!priorWide.isNullOrEmpty()) {
+                val nextWide = HashMap<Int, BooleanArray>(priorWide.size)
+                for ((wr, mask) in priorWide) {
+                    nextWide[wr] = NavigationTopologyMasks.updateWideYieldMaskIncremental(next, mask, wr, nextGate, exactChanged)
+                }
+                next.lazyWideYieldByRings = nextWide
+            }
+        }
+        return next
+    }
 
     /** Compose authorized dynamic cells into a self-contained value, without retaining a truth query. */
     internal fun withBuildings(buildings: Set<Pair<Int, Int>>): PlanningTerrain {
@@ -217,10 +292,29 @@ class PlanningTerrain private constructor(
             }
         }
         if (changedCount == 0) return this
+        val exactChanged = changed.copyOf(changedCount)
         val updatedClearance = if (subdivision == 1) {
-            lazyClearance?.withChangedCells(combined, changed.copyOf(changedCount))
+            lazyClearance?.withChangedCells(combined, exactChanged)
         } else null
-        return PlanningTerrain(widthTiles, heightTiles, tileWidth, tileHeight, combined, Unit, updatedClearance)
+        val next = PlanningTerrain(
+            widthTiles, heightTiles, tileWidth, tileHeight, combined, Unit,
+            updatedClearance, prebuiltGateThroatMask = null,
+            lastDeltaFromId = terrainId, lastDeltaCells = exactChanged,
+        )
+        val priorGate = lazyGateThroatMask
+        if (subdivision == 1 && priorGate != null) {
+            val nextGate = NavigationTopologyMasks.updateGateThroatMaskIncremental(next, priorGate, exactChanged)
+            next.lazyGateThroatMask = nextGate
+            val priorWide = synchronized(clearanceLock) { lazyWideYieldByRings?.entries?.toList() }
+            if (!priorWide.isNullOrEmpty()) {
+                val nextWide = HashMap<Int, BooleanArray>(priorWide.size)
+                for ((wr, mask) in priorWide) {
+                    nextWide[wr] = NavigationTopologyMasks.updateWideYieldMaskIncremental(next, mask, wr, nextGate, exactChanged)
+                }
+                next.lazyWideYieldByRings = nextWide
+            }
+        }
+        return next
     }
 
     /**
@@ -230,8 +324,8 @@ class PlanningTerrain private constructor(
     internal fun withBuildingsCached(effectiveBuildings: Set<Pair<Int, Int>>): PlanningTerrain {
         if (effectiveBuildings.isEmpty()) return this
         synchronized(clearanceLock) {
-            val cache = lazyBuildingExclusions ?: object : LinkedHashMap<Set<Pair<Int, Int>>, PlanningTerrain>(8, 0.75f, true) {
-                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Set<Pair<Int, Int>>, PlanningTerrain>?): Boolean = size > 8
+            val cache = lazyBuildingExclusions ?: object : LinkedHashMap<Set<Pair<Int, Int>>, PlanningTerrain>(16, 0.75f, true) {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Set<Pair<Int, Int>>, PlanningTerrain>?): Boolean = size > 32
             }.also { lazyBuildingExclusions = it }
             cache[effectiveBuildings]?.let { return it }
             val keyCopy = HashSet(effectiveBuildings)
@@ -241,15 +335,23 @@ class PlanningTerrain private constructor(
         }
     }
 
-    internal fun withUpdatedKnowledge(previous: KnowledgeSnapshot, current: KnowledgeSnapshot,
-                                      movementType: MovementType, tileSets: List<TileSetDefinition>): PlanningTerrain {
+    internal fun withUpdatedKnowledge(
+        previous: KnowledgeSnapshot,
+        current: KnowledgeSnapshot,
+        movementType: MovementType,
+        tileSets: List<TileSetDefinition>,
+        fixedBlocked: Set<Pair<Int, Int>>? = null,
+    ): PlanningTerrain {
         if (current.terrainRevision == previous.terrainRevision) return this
         var updated: BooleanArray? = null
         var changed = IntArray(16)
         var changedCount = 0
         current.forEachTerrainChangeFrom(previous) { index, knowledge ->
-            val blocked = knowledge.movementBlocked(movementType, tileSets)
-            if (blocked != isBlocked(index % widthTiles, index / widthTiles)) {
+            val col = index % widthTiles
+            val row = index / widthTiles
+            val blocked = knowledge.movementBlocked(movementType, tileSets) ||
+                (fixedBlocked != null && (col to row) in fixedBlocked)
+            if (blocked != isBlocked(col, row)) {
                 val output = updated ?: cellCopy().also { updated = it }
                 output[index] = blocked
                 if (changedCount == changed.size) changed = changed.copyOf(changed.size shl 1)
@@ -257,13 +359,33 @@ class PlanningTerrain private constructor(
             }
         }
         val nextCells = updated ?: return this
+        val exactChanged = changed.copyOf(changedCount)
         val updatedClearance = if (subdivision == 1) {
-            lazyClearance?.withChangedCells(nextCells, changed.copyOf(changedCount))
+            lazyClearance?.withChangedCells(nextCells, exactChanged)
         } else null
-        return PlanningTerrain(widthTiles, heightTiles, tileWidth, tileHeight, nextCells, Unit, updatedClearance)
+        val next = PlanningTerrain(
+            widthTiles, heightTiles, tileWidth, tileHeight, nextCells, Unit,
+            updatedClearance, prebuiltGateThroatMask = null,
+            lastDeltaFromId = terrainId, lastDeltaCells = exactChanged,
+        )
+        val priorGate = lazyGateThroatMask
+        if (subdivision == 1 && priorGate != null) {
+            val nextGate = NavigationTopologyMasks.updateGateThroatMaskIncremental(next, priorGate, exactChanged)
+            next.lazyGateThroatMask = nextGate
+            val priorWide = synchronized(clearanceLock) { lazyWideYieldByRings?.entries?.toList() }
+            if (!priorWide.isNullOrEmpty()) {
+                val nextWide = HashMap<Int, BooleanArray>(priorWide.size)
+                for ((wr, mask) in priorWide) {
+                    nextWide[wr] = NavigationTopologyMasks.updateWideYieldMaskIncremental(next, mask, wr, nextGate, exactChanged)
+                }
+                next.lazyWideYieldByRings = nextWide
+            }
+        }
+        return next
     }
 
     companion object {
+        private val nextTerrainId = java.util.concurrent.atomic.AtomicLong(1L)
         internal var gateMaskComputeCount: Long = 0L
         private fun validateShape(width: Int, height: Int, tileWidth: Int, tileHeight: Int) {
             if(width<=0 || height<=0 || width.toLong()*height>Int.MAX_VALUE) throw PlanningException("invalid-dimensions", "Positive dimensions with product within Int are required")

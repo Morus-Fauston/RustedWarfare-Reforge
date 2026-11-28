@@ -5,13 +5,19 @@ import java.util.Collections
 /** Session-local presentation IDs; callers admit members through the authorized selection boundary. */
 class SelectionState(private val clockMillis: () -> Long = { System.nanoTime() / 1_000_000L }) {
     private val selected = linkedSetOf<String>()
+    private var selectedSnapshot: Set<String> = Collections.emptySet()
     private var explicitPrimary: String? = null
     private val groups = Array(10) { linkedSetOf<String>() }
     private val lastRecallMillis = arrayOfNulls<Long>(10)
-    val selectedIds: Set<String> get() = Collections.unmodifiableSet(LinkedHashSet(selected))
+    val selectedIds: Set<String> get() = selectedSnapshot
     val primaryId: String? get() = explicitPrimary?.takeIf { it in selected } ?: selected.lastOrNull()
     var revision: Long = 0L
         private set
+
+    private fun refreshSnapshot() {
+        selectedSnapshot = if (selected.isEmpty()) Collections.emptySet()
+        else Collections.unmodifiableSet(LinkedHashSet(selected))
+    }
 
     fun select(ids: Collection<String>, mode: SelectionMode = SelectionMode.REPLACE) {
         val before = selected.toList()
@@ -32,7 +38,10 @@ class SelectionState(private val clockMillis: () -> Long = { System.nanoTime() /
                 if (explicitPrimary !in selected) explicitPrimary = null
             }
         }
-        if (before != selected.toList() || beforePrimary != primaryId) revision++
+        if (before != selected.toList() || beforePrimary != primaryId) {
+            refreshSnapshot()
+            revision++
+        }
     }
 
     /** Explicitly switches the primary unit inside the existing [selectedIds] set without mutating membership. */
@@ -75,13 +84,17 @@ class SelectionState(private val clockMillis: () -> Long = { System.nanoTime() /
         if (explicitPrimary != null && explicitPrimary !in selected) {
             explicitPrimary = null
         }
-        if (changed) revision++
+        if (changed) {
+            refreshSnapshot()
+            revision++
+        }
         groups.forEach { it.removeAll(observedDeadIds) }
     }
 
     fun clear() {
         if (selected.isNotEmpty() || explicitPrimary != null) revision++
         selected.clear()
+        selectedSnapshot = Collections.emptySet()
         explicitPrimary = null
         groups.forEach { it.clear() }
         lastRecallMillis.fill(null)

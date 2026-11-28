@@ -561,7 +561,7 @@ class LocomotionModuleTest {
         fun runTrace(injectFault: Boolean): List<List<Any?>> {
             var faultFired = false
             val faultHook: (MutableUnit) -> Unit = { body ->
-                if (injectFault && !faultFired && body.nav.lastAvoidHeadingDeg != null) {
+                if (injectFault && !faultFired && body.lastAvoidHeadingDeg != null) {
                     faultFired = true
                     error("injected-avoid-rollback-fault")
                 }
@@ -594,9 +594,6 @@ class LocomotionModuleTest {
                 ctx.close()
             }
         }
-
-        val navWithAvoid = UnitNavigationState.EMPTY.copy(lastAvoidHeadingDeg = 125.0)
-        assertEquals(null, navWithAvoid.adoptRoute(listOf(Position(100.0, 100.0)), 1L).lastAvoidHeadingDeg)
 
         val clean = runTrace(injectFault = false)
         val recovered = runTrace(injectFault = true)

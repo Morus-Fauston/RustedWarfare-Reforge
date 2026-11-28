@@ -243,6 +243,36 @@ internal class PocketTopology private constructor(
         return r * localW + c
     }
 
+    fun withUpdatedTerrain(nextTerrain: PlanningTerrain): PocketTopology = PocketTopology(
+        terrain = nextTerrain,
+        minCol = minCol,
+        minRow = minRow,
+        localW = localW,
+        localH = localH,
+        hasPocket = hasPocket,
+        mouthShellDist = mouthShellDist,
+        interiorCellCount = interiorCellCount,
+        mouthCenter = mouthCenter,
+        topoDist = topoDist,
+        interiorMask = interiorMask,
+        depthArr = depthArr,
+        mouthBandMask = mouthBandMask,
+    )
+
+    fun touchesLocalWindow(changedCells: IntArray, widthTiles: Int): Boolean {
+        val maxCol = minCol + localW - 1
+        val maxRow = minRow + localH - 1
+        val pad = MAX_CONFINED_SPAN_TILES
+        for (idx in changedCells) {
+            val c = idx % widthTiles
+            val r = idx / widthTiles
+            if (c in (minCol - pad)..(maxCol + pad) && r in (minRow - pad)..(maxRow + pad)) {
+                return true
+            }
+        }
+        return false
+    }
+
     fun isReachable(pos: Position): Boolean {
         val idx = localIndex(pos)
         return idx >= 0 && topoDist[idx] >= 0
@@ -510,8 +540,20 @@ internal class SharedLandingSites(
             val entry = current[i]
             if (entry.terrain === terrain) return entry
         }
+        // Fast O(changed) reuse when fog-of-war or distant buildings changed outside the click's local BFS window.
+        val deltaCells = terrain.lastDeltaCells
+        if (deltaCells != null && terrain.lastDeltaFromId != 0L) {
+            for (i in current.lastIndex downTo 0) {
+                val entry = current[i]
+                if (entry.terrain.terrainId == terrain.lastDeltaFromId && !entry.touchesLocalWindow(deltaCells, terrain.widthTiles)) {
+                    val reused = entry.withUpdatedTerrain(terrain)
+                    cachedTopologies = if (current.size >= 4) current.drop(1) + reused else current + reused
+                    return reused
+                }
+            }
+        }
         val computed = PocketTopology.analyze(terrain, group.click, group.members.size)
-        cachedTopologies = current + computed
+        cachedTopologies = if (current.size >= 4) current.drop(1) + computed else current + computed
         return computed
     }
 
@@ -674,6 +716,42 @@ internal object TerminalLanding {
     private const val ZERO_SEED_NUCLEATION_TICKS = 8L
     private const val RADIAL_PROGRESS_EPS = 1.25
 
+    /**
+     * Zero-allocation O(1) spatial pre-check used by [UnitMovementOrchestrator] to skip full
+     * terminal landing & LOS evaluation while a unit is far en route outside `landingZoneR`.
+     */
+    fun hasNearbySettledSameGroupPeer(
+        host: UnitMovementHost,
+        unit: MutableUnit,
+        group: GroupMoveRequest,
+        hardR: Double,
+    ): Boolean {
+        if (!host.spatialIndex.hasAnyParkedInGroup(group)) return false
+        val layer = UnitContact.layer(unit) ?: return false
+        val spatialLayer = SpatialLayer.fromContact(layer)
+        val edgeQueryR = hardR + max(36.0, hardR * 1.25)
+        var found = false
+        host.spatialIndex.forEachInBoundsUnordered(
+            spatialLayer,
+            unit.position.x - edgeQueryR, unit.position.x + edgeQueryR,
+            unit.position.y - edgeQueryR, unit.position.y + edgeQueryR,
+            useBufferRadius = false,
+        ) { other ->
+            if (other !== unit && other.alive &&
+                other.landingMember?.group === group && other.landingMember?.parked == true
+            ) {
+                val otherR = max(1.0, other.definition.movementCollision.boundingRadius)
+                val reach = hardR + otherR + max(15.0, hardR * 1.20)
+                if (ScreenPlane.distanceSquared(unit.position, other.position) <= reach * reach) {
+                    found = true
+                    return@forEachInBoundsUnordered true
+                }
+            }
+            false
+        }
+        return found
+    }
+
     fun evaluate(
         host: UnitMovementHost,
         unit: MutableUnit,
@@ -787,12 +865,6 @@ internal object TerminalLanding {
             }
         }
 
-        val poseLegalNow = canSettleAtPose(host, unit, mapW, mapH, boundR, terrainShape, hullGrid, spatialLayer)
-        val throatBlocked = isPluggingBottleneckThroat(
-            host, unit, map, terrain, member.group, goal, hardR, maxGroupR, geoDistToGoal, spatialLayer,
-        )
-        val pocketMouthBlocked = topology != null && topology.hasPocket &&
-            isPluggingFillingPocketMouth(host, unit, topology, member.group, hardR, spatialLayer)
         val isFactoryFan = member.group.noParkingCorridor != null
         val inNoParkingCorridor = isCircle && member.group.noParkingCorridor?.contains(unit.position, hardR) == true
         // For no-rally factory fan units still clear of their own outer fan slot, do not hijack steering
@@ -803,7 +875,17 @@ internal object TerminalLanding {
         ) {
             return Decision(flankAim = null, settleNow = false, inClusterZone = false, updatedMember = member)
         }
-        val inThroat = throatBlocked || pocketMouthBlocked || inNoParkingCorridor
+        var cachedPoseLegal: Boolean? = null
+        fun poseLegalNow(): Boolean = cachedPoseLegal ?: canSettleAtPose(
+            host, unit, mapW, mapH, boundR, terrainShape, hullGrid, spatialLayer,
+        ).also { cachedPoseLegal = it }
+        var cachedInThroat: Boolean? = null
+        fun inThroatNow(): Boolean = cachedInThroat ?: (inNoParkingCorridor ||
+            isPluggingBottleneckThroat(host, unit, map, terrain, member.group, goal, hardR, maxGroupR, geoDistToGoal, spatialLayer) ||
+            (topology != null && topology.hasPocket &&
+                isPluggingFillingPocketMouth(host, unit, topology, member.group, hardR, spatialLayer))).also {
+            cachedInThroat = it
+        }
 
         // Advance direction: use direct goal vector when straight LOS exists; use geodesic flow direction around corners!
         val flowDir = if (!hasTerrainLosToGoal) host.navigationGuidance.sampleFlowDirection(host, unit, terrain, goal) else null
@@ -819,9 +901,15 @@ internal object TerminalLanding {
         }
 
         // 1. Core seed direct arrival: lead unit(s) reaching the core center settle accurately on goal.
-        val coreCaptureR = max(1.5, host.movementContract.targetRadius)
-        if (hasTerrainLosToGoal && distToGoal <= coreCaptureR && poseLegalNow) {
-            if (!inThroat) {
+        // Nearest-reachable redirects settle at exact hull-contact precision via StrictCapture;
+        // rectangular hulls already covering the click within positional capture radius avoid spurious rotation.
+        val coreCaptureR = when {
+            isCircle && unit.nearestMoveTarget != null -> 0.000001
+            !isCircle && unit.nearestMoveTarget == null -> max(7.0, host.movementContract.targetRadius)
+            else -> max(1.5, host.movementContract.targetRadius)
+        }
+        if (hasTerrainLosToGoal && distToGoal <= coreCaptureR && poseLegalNow()) {
+            if (!inThroatNow()) {
                 return Decision(flankAim = null, settleNow = true, inClusterZone = true, updatedMember = member)
             }
             val probeStep = max(hardR * 1.4, 9.5)
@@ -859,21 +947,25 @@ internal object TerminalLanding {
         for (i in 0 until neighbors.size) {
             val other = neighbors[i]
             if (other === unit || !other.alive) continue
-            if (!host.knowsRouteOccupant(unit, other)) continue
-            val otherR = max(1.0, other.definition.movementCollision.boundingRadius)
-            val ox = other.position.x - unit.position.x
-            val oy = other.position.y - unit.position.y
-            val dist = hypot(ox, oy)
             val isSettledPeer = other.landingMember?.group === member.group && other.landingMember?.parked == true
             val isStationary = other.moveTarget == null
+            if (!isSettledPeer && !isStationary) continue
+            if (!host.knowsRouteOccupant(unit, other)) continue
             if (isSettledPeer) anySettledNearby = true
-            val otherDistToGoal = hypot(goal.x - other.position.x, goal.y - other.position.y)
+            val otherR = max(1.0, other.definition.movementCollision.boundingRadius)
             val reach = hardR + otherR + max(15.0, hardR * 1.20)
-            if (dist > reach) continue
+            val ox = other.position.x - unit.position.x
+            val oy = other.position.y - unit.position.y
+            val distSq = ox * ox + oy * oy
+            if (distSq > reach * reach) continue
+            val otherDistToGoal = hypot(goal.x - other.position.x, goal.y - other.position.y)
+            val countsAsCore = if (isFactoryFan) isSettledPeer else (isSettledPeer || (isStationary && otherDistToGoal < distToGoal - 0.5))
+            val countsAsBlocker = if (isFactoryFan) isSettledPeer else isStationary
+            if (!countsAsCore && !countsAsBlocker) continue
             if (terrainShape != null && !hasPassableTerrainLos(terrain, hullGrid, terrainShape, unit.position, other.position, unit.heading, terrainR)) {
                 continue
             }
-            val countsAsCore = if (isFactoryFan) isSettledPeer else (isSettledPeer || (isStationary && otherDistToGoal < distToGoal - 0.5))
+            val dist = sqrt(distSq)
             if (countsAsCore) {
                 hasRealSettledCore = true
                 connectedToSettledCore = true
@@ -881,7 +973,6 @@ internal object TerminalLanding {
                     touchingCoreSeed = true
                 }
             }
-            val countsAsBlocker = if (isFactoryFan) isSettledPeer else isStationary
             if (countsAsBlocker && dist > 1e-5) {
                 val fwd = (ox * gdx + oy * gdy) / dist
                 val lat = abs(ox * gdy - oy * gdx)
@@ -913,13 +1004,13 @@ internal object TerminalLanding {
                 val lowSpd = abs(unit.speed) <= max(0.22, 0.35 * maxSpeed)
                 val leaderArchLocked = convergence.isNucleationLeader && convergence.inwardSqueezed &&
                     progressed.lowProgressTicks >= ZERO_SEED_NUCLEATION_TICKS
-                val canNucleateHere = poseLegalNow && !inThroat && convergence.inwardSqueezed && (
+                val canNucleateHere = convergence.inwardSqueezed && (
                     leaderArchLocked || (distToGoal <= coreNucleationR && (
                         (convergence.isNucleationLeader && (lowSpd && progressed.lowProgressTicks >= 4L || progressed.lowProgressTicks >= ZERO_SEED_NUCLEATION_TICKS)) ||
                             progressed.lowProgressTicks >= ZERO_SEED_NUCLEATION_TICKS ||
                             (distToGoal <= max(6.5, hardR * 1.15) && progressed.lowProgressTicks >= 4L && lowSpd)
                         ))
-                    )
+                    ) && poseLegalNow() && !inThroatNow()
                 return Decision(
                     flankAim = null,
                     settleNow = canNucleateHere,
@@ -940,6 +1031,8 @@ internal object TerminalLanding {
 
         // Update monotone radial/geodesic progress tracker: orbiting at constant radius does NOT reset lowProgressTicks!
         val progressed = updateRadialProgressTicks(member, progressMetric, delta)
+        val poseLegal = poseLegalNow()
+        val inThroat = inThroatNow()
 
         // 3. Rectangular hulls (2–7 naval fleets or mixed groups): settle cleanly adjacent to settled core at legal pose.
         if (!isCircle) {
@@ -948,7 +1041,7 @@ internal object TerminalLanding {
             val throatFallback = !inNoParkingCorridor && inThroat && lowSpdRect && updated.lowProgressTicks >= THROAT_DEADLOCK_SETTLE_TICKS
             val blockedOrStalled = (frontBlockedByStationary && (lowSpdRect || updated.lowProgressTicks >= SETTLE_STALL_TICKS)) ||
                 (lowSpdRect && updated.lowProgressTicks >= SETTLE_STALL_TICKS)
-            val canSettle = !inNoParkingCorridor && connectedToSettledCore && poseLegalNow && (!inThroat || throatFallback) && blockedOrStalled
+            val canSettle = !inNoParkingCorridor && connectedToSettledCore && poseLegal && (!inThroat || throatFallback) && blockedOrStalled
             return Decision(flankAim = null, settleNow = canSettle, inClusterZone = true, updatedMember = updated)
         }
 
@@ -1117,7 +1210,7 @@ internal object TerminalLanding {
                 ((lowSpeed || frontBlockedByStationary) && updated.lowProgressTicks >= SETTLE_STALL_TICKS) ||
                 updated.lowProgressTicks >= HIGH_SPEED_STALL_TICKS
             )
-        val readyToSettle = !inNoParkingCorridor && connectedToSettledCore && poseLegalNow &&
+        val readyToSettle = !inNoParkingCorridor && connectedToSettledCore && poseLegal &&
             (openSettleReady || overflowCascadeReady || throatSaturatedExit)
         return Decision(
             flankAim = if (readyToSettle) null else chosenAim,
@@ -1196,22 +1289,26 @@ internal object TerminalLanding {
             if (!UnitContact.poseFits(terrainShape, probe, unit.heading, hullGrid)) return null
         }
         val queryR = hardR + 22.0
-        val nearProbe = host.spatialIndex.queryBounds(
+        var blocked = false
+        host.spatialIndex.forEachInBoundsUnordered(
             spatialLayer,
             probe.x - queryR, probe.x + queryR,
             probe.y - queryR, probe.y + queryR,
             useBufferRadius = false,
-        )
-        for (i in 0 until nearProbe.size) {
-            val other = nearProbe[i]
-            if (other === unit || !other.alive) continue
-            if (!host.knowsRouteOccupant(unit, other)) continue
+        ) { other ->
+            if (other === unit || !other.alive) return@forEachInBoundsUnordered false
+            if (!host.knowsRouteOccupant(unit, other)) return@forEachInBoundsUnordered false
             val otherR = max(1.0, other.definition.movementCollision.boundingRadius)
             val stationaryOrPinned = other.moveTarget == null || abs(other.speed) <= 0.08 * max(0.2, UnitLocomotion.movement(other).moveSpeed)
-            if (!stationaryOrPinned) continue
+            if (!stationaryOrPinned) return@forEachInBoundsUnordered false
             val minGap = hardR + otherR + 0.75
-            if (ScreenPlane.distanceSquared(probe, other.position) < minGap * minGap) return null
+            if (ScreenPlane.distanceSquared(probe, other.position) < minGap * minGap) {
+                blocked = true
+                return@forEachInBoundsUnordered true
+            }
+            false
         }
+        if (blocked) return null
         val aimStep = max(26.0, hardR * 2.4)
         val aim = Position(unit.position.x + fx * aimStep, unit.position.y + fy * aimStep)
         return aim to probeDist
@@ -1232,21 +1329,19 @@ internal object TerminalLanding {
         if (!topology.isInMouthBand(unit.position)) return false
         val capacity = topology.estimatedInteriorCapacity(hardR)
         val searchR = max(topology.terrain.tileWidth, topology.terrain.tileHeight) * 12.0
-        val nearby = host.spatialIndex.queryBounds(
-            spatialLayer,
-            topology.mouthCenter.x - searchR, topology.mouthCenter.x + searchR,
-            topology.mouthCenter.y - searchR, topology.mouthCenter.y + searchR,
-            useBufferRadius = false,
-        )
         var interiorParked = 0
         var interiorMoving = 0
         var exteriorWaiting = false
         val ownSteps = topology.bfsStepsFromClick(unit.position)
-        for (i in 0 until nearby.size) {
-            val other = nearby[i]
-            if (other === unit || !other.alive) continue
-            val ol = other.landingMember ?: continue
-            if (ol.group !== group) continue
+        host.spatialIndex.forEachInBoundsUnordered(
+            spatialLayer,
+            topology.mouthCenter.x - searchR, topology.mouthCenter.x + searchR,
+            topology.mouthCenter.y - searchR, topology.mouthCenter.y + searchR,
+            useBufferRadius = false,
+        ) { other ->
+            if (other === unit || !other.alive) return@forEachInBoundsUnordered false
+            val ol = other.landingMember ?: return@forEachInBoundsUnordered false
+            if (ol.group !== group) return@forEachInBoundsUnordered false
             if (topology.isInteriorAt(other.position)) {
                 if (ol.parked) interiorParked++
                 else if (other.moveTarget != null && abs(other.speed) > 0.1) interiorMoving++
@@ -1254,6 +1349,7 @@ internal object TerminalLanding {
                 val otherSteps = topology.bfsStepsFromClick(other.position)
                 if (otherSteps > ownSteps) exteriorWaiting = true
             }
+            false
         }
         return interiorMoving > 0 && interiorParked < capacity && exteriorWaiting
     }

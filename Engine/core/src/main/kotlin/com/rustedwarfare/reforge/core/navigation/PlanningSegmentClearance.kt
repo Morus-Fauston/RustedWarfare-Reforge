@@ -26,24 +26,53 @@ import kotlin.math.min
  *   zero heap allocations), querying only candidate blocked words via [BlockedCellIndex].
  */
 internal object PlanningSegmentClearance {
+    private fun interface CellBlocked {
+        fun isBlocked(col: Int, row: Int): Boolean
+    }
+
+    private fun interface BlockedRange {
+        fun anyBlocked(c0: Int, c1: Int, r0: Int, r1: Int, predicate: (Int, Int) -> Boolean): Boolean
+    }
+
     fun allows(
         map: PlanningTerrain,
         start: Position,
         end: Position,
         boundaryRadius: Double,
         clearanceRadius: Double = 0.0,
-    ): Boolean = allows(
-        widthTiles = map.widthTiles,
-        heightTiles = map.heightTiles,
-        tileWidth = map.tileWidth,
-        tileHeight = map.tileHeight,
-        start = start,
-        end = end,
-        boundaryRadius = boundaryRadius,
-        clearanceRadius = clearanceRadius,
-        blocked = map::isBlocked,
-        candidates = map::anyBlocked,
-    )
+    ): Boolean {
+        val mapWidth = map.widthTiles.toDouble() * map.tileWidth
+        val mapHeight = map.heightTiles.toDouble() * map.tileHeight
+        if (!MapBounds.contains(mapWidth, mapHeight, start, boundaryRadius) ||
+            !MapBounds.contains(mapWidth, mapHeight, end, boundaryRadius)
+        ) return false
+        val r = if (clearanceRadius.isFinite() && clearanceRadius > 0.0) clearanceRadius else 0.0
+        val firstColumn = floor((minOf(start.x, end.x) - r) / map.tileWidth).toInt().coerceIn(0, map.widthTiles)
+        val lastColumn = floor((maxOf(start.x, end.x) + r) / map.tileWidth).toInt().coerceIn(-1, map.widthTiles - 1)
+        val firstRow = floor((minOf(start.y, end.y) - r) / map.tileHeight).toInt().coerceIn(0, map.heightTiles)
+        val lastRow = floor((maxOf(start.y, end.y) + r) / map.tileHeight).toInt().coerceIn(-1, map.heightTiles - 1)
+        if (firstColumn > lastColumn || firstRow > lastRow) return true
+        // Exact O(1) Chebyshev clearance-ball fast path on base-resolution grids: clearanceRings(sc, sr) == K
+        // guarantees every base cell within Chebyshev distance <= K - 1 tiles of (sc, sr) is unblocked.
+        if (!map.isSubdivided) {
+            val sc = floor(start.x / map.tileWidth).toInt().coerceIn(0, map.widthTiles - 1)
+            val sr = floor(start.y / map.tileHeight).toInt().coerceIn(0, map.heightTiles - 1)
+            val maxCheb = max(max(sc - firstColumn, lastColumn - sc), max(sr - firstRow, lastRow - sr))
+            if (map.clearanceRings(sc, sr) > maxCheb) return true
+        }
+        return allows(
+            widthTiles = map.widthTiles,
+            heightTiles = map.heightTiles,
+            tileWidth = map.tileWidth,
+            tileHeight = map.tileHeight,
+            start = start,
+            end = end,
+            boundaryRadius = boundaryRadius,
+            clearanceRadius = clearanceRadius,
+            blocked = CellBlocked { col, row -> map.isBlocked(col, row) },
+            candidates = BlockedRange { c0, c1, r0, r1, pred -> map.anyBlocked(c0, c1, r0, r1, pred) },
+        )
+    }
 
     /** Swept disk clearance shorthand where obstacle clearance and map-edge inset share [radius]. */
     fun allowsClearance(map: PlanningTerrain, start: Position, end: Position, radius: Double): Boolean =
@@ -104,9 +133,9 @@ internal object PlanningSegmentClearance {
             end = end,
             boundaryRadius = radius,
             clearanceRadius = 0.0,
-            blocked = map.blocking::isBlocked,
+            blocked = CellBlocked { col, row -> map.blocking.isBlocked(col, row) },
             candidates = if (map.blocking.widthTiles == map.widthTiles && map.blocking.heightTiles == map.heightTiles)
-                map.blocking::anyBlocked else null,
+                BlockedRange { c0, c1, r0, r1, pred -> map.blocking.anyBlocked(c0, c1, r0, r1, pred) } else null,
         )
 
     private fun allows(
@@ -118,8 +147,8 @@ internal object PlanningSegmentClearance {
         end: Position,
         boundaryRadius: Double,
         clearanceRadius: Double,
-        blocked: (Int, Int) -> Boolean,
-        candidates: ((Int, Int, Int, Int, (Int, Int) -> Boolean) -> Boolean)?,
+        blocked: CellBlocked,
+        candidates: BlockedRange?,
     ): Boolean {
         val mapWidth = widthTiles.toDouble() * tileWidth
         val mapHeight = heightTiles.toDouble() * tileHeight
@@ -134,20 +163,160 @@ internal object PlanningSegmentClearance {
         val lastRow = floor((maxOf(start.y, end.y) + r) / tileHeight).toInt().coerceIn(-1, heightTiles - 1)
         if (firstColumn > lastColumn || firstRow > lastRow) return true
         if (r == 0.0 && firstColumn == lastColumn && firstRow == lastRow) {
-            return !blocked(firstColumn, firstRow)
+            return !blocked.isBlocked(firstColumn, firstRow)
+        }
+        val boxCols = lastColumn - firstColumn + 1
+        val boxRows = lastRow - firstRow + 1
+        // For long segments (bounding box > 32 cells), walk a tight band along the segment so
+        // blocked cells hit early (in O(length) instead of scanning an O(length^2) AABB).
+        // Mathematically equivalent: any cell within distance `r` of `[start, end]` must fall
+        // within `[minCoord - r, maxCoord + r]` over the segment's span across that column/row.
+        if (boxCols.toLong() * boxRows.toLong() > 32L) {
+            return allowsCorridorBand(
+                widthTiles = widthTiles,
+                heightTiles = heightTiles,
+                tileWidth = tileWidth,
+                tileHeight = tileHeight,
+                start = start,
+                end = end,
+                r = r,
+                mapWidth = mapWidth,
+                mapHeight = mapHeight,
+                firstColumn = firstColumn,
+                lastColumn = lastColumn,
+                firstRow = firstRow,
+                lastRow = lastRow,
+                blocked = blocked,
+            )
         }
         if (candidates != null) {
-            return !candidates(firstColumn, lastColumn, firstRow, lastRow) { column, row ->
+            return !candidates.anyBlocked(firstColumn, lastColumn, firstRow, lastRow) { column, row ->
                 if (r == 0.0) entersCell(start, end, column, row, tileWidth, tileHeight)
                 else entersCellWithClearance(start, end, r, column, row, tileWidth, tileHeight, mapWidth, mapHeight, allowSeparation = true)
             }
         }
         for (row in firstRow..lastRow) {
             for (column in firstColumn..lastColumn) {
-                if (!blocked(column, row)) continue
+                if (!blocked.isBlocked(column, row)) continue
                 val hit = if (r == 0.0) entersCell(start, end, column, row, tileWidth, tileHeight)
                 else entersCellWithClearance(start, end, r, column, row, tileWidth, tileHeight, mapWidth, mapHeight, allowSeparation = true)
                 if (hit) return false
+            }
+        }
+        return true
+    }
+
+    private fun allowsCorridorBand(
+        widthTiles: Int,
+        heightTiles: Int,
+        tileWidth: Int,
+        tileHeight: Int,
+        start: Position,
+        end: Position,
+        r: Double,
+        mapWidth: Double,
+        mapHeight: Double,
+        firstColumn: Int,
+        lastColumn: Int,
+        firstRow: Int,
+        lastRow: Int,
+        blocked: CellBlocked,
+    ): Boolean {
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val tw = tileWidth.toDouble()
+        val th = tileHeight.toDouble()
+        // O(1) midpoint & quarter-point blocked probes when clearance radius > 0 (for r == 0 half-open
+        // edge grazing must go through exact `entersCell` tie-breaking instead of raw floor probes).
+        if (r > 0.0) {
+            val midCol = floor((start.x + dx * 0.5) / tw).toInt().coerceIn(0, widthTiles - 1)
+            val midRow = floor((start.y + dy * 0.5) / th).toInt().coerceIn(0, heightTiles - 1)
+            if (blocked.isBlocked(midCol, midRow) &&
+                entersCellWithClearance(start, end, r, midCol, midRow, tileWidth, tileHeight, mapWidth, mapHeight, allowSeparation = true)
+            ) return false
+            val q1Col = floor((start.x + dx * 0.25) / tw).toInt().coerceIn(0, widthTiles - 1)
+            val q1Row = floor((start.y + dy * 0.25) / th).toInt().coerceIn(0, heightTiles - 1)
+            if (blocked.isBlocked(q1Col, q1Row) &&
+                entersCellWithClearance(start, end, r, q1Col, q1Row, tileWidth, tileHeight, mapWidth, mapHeight, allowSeparation = true)
+            ) return false
+            val q3Col = floor((start.x + dx * 0.75) / tw).toInt().coerceIn(0, widthTiles - 1)
+            val q3Row = floor((start.y + dy * 0.75) / th).toInt().coerceIn(0, heightTiles - 1)
+            if (blocked.isBlocked(q3Col, q3Row) &&
+                entersCellWithClearance(start, end, r, q3Col, q3Row, tileWidth, tileHeight, mapWidth, mapHeight, allowSeparation = true)
+            ) return false
+        }
+        val eps = 1e-9
+        // Walk from `start` toward `end` along the dominant tile axis so obstacles near `start`
+        // reject immediately.
+        if (abs(dx) / tw >= abs(dy) / th) {
+            val step = if (dx >= 0.0) 1 else -1
+            val cStart = if (step > 0) firstColumn else lastColumn
+            val cEnd = if (step > 0) lastColumn else firstColumn
+            val padY = r + eps
+            var col = cStart
+            while (true) {
+                val cellMinX = col * tw - r
+                val cellMaxX = (col + 1) * tw + r
+                val t0: Double
+                val t1: Double
+                if (dx == 0.0) {
+                    t0 = 0.0
+                    t1 = 1.0
+                } else {
+                    val ta = (cellMinX - start.x) / dx
+                    val tb = (cellMaxX - start.x) / dx
+                    t0 = max(0.0, min(ta, tb))
+                    t1 = min(1.0, max(ta, tb))
+                }
+                if (t0 <= t1) {
+                    val ya = start.y + dy * t0
+                    val yb = start.y + dy * t1
+                    val rLo = floor((min(ya, yb) - padY) / th).toInt().coerceIn(firstRow, lastRow)
+                    val rHi = floor((max(ya, yb) + padY) / th).toInt().coerceIn(firstRow, lastRow)
+                    for (row in rLo..rHi) {
+                        if (!blocked.isBlocked(col, row)) continue
+                        val hit = if (r == 0.0) entersCell(start, end, col, row, tileWidth, tileHeight)
+                        else entersCellWithClearance(start, end, r, col, row, tileWidth, tileHeight, mapWidth, mapHeight, allowSeparation = true)
+                        if (hit) return false
+                    }
+                }
+                if (col == cEnd) break
+                col += step
+            }
+        } else {
+            val step = if (dy >= 0.0) 1 else -1
+            val rStart = if (step > 0) firstRow else lastRow
+            val rEnd = if (step > 0) lastRow else firstRow
+            val padX = r + eps
+            var row = rStart
+            while (true) {
+                val cellMinY = row * th - r
+                val cellMaxY = (row + 1) * th + r
+                val t0: Double
+                val t1: Double
+                if (dy == 0.0) {
+                    t0 = 0.0
+                    t1 = 1.0
+                } else {
+                    val ta = (cellMinY - start.y) / dy
+                    val tb = (cellMaxY - start.y) / dy
+                    t0 = max(0.0, min(ta, tb))
+                    t1 = min(1.0, max(ta, tb))
+                }
+                if (t0 <= t1) {
+                    val xa = start.x + dx * t0
+                    val xb = start.x + dx * t1
+                    val cLo = floor((min(xa, xb) - padX) / tw).toInt().coerceIn(firstColumn, lastColumn)
+                    val cHi = floor((max(xa, xb) + padX) / tw).toInt().coerceIn(firstColumn, lastColumn)
+                    for (col in cLo..cHi) {
+                        if (!blocked.isBlocked(col, row)) continue
+                        val hit = if (r == 0.0) entersCell(start, end, col, row, tileWidth, tileHeight)
+                        else entersCellWithClearance(start, end, r, col, row, tileWidth, tileHeight, mapWidth, mapHeight, allowSeparation = true)
+                        if (hit) return false
+                    }
+                }
+                if (row == rEnd) break
+                row += step
             }
         }
         return true

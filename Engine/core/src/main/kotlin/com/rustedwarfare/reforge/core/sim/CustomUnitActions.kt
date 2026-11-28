@@ -299,16 +299,29 @@ internal object CustomUnitActions {
 
     fun validateCandidate(unit: MutableUnit) {
         val state = unit.customActionState
-        val actions = unit.definition.customActions?.actions.orEmpty().filter { it.automatic == null }
-        val byId = actions.associateBy { it.actionId }
         require(unit.blinkCooldownUntil.isFinite() && unit.blinkCooldownUntil >= 0.0 &&
             (!unit.blinkUnlocked || unit.definition.blink != null))
-        require(state.automaticCooldown.isFinite() && state.automaticCooldown in 0f..60f &&
+        val customActions = unit.definition.customActions
+        if (customActions == null) {
+            require(state.automaticCooldown == 0f && state.queue.isEmpty() && state.cooldownEnds.isEmpty()) {
+                "Invalid custom unit action candidate"
+            }
+            return
+        }
+        require(state.automaticCooldown.isFinite() && state.automaticCooldown in 0f..60f) {
+            "Invalid custom unit action candidate"
+        }
+        if (state.queue.isEmpty() && state.cooldownEnds.isEmpty()) return
+        val actions = customActions.actions.filter { it.automatic == null }
+        val byId = actions.associateBy { it.actionId }
+        require(
             state.queue.map { it.orderId }.distinct().size == state.queue.size &&
-            state.queue.all { item -> byId[item.action.actionId]?.let(item::matches) == true && item.progress in 0f..<1f &&
-                item.advancedTicks.isFinite() && item.advancedTicks >= 0f } &&
-            state.cooldownEnds.keys.all { (byId[it]?.cooldown ?: 0) > 0 } &&
-            (unit.definition.customActions != null || state == CustomActionState())) {
+                state.queue.all { item ->
+                    byId[item.action.actionId]?.let(item::matches) == true && item.progress in 0f..<1f &&
+                        item.advancedTicks.isFinite() && item.advancedTicks >= 0f
+                } &&
+                state.cooldownEnds.keys.all { (byId[it]?.cooldown ?: 0) > 0 },
+        ) {
             "Invalid custom unit action candidate"
         }
     }

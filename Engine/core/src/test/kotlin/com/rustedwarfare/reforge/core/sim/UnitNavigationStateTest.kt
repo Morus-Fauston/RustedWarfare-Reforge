@@ -47,7 +47,6 @@ class UnitNavigationStateTest {
             maneuverTurnWaypoint = Position(150.0, 150.0),
             lastManeuverContactRepair = 9L,
             routeOccupantIds = listOf("u2"),
-            localProgressTime = 2.0,
         )
         val paused = dirty.pauseRoute()
         assertNull(paused.moveTarget)
@@ -69,7 +68,6 @@ class UnitNavigationStateTest {
         assertNull(paused.maneuverTurnWaypoint)
         assertNull(paused.lastManeuverContactRepair)
         assertTrue(paused.routeOccupantIds.isEmpty())
-        assertEquals(0.0, paused.localProgressTime)
     }
 
     @Test

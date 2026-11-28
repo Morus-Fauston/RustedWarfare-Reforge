@@ -27,8 +27,12 @@ internal data class AutomaticKnowledgeCommit(
     val visionState: AutomaticVisionState,
 )
 
-internal data class BuildingCommit(val truth: BuildingTerrain,
-    val owners: Map<String, BuildingKnowledge>, val discoveries: Map<String, Map<Pair<Int, Int>, Long>>)
+internal class BuildingCommit(
+    val truth: BuildingTerrain,
+    val owners: Map<String, BuildingKnowledge>,
+    val discoveries: Map<String, Map<Pair<Int, Int>, Long>>,
+    val visibilityMasks: LongArray? = null,
+)
 
 /** Mutable ownership for one working step; immutable gameplay values are shared until replaced.
  * Add candidate state here, and isolate mutable containers in [fork]. Projection caches that
@@ -90,13 +94,22 @@ internal data class StepState(
     var pendingKnowledgeDiscoveries: MutableMap<String, MutableMap<Pair<Int, Int>, Long>> = mutableMapOf(),
 ) {
     fun fork(planningRollback: PathSearchRollback): StepState {
-        val forkedUnits = units.mapValuesTo(linkedMapOf()) { (_, unit) ->
+        val forkedUnits = LinkedHashMap<String, MutableUnit>((units.size * 4) / 3 + 2)
+        for ((unitId, unit) in units) {
             val combat = unit.combat?.copy()
-            val named = unit.namedWeapons?.mapValuesTo(linkedMapOf()) { (_, state) ->
-                if (state === unit.combat) checkNotNull(combat) else state.copy()
+            val named = unit.namedWeapons?.let { weapons ->
+                val copy = LinkedHashMap<String, MutableCombat>((weapons.size * 4) / 3 + 2)
+                for ((wName, state) in weapons) {
+                    copy[wName] = if (state === unit.combat) checkNotNull(combat) else state.copy()
+                }
+                copy
             }
-            unit.copy(combat = combat, namedWeapons = named,
-                pointDefense = unit.pointDefense?.copy()) }
+            forkedUnits[unitId] = unit.copy(
+                combat = combat,
+                namedWeapons = named,
+                pointDefense = unit.pointDefense?.copy(),
+            )
+        }
         return copy(
         units = forkedUnits,
         spatialIndex = spatialIndex.fork(forkedUnits),
@@ -133,10 +146,27 @@ internal data class StepState(
     }
 
     fun validate(input: Scenario) {
-        require(temporaryVision.all { it.owner in input.players.map { p -> p.playerId } &&
-            it.position.x.isFinite() && it.position.y.isFinite() && it.remaining.isFinite() && it.remaining >= 0f })
+        if (temporaryVision.isNotEmpty()) {
+            val playerIds = input.players.mapTo(HashSet(input.players.size)) { it.playerId }
+            require(temporaryVision.all { it.owner in playerIds &&
+                it.position.x.isFinite() && it.position.y.isFinite() && it.remaining.isFinite() && it.remaining >= 0f })
+        }
         Transport.validate(units)
-        val objectIds = mutableSetOf<Long>()
+        val needsObjectIds = input.combatContract != null || projectiles.isNotEmpty()
+        val fastCap = if (needsObjectIds && nextObjectId in 1L..65536L) nextObjectId.toInt() else -1
+        val seenMark: IntArray?
+        val seenEpoch: Int
+        val objectIds: HashSet<Long>?
+        if (fastCap > 0) {
+            val scratch = objectIdValidateScratch.get()
+            seenMark = scratch.ensure(fastCap)
+            seenEpoch = scratch.nextEpoch()
+            objectIds = null
+        } else {
+            seenMark = null
+            seenEpoch = 0
+            objectIds = if (needsObjectIds) HashSet(((units.size + projectiles.size) * 4) / 3 + 2) else null
+        }
         var previousKey: String? = null
         for (unit in units.values) {
             UnitAttachments.validateCandidateUnit(this, unit)
@@ -177,7 +207,13 @@ internal data class StepState(
             previousKey = unit.updateKey
             if (input.combatContract != null) {
                 val id = checkNotNull(unit.objectId)
-                require(id > 0L && id < nextObjectId && objectIds.add(id)) { "Invalid or duplicate unit object ID" }
+                val unique = if (seenMark != null && id > 0L && id < fastCap.toLong()) {
+                    val idx = id.toInt()
+                    if (seenMark[idx] == seenEpoch) false else { seenMark[idx] = seenEpoch; true }
+                } else {
+                    checkNotNull(objectIds).add(id)
+                }
+                require(id > 0L && id < nextObjectId && unique) { "Invalid or duplicate unit object ID" }
             }
             origin?.let { birth ->
                 val producer = units.getValue(birth.producerId)
@@ -192,7 +228,7 @@ internal data class StepState(
                         it.targetTypeId == producer.typeId } == true ||
                         com.rustedwarfare.reforge.core.content.NautilusRules.supports(birthDefinition) &&
                         com.rustedwarfare.reforge.core.content.NautilusRules.supports(producer.definition)) &&
-                    PRODUCED_NONCE_REGEX.matches(nonce) &&
+                    isLowerHex32(nonce) &&
                     unit.updateKey.startsWith("~produced/") &&
                     unit.updateKey.removePrefix("~produced/").toLong() in 1L..lastBirthSerial) {
                     "Invalid produced unit identity"
@@ -213,16 +249,41 @@ internal data class StepState(
                 unit.alive == (it > 0.0 || unit.deathPending)) { "Invalid unit life state" } }
             require(!unit.destroyedWithoutHealth || unit.health == null && unit.definition.maximumHealth == null &&
                 !unit.deathPending) { "Invalid destroyed unit without health" }
-            for (state in unit.namedWeapons?.values ?: listOfNotNull(unit.combat)) {
-                require(listOf(state.turretHeading, state.angularVelocity, state.cooldown, state.offset.x, state.offset.y,
-                    state.idleBaseHeading, state.idleOffset, state.warmup)
-                    .all { it.isFinite() }) { "Weapon candidate must remain finite" }
-                require(state.warmup >= 0.0) { "Warmup must remain nonnegative" }
-                require(state.idleTimer.isFinite() && state.idleHold.isFinite() && state.idleHold >= 0f &&
-                    state.idleDirection in setOf(-1, 1)) { "Invalid idle candidate" }
-                require(state.patrolSearchTimer.isFinite() && state.patrolSearchTimer >= 0f &&
-                    state.patrolDispatchTimer.isFinite() && state.patrolDispatchTimer >= 0f) {
-                    "Invalid patrol combat timers"
+            val namedMap = unit.namedWeapons
+            if (namedMap != null) {
+                for (state in namedMap.values) {
+                    require(
+                        state.turretHeading.isFinite() && state.angularVelocity.isFinite() &&
+                            state.cooldown.isFinite() && state.offset.x.isFinite() && state.offset.y.isFinite() &&
+                            state.idleBaseHeading.isFinite() && state.idleOffset.isFinite() && state.warmup.isFinite(),
+                    ) { "Weapon candidate must remain finite" }
+                    require(state.warmup >= 0.0) { "Warmup must remain nonnegative" }
+                    require(
+                        state.idleTimer.isFinite() && state.idleHold.isFinite() && state.idleHold >= 0f &&
+                            (state.idleDirection == -1 || state.idleDirection == 1),
+                    ) { "Invalid idle candidate" }
+                    require(
+                        state.patrolSearchTimer.isFinite() && state.patrolSearchTimer >= 0f &&
+                            state.patrolDispatchTimer.isFinite() && state.patrolDispatchTimer >= 0f,
+                    ) { "Invalid patrol combat timers" }
+                }
+            } else {
+                val state = unit.combat
+                if (state != null) {
+                    require(
+                        state.turretHeading.isFinite() && state.angularVelocity.isFinite() &&
+                            state.cooldown.isFinite() && state.offset.x.isFinite() && state.offset.y.isFinite() &&
+                            state.idleBaseHeading.isFinite() && state.idleOffset.isFinite() && state.warmup.isFinite(),
+                    ) { "Weapon candidate must remain finite" }
+                    require(state.warmup >= 0.0) { "Warmup must remain nonnegative" }
+                    require(
+                        state.idleTimer.isFinite() && state.idleHold.isFinite() && state.idleHold >= 0f &&
+                            (state.idleDirection == -1 || state.idleDirection == 1),
+                    ) { "Invalid idle candidate" }
+                    require(
+                        state.patrolSearchTimer.isFinite() && state.patrolSearchTimer >= 0f &&
+                            state.patrolDispatchTimer.isFinite() && state.patrolDispatchTimer >= 0f,
+                    ) { "Invalid patrol combat timers" }
                 }
             }
             if (unit.combat != null) require(OrdinaryWeapon.hasFiniteGeometry(unit)) { "Weapon geometry must remain finite" }
@@ -251,7 +312,14 @@ internal data class StepState(
                 (projectile.missile == null || projectile.speed.toFloat().let { it.isFinite() && it >= 0f } && projectile.missileRawAz.isFinite())) {
                 "Projectile candidate must remain finite"
             }
-            require(projectile.objectId > 0L && projectile.objectId < nextObjectId && objectIds.add(projectile.objectId)) {
+            val pId = projectile.objectId
+            val pUnique = if (seenMark != null && pId > 0L && pId < fastCap.toLong()) {
+                val idx = pId.toInt()
+                if (seenMark[idx] == seenEpoch) false else { seenMark[idx] = seenEpoch; true }
+            } else {
+                checkNotNull(objectIds).add(pId)
+            }
+            require(pId > 0L && pId < nextObjectId && pUnique) {
                 "Invalid or duplicate projectile object ID"
             }
         }
@@ -280,7 +348,14 @@ internal data class StepState(
     }
 
     companion object {
-        private val PRODUCED_NONCE_REGEX = Regex("[0-9a-f]{32}")
+        private fun isLowerHex32(value: String): Boolean {
+            if (value.length != 32) return false
+            for (i in 0 until 32) {
+                val c = value[i]
+                if ((c < '0' || c > '9') && (c < 'a' || c > 'f')) return false
+            }
+            return true
+        }
     }
 }
 
@@ -446,3 +521,30 @@ internal class CandidateStep(val state: StepState, private val step: Step) {
 
     fun abort() { knowledge?.stores?.values?.forEach { it.close() } }
 }
+
+private class ObjectIdValidateScratch {
+    private var marks: IntArray = IntArray(256)
+    private var epoch: Int = 0
+
+    fun ensure(size: Int): IntArray {
+        if (marks.size < size) {
+            var cap = marks.size
+            while (cap < size) cap = cap shl 1
+            marks = IntArray(cap)
+            epoch = 0
+        }
+        return marks
+    }
+
+    fun nextEpoch(): Int {
+        epoch++
+        if (epoch == Int.MAX_VALUE) {
+            marks.fill(0)
+            epoch = 1
+        }
+        return epoch
+    }
+}
+
+private val objectIdValidateScratch: ThreadLocal<ObjectIdValidateScratch> =
+    ThreadLocal.withInitial { ObjectIdValidateScratch() }

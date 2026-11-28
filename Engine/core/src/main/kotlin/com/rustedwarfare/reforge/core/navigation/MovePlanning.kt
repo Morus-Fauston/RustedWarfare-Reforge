@@ -67,7 +67,7 @@ internal data class MovePlanningInput(
                 val saved = members[index]
                 val next = current.members[index]
                 (if (replacingCommand) saved.action.sameMoveRequest(next.action) &&
-                    saved.body?.landingMember?.group === next.body?.landingMember?.group else saved.action == next.action) &&
+                    saved.body?.landingMember?.group.sameGroupTarget(next.body?.landingMember?.group) else saved.action == next.action) &&
                     saved.pose == next.pose && saved.start == next.start &&
                     saved.radius == next.radius && saved.terrain === next.terrain && saved.hull == next.hull &&
                     saved.hasBirthDelay == next.hasBirthDelay
@@ -86,7 +86,13 @@ internal data class MovePlanningInput(
 }
 
 private fun MoveAction.sameMoveRequest(other: MoveAction): Boolean =
-    unitId == other.unitId && actorPlayerId == other.actorPlayerId && world === other.world && target == other.target
+    unitId == other.unitId && actorPlayerId == other.actorPlayerId && world === other.world && target == other.target &&
+        cohortEscort == other.cohortEscort
+
+private fun GroupMoveRequest?.sameGroupTarget(other: GroupMoveRequest?): Boolean =
+    (this == null && other == null) ||
+        (this != null && other != null && world === other.world && actor == other.actor &&
+            click == other.click && members == other.members && traversalMode == other.traversalMode)
 
 internal data class PlannedMove(val route: PlannedRoute?, val counters: PathSearchCounters?, val searchNanos: Long,
                                 val nearest: Boolean = false)
@@ -185,6 +191,7 @@ internal class MovePlanning {
     private val byMember = HashMap<String, Order>()
     private val workByOrder = HashMap<Order, Work>()
     private val tacticalJobs = LinkedHashMap<String, TacticalJob>()
+    private var sharedFrontierPool = ArrayDeque<PrimitiveGridFrontier>(2)
     private var activeRollback: PathSearchRollback? = null
 
     private fun queueFor(order: Order): LinkedHashSet<Order> = when {
@@ -203,6 +210,7 @@ internal class MovePlanning {
         p0FastLane.asSequence() + p0Ordinary.asSequence() + p2Repairs.asSequence() + optionalRejoins.asSequence()
 
     fun fork(rollback: PathSearchRollback): MovePlanning = MovePlanning().also { pending ->
+        pending.sharedFrontierPool = sharedFrontierPool
         pending.activeRollback = rollback
         for (order in allOrdersSequence()) {
             pending.add(order)
@@ -453,7 +461,7 @@ internal class MovePlanning {
         pathPolicy: ClearanceAStarPolicy,
     ): TacticalJob {
         val counters = if (request.collectDiagnostics) PathSearchCounters() else null
-        val cache = PathClearanceCache(reuseApproach = false)
+        val cache = PathClearanceCache(reuseApproach = false, sharedPool = sharedFrontierPool)
         val rawSearch = if (request.targetRange > 0.0) {
             pathPolicy.beginRange(
                 request.terrain,
@@ -616,7 +624,7 @@ internal class MovePlanning {
                     return
                 }
                 val current = snapshot(order.action, order.repair)
-                if (!previousWork.rebind(current)) previousWork = Work(current)
+                if (!previousWork.rebind(current)) previousWork = Work(current, sharedFrontierPool)
                 previousWork.requestKey = order.requestKey
                 workByOrder[order] = previousWork
             }
@@ -624,7 +632,7 @@ internal class MovePlanning {
                 record(completed = false)
                 return
             }
-            val work = previousWork ?: Work(snapshot(order.action, order.repair)).also {
+            val work = previousWork ?: Work(snapshot(order.action, order.repair), sharedFrontierPool).also {
                 it.requestKey = order.requestKey
             }
             var result = work.advance(pathPolicy, budget)
@@ -676,7 +684,7 @@ internal class MovePlanning {
                     if (samples != null) firstSegment = FirstSegmentDecision(member.action.actionId, member.action.unitId,
                         member.start, end, blockers.map { it.body.unitId }, if (blockers.isEmpty()) "adopt" else "replan-member")
                     if (blockers.isNotEmpty()) {
-                        val retry = Work(live)
+                        val retry = Work(live, sharedFrontierPool)
                         retry.localObstacles = blockers
                         retry.requestKey = order.requestKey
                         workByOrder[order] = retry
@@ -700,7 +708,10 @@ internal class MovePlanning {
         }
     }
 
-    private class Work(var input: MovePlanningInput) {
+    private class Work(
+        var input: MovePlanningInput,
+        private val frontierPool: ArrayDeque<PrimitiveGridFrontier>,
+    ) {
         var requestKey: Any? = null
         private var searchedResult: Map<String, PlannedMove>? = null
         private var search: ExactPathSearch? = null
@@ -710,7 +721,7 @@ internal class MovePlanning {
         private var searchNanos = 0L
         private var checkingRoute: PlannedMove? = null
         private var occupantIndex = -1
-        private var cache: PathClearanceCache? = PathClearanceCache(reuseApproach = false)
+        private var cache: PathClearanceCache? = PathClearanceCache(reuseApproach = false, sharedPool = frontierPool)
         private var rollback: PathSearchRollback? = null
 
         fun adoptSpliced(liveInput: MovePlanningInput, spliced: Map<String, PlannedMove>) {
@@ -746,7 +757,7 @@ internal class MovePlanning {
             return true
         }
 
-        fun fork(rollback: PathSearchRollback): Work = Work(input).also { copy ->
+        fun fork(rollback: PathSearchRollback): Work = Work(input, frontierPool).also { copy ->
             copy.requestKey = requestKey
             copy.searchedResult = searchedResult
             copy.localObstacles = localObstacles

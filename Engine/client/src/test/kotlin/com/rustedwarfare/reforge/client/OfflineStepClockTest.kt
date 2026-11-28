@@ -175,4 +175,24 @@ class OfflineStepClockTest {
                 "Lightweight non-observation sink must never serialize per-step observations")
         }
     }
+
+    @Test fun frame_budget_guard_guarantees_forward_progress_and_carries_remaining_substeps() {
+        val clock = OfflineStepClock()
+        clock.setRate(OfflineRate.QUADRUPLE)
+        val seen = mutableListOf<Int>()
+        val frame1 = clock.advanceWithLastFlag(
+            realSeconds = 1.0 / 60.0,
+            canContinueFrame = { completed -> completed < 2 },
+        ) { _ ->
+            seen += 1
+        }
+        assertEquals(2, frame1.executedSteps, "Should stop after budget limit while advancing >= 1 step")
+        assertEquals(2.0, frame1.pendingSteps, 1e-9, "Remaining substeps must stay in pending backlog")
+        assertEquals(2, seen.size)
+
+        val frame2 = clock.advanceWithLastFlag(realSeconds = 1.0 / 60.0) { _ -> seen += 1 }
+        assertEquals(6, frame2.executedSteps, "Subsequent cheap frame should drain carried backlog")
+        assertEquals(0.0, frame2.pendingSteps, 1e-9)
+        assertEquals(8, seen.size)
+    }
 }
