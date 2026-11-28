@@ -10,11 +10,11 @@ import java.util.*;
 /** JDK 24+ host measurement agent. Counts outer intervals once, including repeated scans. */
 public final class PlanningClock implements ClassFileTransformer {
     static final Map<String, Set<String>> ROOTS = Map.of(
-        "SimulationContext", Set.of("requestGroupMove", "submit", "refreshGroupDestinations", "replanForKnowledge",
-            "repairInvalidConnections", "recoverStalledMoves", "prepareRouteSuccessors", "scheduleManeuverRepair", "groupStopClearsSlots",
+        "SimulationContext", Set.of("requestGroupMove", "submit", "replanForKnowledge",
+            "repairInvalidConnections", "recoverStalledMoves", "prepareRouteSuccessors", "scheduleManeuverRepair",
             "routeOccupancy", "continuationFits", "planningTerrainFor", "requestRouteContinuation",
             "updateUnit$maneuverAim", "preparesRouteSuccessor"),
-        "PassageAdmission", Set.of("waitingUnits"), "LocalMotionMaintenance", Set.of("advance"),
+        "PassageAdmission", Set.of("waitingUnits"),
         "MovePlanning", Set.of("advance", "fork", "enqueue", "repair", "cancel"));
     static final Set<String> installed = new TreeSet<>();
     static final ThreadMXBean clock = ManagementFactory.getThreadMXBean();
@@ -48,8 +48,8 @@ public final class PlanningClock implements ClassFileTransformer {
     public static void stepEnd() throws IOException {
         if(depth!=0) throw new IllegalStateException("incomplete timed interval");
         if(step==0) for (var entry : ROOTS.entrySet()) for (var name : entry.getValue())
-            if (!entry.getKey().equals("LocalMotionMaintenance") && !installed.contains(entry.getKey()+"."+name)) throw new IllegalStateException("missing hook "+name);
-        output.write(step++ + "\t" + totalCpu + "\t" + totalWall + "\t" + outerCalls + "\t" + nestedCalls + "\t" + calls.getOrDefault("SimulationContext.planningTerrainFor",0) + "\t" + calls.getOrDefault("LocalMotionMaintenance.advance",0) + "\t" + String.join(",", admissionWait.stream().map(Object::toString).sorted().toList()) + "\n");
+            if (!installed.contains(entry.getKey()+"."+name)) throw new IllegalStateException("missing hook "+name);
+        output.write(step++ + "\t" + totalCpu + "\t" + totalWall + "\t" + outerCalls + "\t" + nestedCalls + "\t" + calls.getOrDefault("SimulationContext.planningTerrainFor",0) + "\t0\t" + String.join(",", admissionWait.stream().map(Object::toString).sorted().toList()) + "\n");
         calls.clear(); outerCalls=0; nestedCalls=0; admissionWait=Set.of();
         totalCpu=0; totalWall=0;
     }

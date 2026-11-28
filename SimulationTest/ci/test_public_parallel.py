@@ -246,17 +246,125 @@ OS: Linux
             self.assertEqual('execution-failed', missing['status'])
 
     def test_workflows_enable_repo_wide_parallel_pr_and_sharded_long_with_fallbacks(self):
+        import re
         from public_check import REPO
+        from public_parallel import MECHANISMS
         pr_yml = (REPO/'.github/workflows/public-pr.yml').read_text(encoding='utf8')
         self.assertNotIn('codex/phase-six-asp-test', pr_yml)
         self.assertIn("vars.PUBLIC_PR_PARALLEL == 'false'", pr_yml)
         self.assertIn("inputs.execution == 'serial'", pr_yml)
+        for shard in MECHANISMS:
+            self.assertIn(shard, pr_yml)
+            self.assertIn(f'{shard.replace("-", "_")}_artifact', pr_yml)
 
         long_yml = (REPO/'.github/workflows/public-long.yml').read_text(encoding='utf8')
         for token in ('public-long-prepare:', 'public-long-scenarios:', 'public-long-coverage:',
                       'public-final-candidate:', 'long-1', 'long-2', 'long-3',
                       "vars.PUBLIC_LONG_PARALLEL == 'false'"):
             self.assertIn(token, long_yml)
+
+        draft_yml = (REPO/'SimulationTest/ci/public-pr.yml').read_text(encoding='utf8')
+        versions = []
+        for path_label, content in (('.github/workflows/public-pr.yml', pr_yml),
+                                    ('.github/workflows/public-long.yml', long_yml),
+                                    ('SimulationTest/ci/public-pr.yml', draft_yml)):
+            blocks = re.findall(r'uses:\s*actions/setup-java@[^\r\n]+\r?\n\s+with:\r?\n\s+distribution:\s*(\S+)\r?\n\s+java-version:\s*[\'"]?([^\'"\r\n]+)[\'"]?', content)
+            self.assertGreaterEqual(len(blocks), 1, path_label)
+            for dist, ver in blocks:
+                self.assertEqual('temurin', dist, path_label)
+                self.assertRegex(ver, r'^25\.\d+\.\d+(?:\.\d+)?\+\d+$', f'{path_label} uses floating JDK version: {ver}')
+                versions.append(ver)
+        self.assertEqual(1, len(set(versions)), f'Workflows disagree on pinned Temurin version: {set(versions)}')
+
+    def test_toolchain_mismatch_is_rejected_and_mechanisms_shard_with_strict_conservation(self):
+        from public_check import REPO
+        from public_parallel import MECHANISMS, SCENARIOS, aggregate, new_plan, run_shard, write_json
+
+        plan = new_plan(REPO, layer_kind='pr')
+        self.assertEqual(4, len(MECHANISMS))
+        self.assertEqual({*MECHANISMS, *SCENARIOS}, set(plan['shards']))
+        self.assertEqual(set(MECHANISMS), set(plan['mechanismShards']))
+
+        full_mech = plan['mechanisms']
+        expected_pairs = {(g['fixture'], mod, cls): tuple(g['owners'][mod][cls])
+                          for g in full_mech['groups'] for mod, classes in g['tests'].items() for cls in classes}
+        sharded_pairs = []
+        for shard in MECHANISMS:
+            sub = plan['mechanismShards'][shard]
+            shard_class_count = sum(len(classes) for g in sub['groups'] for classes in g['tests'].values())
+            self.assertGreater(shard_class_count, 0, shard)
+            self.assertLessEqual(shard_class_count, 400, f'{shard} exceeds safe single-job class budget: {shard_class_count}')
+            for g in sub['groups']:
+                for mod, classes in g['tests'].items():
+                    for cls in classes:
+                        sharded_pairs.append(((g['fixture'], mod, cls), tuple(g['owners'][mod][cls])))
+        self.assertEqual(len(expected_pairs), len(sharded_pairs))
+        self.assertEqual(expected_pairs, dict(sharded_pairs))
+
+        sharded_py = [p for shard in MECHANISMS for p in plan['mechanismShards'][shard]['pythonTests']]
+        self.assertEqual(full_mech['pythonTests'], sharded_py)
+
+        # Toolchain drift check in run_shard (e.g., 25.0.5+8 vs 25.0.5.1+2)
+        identity = dict(run='300', attempt='1', head='a'*40, checkout='b'*40, tree='c'*40)
+        base_tools = {'javaVersion': ['SEMANTIC_VERSION="25.0.5+8"']}
+        drifted_tools = {'javaVersion': ['SEMANTIC_VERSION="25.0.5.1+2"']}
+        bundle = dict(plan, identity=identity, source=[{'path': 'in', 'sha256': '1'}],
+                      toolchain=base_tools, gradle={'version': '9.3.1'}, archiveSha256='d'*64, files=[])
+        with (tempfile.TemporaryDirectory() as tmp,
+              patch('public_parallel.candidate', return_value=identity),
+              patch('public_parallel.identities', return_value=bundle['source']),
+              patch('public_parallel.toolchain', return_value=drifted_tools)):
+            mismatch = run_shard(Path(tmp), bundle, '0'*64, MECHANISMS[0], None, Path(tmp)/'mismatch')
+            self.assertEqual('execution-failed', mismatch['status'])
+            self.assertEqual('Shard toolchain differs', mismatch['error'])
+
+        # Conservation check in aggregate across all 4 mechanism shards + scenario shards
+        plan_sha = '9'*64
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            pins = {}
+            for shard in bundle['shards']:
+                if shard in MECHANISMS:
+                    sub = bundle['mechanismShards'][shard]
+                    cov = dict(
+                        groups=[dict(fixture=g['fixture'], methods=[
+                            dict(module=mod, className=cls, method='test_case()', suites=g['owners'][mod][cls])
+                            for mod, classes in g['tests'].items() for cls in classes
+                        ]) for g in sub['groups']],
+                        python=[dict(path=p, suites=sub['pythonOwners'][p], tests=1) for p in sub['pythonTests']]
+                    )
+                    gradle_val = bundle['gradle']
+                else:
+                    cases = bundle['shards'][shard]
+                    cov = dict(scenarios=[dict(suite=c['suite'], id=c['id'], kind=c['kind'], status='passed',
+                                               elapsedSeconds=1.0,
+                                               commands=[c['id']] + ([c['id']+'-recompare'] if c.get('backend') == 'session' or c.get('recompare') else []) + ([c['id']+'-assertions'] if c.get('archiveAssertions') else []),
+                                               archive=dict(id=c['id'], kind=c['kind'])) for c in cases])
+                    gradle_val = None
+                row = dict(identity=identity, planSha256=plan_sha, toolchain=base_tools,
+                           archiveSha256=bundle['archiveSha256'], status='passed', gradle=gradle_val,
+                           shard=shard, coverage=cov)
+                p = folder/f'public-receipt-1-{shard}'/'receipt.json'
+                p.parent.mkdir()
+                write_json(p, row)
+                pins[shard] = digest(p)
+            artifacts = {shard: '3'*64 for shard in bundle['shards']}
+            jobs = dict(prepare='success', mechanism='success', scenarios='success')
+            ok = aggregate(bundle, plan_sha, folder, pins, jobs, artifacts, lambda k, r: None)
+            self.assertEqual('passed', ok['status'], ok['errors'])
+
+            # Tamper: duplicate a class from mechanisms-1 into mechanisms-2 -> must fail conservation
+            m2_path = folder/f'public-receipt-1-{MECHANISMS[1]}'/'receipt.json'
+            m2_orig = m2_path.read_bytes()
+            m1_row = json.loads((folder/f'public-receipt-1-{MECHANISMS[0]}'/'receipt.json').read_bytes())
+            m2_bad = json.loads(m2_orig)
+            m2_bad['coverage']['groups'][0]['methods'].append(m1_row['coverage']['groups'][0]['methods'][0])
+            m2_path.write_text(json.dumps(m2_bad), encoding='utf8')
+            pins[MECHANISMS[1]] = digest(m2_path)
+            dup_res = aggregate(bundle, plan_sha, folder, pins, jobs, artifacts, lambda k, r: None)
+            self.assertEqual('execution-failed', dup_res['status'])
+            m2_path.write_bytes(m2_orig)
+            pins[MECHANISMS[1]] = digest(m2_path)
 
 
 if __name__ == '__main__':

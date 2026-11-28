@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.ContentLoader
 import com.rustedwarfare.reforge.core.content.ContentResult
@@ -182,7 +184,7 @@ class UnitContactTest {
             assertTrue(blockedTurn.isNotEmpty(), "The sample needs a physically blocked turn with zero attempted translation")
             val repair = context.drainPathDiagnostics(context.world).firstOrNull {
                 it.unitId == "ship" && it.actionId == "move-ship" &&
-                    it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR
+                    it.reason == com.rustedwarfare.reforge.core.navigation.PathSearchReason.ROUTE_REPAIR
             }
             assertTrue(repair != null, "A blocked turn must trigger repair without waiting for translation")
             assertTrue(checkNotNull(repair.executionStep) > blockedTurn.first().stepIndex)
@@ -595,7 +597,7 @@ class UnitContactTest {
                         assertEquals(listOf(Event("movement-blocked", "mover")), view.events)
                     }
                     val retries = hidden.drainPathDiagnostics(hidden.world).filter {
-                        it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ROUTE_REPAIR
+                        it.reason == com.rustedwarfare.reforge.core.navigation.PathSearchReason.ROUTE_REPAIR
                     }
                     assertEquals(pushable, retries.isEmpty())
                     assertTrue(retries.all { it.pathPointCount == 1 && it.usedPlayerKnowledge })

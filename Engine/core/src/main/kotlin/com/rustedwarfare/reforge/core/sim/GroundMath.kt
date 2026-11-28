@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 /** The finite artillery Float lookup operations; ordinary geometry never calls these tables. */
 internal object GroundMath {
     data class Point(val x: Float, val y: Float)

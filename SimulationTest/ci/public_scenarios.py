@@ -1,12 +1,19 @@
 """Bound independent headless scenarios; preserve every started item's terminal state."""
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import json
+import math
 import os
 from pathlib import Path
 import re
 import sys
 import threading
 import time
+
+
+def session_timeout_seconds(case, timeout):
+    cap = 300 if case.get('kind') == 'long' else 180
+    headroom = int(timeout) - 30 if timeout > 60 else int(math.ceil(timeout))
+    return max(1, min(cap, headroom))
 
 
 def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, execute_command):
@@ -31,8 +38,8 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
             stopped.set()
 
     try:
-        if workers not in (1, 2, 4):
-            raise ValueError('Scenario workers must be 1, 2 or 4')
+        if workers not in (1, 2, 4, 8):
+            raise ValueError('Scenario workers must be 1, 2, 4 or 8')
         names = []
         for case in cases:
             name = case['id']
@@ -81,7 +88,8 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
             if case.get('backend') == 'session':
                 command(case['id'], [sys.executable, '-B', str(project/'tools/platform_scenario.py'),
                     'session', '--scenario', str(project/'public'/case['scenario']),
-                    '--contract', str(project/'public'/case['contract']), '--distribution', str(distribution), '--output', str(folder)])
+                    '--contract', str(project/'public'/case['contract']), '--distribution', str(distribution),
+                    '--timeout', str(session_timeout_seconds(case, timeout)), '--output', str(folder)])
                 archive_started = time.monotonic()
                 judgment = json.loads((folder/'result.json').read_text(encoding='utf8'))
                 archive_seconds = time.monotonic() - archive_started

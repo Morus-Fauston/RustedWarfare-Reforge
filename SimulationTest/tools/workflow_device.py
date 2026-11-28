@@ -195,7 +195,7 @@ def _run_device(plan,config,output,target):
                     wanted=base['expectedPackages'][pkg]
                     require(identity[role]['sha256']==wanted['apk']['sha256'] and identity[role]['path']==wanted['basePath'] and identity[role]['bytes']==wanted['apk']['bytes'],'ART actual code identity differs')
                 names={r['name'] for r in identity['classes']}
-                expected={'com.rustedwarfare.reforge.core.sim.'+n for n in ('SimulationContext','MotionStepSample','Position')}|{'com.rustedwarfare.reforge.core.content.MovementProfile'}|{'com.rustedwarfare.reforge.core.path.'+n for n in ('PathPlanner','PlanningTerrain')}
+                expected={'com.rustedwarfare.reforge.core.sim.'+n for n in ('SimulationContext','MotionStepSample','Position')}|{'com.rustedwarfare.reforge.core.content.MovementProfile'}|{'com.rustedwarfare.reforge.core.path.'+n for n in ('AuthorizedNavigationTerrain','PlanningTerrain')}
                 require(len(identity['classes'])==6 and names==expected,'ART loaded class coverage differs')
                 captured=next(r for r in motion['cases'] if r['case']=='captured-knowledge-reachability')
                 require(len(captured['checks'])==7 and all(r['success'] and r['allLegsDirect'] for r in captured['checks']),'ART planner checks differ')

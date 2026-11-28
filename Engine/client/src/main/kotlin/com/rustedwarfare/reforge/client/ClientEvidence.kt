@@ -5,6 +5,8 @@ import com.rustedwarfare.reforge.core.sim.*
 fun interface ClientEvidence {
     fun record(kind: String, values: Map<String, Any?>)
 
+    val capturesObservations: Boolean get() = this !== NONE
+
     /** Menu state only, from checked in-memory rows. This never scans sources or claims rendered pixels. */
     fun recordVisualAssetMenu(state: VisualAssetSettingsSession) {
         if (this === NONE) return
@@ -68,7 +70,7 @@ fun interface ClientEvidence {
 
     /** Legacy sinks keep the original field shape; typed sinks can defer immutable knowledge. */
     fun recordObservation(phase: String, observation: PlayerObservation, generation: Long? = null) {
-        if (this !== NONE) record("observation", mapOf("phase" to phase, "sample" to observation.fields()) +
+        if (capturesObservations) record("observation", mapOf("phase" to phase, "sample" to observation.fields()) +
             (generation?.let { mapOf("generation" to it) } ?: emptyMap()))
     }
 
@@ -81,6 +83,7 @@ internal fun ClientEvidence.withGeneration(generation: Long): ClientEvidence {
     val sink = this
     val fixedGeneration = generation
     return object : ClientEvidence {
+        override val capturesObservations: Boolean get() = sink.capturesObservations
         override fun record(kind: String, values: Map<String, Any?>) =
             sink.record(kind, values + ("generation" to generation))
         override fun recordObservation(phase: String, observation: PlayerObservation, generation: Long?) =

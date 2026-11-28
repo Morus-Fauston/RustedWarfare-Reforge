@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.NamedWeaponDefinition
 import com.rustedwarfare.reforge.core.content.TurretMount
 import com.rustedwarfare.reforge.core.content.UnitDefinition

@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '25.0.5+8'
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '25.0.5+8'
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
@@ -128,10 +128,20 @@ jobs:
   public-mechanisms:
     needs: public-prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [mechanisms-1, mechanisms-2, mechanisms-3, mechanisms-4]
     outputs:
-      mechanisms: ${{ steps.run.outputs.mechanisms }}
-      mechanisms_artifact: ${{ steps.evidence.outputs.artifact-digest }}
+      mechanisms_1: ${{ steps.run.outputs.mechanisms_1 }}
+      mechanisms_1_artifact: ${{ steps.names.outputs.mechanisms_1_artifact }}
+      mechanisms_2: ${{ steps.run.outputs.mechanisms_2 }}
+      mechanisms_2_artifact: ${{ steps.names.outputs.mechanisms_2_artifact }}
+      mechanisms_3: ${{ steps.run.outputs.mechanisms_3 }}
+      mechanisms_3_artifact: ${{ steps.names.outputs.mechanisms_3_artifact }}
+      mechanisms_4: ${{ steps.run.outputs.mechanisms_4 }}
+      mechanisms_4_artifact: ${{ steps.names.outputs.mechanisms_4_artifact }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -139,7 +149,7 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '25.0.5+8'
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
@@ -151,29 +161,37 @@ jobs:
         with:
           name: public-distribution-${{ github.run_attempt }}
           path: SimulationTest/build/public-transfer
-      - name: Run current JVM methods and Python scripts
+      - name: Run assigned JVM methods and Python scripts
         id: run
         env:
           PUBLIC_PLAN_SHA: ${{ needs.public-prepare.outputs.plan_sha }}
+          SHARD: ${{ matrix.shard }}
         run: >-
           python -B SimulationTest/ci/public_parallel.py shard
-          --transfer SimulationTest/build/public-transfer --shard mechanisms
+          --transfer SimulationTest/build/public-transfer --shard "$SHARD"
           --output SimulationTest/build/public-mechanisms
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: public-receipt-${{ github.run_attempt }}-mechanisms
+          name: public-receipt-${{ github.run_attempt }}-${{ matrix.shard }}
           path: SimulationTest/build/public-mechanisms/receipt.json
           if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         id: evidence
         if: always()
         with:
-          name: public-raw-${{ github.run_attempt }}-mechanisms
+          name: public-raw-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
             SimulationTest/build/public-mechanisms/mechanisms
             SimulationTest/build/public-mechanisms/gradle-version*
           if-no-files-found: error
+      - name: Pin the raw mechanism shard artifact
+        id: names
+        if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
+          ARTIFACT_DIGEST: ${{ steps.evidence.outputs.artifact-digest }}
+        run: printf '%s_artifact=%s\n' "${SHARD//-/_}" "$ARTIFACT_DIGEST" >> "$GITHUB_OUTPUT"
   public-scenarios:
     needs: public-prepare
     runs-on: ubuntu-latest
@@ -200,7 +218,7 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '25.0.5+8'
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.13'
@@ -274,9 +292,9 @@ jobs:
           PUBLIC_JOBS: >-
             {"prepare":"${{ needs.public-prepare.result }}","mechanism":"${{ needs.public-mechanisms.result }}","scenarios":"${{ needs.public-scenarios.result }}"}
           PUBLIC_PINS: >-
-            {"mechanisms":"${{ needs.public-mechanisms.outputs.mechanisms }}","production-1":"${{ needs.public-scenarios.outputs.production_1 }}","production-2":"${{ needs.public-scenarios.outputs.production_2 }}","production-3":"${{ needs.public-scenarios.outputs.production_3 }}","other-short":"${{ needs.public-scenarios.outputs.other_short }}","content-three-formats":"${{ needs.public-scenarios.outputs.content_three_formats }}"}
+            {"mechanisms-1":"${{ needs.public-mechanisms.outputs.mechanisms_1 }}","mechanisms-2":"${{ needs.public-mechanisms.outputs.mechanisms_2 }}","mechanisms-3":"${{ needs.public-mechanisms.outputs.mechanisms_3 }}","mechanisms-4":"${{ needs.public-mechanisms.outputs.mechanisms_4 }}","production-1":"${{ needs.public-scenarios.outputs.production_1 }}","production-2":"${{ needs.public-scenarios.outputs.production_2 }}","production-3":"${{ needs.public-scenarios.outputs.production_3 }}","other-short":"${{ needs.public-scenarios.outputs.other_short }}","content-three-formats":"${{ needs.public-scenarios.outputs.content_three_formats }}"}
           PUBLIC_ARTIFACTS: >-
-            {"mechanisms":"${{ needs.public-mechanisms.outputs.mechanisms_artifact }}","production-1":"${{ needs.public-scenarios.outputs.production_1_artifact }}","production-2":"${{ needs.public-scenarios.outputs.production_2_artifact }}","production-3":"${{ needs.public-scenarios.outputs.production_3_artifact }}","other-short":"${{ needs.public-scenarios.outputs.other_short_artifact }}","content-three-formats":"${{ needs.public-scenarios.outputs.content_three_formats_artifact }}"}
+            {"mechanisms-1":"${{ needs.public-mechanisms.outputs.mechanisms_1_artifact }}","mechanisms-2":"${{ needs.public-mechanisms.outputs.mechanisms_2_artifact }}","mechanisms-3":"${{ needs.public-mechanisms.outputs.mechanisms_3_artifact }}","mechanisms-4":"${{ needs.public-mechanisms.outputs.mechanisms_4_artifact }}","production-1":"${{ needs.public-scenarios.outputs.production_1_artifact }}","production-2":"${{ needs.public-scenarios.outputs.production_2_artifact }}","production-3":"${{ needs.public-scenarios.outputs.production_3_artifact }}","other-short":"${{ needs.public-scenarios.outputs.other_short_artifact }}","content-three-formats":"${{ needs.public-scenarios.outputs.content_three_formats_artifact }}"}
         run: >-
           python -B SimulationTest/ci/public_parallel.py summary
           --transfer SimulationTest/build/public-transfer --receipts SimulationTest/build/public-receipts

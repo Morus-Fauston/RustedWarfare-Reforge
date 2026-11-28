@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import java.util.Collections
 import java.security.MessageDigest
 
@@ -24,7 +26,8 @@ data class SandboxCommandReceipt(val sequence: Long, val generation: Long, val w
 
 /** Local host capability, fixed before the match; ordinary player Actions never grant deployment. */
 class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false, val generation: Long = 1L,
-    cameraCues: List<OfflineCameraCue> = emptyList()) : AutoCloseable {
+    cameraCues: List<OfflineCameraCue> = emptyList(),
+    movePlanningBudgetPerStep: Int? = null) : AutoCloseable {
     private data class SeenRequest(val identity: Any, val receipt: SandboxCommandReceipt)
 
     init {
@@ -45,7 +48,11 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
         }
     }
 
-    val context: SimulationContext = when (val initialized = SimulationContext.initialize(input)) {
+    val context: SimulationContext = when (val initialized = if (movePlanningBudgetPerStep != null) {
+        SimulationContext(movePlanningBudgetPerStep = movePlanningBudgetPerStep).initialize(input)
+    } else {
+        SimulationContext.initialize(input)
+    }) {
         is InitResult.Accepted -> initialized.context
         is InitResult.Rejected -> error("${initialized.error.code}: ${initialized.error.message}")
     }
@@ -169,9 +176,9 @@ class OfflineSandboxHost(input: Scenario, val deploymentEnabled: Boolean = false
     fun projectileEvidence(ids: Set<Long>): List<SandboxProjectileEvidence> =
         if (closed || !deploymentEnabled || ids.isEmpty()) emptyList() else context.sandboxProjectileEvidence(ids)
 
-    fun advance(step: Step): Observation {
+    fun advance(step: Step, materializeObservation: Boolean = true): Observation {
         check(!closed && context.isCurrentSandboxWorld(world)) { "Local sandbox host is closed" }
-        val (observation, applied) = context.advanceSandbox(step, pending.values.toList())
+        val (observation, applied) = context.advanceSandbox(step, pending.values.toList(), materializeObservation)
         // Publish deduplication results only after the entire real simulation step committed.
         for (result in applied) {
             requests[result.sequence] = requests.getValue(result.sequence).copy(receipt = result)

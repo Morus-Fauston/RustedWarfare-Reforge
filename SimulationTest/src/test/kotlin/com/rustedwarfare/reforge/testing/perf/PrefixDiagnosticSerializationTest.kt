@@ -4,7 +4,7 @@ import com.rustedwarfare.reforge.core.content.MovementProfile
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.testing.p002.P002KnowledgeSuite
 import java.nio.file.Files

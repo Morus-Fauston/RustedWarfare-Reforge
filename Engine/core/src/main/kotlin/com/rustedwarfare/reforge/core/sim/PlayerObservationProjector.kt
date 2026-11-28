@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.knowledge.KnowledgeSnapshot
 import com.rustedwarfare.reforge.core.knowledge.VisionSnapshot
 import java.util.Collections
@@ -73,7 +75,7 @@ internal class PlayerObservationProjector(world: WorldHandle, scenario: Scenario
                 if (task.targetUnitId != null && task.targetUnitId !in visibleIds) task.copy(targetUnitId = null) else task
             })
             if (it.ownerPlayerId != playerId) {
-                it.copy(moveTarget = null, moveArrival = null, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
+                it.copy(moveTarget = null, moveArrival = null, cohortEscortYielding = false, pathPoints = emptyList(), attackTargetId = null, cooldown = null, pointDefense = null,
                     tasks = emptyList(), constructionTargetId = null, transportExit = null,
                     transport = null, unitActions = null, attachmentOverview = null, factoryRally = null,
                     attachment = it.attachment?.takeIf { relation -> relation.parentUnitId in visibleIds },

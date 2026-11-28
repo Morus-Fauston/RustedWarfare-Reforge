@@ -1,12 +1,14 @@
 package com.rustedwarfare.reforge.testing.perf
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementProfile
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
-import com.rustedwarfare.reforge.core.path.PathSearchOutcome
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchOutcome
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import java.nio.file.Files
@@ -349,7 +351,7 @@ class PathPerfBatchTest {
     @Test
     fun `validator rejects wrong direct fallback counters IDs and entire colliding segments`() {
         val batch = PathPerfBatch.measureBatch("MEMORY_GAP", 10, 0, testUnit())
-        fun sampleChange(index: Int, value: com.rustedwarfare.reforge.core.path.PathSearchSample) =
+        fun sampleChange(index: Int, value: com.rustedwarfare.reforge.core.navigation.PathSearchSample) =
             batch.copy(samples = batch.samples.mapIndexed { i, original -> if (i == index) value else original })
         fun pathChange(index: Int, path: List<Position>) = batch.copy(
             units = batch.units.mapIndexed { i, original -> if (i == index) original.copy(pathPoints = path) else original },

@@ -58,7 +58,7 @@ object PlatformSessionRunner {
                 val row = obj("sequence" to n(sequence++), "kind" to s(kind), "generation" to n(1))
                 writer.write(JsonObject(row + values.mapValues { encode(it.value) }).toString())
                 writer.newLine()
-                writer.flush()
+                if (kind != "observation") writer.flush()
             }
             val loaded = loadScenario(inputs, document, evidence, output, loadTimeoutSeconds, plan)
             SandboxSession(loaded.scenario, evidence, SandboxOptions(deploymentEnabled = deployment)).use { session ->

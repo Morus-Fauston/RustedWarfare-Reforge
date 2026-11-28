@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.FootprintAnchor
 import com.rustedwarfare.reforge.core.content.BuildingFootprint
 import java.util.Collections

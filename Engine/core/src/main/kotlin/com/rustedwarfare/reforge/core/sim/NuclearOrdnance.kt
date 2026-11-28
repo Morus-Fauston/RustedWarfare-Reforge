@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 
 internal enum class OrdnanceAction(val key: String, val cost: Long, val rate: Float, val queueLimit: Int) {

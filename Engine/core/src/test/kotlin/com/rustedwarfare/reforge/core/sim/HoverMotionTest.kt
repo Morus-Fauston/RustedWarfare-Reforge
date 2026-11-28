@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 import kotlin.test.*
 
@@ -11,15 +13,27 @@ class HoverMotionTest {
             source.movement.copy(type = MovementType.LAND),
             source.movement.copy(hover = HoverProfile(heightDrift = 5.0)),
             source.movement.copy(hover = HoverProfile(phaseSpeed = Double.NaN)),
-            source.movement.copy(slidingMode = false),
             source.movement.copy(flight = FlightProfile(20.0, 0.0, .1, 0.0)),
-            source.movement.copy(reverseSpeedPercentage = 1.0))
+            source.movement.copy(reverseSpeedPercentage = 1.5),
+            source.movement.copy(reverseSpeedPercentage = -0.1))
         for (movement in profiles) {
             val unit = UnitDefinition(source.id, source.className, source.radius, source.displayRadius,
                 source.totalFrames, source.imagePath, source.imageScale, movement, emptySet())
             val rejected = assertIs<InitResult.Rejected>(SimulationContext.initialize(base.copy(
                 unitDefinitions = mapOf(source.id to unit), units = listOf(UnitSpawn("h", "p1", source.id, Position(100.0, 100.0), 0.0)))))
             assertEquals("unsupported-hover", rejected.error.code)
+        }
+        // ENG-P017-006: non-sliding HOVER and arbitrary [0.0, 1.0] reverseSpeedPercentage are now accepted.
+        for (validMovement in listOf(
+            source.movement.copy(slidingMode = false, ignoringBody = false),
+            source.movement.copy(reverseSpeedPercentage = 0.6),
+            source.movement.copy(reverseSpeedPercentage = 1.0),
+        )) {
+            val unit = UnitDefinition(source.id, source.className, source.radius, source.displayRadius,
+                source.totalFrames, source.imagePath, source.imageScale, validMovement, emptySet())
+            val accepted = assertIs<InitResult.Accepted>(SimulationContext.initialize(base.copy(
+                unitDefinitions = mapOf(source.id to unit), units = listOf(UnitSpawn("h", "p1", source.id, Position(100.0, 100.0), 0.0)))))
+            accepted.context.close()
         }
     }
 

@@ -36,12 +36,14 @@ data class HudDebugLayerState(
     val showRoutes: Boolean = true,
     val showDetails: Boolean = false,
     val showGrid: Boolean = false,
+    val showHotspots: Boolean = false,
 ) {
     fun toggleEnabled(): HudDebugLayerState = copy(enabled = !enabled)
     fun toggleBoxes(): HudDebugLayerState = if (enabled) copy(showBoxes = !showBoxes) else this
     fun toggleRoutes(): HudDebugLayerState = if (enabled) copy(showRoutes = !showRoutes) else this
     fun toggleDetails(): HudDebugLayerState = if (enabled) copy(showDetails = !showDetails) else this
     fun toggleGrid(): HudDebugLayerState = if (enabled) copy(showGrid = !showGrid) else this
+    fun toggleHotspots(): HudDebugLayerState = if (enabled) copy(showHotspots = !showHotspots) else this
     fun reset(): HudDebugLayerState = HudDebugLayerState()
 }
 
@@ -53,6 +55,8 @@ data class HudDebugOverlaySnapshot(
     val showRoutes: Boolean,
     val showDetails: Boolean,
     val showGrid: Boolean,
+    val showHotspots: Boolean = false,
+    val hotspotLines: List<String> = emptyList(),
 )
 
 data class HudDebugFrameMetrics(
@@ -65,6 +69,7 @@ data class HudDebugFrameMetrics(
     val mapId: String,
     val cursorWorld: Position?,
     val versionLabel: String = resolveVersionLabel(),
+    val hotspotLines: List<String> = emptyList(),
 ) {
     companion object {
         /** Reads JAR Implementation-Version when packaged, falling back to "dev" so debug readout never drifts. */
@@ -139,6 +144,8 @@ object HudDebugProjection {
             showRoutes = state.showRoutes,
             showDetails = state.showDetails,
             showGrid = state.showGrid,
+            showHotspots = state.showHotspots,
+            hotspotLines = if (state.showHotspots) metrics.hotspotLines else emptyList(),
         )
     }
 
@@ -147,7 +154,8 @@ object HudDebugProjection {
         val r = if (state.showRoutes) "ON" else "off"
         val d = if (state.showDetails) "ON" else "off"
         val g = if (state.showGrid) "ON" else "off"
-        return "layers [B] boxes $b · [R] routes $r · [D] details $d · [G] grid $g"
+        val suffix = if (state.showHotspots) " · [H] hotspots ON" else ""
+        return "layers [B] boxes $b · [R] routes $r · [D] details $d · [G] grid $g$suffix"
     }
 
     private fun buildCursorLine(cursor: Position?, map: com.rustedwarfare.reforge.core.content.MapDefinition): String {
@@ -318,8 +326,8 @@ internal class HudDebugOverlay(
         isVisible = true
         leftTopY = systemBarBottomY - 6f
 
-        val totalLeftRows = snap.leftLines.size + if (snap.stacked) snap.rightLines.size else 0
-        leftColumnBottomY = leftTopY - totalLeftRows * (ROW_H + ROW_GAP)
+        val totalLeftRows = snap.leftLines.size + snap.hotspotLines.size + if (snap.stacked) snap.rightLines.size else 0
+        leftColumnBottomY = leftTopY - totalLeftRows * (ROW_H + ROW_GAP) - if (snap.hotspotLines.isNotEmpty()) 4f else 0f
 
         // Position touch sub-layer toggle hitboxes on the "layers" row (index 7)
         if (touchControls) {
@@ -382,6 +390,14 @@ internal class HudDebugOverlay(
                 drawMonoPillLeft(batch, white, font, line, UiTokens.SCREEN_MARGIN, rowY, alpha)
             }
             cy -= (ROW_H + ROW_GAP)
+        }
+        if (snap.hotspotLines.isNotEmpty()) {
+            cy -= 4f
+            for (line in snap.hotspotLines) {
+                val rowY = cy - ROW_H
+                drawMonoPillLeft(batch, white, font, line, UiTokens.SCREEN_MARGIN, rowY, alpha)
+                cy -= (ROW_H + ROW_GAP)
+            }
         }
 
         // 2. Right column (right-aligned to left of sidebar, top=8) when not stacked

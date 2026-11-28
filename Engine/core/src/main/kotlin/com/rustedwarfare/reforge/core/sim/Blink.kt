@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlinkProfile
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import kotlin.math.ceil

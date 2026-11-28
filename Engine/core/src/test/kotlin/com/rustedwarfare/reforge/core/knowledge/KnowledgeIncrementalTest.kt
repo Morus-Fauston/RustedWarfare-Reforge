@@ -12,16 +12,18 @@ class KnowledgeIncrementalTest {
         PlayerTerrainKnowledge.create(world, "p1", 5, 5,
             KnowledgeRules(retention, PathInformationSource.PLAYER_KNOWLEDGE, false))
 
-    @Test fun kc_stationary_projection_refreshes_terrain_and_advances_revision_even_without_changes() {
+    @Test fun kc_stationary_projection_keeps_revision_constant_until_real_knowledge_changes() {
         val world = world(); val store = store(world)
         val firstInput = listOf(VisibleTerrainCell(1, 1, false, 7))
         store.accept(world, firstInput)
         val first = store.snapshot(world)
+        assertEquals(1L, first.revision)
         store.accept(world, firstInput)
-        assertEquals(2L, store.snapshot(world).revision)
+        assertSame(first, store.snapshot(world))
+        assertEquals(1L, store.snapshot(world).revision)
         store.accept(world, listOf(VisibleTerrainCell(1, 1, true, 9)))
         val changed = store.snapshot(world)
-        assertEquals(3L, changed.revision)
+        assertEquals(2L, changed.revision)
         assertEquals(CellKnowledge(true, true, 9), changed.cell(1, 1))
         assertEquals(CellKnowledge(true, false, 7), first.cell(1, 1))
         store.close()
@@ -89,13 +91,13 @@ class KnowledgeIncrementalTest {
         assertFalse(view.contains(5, 0))
     }
 
-    @Test fun reuse_identical_cells_while_public_revision_keeps_advancing() {
+    @Test fun reuse_identical_snapshot_and_cells_when_no_knowledge_changes() {
         val world = world(); val store = store(world)
         val input = listOf(VisibleTerrainCell(0, 0, false, 1))
         store.accept(world, input); val before = store.snapshot(world)
         store.accept(world, input); val after = store.snapshot(world)
-        assertEquals(before.revision + 1, after.revision)
-        assertNotSame(before, after)
+        assertEquals(before.revision, after.revision)
+        assertSame(before, after)
         assertSame(before.cells, after.cells)
         assertFailsWith<UnsupportedOperationException> { (after.cells as MutableList).clear() }
         store.close()
@@ -122,7 +124,7 @@ class KnowledgeIncrementalTest {
         assertSame(before, original.snapshot(world))
         val repeated = first.store.projected(world, listOf(VisibleTerrainCell(1, 1, false, 7)))
         assertTrue(repeated.changes.isEmpty())
-        assertEquals(2L, repeated.store.snapshot(world).revision)
+        assertEquals(1L, repeated.store.snapshot(world).revision)
         val terrain = repeated.store.projected(world, listOf(VisibleTerrainCell(1, 1, true, 9)))
         assertEquals(listOf(KnowledgeCellChange(6, CellKnowledge(true, false, 7), CellKnowledge(true, true, 9))), terrain.changes)
         val hidden = terrain.store.projected(world, emptyList())

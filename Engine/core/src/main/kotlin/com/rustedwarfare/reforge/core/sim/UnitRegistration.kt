@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.FactoryExitProfile
 import com.rustedwarfare.reforge.core.content.AttachmentSlotDefinition
 import com.rustedwarfare.reforge.core.content.MapDefinition
@@ -12,10 +14,10 @@ internal data class ConstructionRegistration(val unit: MutableUnit, val ledger: 
 
 /** Creates and inserts units in the current candidate; world publication remains at the caller's commit. */
 internal object UnitRegistration {
-    fun initial(state: StepState, input: Scenario, spawn: UnitSpawn, coordinates: CoordinatePolicy): MutableUnit {
+    fun initial(state: StepState, input: Scenario, spawn: UnitSpawn): MutableUnit {
         val definition = input.unitDefinitions.getValue(spawn.typeId)
         val chassis = definition.attachmentLayout != null
-        return register(state, input, spawn.copy(heading = if (chassis) 90.0 else coordinates.normalize(spawn.heading),
+        return register(state, input, spawn.copy(heading = if (chassis) 90.0 else ScreenPlane.normalize(spawn.heading),
             height = if (chassis) UnitAttachments.OPENING_HEIGHT else definition.movement.flight?.startingHeightOffset ?: spawn.height),
             input.combatContract?.unitObjectIds?.getValue(spawn.unitId))
     }
@@ -32,7 +34,7 @@ internal object UnitRegistration {
     }
 
     fun produced(state: StepState, input: Scenario, factory: MutableUnit, completed: ProductionCompletion,
-                 map: MapDefinition = input.map): MutableUnit {
+                 map: MapDefinition = input.map, world: WorldHandle? = null): MutableUnit {
         check(completed.ownerPlayerId == factory.ownerPlayerId)
         val definition = input.unitDefinitions.getValue(completed.typeId)
         val publicId = "produced:${factory.ownerPlayerId}:${completed.unitNonce}"
@@ -52,12 +54,62 @@ internal object UnitRegistration {
             if (customProducer) unit.nativeTransportPlacement = true
             val rally = factory.factoryRally.takeIf { factory.definition.production?.rallyEnabled == true }
             if (reachable) {
-                unit.moveTarget = birth.target
-                unit.originMoveId = "production-exit:$publicId"
-                if (rally != null || definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP || definition.energy != null)
-                    unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, checkNotNull(unit.originMoveId), birth.target,
-                        factoryExit = rally != null))
-                unit.adoptRoute(listOf(birth.target), birth.target, -1L)
+                val exitId = "production-exit:$publicId"
+                val hasQueuedExitTask = rally != null ||
+                    definition.transport == com.rustedwarfare.reforge.core.content.TransportProfile.NATIVE_DROPSHIP ||
+                    definition.energy != null
+                val useNoRallyFanCluster = rally == null && !hasQueuedExitTask && !customProducer &&
+                    world != null &&
+                    definition.movementCollision is MovementCollisionShape.Circle &&
+                    definition.movement.type != com.rustedwarfare.reforge.core.content.MovementType.AIR &&
+                    definition.movement.type != com.rustedwarfare.reforge.core.content.MovementType.NONE
+                if (useNoRallyFanCluster) {
+                    val fanPlan = selectFactoryFanPlan(state, factory, birth, definition, map)
+                    val fanTarget = fanPlan.target
+                    val stagingGroup = factoryStagingGroup(state, input, factory, birth, definition, world)
+                    val fanContract = MotionContract(
+                        goal = MotionGoalGeometry.SharedCluster(
+                            anchor = fanTarget,
+                            completesOnCapture = true,
+                        ),
+                        allowPassageYield = false,
+                        traversalMode = TraversalMode.INDEPENDENT,
+                        enableLocalAvoidance = true,
+                        allowsManeuverFollow = false,
+                        preparesRouteSuccessor = false,
+                        tracksRouteStall = false,
+                        tracksHardContactLimit = false,
+                        gatheringTarget = null,
+                    )
+                    unit.updateNavigation {
+                        it.bindCommandTarget(
+                            target = fanTarget,
+                            originMoveId = exitId,
+                            originAtStep = null,
+                            contract = fanContract,
+                            landingMember = LandingMember(stagingGroup),
+                        )
+                    }
+                    unit.adoptRoute(fanPlan.waypoints, fanTarget, -1L)
+                } else {
+                    val exitContract = MotionContract.factoryExit(
+                        target = birth.target,
+                        hasQueuedExitTask = hasQueuedExitTask,
+                        hasRally = rally != null,
+                    )
+                    unit.updateNavigation {
+                        it.bindCommandTarget(
+                            target = birth.target,
+                            originMoveId = exitId,
+                            originAtStep = null,
+                            contract = exitContract,
+                        )
+                    }
+                    if (hasQueuedExitTask)
+                        unit.taskQueue = UnitTaskQueue().append(UnitTask(UnitTaskKind.MOVE, exitId, birth.target,
+                            factoryExit = rally != null, motionContract = exitContract))
+                    unit.adoptRoute(listOf(birth.target), birth.target, -1L)
+                }
             }
             if (rally != null) unit.taskQueue = unit.taskQueue.append(UnitTask(UnitTaskKind.MOVE, "production-rally:$publicId", rally, startsAfterFactoryExit = true))
         }
@@ -80,6 +132,162 @@ internal object UnitRegistration {
         }
         state.pendingEvents += Event("unit-produced", publicId)
         return born
+    }
+
+    private data class FactoryFanPlan(val target: Position, val waypoints: List<Position>)
+
+    /**
+     * Selects a deterministic passable fan-out staging point on expanding forward semicircle arcs
+     * in front of [factory] for continuous no-rally production (ENG-P017-008).
+     *
+     * Always tries the exact [birth.target] first so isolated/single-unit exits remain bit-identical;
+     * when the doorway anchor is already occupied or claimed by prior units, picks the nearest open
+     * passable arc slot alternating left/right with an optional doorway-clearing intermediate waypoint.
+     */
+    private fun selectFactoryFanPlan(
+        state: StepState,
+        factory: MutableUnit,
+        birth: FactoryBirth,
+        product: com.rustedwarfare.reforge.core.content.UnitDefinition,
+        map: MapDefinition,
+    ): FactoryFanPlan {
+        val defaultPlan = FactoryFanPlan(birth.target, listOf(birth.target))
+        if (product.movementCollision !is MovementCollisionShape.Circle) return defaultPlan
+        if (factory.definition.production?.exitProfile == FactoryExitProfile.NATIVE_SEA) return defaultPlan
+        val dx = birth.target.x - birth.position.x
+        val dy = birth.target.y - birth.position.y
+        val dist = kotlin.math.hypot(dx, dy)
+        if (dist <= 1e-4) return defaultPlan
+        val dirX = dx / dist
+        val dirY = dy / dist
+        val rightX = -dirY
+        val rightY = dirX
+
+        val prodR = maxOf(4.0, product.movementCollision.radius)
+        // Permeable fan spacing (>= 4.3 * R leaves a > 2R navigable lane between staged units so
+        // trailing rings glide through inner rings without building a doorway dam).
+        val slotSpacing = maxOf(prodR * 4.3, 24.0)
+        val occupiedR2 = (slotSpacing * 0.72) * (slotSpacing * 0.72)
+        val collisionMap = state.buildingTerrain?.collisionMap ?: map
+        val moveType = product.movement.type
+        val terrainGrid = HullTerrainGrid.authoritative(collisionMap, moveType)
+        val spatialLayer = if (UnitLocomotion.isUnderwater(product, 0.0)) SpatialLayer.SUBMERGED else SpatialLayer.SURFACE
+        val claimedTargets = state.units.values.mapNotNull { u ->
+            if (!u.alive || u.carriedBy != null || u.definition.building != null) null
+            else u.moveTarget?.takeIf { ScreenPlane.distanceSquared(it, birth.target) <= 320.0 * 320.0 }
+        }
+
+        fun isUnitClear(cand: Position): Boolean {
+            val q = slotSpacing
+            val nearby = state.spatialIndex.queryBounds(
+                spatialLayer,
+                cand.x - q, cand.x + q,
+                cand.y - q, cand.y + q,
+            )
+            for (i in 0 until nearby.size) {
+                val other = nearby[i]
+                if (!other.alive || other.carriedBy != null || other.definition.building != null) continue
+                val minSep = prodR + UnitContact.boundingRadius(other.definition.movementCollision) + 2.5
+                if (ScreenPlane.distanceSquared(other.position, cand) < minSep * minSep) return false
+            }
+            for (i in claimedTargets.indices) {
+                if (ScreenPlane.distanceSquared(claimedTargets[i], cand) < occupiedR2) return false
+            }
+            return true
+        }
+
+        fun isSlotOpen(cand: Position): Boolean {
+            if (!MapBounds.containsHull(map, cand, birth.heading, product.movementCollision)) return false
+            if (!UnitContact.poseFits(product.movementCollision, cand, birth.heading, terrainGrid)) return false
+            return isUnitClear(cand)
+        }
+
+        // First unit / empty staging anchor always uses exact birth.target (100% preserves single-unit & building-crossing exits).
+        if (isUnitClear(birth.target)) return defaultPlan
+
+        val doorClear = minOf(dist * 0.55, factory.definition.radius + prodR + 6.0)
+        val doorExit = Position(birth.position.x + dirX * doorClear, birth.position.y + dirY * doorClear)
+        val baseArcR = maxOf(dist - doorClear, prodR * 3.5)
+        val maxAngleRad = Math.toRadians(60.0)
+        for (ring in 0..8) {
+            val r = baseArcR + ring * slotSpacing
+            val dTheta = maxOf(0.16, slotSpacing / maxOf(r, slotSpacing))
+            val maxSteps = kotlin.math.floor(maxAngleRad / dTheta).toInt().coerceAtLeast(1)
+            val stepOrder = (0..maxSteps).toList()
+            for (step in stepOrder) {
+                val signs = if (step == 0) intArrayOf(0) else intArrayOf(1, -1)
+                for (sign in signs) {
+                    val theta = step * dTheta * sign
+                    val c = kotlin.math.cos(theta)
+                    val s = kotlin.math.sin(theta)
+                    val cand = Position(
+                        doorExit.x + (dirX * c + rightX * s) * r,
+                        doorExit.y + (dirY * c + rightY * s) * r,
+                    )
+                    if (!isSlotOpen(cand)) continue
+                    return FactoryFanPlan(cand, listOf(cand))
+                }
+            }
+        }
+        return defaultPlan
+    }
+
+    private fun factoryStagingGroup(
+        state: StepState,
+        input: Scenario,
+        factory: MutableUnit,
+        birth: FactoryBirth,
+        product: com.rustedwarfare.reforge.core.content.UnitDefinition,
+        world: WorldHandle,
+    ): GroupMoveRequest {
+        val existing = state.factoryStagingGroups[factory.unitId]
+        // Reuse stable staging cluster identity per (factory.unitId, owner) so alternating exits
+        // (e.g. CUSTOM_MECH productionSide flips) and mixed product sizes share ONE cluster identity.
+        if (existing != null && existing.actor == factory.ownerPlayerId) {
+            return existing
+        }
+        val dx = birth.target.x - birth.position.x
+        val dy = birth.target.y - birth.position.y
+        val dist = kotlin.math.hypot(dx, dy)
+        val isCircle = product.movementCollision is MovementCollisionShape.Circle
+        val corridor = if (dist > 1e-4 && isCircle) {
+            val dirX = dx / dist
+            val dirY = dy / dist
+            val prodR = maxOf(4.0, product.movementCollision.boundingRadius)
+            val clearDist = minOf(maxOf(0.0, dist - maxOf(14.0, prodR * 2.2)), factory.definition.radius + prodR * 1.4)
+            val halfWidth = maxOf(prodR * 1.6, 10.0)
+            val minSettleAlong = minOf(clearDist, maxOf(0.0, factory.definition.radius + prodR))
+            NoParkingCorridor(
+                originX = birth.position.x,
+                originY = birth.position.y,
+                dirX = dirX,
+                dirY = dirY,
+                clearDist = clearDist,
+                halfWidth = halfWidth,
+                minSettleAlong = minSettleAlong,
+            )
+        } else null
+        val maxRadii = mutableMapOf<com.rustedwarfare.reforge.core.content.MovementType, Double>()
+        maxRadii[product.movement.type] = product.movementCollision.boundingRadius
+        factory.definition.production?.unitTypeIds?.forEach { typeId ->
+            val def = input.unitDefinitions[typeId] ?: return@forEach
+            val mt = def.movement.type
+            val r = def.movementCollision.boundingRadius
+            val prev = maxRadii[mt]
+            if (prev == null || r > prev) maxRadii[mt] = r
+        }
+        val created = GroupMoveRequest(
+            world = world,
+            completedStep = state.stepIndex,
+            actor = factory.ownerPlayerId,
+            click = birth.target,
+            members = emptySet(),
+            maxRadiusByMovement = maxRadii,
+            dynamicCluster = true,
+            noParkingCorridor = corridor,
+        )
+        state.factoryStagingGroups[factory.unitId] = created
+        return created
     }
 
     fun sandboxId(ownerPlayerId: String, generation: Long, sequence: Long): String =
@@ -112,12 +320,12 @@ internal object UnitRegistration {
     }
 
     fun sandbox(state: StepState, input: Scenario, command: SandboxCommand.Spawn,
-                id: String, coordinates: CoordinatePolicy): MutableUnit {
+                id: String): MutableUnit {
         val definition = input.unitDefinitions.getValue(command.typeId)
         check(id !in state.units) { "Sandbox identity must be new" }
         val identity = nextIdentity(state)
         val unit = create(input, UnitSpawn(id, command.ownerPlayerId, command.typeId, command.position,
-            coordinates.normalize(command.heading), definition.movement.flight?.startingHeightOffset
+            ScreenPlane.normalize(command.heading), definition.movement.flight?.startingHeightOffset
                 ?: definition.fixedUnderwaterTarget?.height ?: 0.0), identity.objectId, identity.updateKey)
         if (command.state == SandboxInitialState.DAMAGED) unit.health = checkNotNull(definition.maximumHealth) / 2.0
         registerUnit(state, input, unit, identity)
@@ -183,6 +391,10 @@ internal object UnitRegistration {
         val terrain = if (unit.definition.building == null) state.buildingTerrain else
             BuildingTerrain.fromLive(input.map, state.units.values + unit, state.buildingTerrain)
         Transport.refreshTerrain(unit, input.map)
+        unit.overLiquid = input.map.isLiquid(
+            MapBounds.cell(unit.position.x, input.map.tileWidth, input.map.widthTiles),
+            MapBounds.cell(unit.position.y, input.map.tileHeight, input.map.heightTiles),
+        )
         state.units[unit.unitId] = unit
         state.spatialIndex.insert(unit)
         state.productionLedger = ledger

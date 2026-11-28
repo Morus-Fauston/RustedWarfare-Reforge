@@ -7,7 +7,7 @@
   ],
   "mechanismTests": [
     "com.rustedwarfare.reforge.core.content.UnitSightRangeTest",
-    "com.rustedwarfare.reforge.core.path.ClearanceBoundaryTest"
+    "com.rustedwarfare.reforge.core.navigation.ClearanceBoundaryTest"
   ],
   "short": {
     "scenario": "scenarios/select-move-stop.json",

@@ -1,6 +1,6 @@
 package com.rustedwarfare.reforge.testing.cross
 
-import com.rustedwarfare.reforge.core.sim.MotionStepSample
+import com.rustedwarfare.reforge.core.navigation.MotionStepSample
 import com.rustedwarfare.reforge.core.sim.Position
 import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import kotlin.math.abs

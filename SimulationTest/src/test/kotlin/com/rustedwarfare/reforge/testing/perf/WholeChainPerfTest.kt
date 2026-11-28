@@ -2,7 +2,7 @@ package com.rustedwarfare.reforge.testing.perf
 
 import com.rustedwarfare.reforge.core.knowledge.TerrainRetention
 import com.rustedwarfare.reforge.core.sim.*
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import com.rustedwarfare.reforge.testing.MotionCenterGeometry
 import kotlin.test.*
 

@@ -44,6 +44,25 @@ tasks.named<JavaExec>("run") {
 
 tasks.test {
     useJUnitPlatform()
+    // PC tests stay serial to avoid shared desktop/audio/resource-pack fixture contention.
+    maxParallelForks = 1
+    val repoRoot = rootProject.projectDir.parentFile
+    val privateP001 = repoRoot.resolve("TestLab/local/P001-移动沙盒输入")
+    val fallbackP001 = repoRoot.resolve("SimulationTest/public/inputs/content-movement-knowledge/P001-移动沙盒输入")
+    systemProperty(
+        "p001.inputs.dir",
+        System.getProperty("p001.inputs.dir")
+            ?: (if (privateP001.isDirectory) privateP001 else fallbackP001).absolutePath,
+    )
+    systemProperty(
+        "public.fixtures.dir",
+        System.getProperty("public.fixtures.dir")
+            ?: repoRoot.resolve("SimulationTest/public/inputs").absolutePath,
+    )
+    systemProperty(
+        "repo.root",
+        System.getProperty("repo.root") ?: repoRoot.absolutePath,
+    )
 }
 
 // Self-owned, paired scene inputs travel with the installed PC application.

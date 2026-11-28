@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import kotlin.test.*
 
 /** Module representation checks, not a player-visible thirtieth order or a gameplay trace. */

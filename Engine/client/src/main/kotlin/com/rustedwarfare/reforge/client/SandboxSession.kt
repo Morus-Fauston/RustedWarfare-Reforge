@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.client
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.sim.*
 import com.rustedwarfare.reforge.core.content.MovementCollisionShape
 import com.rustedwarfare.reforge.core.content.MovementType
@@ -49,6 +51,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     var sandboxCommandFeedback: String = SandboxCommands.HELP
         private set
     val canDeploy: Boolean get() = isOpen && options.deploymentEnabled
+
+    internal fun prewarmNavigationTerrains() {
+        context.prewarmNavigationTerrains()
+    }
 
     internal fun updateCamera(camera: OfflineCameraController) {
         val view = observation
@@ -135,6 +141,20 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
 
     private var terrainKnowledge: List<com.rustedwarfare.reforge.core.knowledge.CellKnowledge>? = null
     private var latestFrame: SandboxFrame? = null
+    internal var publishedFrameCount: Long = 0L
+        private set
+    internal val materializedObservationCountForTest: Long
+        get() = context.materializedObservationCount
+    internal val simHotspotCollector: com.rustedwarfare.reforge.core.sim.SimHotspotCollector =
+        com.rustedwarfare.reforge.core.sim.SimHotspotCollector().also { context.hotspotCollector = it }
+    internal var lastPublishFrameNanos: Long = 0L
+        private set
+    internal val liveUnitCountForProfiler: Int
+        get() = if (isOpen) context.liveUnitCountForProfiler else 0
+    internal val activeFlowFieldCountForProfiler: Int
+        get() = if (isOpen) context.activeFlowFieldCountForProfiler else 0
+    internal val cachedFlowFieldCountForProfiler: Int
+        get() = if (isOpen) context.cachedFlowFieldCountForProfiler else 0
     val frame: SandboxFrame get() = checkNotNull(latestFrame) { "Match is closed" }
     val observation: PlayerObservation get() = frame.observation
 
@@ -188,15 +208,27 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
     fun groupCount(index: Int): Int {
         if (!isOpen) return 0
-        val visible = observation.units.filter { it.alive }.map { it.unitId }.toSet()
-        return selection.groupMembers(index).count { it in visible }
+        val members = selection.groupMembers(index)
+        if (members.isEmpty()) return 0
+        var alive = 0
+        val units = observation.units
+        for (i in 0 until units.size) {
+            val u = units[i]
+            if (u.alive && u.unitId in members) alive++
+        }
+        return alive
     }
     fun recallGroup(index: Int, additive: Boolean = false): Position? {
         if (!isOpen) return null
         val alive = observation.units.filter { it.alive }.map { it.unitId }.toSet()
-        val eligible = selection.groupMembers(index).filter { it in alive }.filter { id ->
-            apply(SelectAction("click-${++actionNumber}", "p1", id, context.world)) is ActionResult.Accepted
+        val candidates = selection.groupMembers(index).filter { it in alive }
+        val batchRecall = candidates.size > 1 && !evidence.capturesObservations
+        val eligible = candidates.filter { id ->
+            apply(SelectAction("click-${++actionNumber}", "p1", id, context.world), deferPublish = batchRecall) is ActionResult.Accepted
         }.toSet()
+        if (batchRecall && candidates.isNotEmpty()) {
+            publishFrame()
+        }
         val centerId = selection.recallGroup(index, eligible, additive)
         val center = observation.units.firstOrNull { it.unitId == centerId }?.position
         rejectedFeedback = false
@@ -560,11 +592,11 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     fun isEnergyLocked(unit: UnitObservation): Boolean =
         unit.energy?.recharging == true || unit.pointDefense?.exhausted == true
 
-    fun move(position: Position): ActionResult? {
+    fun move(position: Position, cohortEscort: Boolean = false): ActionResult? {
         val selection = selectedIds
-        val group = if (selection.size > 1) context.requestGroupMove("p1", selection, position) else null
+        val group = if (selection.size > 1) context.requestGroupMove("p1", selection, position, cohortEscort = cohortEscort) else null
         return dispatch(selection, ::canMove, group) { id ->
-            MoveAction("click-${++actionNumber}", "p1", id, position, context.world)
+            MoveAction("click-${++actionNumber}", "p1", id, position, context.world, cohortEscort = cohortEscort)
         }
     }
     val canPatrol: Boolean get() = isOpen && observation.units.any { it.unitId in selectedIds && canMove(it) }
@@ -686,7 +718,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         arrivalCommandStep = nextStep
         immobileMoveMembers.clear()
         lastCommandBatch = null
-        val batchMulti = members.size > 1 && evidence === ClientEvidence.NONE
+        val batchMulti = members.size > 1 && !evidence.capturesObservations
         for (id in members) {
             if (members.size > 1 && observation.units.none { it.unitId == id && applicable(it) }) { skipped++; continue }
             pendingUnloadTargets.remove(id)
@@ -722,7 +754,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     /** Read-only hit identity from this player's published observation. */
     fun commandTargetAt(position: Position): String? = unitAt(position)
 
-    fun command(position: Position, append: Boolean = false): ActionResult? {
+    fun command(position: Position, append: Boolean = false, cohortEscort: Boolean = false): ActionResult? {
         val targetId = unitAt(position)
         val target = observation.units.firstOrNull { it.unitId == targetId }
         if (target != null && target.ownerPlayerId == "p1") {
@@ -741,13 +773,22 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             return dispatch { worker -> ResumeConstructionAction("click-${++actionNumber}", "p1", worker, target.unitId, context.world, append = append) }
         return if (target != null && target.ownerPlayerId != "p1")
             dispatch { actor -> AttackAction("click-${++actionNumber}", "p1", actor, target.unitId, context.world) }
-        else move(position)
+        else move(position, cohortEscort = cohortEscort)
     }
     /** Host-authorized sound parameters only; player truth is never read by a playback backend. */
     fun consumeSounds(listener: SoundListener): AuthorizedSoundBatch = context.consumeSounds(context.world, "p1", listener)
 
-    fun tick() {
-        commandHost.advance(Step(nextStep, 1.0, "sim-tick"))
+    internal fun requiresPerStepObservation(hasScriptedCamera: Boolean): Boolean =
+        evidence.capturesObservations || hasScriptedCamera || pendingUnloadTargets.isNotEmpty() ||
+            (canDeploy && deployedProjectileIds.isNotEmpty() && evidence !== ClientEvidence.NONE)
+
+    fun tick() = tick(publishRenderFrame = true)
+
+    private var hasUnpublishedStep = false
+
+    fun tick(publishRenderFrame: Boolean) {
+        val effectivePublish = publishRenderFrame || requiresPerStepObservation(false)
+        commandHost.advance(Step(nextStep, 1.0, "sim-tick"), materializeObservation = effectivePublish)
         nextStep++
         for ((sequence, request) in pendingSandboxRequests.toMap()) {
             val result = checkNotNull(commandHost.receipt(sequence))
@@ -763,7 +804,17 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
                 "projectiles" to samples.map { mapOf("objectId" to it.objectId, "kind" to it.kind,
                     "x" to it.position.x, "y" to it.position.y, "interceptorUnitId" to it.interceptorUnitId) })
         }
+        hasUnpublishedStep = true
+        if (!effectivePublish) return
+        flushPendingRenderFrame()
+    }
+
+    /** Publishes the end-of-frame observation if an intermediate substep finished early due to frame-budget pacing. */
+    fun flushPendingRenderFrame() {
+        if (!hasUnpublishedStep) return
+        hasUnpublishedStep = false
         publishFrame()
+        val ingestStart = System.nanoTime()
         if (pendingUnloadTargets.isNotEmpty()) {
             val iter = pendingUnloadTargets.entries.iterator()
             while (iter.hasNext()) {
@@ -787,6 +838,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             }
         }
         diagnosticTracker.ingestPlayer(observation)
+        lastPublishFrameNanos += (System.nanoTime() - ingestStart).coerceAtLeast(0L)
         for (result in observation.actionResults.filterIsInstance<ActionResult.Rejected>()) {
             if (result.error.code == "immobile-unit") {
                 val member = lastCommandBatch?.members?.firstOrNull { it.result.actionId == result.actionId } ?: continue
@@ -861,7 +913,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val mobile = candidates.filter { scenario.unitDefinitions.getValue(it.typeId).movement.type !=
             com.rustedwarfare.reforge.core.content.MovementType.NONE }
         val selectedCandidates = (mobile.ifEmpty { candidates }).sortedBy { it.unitId }
-        val batchSelect = selectedCandidates.size > 1 && evidence === ClientEvidence.NONE
+        val batchSelect = selectedCandidates.size > 1 && !evidence.capturesObservations
         val accepted = selectedCandidates.mapNotNull { unit ->
             unit.unitId.takeIf { apply(SelectAction("click-${++actionNumber}", "p1", it, context.world), deferPublish = batchSelect) is ActionResult.Accepted }
         }
@@ -923,13 +975,14 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
             (if (action is AmphibiousFlightAction) mapOf("flying" to action.flying) else emptyMap()) +
             (if (action is UnitAction) mapOf("actionName" to action.actionName, "cancelQueued" to action.cancelQueued) else emptyMap()) +
             (if (action is LoadAction) mapOf("direction" to action.direction.name) else emptyMap()) +
-            (if (action is UnloadAction) mapOf("unloading" to action.unloading) else emptyMap()) }
+            (if (action is UnloadAction) mapOf("unloading" to action.unloading) else emptyMap()) +
+            (if (action is MoveAction && action.cohortEscort) mapOf("cohortEscort" to true) else emptyMap()) }
         if (!deferPublish) capture("after-action")
         return result
     }
 
     private fun capture(phase: String) {
-        if (evidence !== ClientEvidence.NONE) evidence.recordObservation(phase, observation)
+        if (evidence.capturesObservations) evidence.recordObservation(phase, observation)
     }
 
     private fun makeFrame(): SandboxFrame {
@@ -937,7 +990,7 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         val map = scenario.map
         val knowledge = view.knowledge
         val previous = latestFrame
-        if (previous != null && knowledge?.cells == terrainKnowledge) return previous.withObservation(view)
+        if (previous != null && (knowledge?.cells === terrainKnowledge || knowledge?.cells == terrainKnowledge)) return previous.withObservation(view)
         // NoFog alone explicitly authorizes the local host's entire ground layout.
         val ground = if (knowledge == null) map.groundGids else null
         val terrain = List(map.widthTiles * map.heightTiles) { index ->
@@ -952,8 +1005,10 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
     }
 
     private fun publishFrame() {
+        val observeStart = System.nanoTime()
         val next = makeFrame()
         latestFrame = next
+        publishedFrameCount++
         val previous = selectedIds
         selection.reconcile(observation.units.filter { it.alive }.map { it.unitId }.toSet(),
             observation.units.filter { !it.alive }.map { it.unitId }.toSet() +
@@ -963,6 +1018,13 @@ class SandboxSession(scenario: Scenario, private val evidence: ClientEvidence = 
         if (previous.isNotEmpty() && selectedIds.isEmpty()) {
             feedback = "No selection"
         }
+        lastPublishFrameNanos += (System.nanoTime() - observeStart).coerceAtLeast(0L)
+    }
+
+    internal fun drainPublishFrameNanos(): Long {
+        val ns = lastPublishFrameNanos
+        lastPublishFrameNanos = 0L
+        return ns
     }
 
     override fun close() {

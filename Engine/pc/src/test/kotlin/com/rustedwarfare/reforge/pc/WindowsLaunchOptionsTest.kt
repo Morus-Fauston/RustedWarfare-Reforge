@@ -31,7 +31,12 @@ class WindowsLaunchOptionsTest {
         val root = java.nio.file.Path.of(checkNotNull(System.getProperty("public.fixtures.dir"))).parent.parent.parent
         val options = WindowsLaunchOptions.parse(arrayOf("--development", "true"), root)
         assertTrue(options.development)
-        assertTrue(options.diagnostics)
+        assertFalse(options.diagnostics, "--development true alone must NOT implicitly enable heavy per-frame JsonlEvidence")
+        val explicitDiag = WindowsLaunchOptions.parse(arrayOf("--development", "true", "--diagnostics", "true"), root)
+        assertTrue(explicitDiag.development)
+        assertTrue(explicitDiag.diagnostics)
+        val withEvidence = WindowsLaunchOptions.parse(arrayOf("--development", "true", "--evidence", "local-dev-run"), root)
+        assertTrue(withEvidence.diagnostics)
         assertEquals("RustedWarfare-Reforge | Phase VI A sandbox", options.title)
         val seed = root.resolve("SimulationTest/public/scenarios/phase-six-a-json.json")
         assertEquals(seed, options.testScenarioSeed)

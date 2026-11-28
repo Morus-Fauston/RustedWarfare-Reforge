@@ -15,9 +15,10 @@ class KnowledgeSnapshot private constructor(
     val height: Int,
     val revision: Long,
     private val ownedCells: KnowledgeCells,
+    internal val terrainRevision: Long = revision,
 ) {
     internal constructor(worldId: String, playerId: String, width: Int, height: Int, revision: Long,
-                         cells: List<CellKnowledge>) : this(worldId, playerId, width, height, revision, KnowledgeCells.copied(cells))
+                         cells: List<CellKnowledge>) : this(worldId, playerId, width, height, revision, KnowledgeCells.copied(cells), revision)
     val cells: List<CellKnowledge> = ownedCells.view
     fun cell(column: Int, row: Int): CellKnowledge {
         if(column !in 0 until width || row !in 0 until height) throw KnowledgeException("out-of-bounds", "Knowledge cell is outside the map")
@@ -32,8 +33,15 @@ class KnowledgeSnapshot private constructor(
     }
 
     internal companion object {
-        fun owned(worldId: String, playerId: String, width: Int, height: Int, revision: Long,
-                  cells: KnowledgeCells) = KnowledgeSnapshot(worldId, playerId, width, height, revision, cells)
+        fun owned(
+            worldId: String,
+            playerId: String,
+            width: Int,
+            height: Int,
+            revision: Long,
+            cells: KnowledgeCells,
+            terrainRevision: Long = revision,
+        ) = KnowledgeSnapshot(worldId, playerId, width, height, revision, cells, terrainRevision)
     }
 }
 
@@ -47,12 +55,14 @@ class PlayerTerrainKnowledge private constructor(
     initialCells: KnowledgeCells,
     initialRevision: Long = 0L,
     initialVisible: Set<Int> = emptySet(),
+    initialTerrainRevision: Long = initialRevision,
 ) {
     private var cells = initialCells
     private var visible = initialVisible
-    private var revision=initialRevision
+    private var revision = initialRevision
+    private var terrainRevision = initialTerrainRevision
     private var cachedSnapshot: KnowledgeSnapshot? = null
-    private var closed=false
+    private var closed = false
 
     companion object {
         fun create(world: WorldHandle, playerId: String, width: Int, height: Int, rules: KnowledgeRules): PlayerTerrainKnowledge {
@@ -70,43 +80,59 @@ class PlayerTerrainKnowledge private constructor(
     }
 
     private fun update(visibleTerrain: List<VisibleTerrainCell>): List<KnowledgeCellChange> {
-        val projection=visibleTerrain.toList()
-        val seen=HashSet<Int>()
-        for(cell in projection) {
-            if(cell.column !in 0 until width || cell.row !in 0 until height) throw KnowledgeException("out-of-bounds", "Visible terrain cell is outside the map")
-            if(!seen.add(cell.row*width+cell.column)) throw KnowledgeException("duplicate-cell", "Visible terrain projection contains a repeated cell")
+        val projection = visibleTerrain.toList()
+        val seen = HashSet<Int>(projection.size * 2)
+        for (cell in projection) {
+            if (cell.column !in 0 until width || cell.row !in 0 until height) throw KnowledgeException("out-of-bounds", "Visible terrain cell is outside the map")
+            if (!seen.add(cell.row * width + cell.column)) throw KnowledgeException("duplicate-cell", "Visible terrain projection contains a repeated cell")
         }
         val changes = ArrayList<KnowledgeCellChange>()
+        var terrainChanged = false
         for (index in visible) if (index !in seen) {
             val before = cells[index]
             val after = if (rules.retention == TerrainRetention.MEMORY)
                 CellKnowledge(false, before.lastKnownBlocked, before.lastKnownGroundGid) else KnowledgeCells.UNKNOWN
-            changes.add(KnowledgeCellChange(index, before, after))
+            if (before != after) {
+                changes.add(KnowledgeCellChange(index, before, after))
+                if (before.lastKnownBlocked != after.lastKnownBlocked || before.lastKnownGroundGid != after.lastKnownGroundGid) {
+                    terrainChanged = true
+                }
+            }
         }
         for (cell in projection) {
             val index = cell.row * width + cell.column
             val before = cells[index]
-            if (!before.visible || before.lastKnownBlocked != cell.blocked || before.lastKnownGroundGid != cell.groundGid)
-                changes.add(KnowledgeCellChange(index, before, CellKnowledge(true, cell.blocked, cell.groundGid)))
+            if (!before.visible || before.lastKnownBlocked != cell.blocked || before.lastKnownGroundGid != cell.groundGid) {
+                val after = CellKnowledge(true, cell.blocked, cell.groundGid)
+                changes.add(KnowledgeCellChange(index, before, after))
+                if (before.lastKnownBlocked != after.lastKnownBlocked || before.lastKnownGroundGid != after.lastKnownGroundGid) {
+                    terrainChanged = true
+                }
+            }
         }
-        val next = cells.replacing(changes)
-        cells = next
         visible = seen // owned by this update; later updates only read this set
-        revision++
-        cachedSnapshot=null
+        if (changes.isNotEmpty()) {
+            cells = cells.replacing(changes)
+            revision++
+            if (terrainChanged) {
+                terrainRevision++
+            }
+            cachedSnapshot = null
+        }
         return Collections.unmodifiableList(changes)
     }
 
     fun snapshot(world: WorldHandle): KnowledgeSnapshot {
         checkAccess(world)
-        return cachedSnapshot ?: KnowledgeSnapshot.owned(this.world.id,playerId,width,height,revision,cells)
-            .also { cachedSnapshot=it }
+        return cachedSnapshot ?: KnowledgeSnapshot.owned(this.world.id, playerId, width, height, revision, cells, terrainRevision)
+            .also { cachedSnapshot = it }
     }
 
     internal fun projected(world: WorldHandle, visibleTerrain: List<VisibleTerrainCell>): KnowledgeProjection {
         checkAccess(world)
         // accept replaces the list atomically; neither this store nor the projection mutates it.
-        val next = PlayerTerrainKnowledge(this.world, playerId, width, height, rules, cells, revision, visible)
+        val next = PlayerTerrainKnowledge(this.world, playerId, width, height, rules, cells, revision, visible, terrainRevision)
+            .also { it.cachedSnapshot = this.cachedSnapshot }
         val changes = next.update(visibleTerrain)
         return KnowledgeProjection(next, changes)
     }

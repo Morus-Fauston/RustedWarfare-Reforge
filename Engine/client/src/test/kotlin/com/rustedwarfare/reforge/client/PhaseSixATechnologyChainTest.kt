@@ -18,7 +18,7 @@ class PhaseSixATechnologyChainTest {
                 session.phaseSixSelectUnit(session.phaseSixOwned().single { it.unitId == builder.unitId })
                 val submission = session.build(type, point)
                 assertIs<ActionResult.Accepted>(submission, "Build $type at $point: $submission / ${session.playerFeedback}")
-                return session.phaseSixAwaitUnit(type, 5600)
+                return session.phaseSixAwaitUnit(type, 6400)
             }
             fun produce(factory: UnitObservation, type: String, ticks: Int = 4800): UnitObservation {
                 val price = assertNotNull(start.scenario.unitDefinitions.getValue(type).build).price

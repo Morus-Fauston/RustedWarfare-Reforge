@@ -1,14 +1,17 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.math.hypot
 import com.rustedwarfare.reforge.core.content.AttackMovementProfile
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.MovementProfile
+import com.rustedwarfare.reforge.core.navigation.VerticalPoseController
 
 /** Adapted from the qualified movement-only flight slice, using the shared physical height. */
-internal object FlightMotion {
+internal object FlightMotion : VerticalPoseController {
     fun velocity(profile: MovementProfile, current: Position, target: Position, fraction: Double, delta: Double, maximumSpeed: Double = profile.moveSpeed): Position {
         val oldDistance = hypot(target.x - current.x, target.y - current.y)
         var vx = current.x
@@ -25,8 +28,8 @@ internal object FlightMotion {
         return Position(vx + (target.x - vx) / remaining * limit, vy + (target.y - vy) / remaining * limit)
     }
 
-    fun advancePose(unit: MutableUnit, map: MapDefinition, delta: Double, acceptsHeight: (Double) -> Boolean) {
-        val profile = unit.definition.movement.flight ?: return
+    override fun advancePose(unit: MutableUnit, map: MapDefinition, delta: Double, acceptsHeight: (Double) -> Boolean): String? {
+        val profile = unit.definition.movement.flight ?: return null
         unit.definition.rotor?.let { rotor ->
             unit.rotorPhase = (unit.rotorPhase + rotor.spinRate * delta) % 360.0
         }
@@ -34,7 +37,7 @@ internal object FlightMotion {
         unit.heightPhase += 2.0 * delta
         if (unit.heightPhase > 360.0) unit.heightPhase -= 360.0
         val bomber = unit.definition.attackMovement == AttackMovementProfile.BOMBER
-        if ((bomber || profile.landWhenStationary) && advanceIdleLanding(unit, map, delta, bomber, acceptsHeight)) return
+        if ((bomber || profile.landWhenStationary) && advanceIdleLanding(unit, map, delta, bomber, acceptsHeight)) return null
         val desired = profile.targetHeight + sin(Math.toRadians(unit.heightPhase)) * profile.heightDrift
         val difference = unit.height - desired
         check(desired.isFinite() && difference.isFinite()) { "Non-finite derived flight height for ${unit.unitId}" }
@@ -47,6 +50,7 @@ internal object FlightMotion {
                 desired, rate, cappedRate).all { it.isFinite() }) {
             "Non-finite flight height for ${unit.unitId}"
         }
+        return null
     }
 
     fun bomberAttackDestination(unit: MutableUnit, target: Position, map: MapDefinition): Position {

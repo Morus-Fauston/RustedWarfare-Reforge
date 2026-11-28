@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.knowledge.VisionSnapshot
 import com.rustedwarfare.reforge.core.content.foundationMovementType
 import com.rustedwarfare.reforge.core.content.MaintenanceProfile
@@ -9,13 +11,18 @@ import com.rustedwarfare.reforge.core.content.canConstruct
 import java.util.Collections
 
 internal data class BuildingRoute(val points: List<Position>, val knowledgeRevision: Long, val buildingRevision: Long)
+internal sealed interface BuildingRouteResolution {
+    data class Ready(val route: BuildingRoute) : BuildingRouteResolution
+    data object Unreachable : BuildingRouteResolution
+    data object Pending : BuildingRouteResolution
+}
 internal interface BuildingWorkAccess {
-    fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRoute?
+    fun path(worker: MutableUnit, target: Position, range: Double, task: UnitTask, step: Long): BuildingRouteResolution
     fun construct(ownerPlayerId: String, typeId: String, position: Position, nonce: String,
                   paidLedger: ProductionLedger): ConstructionRegistration
 }
 internal data class BuildingWorkFrame(val input: Scenario, val units: Map<String, MutableUnit>, val step: Step,
-    val view: VisionSnapshot?, val coordinates: CoordinatePolicy, val steering: SteeringPolicy, val access: BuildingWorkAccess)
+    val view: VisionSnapshot?, val access: BuildingWorkAccess, val faultHook: ((MutableUnit) -> Unit)? = null)
 internal data class BuildingWorkChange(val work: BuildingWork, val ledger: ProductionLedger,
     val upgrades: OrdinaryUpgrades?, val created: MutableUnit? = null, val events: List<Event> = emptyList(),
     val reclaimedUnitId: String? = null)
@@ -211,7 +218,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             com.rustedwarfare.reforge.core.content.FactoryExitProfile.NATIVE_SEA) 110.0 else 0.0
         if (nativeBay(worker)) {
             val range = 230.0 + bonus + if (wasWorking) 5.0 else 0.0
-            if (frame.coordinates.distanceSquared(worker.position, target.position) > range * range) {
+            if (ScreenPlane.distanceSquared(worker.position, target.position) > range * range) {
                 worker.taskQueue = worker.taskQueue.pop()
                 worker.constructionElapsed = 0f
                 worker.cancelRoute()
@@ -224,7 +231,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         }
         val profile = checkNotNull(worker.definition.builder)
         val range = profile.range.toDouble() + bonus + if (wasWorking) 5.0 else 0.0
-        if (frame.coordinates.distanceSquared(worker.position, target.position) > range * range) {
+        if (ScreenPlane.distanceSquared(worker.position, target.position) > range * range) {
             if (worker.tasks.firstOrNull()?.automaticRepair == true) {
                 worker.taskQueue = worker.taskQueue.pop()
                 worker.constructionElapsed = 0f
@@ -259,7 +266,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             return ScreenPlane.difference(desired, updated)
         }
         val name = profile.mainNanoTurret
-            ?: return frame.steering.turn(worker, target, frame.step.delta, frame.coordinates)
+            ?: return AcceleratedSteering.turn(worker, target, frame.step.delta, frame.faultHook)
         val definition = checkNotNull(worker.definition.combat?.namedWeapons).byName.getValue(name)
         val state = checkNotNull(worker.namedWeapons).getValue(name)
         state.idleHold = 70f
@@ -272,22 +279,38 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
                       frame: BuildingWorkFrame): List<Event> {
         worker.requestMovement(target)
         if (worker.moveTarget == target && worker.pathPoints.isNotEmpty()) return emptyList()
-        val path = frame.access.path(worker, target, range, task, frame.step.stepIndex)
-        if (path == null) {
-            if (task.kind == UnitTaskKind.BUILD) {
-                worker.pauseRoute()
-                return emptyList()
+        return when (val resolution = frame.access.path(worker, target, range, task, frame.step.stepIndex)) {
+            BuildingRouteResolution.Pending -> emptyList()
+            BuildingRouteResolution.Unreachable -> {
+                if (task.kind == UnitTaskKind.BUILD) {
+                    worker.pauseRoute()
+                    return emptyList()
+                }
+                worker.taskQueue = worker.taskQueue.pop()
+                worker.constructionElapsed = 0f
+                worker.cancelRoute()
+                listOf(Event("path-unreachable", worker.unitId))
             }
-            worker.taskQueue = worker.taskQueue.pop()
-            worker.constructionElapsed = 0f
-            worker.cancelRoute()
-            return listOf(Event("path-unreachable", worker.unitId))
+            is BuildingRouteResolution.Ready -> {
+                val path = resolution.route
+                val contract = task.motionContract ?: MotionContract.rangeApproach(
+                    center = target,
+                    range = range,
+                    tracksRouteStall = true,
+                    enableLocalAvoidance = true,
+                )
+                worker.updateNavigation {
+                    it.bindCommandTarget(
+                        target = target,
+                        originMoveId = task.actionId,
+                        originAtStep = task.atStep,
+                        contract = contract,
+                    )
+                }
+                worker.adoptRoute(path.points, target, path.knowledgeRevision, path.buildingRevision)
+                emptyList()
+            }
         }
-        worker.moveTarget = target
-        worker.originMoveId = task.actionId
-        worker.originAtStep = task.atStep
-        worker.adoptRoute(path.points, target, path.knowledgeRevision, path.buildingRevision)
-        return emptyList()
     }
 
     fun advanceActivity(worker: MutableUnit, frame: BuildingWorkFrame, ledger: ProductionLedger,
@@ -354,7 +377,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         }
         val order = checkNotNull(task.target)
         val range = checkNotNull(worker.definition.builder).range.toDouble()
-        if (frame.coordinates.distanceSquared(worker.position, order) > range * range) {
+        if (ScreenPlane.distanceSquared(worker.position, order) > range * range) {
             val events = route(worker, order, range, task, frame)
             if (worker.moveTarget != null && worker.singleNodePathCount > 3) {
                 worker.taskQueue = worker.taskQueue.pop()
@@ -400,7 +423,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
             }
         val reused = if (blocked) live.firstOrNull { other ->
             !mobile && other.ownerPlayerId == worker.ownerPlayerId && other.typeId == definition.id &&
-                frame.coordinates.distanceSquared(position, other.position) <
+                ScreenPlane.distanceSquared(position, other.position) <
                     (definition.radius + other.definition.radius) * (definition.radius + other.definition.radius)
         } else null
         if (blocked && reused == null) return unavailable(worker, ledger, upgrades)
@@ -477,8 +500,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         target.reclaimed = true
         target.attackCommand = null
         target.taskQueue = UnitTaskQueue()
-        target.cancelRoute()
-        target.movementRequested = false
+        target.cancelRoute(clearRequested = true)
         target.constructionWorking = false
         target.clearWeaponTargets()
         // Native ci removes the target now; its worker discovers the invalid target at the next entry.
@@ -547,8 +569,7 @@ internal class BuildingWork private constructor(val clock: Int, val nonces: Map<
         target.reclaimed = true
         target.attackCommand = null
         target.taskQueue = UnitTaskQueue()
-        target.cancelRoute()
-        target.movementRequested = false
+        target.cancelRoute(clearRequested = true)
         target.constructionWorking = false
         target.clearWeaponTargets()
         for (other in units.values) {

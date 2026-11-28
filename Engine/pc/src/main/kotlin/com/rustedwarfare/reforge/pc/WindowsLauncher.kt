@@ -72,11 +72,14 @@ fun main(args: Array<String>) {
                 touchControls = options.touchSimulation,
                 initialSkirmishMap = options.skirmishMap,
                 initialUiThemePacks = listOfNotNull(options.themePackDir),
-                initialCatalogSceneId = options.catalogSceneId)
+                initialCatalogSceneId = options.catalogSceneId,
+                hotspotSummaryPath = options.hotspotSummary)
             val client = if (sink == null) screen else WindowPerfSampling(screen, sink)
             val application = if (options.backgroundInput)
-                BackgroundClientInput(client, output, runId, checkNotNull(sink), { screen.inputGeneration },
-                    screen::deployProjectiles, screen::deploymentReceipt)
+                BackgroundClientInput(client, output, runId, evidence, { screen.inputGeneration },
+                    screen::deployProjectiles, screen::deploymentReceipt,
+                    automationStatus = screen::automationStatus,
+                    setCamera = screen::setCameraForAutomation)
             else client
             Lwjgl3Application(application, config)
             evidence.record("process-completed", mapOf("status" to "normal"))

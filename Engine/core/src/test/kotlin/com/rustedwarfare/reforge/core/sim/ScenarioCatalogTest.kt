@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -32,7 +34,7 @@ class ScenarioCatalogTest {
             assertTrue(entry.group in setOf("A", "B"), "Default dev catalog must only contain A/B groups, got ${entry.id}:${entry.group}")
             assertEquals(ScenarioCategory.BENCHMARK_P016, entry.category)
         }
-        assertNotNull(ScenarioCatalog.byId("culdesac-overflow-100")?.knownLimitation)
+        assertNull(ScenarioCatalog.byId("culdesac-overflow-100")?.knownLimitation)
         assertNull(ScenarioCatalog.byId("rocks-small-100")?.knownLimitation)
 
         val baseDefs = TestContentFactory.openScenario().unitDefinitions

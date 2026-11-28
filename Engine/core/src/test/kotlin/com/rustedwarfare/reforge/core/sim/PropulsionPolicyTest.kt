@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -45,6 +47,7 @@ class PropulsionPolicyTest {
         assertEquals(3.0, speed(17.0, 0.0, 4.1, 6.0, final = true))
         assertEquals(1.5, speed(8.999, 0.0, 4.1, 6.0, final = true))
         assertEquals(0.0, speed(3.999, 0.0, 4.1, final = true))
-        assertEquals(0.0, speed(2.999, 0.0, 4.1))
+        assertEquals(1.1, speed(2.999, 0.0, 4.1, final = false))
+        assertEquals(0.275, ReferencePropulsion.targetSpeed(profile.copy(maxTurnSpeed = 4.1, moveSpeed = 1.1, moveDecelerationSpeed = 0.12), 0.0, 0.25, 0.0, true, 0.0))
     }
 }

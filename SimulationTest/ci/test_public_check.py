@@ -289,10 +289,16 @@ class PublicSelectionTest(unittest.TestCase):
 
     def test_scenario_receipt_measures_identity_checks_and_archive_work(self):
         from public_check import run
+        from public_scenarios import session_timeout_seconds
+        self.assertEqual(300, session_timeout_seconds({'kind': 'long'}, 900))
+        self.assertEqual(300, session_timeout_seconds({'kind': 'long'}, 600))
+        self.assertEqual(180, session_timeout_seconds({'kind': 'short'}, 600))
+        self.assertEqual(10, session_timeout_seconds({'kind': 'long'}, 10))
         with owned_scenario_processes([{'backend': 'session'}]) as (repo, plan, prepared):
             output = repo/'timed'
             self.assertEqual(0, run(repo, output, plan, prepared, 10, 1, 1))
             result = json.loads((output/'result.json').read_text(encoding='utf8'))
+            self.assertIn('--timeout', result['commands'][0]['argv'])
             self.assertGreater(result['identityChecks']['scenario']['count'], 0)
             self.assertGreaterEqual(result['identityChecks']['scenario']['elapsedSeconds'], 0)
             queue = result['scenarioExecution']
@@ -387,7 +393,7 @@ class PublicSelectionTest(unittest.TestCase):
                 default=subprocess.run([sys.executable,'-B',str(entry),*scope,'--list'],capture_output=True,text=True)
                 self.assertEqual(0,default.returncode,default.stderr)
                 self.assertEqual(2,json.loads(default.stdout)['scenarioConcurrency']['requested'])
-                for workers in (1,2,4):
+                for workers in (1,2,4,8):
                     result=subprocess.run([sys.executable,'-B',str(entry),*scope,'--list',
                         '--output',str(output),'--scenario-workers',str(workers)],capture_output=True,text=True)
                     self.assertEqual(0,result.returncode,result.stderr)
@@ -395,7 +401,7 @@ class PublicSelectionTest(unittest.TestCase):
                     self.assertEqual(workers,plan['scenarioConcurrency']['requested'])
                     self.assertEqual('after-build-and-tests',plan['scenarioConcurrency']['phase'])
                     self.assertEqual(1,plan['testConcurrency']['requested'])
-                for invalid in ('0','3','5','-1','two'):
+                for invalid in ('0','3','5','9','-1','two'):
                     result=subprocess.run([sys.executable,'-B',str(entry),*scope,'--output',str(output),
                         '--scenario-workers',invalid],capture_output=True)
                     self.assertEqual(2,result.returncode)

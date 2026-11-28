@@ -1,14 +1,16 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.MapDefinition
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MovementType
 import com.rustedwarfare.reforge.core.content.UnitDefinition
-import com.rustedwarfare.reforge.core.path.PathSearchCounters
-import com.rustedwarfare.reforge.core.path.PathSearchOutcome
-import com.rustedwarfare.reforge.core.path.PathSearchReason
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
-import com.rustedwarfare.reforge.core.path.PlanningWorkSlice
+import com.rustedwarfare.reforge.core.navigation.PathSearchCounters
+import com.rustedwarfare.reforge.core.navigation.PathSearchOutcome
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningWorkSlice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -23,18 +25,22 @@ class RouteContinuationTest {
             val target = Position(10.0, 30.0)
             val start = Position(10.0, 82.0)
             val follower = MutableUnit("follower", "p1", definition.id, definition, start, 0.0).apply {
-                stalledRouteTicks = 480L
-                moveTarget = target
-                pathPoints = mutableListOf(target)
+                updateNavigation {
+                    it.withStalledRouteTicks(480L)
+                        .withMoveTarget(target, MotionContract.pointMove(target))
+                        .withPathPoints(listOf(target))
+                }
                 taskQueue = taskQueue.append(UnitTask(UnitTaskKind.MOVE, "follow", target))
             }
             val leader = MutableUnit("leader", "p1", definition.id, definition, Position(10.0, 70.0), 0.0).apply {
-                stalledRouteTicks = 480L
+                updateNavigation { it.withStalledRouteTicks(480L) }
                 taskQueue = taskQueue.append(UnitTask(UnitTaskKind.MOVE, "lead", Position(10.0, 22.0)))
             }
             fun commandLeader(id: String, goal: Position) {
-                leader.moveTarget = goal
-                leader.pathPoints = mutableListOf(goal)
+                leader.updateNavigation {
+                    it.withMoveTarget(goal, MotionContract.pointMove(goal))
+                        .withPathPoints(listOf(goal))
+                }
                 leader.taskQueue = leader.taskQueue.replaceHead(UnitTask(UnitTaskKind.MOVE, id, goal))
             }
             fun pose(unit: MutableUnit) = MovePlanningPose(
@@ -43,16 +49,16 @@ class RouteContinuationTest {
             val terrain = PlanningTerrain.fromNoFog(map, MovementType.WATER)
             val member = MovePlanningMember(action, follower, pose(follower), start, definition.radius,
                 terrain, HullRoute.forUnit(follower, maneuver = true), false, 0L)
-            fun blocker() = MovePlanningOccupant(leader.copy(), pose(leader), null, idle = false, obstructsRoute = true)
-            val policy = ExperimentalPolicies().path
+            fun blocker() = MovePlanningOccupant(leader.copy(), pose(leader), idle = false, obstructsRoute = true)
+            val policy = ClearanceAStarPolicy.DEFAULT
             fun repair(occupants: List<MovePlanningOccupant>): PlannedMove {
                 val queue = MovePlanning()
                 var result: PlannedMove? = null
                 queue.repair(action, ManeuverRepair.CONTACT)
                 repeat(40) {
-                    queue.advance(policy, PathWorkBudget(512), { _, _, reason ->
+                    queue.advance(policy, PathWorkBudget(512), { _, reason ->
                         MovePlanningInput(map, listOf(member), occupants, false, reason)
-                    }, { _, _, _, _, planned -> result = planned })
+                    }, { _, _, _, planned -> result = planned })
                     result?.let { return it }
                 }
                 error("Contact repair never finished")
@@ -61,37 +67,33 @@ class RouteContinuationTest {
             val opposingGoal = Position(10.0, 110.0)
             commandLeader("lead", clearGoal)
             val waiting = repair(listOf(blocker()))
-            assertEquals(null, waiting.slot)
+            assertEquals(null, waiting.route)
             assertTrue(!waiting.nearest)
-            assertEquals(target, assertNotNull(repair(emptyList()).slot).position)
+            assertEquals(target, assertNotNull(repair(emptyList()).route).position)
 
             commandLeader("opposing", opposingGoal)
             val opposed = repair(listOf(blocker()))
             assertTrue(opposed.nearest)
-            assertEquals(start, assertNotNull(opposed.slot).position)
+            assertEquals(start, assertNotNull(opposed.route).position)
 
-            val delayed = object : PathPolicy by policy {
-                override fun beginExact(map: PlanningTerrain, start: Position, target: Position, radius: Double,
-                                        hull: HullRoute?, occupancy: RouteOccupancy?, counters: PathSearchCounters?): ExactPathSearch {
-                    val search = policy.beginExact(map, start, target, radius, hull, occupancy, counters)
-                    return object : ExactPathSearch by search {
-                        private var first = true
-                        override fun advance(budget: PathWorkBudget, cache: PathClearanceCache?) {
-                            if (first) {
-                                first = false
-                                budget.take(budget.limit - budget.used)
-                            } else search.advance(budget, cache)
-                        }
+            val delayed = ClearanceAStarPolicy(exactSearchWrapper = { search, _ ->
+                object : ExactPathSearch by search {
+                    private var first = true
+                    override fun advance(budget: PathWorkBudget, cache: PathClearanceCache?) {
+                        if (first) {
+                            first = false
+                            budget.take(budget.limit - budget.used)
+                        } else search.advance(budget, cache)
                     }
                 }
-            }
+            })
             val queue = MovePlanning()
             val publications = mutableListOf<PlannedMove>()
             val work = mutableListOf<PlanningWorkSlice>()
             queue.repair(action, ManeuverRepair.CONTACT)
-            fun tick() = queue.advance(delayed, PathWorkBudget(512), { _, _, reason ->
+            fun tick() = queue.advance(delayed, PathWorkBudget(512), { _, reason ->
                 MovePlanningInput(map, listOf(member), listOf(blocker()), false, reason)
-            }, { _, _, _, _, result -> publications += result }, work)
+            }, { _, _, _, result -> publications += result }, work)
             tick()
             assertTrue(publications.isEmpty())
             commandLeader("clear", clearGoal)
@@ -158,8 +160,8 @@ class RouteContinuationTest {
                 IntArray(width * height) { water },
                 BlockingGrid(width, height, BooleanArray(width * height)), obstacles)
             val scene = WaterTestScene.scenario(map, MovementType.WATER, spawns.first().position).copy(units = spawns)
-            val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(
-                routePreparationBudget = { 1 })).initialize(scene)).context
+            val context = assertIs<InitResult.Accepted>(SimulationContext(
+                routePreparationBudget = { 1 }).initialize(scene)).context
             try {
                 context.enableRouteContinuationDiagnostics(context.world)
                 for ((id, y) in rows) assertIs<ActionResult.Accepted>(context.submit(
@@ -251,8 +253,8 @@ class RouteContinuationTest {
             val scene = WaterTestScene.scenario(map, MovementType.WATER, start)
             val delayedStep = 220L
             fun run(blockUntil: Long): Triple<List<Position>, List<Observation>, List<RouteContinuationSample>> {
-                val context = assertIs<InitResult.Accepted>(SimulationContext(ExperimentalPolicies(
-                    routePreparationBudget = { step -> if (step < blockUntil) 0 else 8 })).initialize(scene)).context
+                val context = assertIs<InitResult.Accepted>(SimulationContext(
+                    routePreparationBudget = { step -> if (step < blockUntil) 0 else 8 }).initialize(scene)).context
                 try {
                     context.enableRouteContinuationDiagnostics(context.world)
                     assertIs<ActionResult.Accepted>(context.submit(MoveAction("one-order", "p1", "w1", goal, context.world)))

@@ -13,14 +13,15 @@ from development_check import plan_development, resources, run_development
 from public_batch import plan_layer, run_layer, verify_mechanism_receipt
 from public_check import REPO, identities
 from public_distribution import digest
-from public_parallel import SCENARIOS, download_raw, git, measure_gradle, new_plan, toolchain, write_json
+from public_parallel import MECHANISMS, SCENARIOS, download_raw, git, measure_gradle, new_plan, toolchain, write_json
 
 
 PR_WORKFLOW = '.github/workflows/public-pr.yml'
 TECHNOLOGY_SUITE = 'final-candidate-technology'
 TECHNOLOGY_METHOD = 'the_default_technology_chain_uses_ordinary_construction_upgrades_and_production()'
-SHARDS = {'mechanisms', *SCENARIOS}
-JOBS = {'public-prepare', 'public-mechanisms', 'public-coverage',
+SHARDS = {*MECHANISMS, *SCENARIOS}
+JOBS = {'public-prepare', 'public-coverage',
+        *(f'public-mechanisms ({name})' for name in MECHANISMS),
         *(f'public-scenarios ({name})' for name in SCENARIOS)}
 MAX_SECONDS = 1200
 

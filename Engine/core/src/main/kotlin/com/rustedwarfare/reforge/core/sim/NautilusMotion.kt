@@ -1,16 +1,21 @@
 package com.rustedwarfare.reforge.core.sim
 
-import com.rustedwarfare.reforge.core.content.TransportProfile
+import com.rustedwarfare.reforge.core.navigation.*
+
+import com.rustedwarfare.reforge.core.content.MapDefinition
+import com.rustedwarfare.reforge.core.navigation.VerticalPoseController
 import kotlin.math.abs
 
-/** Finite non-air custom height branch, separate from weapon energy and native submarines. */
-internal object NautilusMotion {
-    fun slowDeath(unit: MutableUnit): Boolean = unit.definition.transport == TransportProfile.NAUTILUS_SUBMERGED &&
-        unit.typeId == "nautilusSubmarineLand"
+/**
+ * Data-driven non-air vertical pose controller (ENG-P017-006):
+ * consumes [UnitDefinition.effectiveVerticalPose] without hardcoding unit type IDs.
+ */
+internal object NautilusMotion : VerticalPoseController {
+    fun slowDeath(unit: MutableUnit): Boolean = unit.definition.effectiveVerticalPose?.slowDeathFall == true
 
     /** slowDeathFall preserves motion and defers cargo cleanup to the first update starting on the ground. */
     fun advanceCorpse(unit: MutableUnit, units: Map<String, MutableUnit>,
-                      map: com.rustedwarfare.reforge.core.content.MapDefinition, delta: Double) {
+                      map: MapDefinition, delta: Double) {
         if (!slowDeath(unit) || unit.waterSettled) return
         val elapsed = delta.toFloat()
         if (unit.height > 0.0) {
@@ -37,15 +42,24 @@ internal object NautilusMotion {
             unit.height = (unit.height.toFloat() - unit.sinkSpeed * elapsed).toDouble()
         } else unit.waterSettled = true
         require(unit.sinkSpeed.isFinite() && unit.height.isFinite() && unit.position.x.isFinite() && unit.position.y.isFinite()) {
-            "Nautilus corpse must remain finite"
+            "Custom vertical pose corpse must remain finite"
         }
     }
 
+    override fun advancePose(
+        unit: MutableUnit,
+        map: MapDefinition,
+        delta: Double,
+        acceptsHeight: (Double) -> Boolean,
+    ): String? {
+        advance(unit, delta, acceptsHeight)
+        return null
+    }
+
     fun advance(unit: MutableUnit, delta: Double, acceptsHeight: (Double) -> Boolean) {
-        if (unit.definition.transport != TransportProfile.NAUTILUS_SUBMERGED) return
-        val land = unit.typeId == "nautilusSubmarineLand"
-        val targetHeight = if (land) 2f else if (unit.typeId == "nautilusSubmarineSurface") .1f else -8f
-        val drift = if (land) 0f else .1f
+        val pose = unit.definition.effectiveVerticalPose ?: return
+        val targetHeight = pose.targetHeight.toFloat()
+        val drift = pose.heightDrift.toFloat()
         val elapsed = delta.toFloat()
         var height = unit.height.toFloat()
         val lower = targetHeight - drift
@@ -69,7 +83,7 @@ internal object NautilusMotion {
                 sinkSpeed = 0f
             }
         } else sinkSpeed = 0f
-        require(height.isFinite() && phase.isFinite() && sinkSpeed.isFinite()) { "Custom water height must remain finite" }
+        require(height.isFinite() && phase.isFinite() && sinkSpeed.isFinite()) { "Custom vertical pose height must remain finite" }
         if (!acceptsHeight(height.toDouble())) return
         unit.sinkSpeed = sinkSpeed
         unit.height = height.toDouble()

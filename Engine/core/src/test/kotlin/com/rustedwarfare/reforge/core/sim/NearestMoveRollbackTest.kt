@@ -1,8 +1,10 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.BlockingGrid
 import com.rustedwarfare.reforge.core.content.MapDefinition
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import kotlin.test.*
 
 class NearestMoveRollbackTest {
@@ -38,17 +40,19 @@ class NearestMoveRollbackTest {
                     spawn.position, definition.radius, terrain, HullRoute.Circle(definition.radius), false, 0L)
             }
             val fixed = MutableUnit("holder", "p1", "holder", holder, Position(548.0, 348.9), 0.0)
-            val input = MovePlanningInput(map, members, listOf(MovePlanningOccupant(fixed,
-                MovePlanningPose(fixed.position, 0.0, ContactLayer.SURFACE, holder.movementCollision), null,
-                idle = true, obstructsRoute = true, fixed = true)), false)
-            data class Replay(val step: Long, val plans: Map<String, Pair<Boolean, GroupMoveSlot?>>, val work: List<Int>)
+            val occ = listOf(MovePlanningOccupant(fixed,
+                MovePlanningPose(fixed.position, 0.0, ContactLayer.SURFACE, holder.movementCollision),
+                idle = true, obstructsRoute = true, fixed = true))
+            val byId = members.associateBy { it.action.unitId }
+            data class Replay(val step: Long, val plans: Map<String, Pair<Boolean, PlannedRoute?>>, val work: List<Int>)
             fun replay(retry: Boolean): Replay {
                 val steps = CandidateSteps()
-                members.forEach { steps.current.movePlanning.enqueue(it.action, group) }
+                members.forEach { steps.current.movePlanning.enqueue(it.action, selectionSize = members.size) }
                 val consumed = mutableListOf<Int>()
+                val collected = linkedMapOf<String, Pair<Boolean, PlannedRoute?>>()
                 for (tick in 0L..12000L) {
-                    fun advance(fail: Boolean): Pair<Map<String, Pair<Boolean, GroupMoveSlot?>>, Int> {
-                        val published = linkedMapOf<String, Pair<Boolean, GroupMoveSlot?>>()
+                    fun advance(fail: Boolean): Pair<Map<String, Pair<Boolean, PlannedRoute?>>, Int> {
+                        val published = linkedMapOf<String, Pair<Boolean, PlannedRoute?>>()
                         var used = 0
                         steps.advance(scene, Step(tick, 1.0, "sim-tick"), emptyList(), { index, time, _ ->
                             if (fail) error("observer failure")
@@ -56,8 +60,9 @@ class NearestMoveRollbackTest {
                                 emptyList(), emptyList(), emptyList())
                         }) { candidate ->
                             val budget = PathWorkBudget(128)
-                            candidate.state.movePlanning.advance(ExperimentalPolicies().path, budget, { _, _, _ -> input },
-                                { member, _, _, _, plan -> published[member.action.unitId] = plan.nearest to plan.slot })
+                            candidate.state.movePlanning.advance(ClearanceAStarPolicy.DEFAULT, budget,
+                                { action, _ -> MovePlanningInput(map, listOf(byId.getValue(action.unitId)), occ, false) },
+                                { member, _, _, plan -> published[member.action.unitId] = plan.nearest to plan.route })
                             used = budget.used
                             assertTrue(used in 0..128)
                         }
@@ -67,13 +72,14 @@ class NearestMoveRollbackTest {
                         assertFailsWith<IllegalStateException> { advance(true) }.message)
                     val (plans, used) = advance(false)
                     consumed += used
-                    if (plans.isNotEmpty()) {
-                        assertEquals(setOf("boxed", "left", "right"), plans.keys)
-                        assertEquals(true to null, plans.getValue("boxed"))
-                        assertTrue(plans.getValue("left").first)
-                        assertEquals(Position(314.0, 350.0), assertNotNull(plans.getValue("left").second).position)
-                        assertNotNull(plans.getValue("right").second)
-                        return Replay(tick, plans, consumed)
+                    collected.putAll(plans)
+                    if (collected.size == 3) {
+                        assertEquals(setOf("boxed", "left", "right"), collected.keys)
+                        assertEquals(true to null, collected.getValue("boxed"))
+                        assertTrue(collected.getValue("left").first)
+                        assertEquals(Position(314.0, 350.0), assertNotNull(collected.getValue("left").second).position)
+                        assertNotNull(collected.getValue("right").second)
+                        return Replay(tick, collected, consumed)
                     }
                 }
                 error("Nearest planning did not finish")
@@ -97,11 +103,11 @@ class NearestMoveRollbackTest {
                 MovePlanningPose(body.position, 0.0, ContactLayer.SURFACE, moving.movementCollision), body.position,
                 6.0, PlanningTerrain.fromNoFog(map), HullRoute.Circle(6.0), false, 0L)
             val input = MovePlanningInput(map, listOf(member), listOf(MovePlanningOccupant(fixed,
-                MovePlanningPose(fixed.position, 0.0, ContactLayer.SURFACE, moving.movementCollision), null,
+                MovePlanningPose(fixed.position, 0.0, ContactLayer.SURFACE, moving.movementCollision),
                 idle = true, obstructsRoute = true, fixed = true)), false)
             fun replay(failures: Boolean): Triple<Long, Position, List<Int>> {
                 val steps = CandidateSteps()
-                steps.current.movePlanning.enqueue(action, null)
+                steps.current.movePlanning.enqueue(action)
                 val work = mutableListOf<Int>()
                 for (tick in 0L..6000L) {
                     fun advance(fail: Boolean): Pair<PlannedMove?, Int> {
@@ -113,8 +119,8 @@ class NearestMoveRollbackTest {
                                 emptyList(), emptyList(), emptyList())
                         }) { candidate ->
                             val budget = PathWorkBudget(8)
-                            candidate.state.movePlanning.advance(ExperimentalPolicies().path, budget, { _, _, _ -> input },
-                                { _, _, _, _, plan -> published = plan })
+                            candidate.state.movePlanning.advance(ClearanceAStarPolicy.DEFAULT, budget, { _, _ -> input },
+                                { _, _, _, plan -> published = plan })
                             used = budget.used
                             assertTrue(used in 0..8)
                         }
@@ -125,7 +131,7 @@ class NearestMoveRollbackTest {
                     work += used
                     if (plan != null) {
                         assertTrue(plan.nearest)
-                        val position = assertNotNull(plan.slot).position
+                        val position = assertNotNull(plan.route).position
                         assertEquals(50.5145909041198, position.x, 0.000001)
                         assertEquals(45.7830249972659, position.y, 0.000001)
                         return Triple(tick, position, work)

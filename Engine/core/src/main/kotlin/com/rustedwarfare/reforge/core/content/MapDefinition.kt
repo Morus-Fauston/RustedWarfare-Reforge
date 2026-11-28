@@ -130,20 +130,21 @@ class MapDefinition(
     private val staticOverCliffOverride: BlockingGrid? = overCliffBlockingOverride
     private val staticOverCliffWaterOverride: BlockingGrid? = overCliffWaterBlockingOverride
 
+    private var dynamicBaseMap: MapDefinition? = null
+    private var dynamicAddedCells: Set<Pair<Int, Int>> = emptySet()
+
     /** Immutable dynamic cost already composed into LAND's [blocking] by the host adapter. */
     internal val waterObstacles: Set<Pair<Int, Int>> = Collections.unmodifiableSet(LinkedHashSet(waterObstacles))
 
-    /** Returns an immutable copy adding live building / dynamic obstacles while preserving all multilayer overrides. */
+    /**
+     * Returns an immutable copy adding live building / dynamic obstacles while preserving all multilayer
+     * overrides and delegating lazy movement grids to O(changed-cells) array updates instead of rescanning
+     * all tiles and boxing `(col to row)` pairs.
+     */
     fun withDynamicObstacles(extraObstacles: Set<Pair<Int, Int>>): MapDefinition {
         if (extraObstacles.isEmpty()) return this
-        val combinedLand = BlockingGrid(
-            widthTiles, heightTiles,
-            BooleanArray(widthTiles * heightTiles) { index ->
-                val col = index % widthTiles
-                val row = index / widthTiles
-                blocking.isBlocked(col, row) || (col to row) in extraObstacles
-            },
-        )
+        val combinedLand = blocking.withExtraBlocked(extraObstacles)
+        val combinedWaterObs = if (this.waterObstacles.isEmpty()) extraObstacles else (this.waterObstacles + extraObstacles)
         return MapDefinition(
             widthTiles = widthTiles,
             heightTiles = heightTiles,
@@ -152,7 +153,7 @@ class MapDefinition(
             tileSets = tileSets,
             groundGids = gids,
             blocking = combinedLand,
-            waterObstacles = this.waterObstacles + extraObstacles,
+            waterObstacles = combinedWaterObs,
             visualLayers = visualLayers,
             waterBlockingOverride = staticWaterOverride,
             hoverBlockingOverride = staticHoverOverride,
@@ -168,12 +169,18 @@ class MapDefinition(
             ignoredDiagnostics = ignoredDiagnostics,
             mapProperties = mapProperties,
             backgroundColor = backgroundColor,
-        )
+        ).also { derived ->
+            derived.dynamicBaseMap = this
+            derived.dynamicAddedCells = extraObstacles
+        }
     }
 
     /** Separate immutable passability; ordinary land blocking remains the existing [blocking]. */
     val waterBlocking: BlockingGrid by lazy {
-        if (staticWaterOverride != null && this.waterObstacles.isEmpty()) staticWaterOverride
+        val base = dynamicBaseMap
+        if (base != null) {
+            base.waterBlocking.withExtraBlocked(dynamicAddedCells)
+        } else if (staticWaterOverride != null && this.waterObstacles.isEmpty()) staticWaterOverride
         else BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
             val col = index % widthTiles
             val row = index / widthTiles
@@ -183,7 +190,10 @@ class MapDefinition(
     }
 
     val hoverBlocking: BlockingGrid by lazy {
-        if (staticHoverOverride != null && this.waterObstacles.isEmpty()) staticHoverOverride
+        val base = dynamicBaseMap
+        if (base != null) {
+            base.hoverBlocking.withExtraBlocked(dynamicAddedCells)
+        } else if (staticHoverOverride != null && this.waterObstacles.isEmpty()) staticHoverOverride
         else BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
             val col = index % widthTiles
             val row = index / widthTiles
@@ -194,7 +204,10 @@ class MapDefinition(
     }
 
     val overCliffBlocking: BlockingGrid by lazy {
-        if (staticOverCliffOverride != null && this.waterObstacles.isEmpty()) staticOverCliffOverride
+        val base = dynamicBaseMap
+        if (base != null) {
+            base.overCliffBlocking.withExtraBlocked(dynamicAddedCells)
+        } else if (staticOverCliffOverride != null && this.waterObstacles.isEmpty()) staticOverCliffOverride
         else BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
             val col = index % widthTiles
             val row = index / widthTiles
@@ -205,7 +218,10 @@ class MapDefinition(
     }
 
     val overCliffWaterBlocking: BlockingGrid by lazy {
-        if (staticOverCliffWaterOverride != null && this.waterObstacles.isEmpty()) staticOverCliffWaterOverride
+        val base = dynamicBaseMap
+        if (base != null) {
+            base.overCliffWaterBlocking.withExtraBlocked(dynamicAddedCells)
+        } else if (staticOverCliffWaterOverride != null && this.waterObstacles.isEmpty()) staticOverCliffWaterOverride
         else BlockingGrid(widthTiles, heightTiles, BooleanArray(widthTiles * heightTiles) { index ->
             val col = index % widthTiles
             val row = index / widthTiles
@@ -332,12 +348,35 @@ class BlockingGrid(val widthTiles: Int, val heightTiles: Int, blocked: BooleanAr
         require(widthTiles > 0 && heightTiles > 0 && widthTiles.toLong() * heightTiles == blocked.size.toLong())
     }
     private val cells = blocked.copyOf()
-    private val blockedIndex = com.rustedwarfare.reforge.core.path.BlockedCellIndex(widthTiles, cells)
+    private val blockedIndex = com.rustedwarfare.reforge.core.navigation.BlockedCellIndex(widthTiles, cells)
     val blockedCount: Int = blockedIndex.count
 
     internal fun anyBlocked(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
                             predicate: (Int, Int) -> Boolean): Boolean =
         blockedIndex.any(firstColumn, lastColumn, firstRow, lastRow, predicate)
+
+    internal fun anyBlockedPrim(firstColumn: Int, lastColumn: Int, firstRow: Int, lastRow: Int,
+                                predicate: com.rustedwarfare.reforge.core.navigation.IntCellPredicate): Boolean =
+        blockedIndex.anyPrim(firstColumn, lastColumn, firstRow, lastRow, predicate)
+
+    internal fun withExtraBlocked(extraCells: Set<Pair<Int, Int>>): BlockingGrid {
+        if (extraCells.isEmpty()) return this
+        var anyAdded = false
+        for ((c, r) in extraCells) {
+            if (c in 0 until widthTiles && r in 0 until heightTiles && !cells[r * widthTiles + c]) {
+                anyAdded = true
+                break
+            }
+        }
+        if (!anyAdded) return this
+        val next = cells.copyOf()
+        for ((c, r) in extraCells) {
+            if (c in 0 until widthTiles && r in 0 until heightTiles) {
+                next[r * widthTiles + c] = true
+            }
+        }
+        return BlockingGrid(widthTiles, heightTiles, next)
+    }
 
     fun isBlocked(col: Int, row: Int): Boolean {
         if (col !in 0 until widthTiles || row !in 0 until heightTiles) {

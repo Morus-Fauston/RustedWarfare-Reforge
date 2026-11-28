@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.*
@@ -95,7 +97,7 @@ class MovementSweepTest {
                 assertEquals(MotionTerrainDisposition.CORRECTED,trace.terrainDisposition)
                 assertEquals(now.position,trace.terrainResolved);assertEquals(now.position,trace.finalPosition)
                 assertEquals(speed,trace.integratedSpeed);assertEquals(speed,trace.finalSpeed)
-                assertEquals(1.0,context.localMotionSnapshots(context.world).getValue("u1").correctionTime)
+                assertEquals(1.0,trace.correctionTimeAfter)
                 assertEquals(listOf("movement-started","movement-blocked"),result.events.map { it.kind })
                 context.submit(StopAction("stop","p1","u1",context.world))
                 val stopped=context.advance(Step(1,1.0,"sim-tick")).units.single()

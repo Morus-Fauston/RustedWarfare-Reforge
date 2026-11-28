@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import com.rustedwarfare.reforge.core.content.*
 import com.rustedwarfare.reforge.core.knowledge.*
 import kotlin.test.*
@@ -83,7 +85,7 @@ class BuildingAttackApproachTest {
                 repeat(350) { c.advance(Step(it.toLong(), 1.0, "sim-tick")) }
                 assertTrue(c.observe().units.single { it.unitId == "t" }.health!! < 700.0)
                 val paths = c.drainPathDiagnostics(c.world)
-                assertEquals(1, paths.count { it.reason == com.rustedwarfare.reforge.core.path.PathSearchReason.ATTACK_PURSUIT })
+                assertEquals(1, paths.count { it.reason == com.rustedwarfare.reforge.core.navigation.PathSearchReason.ATTACK_PURSUIT })
                 assertTrue(paths.all { it.usedPlayerKnowledge })
             } finally { c.close() }
         }

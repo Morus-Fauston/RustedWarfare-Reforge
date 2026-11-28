@@ -111,7 +111,7 @@ class VisionIncrementalTest {
             context.advance(Step(0, 1.0, "sim-tick"))
             val after = context.observePlayer(context.world, "p1")
             assertEquals(checkNotNull(before.vision).epoch + 1, checkNotNull(after.vision).epoch)
-            assertEquals(checkNotNull(before.knowledge).revision + 1, checkNotNull(after.knowledge).revision)
+            assertEquals(checkNotNull(before.knowledge).revision, checkNotNull(after.knowledge).revision)
             assertSame(before.vision.basicCells, after.vision.basicCells)
             assertSame(before.vision.effectiveCells, after.vision.effectiveCells)
             assertSame(before.knowledge.cells, after.knowledge.cells)

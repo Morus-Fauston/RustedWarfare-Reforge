@@ -1,8 +1,8 @@
 package com.rustedwarfare.reforge.core.knowledge
 
 import com.rustedwarfare.reforge.core.content.*
-import com.rustedwarfare.reforge.core.path.PathSearchOutcome
-import com.rustedwarfare.reforge.core.path.PathSearchReason
+import com.rustedwarfare.reforge.core.navigation.PathSearchOutcome
+import com.rustedwarfare.reforge.core.navigation.PathSearchReason
 import com.rustedwarfare.reforge.core.sim.*
 import java.awt.geom.Line2D
 import java.nio.file.Path
@@ -12,7 +12,8 @@ import kotlin.test.*
 class KnowledgePrefixFallbackTest {
     @Test fun kpf01_unreachable_anchor_falls_back_to_the_actual_position_without_cancelling_the_move() {
         val unit = UnitDefinition("tank", "CustomUnitMetadata", 11.0, 11.0, 1, Path.of("unused.png"), 1.0,
-            MovementProfile(MovementType.LAND, 1.1, 0.07, 0.17, 4.1, 0.25, false, false), emptySet())
+            MovementProfile(MovementType.LAND, 1.1, 0.07, 0.17, 4.1, 0.25, false, false), emptySet(),
+            movementCollision = MovementCollisionShape.Circle(1.5), explicitMovementCollision = true)
         val start = Position(189.0, 50.0)
         val goal = Position(50.0, 50.0)
         val input = Scenario("knowledge-prefix-fallback",
@@ -32,7 +33,7 @@ class KnowledgePrefixFallbackTest {
             assertEquals(start, opening.units.single().position)
             val oldPath = opening.units.single().pathPoints
             assertTrue(oldPath.size > 1)
-            assertEquals(listOf(Position(170.0, 130.0), Position(130.0, 130.0), goal), oldPath)
+            assertEquals(listOf(Position(170.0, 130.0), Position(150.0, 130.0), goal), oldPath)
             context.drainPathDiagnostics(context.world)
             // The continuous start can use x181.875..186.625 through the right
             // opening; its grid center x190 violates the retained outer radius11.
@@ -64,7 +65,8 @@ class KnowledgePrefixFallbackTest {
 
     @Test fun kpf02_both_real_searches_unreachable_cancel_once_and_clear_the_original_goal() {
         val unit = UnitDefinition("tank", "CustomUnitMetadata", 11.0, 11.0, 1, Path.of("unused.png"), 1.0,
-            MovementProfile(MovementType.LAND, 1.1, 0.07, 0.17, 4.1, 0.25, false, false), emptySet())
+            MovementProfile(MovementType.LAND, 1.1, 0.07, 0.17, 4.1, 0.25, false, false), emptySet(),
+            movementCollision = MovementCollisionShape.Circle(1.5), explicitMovementCollision = true)
         val start = Position(189.0, 50.0)
         val goal = Position(50.0, 50.0)
         val input = Scenario("knowledge-prefix-both-unreachable",
@@ -127,6 +129,6 @@ class KnowledgePrefixFallbackTest {
             val c = corners[index]
             val d = corners[(index + 1) % 4]
             Line2D.linesIntersect(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y)
-        } && minOf(distance(a), distance(b), corners.minOf { Line2D.ptSegDist(a.x, a.y, b.x, b.y, it.x, it.y) }) > 0.0
+        } && minOf(distance(a), distance(b), corners.minOf { Line2D.ptSegDist(a.x, a.y, b.x, b.y, it.x, it.y) }) > 1.5
     }
 }

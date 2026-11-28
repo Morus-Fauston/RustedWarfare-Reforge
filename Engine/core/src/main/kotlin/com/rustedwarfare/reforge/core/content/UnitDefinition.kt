@@ -69,6 +69,55 @@ class UnitDefinition(
     internal val contactBufferCollision = this.movementCollision.contactBufferOutline()
     internal val locomotionStates: SubmersibleLocomotion?
         get() = amphibiousJet?.locomotion ?: submarine?.locomotion
+    /** Pure data-driven submersible profile for both native markers and Phase VI-B custom submarines. */
+    val effectiveSubmersible: SubmersibleMotionProfile?
+        get() = movement.submersible ?: when {
+            submarine == SubmarineProfile.NATIVE -> SubmersibleMotionProfile(
+                surfaceHeight = 1.0,
+                submergedHeight = -8.0,
+                fastVerticalRate = 0.08,
+                fineVerticalRate = 0.02,
+                verticalAcceleration = 0.003,
+                submergedSpeed = 0.45,
+                submergedTurnSpeed = null,
+                divingChangesRoute = false,
+                diveRequiresOverWater = false,
+            )
+            amphibiousJet != null -> SubmersibleMotionProfile(
+                surfaceHeight = 20.0,
+                submergedHeight = -8.0,
+                fastVerticalRate = 0.6,
+                fineVerticalRate = 0.07,
+                verticalAcceleration = 0.006,
+                submergedSpeed = 0.4,
+                submergedTurnSpeed = 1.5,
+                divingChangesRoute = true,
+                diveRequiresOverWater = true,
+            )
+            else -> null
+        }
+    /** Pure data-driven water/land dual speed profile; retains native hovercraft defaults without unit-ID branching. */
+    val effectiveWaterLandSpeed: WaterLandSpeedProfile?
+        get() = movement.waterLandSpeed ?: if (transport == TransportProfile.NATIVE_HOVERCRAFT) {
+            WaterLandSpeedProfile(waterMoveSpeed = 1.2, landMoveSpeed = 0.9, waterTurnSpeed = 1.8, landTurnSpeed = 1.4)
+        } else null
+    /** Pure data-driven short-distance reverse threshold; retains native amphibious jet / dropship defaults. */
+    val effectiveShortReverseDistance: Double?
+        get() = movement.shortReverseDistance ?: if (amphibiousJet != null || transport == TransportProfile.NATIVE_DROPSHIP) {
+            100.0
+        } else null
+    /** Pure data-driven non-air vertical pose profile; derives native Nautilus form depths purely from movement medium. */
+    val effectiveVerticalPose: CustomVerticalPoseProfile?
+        get() = movement.verticalPose ?: if (transport == TransportProfile.NAUTILUS_SUBMERGED) {
+            when (movement.type) {
+                MovementType.OVER_CLIFF_WATER -> CustomVerticalPoseProfile(targetHeight = 2.0, heightDrift = 0.0, slowDeathFall = true)
+                MovementType.HOVER -> CustomVerticalPoseProfile(targetHeight = 0.1, heightDrift = 0.1, slowDeathFall = false)
+                else -> CustomVerticalPoseProfile(targetHeight = -8.0, heightDrift = 0.1, slowDeathFall = false)
+            }
+        } else null
+    /** Pure data-driven water corpse sinking flag (no unit-ID whitelist). */
+    val sinksInWaterOnDeath: Boolean
+        get() = movement.sinksInWaterOnDeath ?: (movement.type == MovementType.WATER || effectiveSubmersible != null)
     val retainedUnconsumed: Set<String> = Collections.unmodifiableSet(LinkedHashSet(retainedUnconsumed))
     val maximumHealth: Double? get() = durability?.maxHp ?: combat?.maxHp
     val productionRequiresCompletedConstruction: Boolean get() =
@@ -116,6 +165,55 @@ enum class NuclearSiloKind(
     INTERCEPTOR("antiNukeLauncherC", 2800.0, 15000L, BuildingFootprint(-1, -1, 1, 1)),
 }
 
+data class WaterLandSpeedProfile(
+    val waterMoveSpeed: Double,
+    val landMoveSpeed: Double,
+    val waterTurnSpeed: Double? = null,
+    val landTurnSpeed: Double? = null,
+) {
+    fun isValid(): Boolean =
+        waterMoveSpeed.isFinite() && waterMoveSpeed > 0.0 &&
+            landMoveSpeed.isFinite() && landMoveSpeed > 0.0 &&
+            (waterTurnSpeed == null || (waterTurnSpeed.isFinite() && waterTurnSpeed > 0.0)) &&
+            (landTurnSpeed == null || (landTurnSpeed.isFinite() && landTurnSpeed > 0.0))
+}
+
+data class SubmersibleMotionProfile(
+    val surfaceHeight: Double = 1.0,
+    val submergedHeight: Double = -8.0,
+    val fastVerticalRate: Double = 0.08,
+    val fineVerticalRate: Double = 0.02,
+    val verticalAcceleration: Double = 0.003,
+    val submergedSpeed: Double = 0.45,
+    val submergedTurnSpeed: Double? = null,
+    val divingChangesRoute: Boolean = false,
+    val diveRequiresOverWater: Boolean = false,
+) {
+    fun isValid(): Boolean =
+        listOf(surfaceHeight, submergedHeight, fastVerticalRate, fineVerticalRate, verticalAcceleration, submergedSpeed)
+            .all { it.isFinite() && it.toFloat().isFinite() } &&
+            submergedHeight < -1.0 && surfaceHeight > -1.0 &&
+            (surfaceHeight.toFloat() - submergedHeight.toFloat()).isFinite() &&
+            fastVerticalRate > 0.0 && fastVerticalRate.toFloat() > 0f &&
+            fineVerticalRate > 0.0 && fineVerticalRate.toFloat() > 0f &&
+            verticalAcceleration > 0.0 && verticalAcceleration.toFloat() > 0f &&
+            submergedSpeed >= 0.0 &&
+            (submergedTurnSpeed == null || (submergedTurnSpeed.isFinite() && submergedTurnSpeed > 0.0))
+}
+
+data class CustomVerticalPoseProfile(
+    val targetHeight: Double,
+    val heightDrift: Double = 0.0,
+    val slowDeathFall: Boolean = false,
+) {
+    fun isValid(): Boolean =
+        targetHeight.isFinite() && heightDrift.isFinite() && heightDrift >= 0.0 &&
+            targetHeight.toFloat().isFinite() && heightDrift.toFloat().isFinite() &&
+            (targetHeight + heightDrift).isFinite() && (targetHeight - heightDrift).isFinite() &&
+            (targetHeight.toFloat() + heightDrift.toFloat() + 1f).isFinite() &&
+            (targetHeight.toFloat() - heightDrift.toFloat()).isFinite()
+}
+
 data class MovementProfile(
     val type: MovementType,
     val moveSpeed: Double,
@@ -129,6 +227,11 @@ data class MovementProfile(
     val slidingDirection: Int = -1,
     val flight: FlightProfile? = null,
     val hover: HoverProfile? = null,
+    val waterLandSpeed: WaterLandSpeedProfile? = null,
+    val submersible: SubmersibleMotionProfile? = null,
+    val verticalPose: CustomVerticalPoseProfile? = null,
+    val shortReverseDistance: Double? = null,
+    val sinksInWaterOnDeath: Boolean? = null,
 )
 
 /** Physical dimensions in map coordinates, independent of selection and weapon targeting. */

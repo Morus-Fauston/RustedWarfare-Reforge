@@ -1,5 +1,7 @@
 package com.rustedwarfare.reforge.core.sim
 
+import com.rustedwarfare.reforge.core.navigation.*
+
 import kotlin.test.*
 
 /** Internal timing-rule evidence; these are not public delta-one clock trajectories. */

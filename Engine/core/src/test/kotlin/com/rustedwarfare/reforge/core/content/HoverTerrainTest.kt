@@ -1,6 +1,6 @@
 package com.rustedwarfare.reforge.core.content
 
-import com.rustedwarfare.reforge.core.path.PlanningTerrain
+import com.rustedwarfare.reforge.core.navigation.PlanningTerrain
 import com.rustedwarfare.reforge.core.knowledge.*
 import com.rustedwarfare.reforge.core.sim.*
 import java.nio.file.Path
