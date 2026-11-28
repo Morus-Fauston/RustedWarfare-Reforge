@@ -27,6 +27,13 @@ def session_timeout_seconds(case, timeout):
     return max(1, min(cap, headroom))
 
 
+def core_long_timeout_ms(case, timeout):
+    if case.get('kind') != 'long' or timeout <= 120:
+        return None
+    headroom = int(timeout) - 30 if timeout > 150 else int(math.ceil(timeout))
+    return max(120, min(600, headroom)) * 1000
+
+
 def _resolve_java_executable():
     java_home = os.environ.get('JAVA_HOME')
     if java_home:
@@ -711,14 +718,19 @@ def run_scenarios(repo, output, cases, distribution, workers, timeout, admit, ex
                     raise RuntimeError('Session evidence is not complete/pass: '+case['id'])
                 archive = dict(id=case['id'], kind=case['kind'], backend='session', path=str(folder))
             else:
+                core_timeout = core_long_timeout_ms(case, timeout)
                 run_argv = cli + ['run', '--scenario', str(scenario_file),
                                   '--contract', str(contract_file), '--output', str(folder), '--mode', 'self']
+                batch_req = dict(
+                    cmd='core-run', scenario=str(scenario_file), contract=str(contract_file),
+                    output=str(folder),
+                )
+                if core_timeout is not None:
+                    run_argv += ['--timeout-ms', str(core_timeout)]
+                    batch_req['timeoutMs'] = core_timeout
                 command(
                     case['id'], run_argv,
-                    batch_payload=dict(
-                        cmd='core-run', scenario=str(scenario_file), contract=str(contract_file),
-                        output=str(folder),
-                    ),
+                    batch_payload=batch_req,
                 )
                 archive_started = time.monotonic()
                 batches = list(folder.glob('run-*'))
