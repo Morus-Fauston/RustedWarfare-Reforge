@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.9 (2026-11-28 16:15)
+
+### 修复
+
+- **分盘原版安装目录同步与本地原版表现资源包开局闭环（`BootstrapScreen` / `VisualAssetSettingsSession`）**：当本地原版游戏安装于非默认目录（如独立盘符的 Steam 库）时，将自动探测到的有效原版根目录同步补入 `VisualAssetSettingsSession`（并在异步目录扫描与后台预览完成时保持），修复在「设置 → 资源包」启用 `本地原版表现资源包`（`reforge:original-android-1.15-176`）后因默认路径缺失触发 `SOURCE_ROOT_INVALID` 进而锁死「开始对局」按钮的问题；未配置且未探测到有效原版目录时禁用移入按钮并给出明确提示，遭遇战大厅、自由沙盒与设置页同步透出后台资源准备进度文案；补齐 `visualPanel` 临时 CLI 覆盖不写盘守卫、6 处资源包修改/导入入口统一取消 `Operation.PREVIEW`，并在启动 `Operation.CATALOG` 期间延后原版包状态对账以完整保留外部第三方资源包校验记录。
+
+### 技术
+
+- **原版直启与异步状态对账回归核验**：更新局外展示版本号至 `v0.6.9`；在 `PcOriginalDirectLaunchTest` 新增本机 Steam 65 单位直启核验及临时 CLI 零写盘、`Operation.PREVIEW` 目录保持与启动 `Operation.CATALOG` 外部包对账共存回归测试；客户端与 PC 单测、`public_batch.py --kind short`（`6/6` 套公开短测）、`:pc:installDist`、Android Debug APK 校验及双根 `workspace_layout.py` 全绿，经独立非作者 R02 定向复核 `APPROVE`（0 必修）。
+
+---
+
 ## v0.6.8 (2026-11-28 15:11)
 
 ### 新增

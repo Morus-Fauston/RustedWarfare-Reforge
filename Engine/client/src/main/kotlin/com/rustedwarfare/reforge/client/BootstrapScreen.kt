@@ -195,6 +195,7 @@ class BootstrapScreen(
         VisualAssetSettingsSession(it, userSettingsStore?.effective?.allEffectivePackOptions().orEmpty())
     }
     private var visualPanel: VisualAssetSettingsPanel? = null
+    private var pendingStartupPackReconcile = false
     private val packState = ContentPackSelectionSession()
     private var packPanel: ContentPackPanel? = null
     private lateinit var visualsTab: TextButton
@@ -703,7 +704,12 @@ class BootstrapScreen(
             fallbackFontProvider = { fallbackFont ?: skin.getFont("default") },
             canStartProvider = { canStartFromSkirmishLobby() },
             statusMessageProvider = {
-                loadError ?: skirmishMapState.error ?: packState.error ?: packState.compositionError ?: visualState?.error
+                loadError
+                    ?: skirmishMapState.error
+                    ?: packState.error
+                    ?: packState.compositionError
+                    ?: visualState?.error
+                    ?: (if (visualState?.canStart == false) visualState.operationLabel else null)
             },
             onNavigateBack = {
                 appShell.handleBackKey(requireMainMenuExitConfirm = false)
@@ -759,7 +765,12 @@ class BootstrapScreen(
             canStartBaseProvider = { visualState?.canStart != false && packState.canStart },
             canStartTestSceneProvider = { visualState?.canStart != false },
             statusMessageProvider = {
-                loadError ?: skirmishMapState.error ?: packState.error ?: packState.compositionError ?: visualState?.error
+                loadError
+                    ?: skirmishMapState.error
+                    ?: packState.error
+                    ?: packState.compositionError
+                    ?: visualState?.error
+                    ?: (if (visualState?.canStart == false) visualState.operationLabel else null)
             },
             onNavigateBack = {
                 appShell.handleBackKey(requireMainMenuExitConfirm = false)
@@ -844,7 +855,8 @@ class BootstrapScreen(
             contentPacksProvider = { buildSettingsContentPackEntries() },
             resourceStatusProvider = {
                 val err = visualState?.error
-                msgOrNull(err) to (err != null)
+                val msg = err ?: (if (visualState?.busy == true && !visualState.isPreviewBusy) visualState.operationLabel else null)
+                msgOrNull(msg) to (err != null)
             },
             contentStatusProvider = {
                 val err = packState.error ?: packState.compositionError
@@ -913,18 +925,24 @@ class BootstrapScreen(
             },
             onImportResourcePackPath = { rawPath ->
                 val vs = visualState
-                if (vs != null && !vs.busy) {
-                    runCatching { vs.importImagePack(Path.of(rawPath)) }
-                        .onFailure { vs.reportImportError(it.message ?: it.toString()) }
+                if (vs != null) {
+                    vs.cancelPreviewIfRunning()
+                    if (!vs.busy) {
+                        runCatching { vs.importImagePack(Path.of(rawPath)) }
+                            .onFailure { vs.reportImportError(it.message ?: it.toString()) }
+                    }
                 }
             },
             onExtractOriginalResourcePath = { rawPath ->
                 val vs = visualState
-                if (vs != null && !vs.busy) {
-                    runCatching {
-                        if (vs.supportsOriginalResourceExtraction) vs.extractOriginalResources(Path.of(rawPath))
-                        else vs.extractOriginalImages(Path.of(rawPath))
-                    }.onFailure { vs.reportImportError(it.message ?: it.toString()) }
+                if (vs != null) {
+                    vs.cancelPreviewIfRunning()
+                    if (!vs.busy) {
+                        runCatching {
+                            if (vs.supportsOriginalResourceExtraction) vs.extractOriginalResources(Path.of(rawPath))
+                            else vs.extractOriginalImages(Path.of(rawPath))
+                        }.onFailure { vs.reportImportError(it.message ?: it.toString()) }
+                    }
                 }
             },
             onMoveContentPack = { packId, delta ->
@@ -1029,6 +1047,16 @@ class BootstrapScreen(
         visualPanel = visualState?.let { state -> VisualAssetSettingsPanel(state, skin,
             contentChoice = { testScenes.choice?.content ?: packState.choice() }) {
             state.syncPackOptions(effectiveSettingsStore.effective.allEffectivePackOptions())
+            if (pendingStartupPackReconcile && !state.busy) {
+                reconcileSavedResourcePacksOnStartup()
+            }
+            if (!state.busy && state.error == null && !state.selection.temporary) {
+                val sessionNonBase = state.selection.packs.enabled.filter { it != UserSettings.BASE_RESOURCE_PACK_ID }
+                val nextSaved = sessionNonBase + UserSettings.BASE_RESOURCE_PACK_ID
+                if (effectiveSettingsStore.effective.enabledResourcePacks != nextSaved) {
+                    effectiveSettingsStore.update { it.copy(enabledResourcePacks = nextSaved) }
+                }
+            }
             evidence.recordVisualAssetMenu(state)
             syncOutGameMapCatalogDirectories()
             if (initialUiThemePacks.isEmpty()) {
@@ -1731,6 +1759,7 @@ class BootstrapScreen(
         if (touchControls) Gdx.input.setCatchKey(Input.Keys.BACK, true)
         if (userSettingsStore != null && !initialContent && !selectDefaultTestScenario) {
             syncPrimaryContentPackFromSettingsStack()
+            reconcileSavedResourcePacksOnStartup()
         }
         resize(Gdx.graphics.width, Gdx.graphics.height)
         presentationReady = true
@@ -1758,7 +1787,9 @@ class BootstrapScreen(
         userSettingsStore?.file?.parent?.resolve("maps")
 
     private fun syncOutGameMapCatalogDirectories() {
-        OutGameMapCatalog.configureDirectories(currentOriginalDirectory(), currentUserMapsDirectory())
+        val origDir = currentOriginalDirectory()
+        visualState?.ensureOriginalDirectoryIfMissing(origDir)
+        OutGameMapCatalog.configureDirectories(origDir, currentUserMapsDirectory())
         if (!lobbyExplicitMapChosen && skirmishMapState.selected == null && skirmishMapState.selectedCatalog == null) {
             val catalogEntries = OutGameMapCatalog.entries(MapPickerFilter.SKIRMISH)
             val realDefault = catalogEntries.firstOrNull() ?: return
@@ -2172,19 +2203,23 @@ class BootstrapScreen(
         )
 
         // Available (`未启用`) column: disabled resource packs (retaining saved `resourcePackOptions` in `settings.json`)
+        val hasValidOriginalDir = currentOriginalDirectory()?.let { java.nio.file.Files.isDirectory(it) } == true
         for (row in sessionRowsById.values) {
             if (row.id != UserSettings.BASE_RESOURCE_PACK_ID && row.id !in mergedUserEnabled) {
                 val meta = row.metadata
+                val isOrigRow = row.id == VisualAssetSource.ORIGINAL.resourcePackId
                 val title = if (meta != null) {
                     LocalizedMetadata.resourcePackName(meta, lang)
-                } else if (row.id == VisualAssetSource.ORIGINAL.resourcePackId) {
+                } else if (isOrigRow) {
                     if (lang == UiLanguage.ZH) "本地原版表现资源包" else "Local Original Visual & Sound Pack"
                 } else {
                     row.id
                 }
-                val sub = if (meta != null) {
+                val sub = if (isOrigRow && !hasValidOriginalDir) {
+                    if (lang == UiLanguage.ZH) "未检测到本地原版安装目录" else "Local original game directory not detected"
+                } else if (meta != null) {
                     LocalizedMetadata.resourcePackDescription(meta, lang)
-                } else if (row.id == VisualAssetSource.ORIGINAL.resourcePackId) {
+                } else if (isOrigRow) {
                     if (lang == UiLanguage.ZH) "原版贴图与音效提取包" else "Extracted original sprites & sounds"
                 } else {
                     row.id
@@ -2195,8 +2230,8 @@ class BootstrapScreen(
                     subtitle = sub,
                     enabled = false,
                     lockedBottom = false,
-                    canEnable = true,
-                    badgeStyle = if (row.id == VisualAssetSource.ORIGINAL.resourcePackId) PackIconBadgeStyle.ORIGINAL_RESOURCE else PackIconBadgeStyle.CUSTOM_RESOURCE,
+                    canEnable = row.canEnable && (!isOrigRow || hasValidOriginalDir),
+                    badgeStyle = if (isOrigRow) PackIconBadgeStyle.ORIGINAL_RESOURCE else PackIconBadgeStyle.CUSTOM_RESOURCE,
                     customIconPath = row.icon?.path,
                     errorText = row.error,
                     options = meta?.options.orEmpty(),
@@ -2217,8 +2252,14 @@ class BootstrapScreen(
         if (inMatchSettingsOpen && optionMeta?.affectsMediaAssets == true) {
             return
         }
-        val updated = effectiveSettingsStore.update { it.withPackOption(packId, optionId, value) }
         val vs = visualState
+        if (vs != null && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy && optionMeta?.affectsMediaAssets == true) {
+                return
+            }
+        }
+        val updated = effectiveSettingsStore.update { it.withPackOption(packId, optionId, value) }
         if (vs != null) {
             if (!vs.busy && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
                 runCatching {
@@ -2242,10 +2283,38 @@ class BootstrapScreen(
         setSettingsResourcePackOption(packId, optionId, value)
     }
 
+    fun moveResourcePackForTest(packId: String, delta: Int) {
+        moveSettingsResourcePack(packId, delta)
+    }
+
+    fun reconcileSavedResourcePacksForTest() {
+        reconcileSavedResourcePacksOnStartup()
+    }
+
     val currentVisualSelectionForTest: VisualAssetSelection?
         get() = visualState?.selection
 
-    fun pollVisualStateForTest(): Boolean = visualState?.poll() ?: false
+    val currentVisualRowsForTest: List<ResourcePackMenuRow>
+        get() = visualState?.rows.orEmpty()
+
+    fun pollVisualStateForTest(): Boolean {
+        val vs = visualState ?: return false
+        val changed = vs.poll()
+        if (changed) {
+            vs.syncPackOptions(effectiveSettingsStore.effective.allEffectivePackOptions())
+            if (pendingStartupPackReconcile && !vs.busy) {
+                reconcileSavedResourcePacksOnStartup()
+            }
+            if (!vs.busy && vs.error == null && !vs.selection.temporary) {
+                val sessionNonBase = vs.selection.packs.enabled.filter { it != UserSettings.BASE_RESOURCE_PACK_ID }
+                val nextSaved = sessionNonBase + UserSettings.BASE_RESOURCE_PACK_ID
+                if (effectiveSettingsStore.effective.enabledResourcePacks != nextSaved) {
+                    effectiveSettingsStore.update { it.copy(enabledResourcePacks = nextSaved) }
+                }
+            }
+        }
+        return changed
+    }
 
     private fun resetSettingsResourcePackOptions(packId: String) {
         if (packId == UserSettings.BASE_RESOURCE_PACK_ID) {
@@ -2254,6 +2323,13 @@ class BootstrapScreen(
             return
         }
         val rowMeta = visualState?.rows?.firstOrNull { it.id == packId }?.metadata
+        val vs = visualState
+        if (vs != null && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy && rowMeta?.options?.any { it.affectsMediaAssets } == true) {
+                return
+            }
+        }
         val updated = if (inMatchSettingsOpen && rowMeta != null) {
             effectiveSettingsStore.update { cur ->
                 var acc = cur
@@ -2267,7 +2343,6 @@ class BootstrapScreen(
         } else {
             effectiveSettingsStore.update { it.resetPackOptions(packId) }
         }
-        val vs = visualState
         if (vs != null) {
             vs.syncPackOptions(updated.allEffectivePackOptions())
             if (!vs.busy && !inMatchSettingsOpen && packId in vs.selection.packs.enabled) {
@@ -2282,11 +2357,15 @@ class BootstrapScreen(
     private fun moveSettingsResourcePack(packId: String, delta: Int) {
         if (inMatchSettingsOpen || packId == UserSettings.BASE_RESOURCE_PACK_ID) return
         val vs = visualState
-        if (!packId.startsWith("ui-theme:") && vs != null && !vs.busy && packId in vs.selection.packs.enabled) {
-            runCatching {
+        if (!packId.startsWith("ui-theme:") && vs != null) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy || packId !in vs.selection.packs.enabled) return
+            val moved = runCatching {
                 vs.movePack(packId, delta)
                 vs.apply(testScenes.choice?.content ?: packState.choice())
-            }
+                true
+            }.getOrDefault(false)
+            if (!moved) return
         }
         effectiveSettingsStore.update { cur ->
             val list = cur.enabledResourcePacks.filter { it != UserSettings.BASE_RESOURCE_PACK_ID }.toMutableList()
@@ -2296,6 +2375,47 @@ class BootstrapScreen(
                 java.util.Collections.swap(list, idx, target)
             }
             cur.copy(enabledResourcePacks = list + UserSettings.BASE_RESOURCE_PACK_ID)
+        }
+        lastHudState = null
+        if (presentationReady) updateHud()
+    }
+
+    private fun reconcileSavedResourcePacksOnStartup() {
+        val vs = visualState ?: return
+        if (vs.selection.temporary) {
+            pendingStartupPackReconcile = false
+            return
+        }
+        val origDir = currentOriginalDirectory()
+        vs.ensureOriginalDirectoryIfMissing(origDir)
+        val origPackId = VisualAssetSource.ORIGINAL.resourcePackId
+        val savedWantsOriginal = origPackId in effectiveSettingsStore.effective.enabledResourcePacks
+        val sessionHasOriginal = origPackId in vs.selection.packs.enabled
+        if (!savedWantsOriginal || sessionHasOriginal) {
+            pendingStartupPackReconcile = false
+            return
+        }
+        if (origDir != null && java.nio.file.Files.isDirectory(origDir)) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy) {
+                pendingStartupPackReconcile = true
+                return
+            }
+            pendingStartupPackReconcile = false
+            runCatching {
+                vs.ensureOriginalDirectoryIfMissing(origDir)
+                vs.setEnabled(origPackId, true)
+                vs.apply(testScenes.choice?.content ?: packState.choice())
+            }.onFailure {
+                effectiveSettingsStore.update { cur ->
+                    cur.copy(enabledResourcePacks = cur.enabledResourcePacks.filter { it != origPackId })
+                }
+            }
+        } else {
+            pendingStartupPackReconcile = false
+            effectiveSettingsStore.update { cur ->
+                cur.copy(enabledResourcePacks = cur.enabledResourcePacks.filter { it != origPackId })
+            }
         }
     }
 
@@ -2311,13 +2431,20 @@ class BootstrapScreen(
             return
         }
         val vs = visualState
-        if (vs != null && !vs.busy) {
+        if (vs != null) {
+            vs.cancelPreviewIfRunning()
+            if (vs.busy) return
+            vs.ensureOriginalDirectoryIfMissing(currentOriginalDirectory())
             val row = vs.rows.firstOrNull { it.id == packId }
             if (row != null && (!enabled || row.canEnable)) {
-                runCatching {
+                val ok = runCatching {
                     vs.setEnabled(packId, enabled)
                     vs.apply(testScenes.choice?.content ?: packState.choice())
-                }
+                    true
+                }.getOrDefault(false)
+                if (!ok && enabled) return
+            } else if (enabled) {
+                return
             }
         }
         effectiveSettingsStore.update { cur ->
@@ -2325,6 +2452,8 @@ class BootstrapScreen(
             val next = if (enabled) listOf(packId) + filtered else filtered
             cur.copy(enabledResourcePacks = next + UserSettings.BASE_RESOURCE_PACK_ID)
         }
+        lastHudState = null
+        if (presentationReady) updateHud()
     }
 
     private fun resolveSixAPackRoot(): Path? = listOf(
@@ -3990,7 +4119,7 @@ class BootstrapScreen(
         settingsScreen.isVisible = showSettingsOverlay
         if (showSettingsOverlay) {
             settingsScreen.inMatchMode = current != null
-            settingsScreen.resourcePackManager.busy = visualState?.busy == true
+            settingsScreen.resourcePackManager.busy = visualState?.let { it.busy && !it.isPreviewBusy } == true
             settingsScreen.contentPackManager.busy = packState.busy
             settingsScreen.refreshPackLists()
             settingsScreen.updateLayout(viewport.worldWidth, viewport.worldHeight)

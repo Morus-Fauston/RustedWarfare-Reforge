@@ -34,6 +34,7 @@ class VisualAssetSettingsSession(
     private var dirty = false
     private var latestPackOptions: Map<String, Map<String, String>> =
         if (initialPackOptions.isNotEmpty()) initialPackOptions else backend.initialSelection.packOptions
+    private var latestOriginalDirectory: Path? = backend.initialSelection.originalDirectory
     var selection: VisualAssetSelection =
         if (initialPackOptions.isNotEmpty()) backend.initialSelection.copy(packOptions = initialPackOptions) else backend.initialSelection
         private set
@@ -48,6 +49,7 @@ class VisualAssetSettingsSession(
     var hasUnsavedCatalog: Boolean = false
         private set
     val busy: Boolean get() = pending != null
+    val isPreviewBusy: Boolean get() = busy && operation == Operation.PREVIEW
     val preparationStatus: String? get() = backend.preparationStatus
     val supportsOriginalImageExtraction: Boolean get() = backend.supportsOriginalImageExtraction
     val supportsOriginalResourceExtraction: Boolean get() = backend.supportsOriginalResourceExtraction
@@ -95,6 +97,7 @@ class VisualAssetSettingsSession(
         check(!busy) { "Cancel preparation before editing" }
         hasUnsavedCatalog = hasUnsavedCatalog || value.packs.catalog != selection.packs.catalog
         latestPackOptions = value.packOptions
+        latestOriginalDirectory = value.originalDirectory
         selection = value; dirty = true; error = null; diagnostic = null; revision++
     }
 
@@ -142,6 +145,27 @@ class VisualAssetSettingsSession(
             selection = selection.copy(packOptions = allOptions)
             revision++
         }
+    }
+
+    /**
+     * Supplies a discovered local installation directory (e.g. Steam Rusted Warfare) when the currently
+     * held `selection.originalDirectory` is absent or points to a non-existent default folder.
+     */
+    fun ensureOriginalDirectoryIfMissing(fallbackDir: Path?) {
+        if (fallbackDir == null || !java.nio.file.Files.isDirectory(fallbackDir)) return
+        val cur = selection.originalDirectory
+        if (cur != null && java.nio.file.Files.isDirectory(cur)) return
+        val normalized = fallbackDir.toAbsolutePath().normalize()
+        latestOriginalDirectory = normalized
+        if (!busy || operation == Operation.CATALOG || operation == Operation.PREVIEW) {
+            selection = selection.copy(originalDirectory = normalized)
+            if (!dirty) previewsRequested = false
+            revision++
+        }
+    }
+
+    fun cancelPreviewIfRunning() {
+        if (isPreviewBusy) cancel()
     }
 
     /**
@@ -299,18 +323,39 @@ class VisualAssetSettingsSession(
                 is Completed.Imported -> acceptImport(result.pack, extracted = kind == Operation.EXTRACT || kind == Operation.EXTRACT_RESOURCES)
                 is Completed.Catalog -> {
                     install(result.checks)
-                    if (selection.packOptions != latestPackOptions) {
-                        selection = selection.copy(packOptions = latestPackOptions)
+                    var merged = selection
+                    if (merged.packOptions != latestPackOptions) {
+                        merged = merged.copy(packOptions = latestPackOptions)
                     }
+                    val orig = latestOriginalDirectory
+                    if (orig != null &&
+                        (merged.originalDirectory == null || !java.nio.file.Files.isDirectory(merged.originalDirectory)) &&
+                        merged.originalDirectory != orig
+                    ) {
+                        merged = merged.copy(originalDirectory = orig)
+                    }
+                    selection = merged
                     error = result.checks.firstOrNull { it.entry.id in selection.packs.enabled && it.error != null }?.error
                     if (result.checks.any { it.error != null }) diagnostic = "Some saved packs are unavailable. Disabled entries are not used."
                 }
                 is Completed.Prepared -> {
                     if (result.save) backend.applyPrepared(result.assets)
-                    selection = if (kind == Operation.PREVIEW && result.assets.selection.packOptions != latestPackOptions) {
-                        result.assets.selection.copy(packOptions = latestPackOptions)
+                    selection = if (kind == Operation.PREVIEW) {
+                        var merged = result.assets.selection
+                        if (merged.packOptions != latestPackOptions) {
+                            merged = merged.copy(packOptions = latestPackOptions)
+                        }
+                        val orig = latestOriginalDirectory
+                        if (orig != null &&
+                            (merged.originalDirectory == null || !java.nio.file.Files.isDirectory(merged.originalDirectory)) &&
+                            merged.originalDirectory != orig
+                        ) {
+                            merged = merged.copy(originalDirectory = orig)
+                        }
+                        merged
                     } else {
                         latestPackOptions = result.assets.selection.packOptions
+                        latestOriginalDirectory = result.assets.selection.originalDirectory
                         result.assets.selection
                     }
                     if (result.assets.selection == selection) {
