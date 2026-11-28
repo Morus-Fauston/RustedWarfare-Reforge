@@ -162,7 +162,7 @@ def new_temp_dir(prefix, base_dir=None):
 
 
 def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=False,
-               forks=None, gradle_workers=None, rerun=False, temp_root=None, is_windows=None):
+               forks=None, gradle_workers=None, rerun=False, temp_root=None, is_windows=None, cloud=None):
     repo = Path(repo).resolve()
     sim_dir = repo / 'SimulationTest'
     public_p001 = repo / PUBLIC_P001_RELATIVE
@@ -171,9 +171,10 @@ def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=F
     if not public_p001.is_dir():
         raise ValueError('Missing public P001 fixture directory: ' + str(public_p001))
 
+    is_cloud = (os.environ.get('GITHUB_ACTIONS') == 'true') if cloud is None else bool(cloud)
     effective_forks = default_test_forks() if forks is None else parse_test_forks(forks)
     effective_gradle_workers = (
-        default_gradle_workers(effective_forks)
+        default_gradle_workers(effective_forks, cloud=is_cloud)
         if gradle_workers is None else parse_gradle_workers(gradle_workers)
     )
     wrapper = gradle_wrapper(sim_dir, is_windows=is_windows)
@@ -194,7 +195,6 @@ def build_plan(repo, *, core=(), client=(), pc=(), tools=(), suites=(), dev_ab=F
             test_tasks.append('--rerun')
 
     if test_tasks:
-        is_cloud = os.environ.get('GITHUB_ACTIONS') == 'true'
         per_module_cap = max(1, min(effective_forks, effective_gradle_workers))
         allocated = allocate_module_test_forks(active_modules, per_module_cap, is_cloud=is_cloud)
         fork_props = [f'-P{mod}.test.maxParallelForks={allocated.get(mod, 1)}' for mod in ('core', 'client', 'tools')]

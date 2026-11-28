@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.6.13 (2026-11-29 00:08)
+
+### 修复
+
+- **本地快筛工具单测云端环境变量解耦（`quick_test.py` / `test_quick_test.py`）**：修复在云端 GitHub Actions（`GITHUB_ACTIONS=true`）环境中运行 `test_quick_test.py` 时，因 `build_plan` 自动走入云端直通分支而与原本校验本地跨模块 `<= 8` 常驻测试子 JVM 分配池（如 `core + pc -> 7 + 1`）的断言发生隐式环境耦合失败的问题；为 `build_plan` 补充可选显式 `cloud` 参数（默认仍读取 `GITHUB_ACTIONS` 保持真实 CLI 行为不变），并在 `test_quick_test.py` 中分别显式校验 `cloud=False` 本地封顶池与 `cloud=True` 云端分支。
+
+### 技术
+
+- **双环境单测与定向复核核验**：在 `GITHUB_ACTIONS=true` 与未设置双环境下实跑 `test_quick_test.py`（`9/9`）及 `SimulationTest/ci` 全套单测（`78/78`）均 100% 通过，工作树布局校验通过，经原独立非作者终审子代理 R02 定向复核 `APPROVE`（0 必修、0 建议）。
+
+---
+
 ## v0.6.12 (2026-11-28 23:49)
 
 ### 新增

@@ -59,6 +59,7 @@ class QuickTestRunnerTest(unittest.TestCase):
                 forks=8,
                 gradle_workers=10,
                 is_windows=True,
+                cloud=False,
             )
             self.assertEqual(8, plan['testForks'])
             self.assertEqual(10, plan['gradleWorkers'])
@@ -72,8 +73,19 @@ class QuickTestRunnerTest(unittest.TestCase):
             self.assertEqual('8', suite_argv[suite_argv.index('--test-forks') + 1])
             self.assertEqual('10', suite_argv[suite_argv.index('--gradle-workers') + 1])
 
+            cloud_plan = quick_test.build_plan(
+                repo,
+                core=['OpenGroundPlanningTest'],
+                pc=['WindowsLaunchOptionsTest'],
+                forks=8,
+                gradle_workers=10,
+                is_windows=True,
+                cloud=True,
+            )
+            self.assertIn('-Pcore.test.maxParallelForks=8', cloud_plan['steps'][0]['argv'])
+
             single_mod = quick_test.build_plan(
-                repo, core=['OpenGroundPlanningTest'], forks=8, gradle_workers=10, is_windows=True)
+                repo, core=['OpenGroundPlanningTest'], forks=8, gradle_workers=10, is_windows=True, cloud=False)
             self.assertIn('-Pcore.test.maxParallelForks=8', single_mod['steps'][0]['argv'])
 
             all_four = quick_test.build_plan(
@@ -85,6 +97,7 @@ class QuickTestRunnerTest(unittest.TestCase):
                 forks=8,
                 gradle_workers=12,
                 is_windows=True,
+                cloud=False,
             )
             all_argv = all_four['steps'][0]['argv']
             self.assertIn('-Pcore.test.maxParallelForks=3', all_argv)
@@ -112,6 +125,7 @@ class QuickTestRunnerTest(unittest.TestCase):
                 forks=4,
                 rerun=True,
                 is_windows=True,
+                cloud=False,
             )
             self.assertEqual(4, plan['testForks'])
             self.assertEqual(1, len(plan['steps']))

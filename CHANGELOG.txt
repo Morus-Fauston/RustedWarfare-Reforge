@@ -1,3 +1,9 @@
+v0.6.13 (2026-11-29 00:08)
+  修复: 为 quick_test.build_plan 补充可选显式 cloud 参数（默认仍读取 GITHUB_ACTIONS 保持 CLI 行为不变），并在 test_quick_test.py 中分别显式断言 cloud=False 本地跨模块 <= 8 常驻子 JVM 池与 cloud=True 云端直通分支，消除云端 GITHUB_ACTIONS=true 环境变量引发的单测断言耦合
+  技术: 在 GITHUB_ACTIONS=true 与本地双环境下通过 test_quick_test.py（9/9）与 SimulationTest/ci 全集（78/78）及布局检查，经原独立非作者终审子代理 R02 定向复核 APPROVE（0 必修）
+
+====
+
 v0.6.12 (2026-11-28 23:49)
   新增: 为 Main 与 PlatformSessionRunner 新增 JSON 行协议常驻批量场景执行器 BatchScenarioWorker 并在 public_scenarios.py / public_batch.py 实装批次级共享常驻进程池 PersistentScenarioWorkerPool（支持 core-run / core-compare / core-assertions / session-run 四类任务、单槽位 GIL 隔离的 --session-eval-worker 评估协进程、满 25 条优雅轮换重启、单条超时进程树强杀恢复、首错早停、热态 LPT 优先级派发及超阈值空闲堆整理，100% 保留原单次 CLI 兼容）
   架构改进: 在 platform_scenario.py 新增 --read-only-inputs 零拷贝公开输入模式（运行前后完整复核全文件字节级 SHA-256，省去逐局整树拷贝），并移除 public_scenarios.py 对已通过内部锁定比较的会话归档额外拉起的第二次外部 compare 子进程（同步对齐 public_parallel.py 预期命令列表并保留独立 compare CLI） / 在 CoreAdapter 按观察者安全复用单局不可变视野快照 JsonObject、取消 RunArchive 逐行同步刷盘改为评估与封签前显式 flush 并优化十六进制摘要缓冲
